@@ -1,0 +1,58 @@
+/*
+ * Bridge between our design tokens (src/styles.css) and the GuiExpert Table. The table defines its
+ * --ge-table-* variables on <html>; redefining them on the table host (.ge-table) wins by inheritance.
+ * Only this file knows --ge-table-*, and only as `var(--token)` or `transparent`: the table follows
+ * every colour scheme.
+ */
+.ge-table {
+  --ge-table-bg: var(--bg-app);
+  --ge-table-border: var(--border);
+
+  --ge-table-header-west-bg: var(--bg-panel);
+  --ge-table-header-center-bg: var(--bg-panel);
+  --ge-table-header-east-bg: var(--bg-panel);
+  --ge-table-header-west-text: var(--text);
+  --ge-table-header-center-text: var(--text);
+  --ge-table-header-east-text: var(--text);
+  --ge-table-header-west-horizontal-border: var(--border);
+  --ge-table-header-center-horizontal-border: var(--border);
+  --ge-table-header-east-horizontal-border: var(--border);
+  --ge-table-header-west-vertical-border: var(--border);
+  --ge-table-header-center-vertical-border: var(--border);
+  --ge-table-header-east-vertical-border: var(--border);
+
+  --ge-table-body-west-bg: var(--bg-gutter);
+  --ge-table-body-center-bg: var(--bg-app);
+  --ge-table-body-east-bg: var(--bg-app);
+  --ge-table-body-west-text: var(--text-dim);
+  --ge-table-body-center-text: var(--text);
+  --ge-table-body-east-text: var(--text);
+  --ge-table-row-odd-bg: transparent;
+  --ge-table-row-even-bg: transparent;
+
+  --ge-table-hover-row-bg: var(--bg-hover);
+  --ge-table-focus-border: var(--accent);
+  --ge-table-focus-outline-color: var(--accent);
+
+  --ge-table-cell-editor-bg: var(--bg-raised);
+  --ge-table-cell-editor-text: var(--text);
+  --ge-table-cell-editor-border: var(--accent);
+  --ge-table-cell-error-color: var(--danger);
+  --ge-table-color-error-text: var(--danger);
+
+  --ge-table-overlay-bg: transparent;
+  --ge-table-overlay-color: var(--text-dim);
+  --ge-table-overlay-content-bg: var(--bg-panel);
+  --ge-table-spinner-color: var(--accent);
+  --ge-table-spinner-track-color: var(--border);
+
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* numbers of a result are right-aligned (features/results/result-model.ts) */
+.ge-table .ge-table-col-div.sc-num {
+  justify-content: flex-end;
+  text-align: right;
+  color: var(--sql-number);
+}

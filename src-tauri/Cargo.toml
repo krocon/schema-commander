@@ -1,0 +1,34 @@
+[package]
+name = "schema-commander"
+version = "0.1.0"
+description = "Cross-platform SQL client (Tauri 2 + Angular)"
+authors = ["Marc Kronberg"]
+license = "MIT"
+repository = "https://github.com/krocon/schema-commander"
+edition = "2024"
+rust-version = "1.93"
+
+[lib]
+name = "schema_commander_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Walking skeleton: an in-memory demo database, so editor → Rust → result grid works without a
+# server. Bundled (no system library), as in log-commander. The real drivers come with the
+# connection prompt (prompts/README.md).
+rusqlite = { version = "0.41", features = ["bundled", "column_decltype"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+# Settings (colour scheme, layout) as one JSON file in the app's config folder.
+tauri-plugin-store = "2"
+# Window position and size over a restart.
+tauri-plugin-window-state = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true

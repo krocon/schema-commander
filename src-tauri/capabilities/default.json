@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Minimal permissions for the main window. Database access goes through the app's own Rust commands (invoke_handler); no fs/shell/sql plugins are enabled.",
+  "windows": ["main"],
+  "permissions": ["core:default", "store:default"]
+}

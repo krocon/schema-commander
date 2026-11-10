@@ -1,0 +1,39 @@
+<p align="center"><img src="public/icon.svg" width="112" alt=""></p>
+
+<h1 align="center">Schema Commander</h1>
+
+<p align="center"><b>A fast, keyboard-driven SQL client for macOS, Windows and Linux.</b></p>
+
+---
+
+Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust. The SQL editor is
+[editlicious](https://krocon.de/products/editlicious/), the grids are the [GuiExpert Table](https://gui.expert).
+
+> Status: **walking skeleton**. A window with an SQL editor, a result grid and 17 colour schemes, running against an
+> in-memory demo database. Real connections, the schema tree and everything else are planned – see
+> [`docs/feature-analysis.md`](docs/feature-analysis.md) and [`prompts/README.md`](prompts/README.md).
+
+## What works
+
+- SQL editor with syntax highlighting; <kbd>Ctrl/⌘</kbd>+<kbd>Enter</kbd> runs the statement under the caret
+- Result grid with virtual scrolling, sortable and resizable columns
+- 17 colour schemes (dark, light, One Dark, Solarized Light, Matrix, Amber …), fixed or following the system
+- Layout, colour scheme and window position survive a restart
+
+## Development
+
+```bash
+pnpm install
+pnpm tauri dev      # app with hot reload (Angular on port 1460)
+pnpm check          # contrast, format, lint, tests, build, cargo fmt/clippy/test
+```
+
+Requirements: Node ≥ 22.22.3, pnpm 10, Rust stable ≥ 1.93 and the
+[Tauri prerequisites](https://tauri.app/start/prerequisites/) of your OS.
+
+Rules and layout for contributors (and AI assistants): [`CLAUDE.md`](CLAUDE.md),
+[`docs/best-practices.md`](docs/best-practices.md), [`docs/architecture.md`](docs/architecture.md).
+
+## License
+
+MIT © 2026 Marc Kronberg

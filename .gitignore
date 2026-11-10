@@ -1,0 +1,32 @@
+# Compiled output
+/dist
+/tmp
+/out-tsc
+
+# Node
+/node_modules
+npm-debug.log
+
+# Rust
+/src-tauri/target
+/src-tauri/gen/schemas
+
+# IDEs and editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.history/*
+
+# Miscellaneous
+/.angular/
+/coverage
+__screenshots__/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Agents (local)
+/.claude/
+/.agents/
+/.gemini/
