@@ -1,3 +1,5 @@
+import { offsetAt, placeIn } from '../../core/text/places';
+
 /**
  * Splits a script into statements, by the rules of a dialect (prompt 005). Pure; the cases are in
  * `sql-split.cases.json`. Used for „the statement under the caret“ and for running a selection or a script.
@@ -249,15 +251,9 @@ export function splitForRun(script: string, dialect: Dialect): Statement[] {
   return out;
 }
 
-/** Offset of a 1-based line and column in `script`. */
+/** Offset (UTF-16) of a line and column of the editor (both from 1, the column in characters). */
 export function offsetOf(script: string, line: number, ch: number): number {
-  let offset = 0;
-  for (let l = 1; l < line; l++) {
-    const eol = script.indexOf('\n', offset);
-    if (eol < 0) return script.length;
-    offset = eol + 1;
-  }
-  return Math.min(script.length, offset + Math.max(0, ch - 1));
+  return offsetAt(script, { line, ch });
 }
 
 /**
@@ -278,13 +274,14 @@ export function statementAt(
   return statements[statements.length - 1];
 }
 
-/** The line and column (both from 1) of an offset of a text whose first line is line `firstLine`. */
+/**
+ * The line and column of the editor (both from 1, the column in characters) of an offset of a text whose
+ * first line is line `firstLine`.
+ */
 export function positionOf(
   text: string,
   offset: number,
   firstLine = 1,
 ): { line: number; ch: number } {
-  const before = text.slice(0, Math.max(0, offset));
-  const breaks = before.split('\n');
-  return { line: firstLine + breaks.length - 1, ch: breaks[breaks.length - 1].length + 1 };
+  return placeIn(text, offset, { line: firstLine, ch: 1 });
 }

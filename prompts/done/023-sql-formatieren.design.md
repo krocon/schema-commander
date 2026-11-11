@@ -70,8 +70,10 @@
 - **editlicious zählt Spalten in Codepunkten** (so steht es in `editlicious-editor.d.ts`; im Browser bestätigt:
   `getRange({1,1},{1,3})` von `a😀b` ist `a😀`). `offsetOf`/`positionOf` in `sql-split.ts` und
   `error-position.ts` (022, dort steht „UTF-16“) rechnen in UTF-16-Einheiten: hinter einem Emoji **in derselben
-  Zeile** liegen Fehlermarkierung und „Anweisung unter dem Cursor“ um eine Spalte je Emoji daneben. Hier nicht
-  angefasst (023 rechnet mit eigenen, getesteten Funktionen `placeIn`/`offsetAt`); eigener kleiner Auftrag.
+  Zeile** lagen Fehlermarkierung und „Anweisung unter dem Cursor“ um eine Spalte je Emoji daneben.
+  **Behoben am 11.11.2026** (Branch `fix/spalten-codepunkte`): `placeIn`/`offsetAt` liegen jetzt in
+  `core/text/places.ts`, `offsetOf`, `positionOf` und `placeOf` rechnen damit; rote Tests zuerst, im Browser
+  im echten Editor bestätigt.
 - **Vorschläge für editlicious**: (1) Nach einem `replaceRange`, das die längste Zeile kürzt, bleibt die Ansicht
   waagerecht verschoben, bis Spalte 1 gezeigt wird – hier mit `goTo(zeile, 1)` vor dem Setzen des Cursors
   ausgeglichen. (2) Eine Aktion `edit.toggleComment`, die das Kommentarzeichen der Grammatik kennt.

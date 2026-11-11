@@ -30,13 +30,16 @@ describe('where a failed statement is marked (catalog)', () => {
     });
   }
 
-  it('counts characters as the databases do and units as the editor does', () => {
+  it('counts characters as the databases and the editor do, units as JavaScript does', () => {
     expect(offsetOfCharacter('a😀b', 1)).toBe(0);
     expect(offsetOfCharacter('a😀b', 2)).toBe(1);
     expect(offsetOfCharacter('a😀b', 3)).toBe(3);
     expect(offsetOfCharacter('a😀b', 99)).toBe(4);
     expect(placeOf('ab\ncd', { line: 5, ch: 10 }, 1)).toEqual({ line: 5, ch: 11 });
     expect(placeOf('ab\ncd', { line: 5, ch: 10 }, 4)).toEqual({ line: 6, ch: 2 });
+    // the editor counts an emoji as one column (two UTF-16 units)
+    expect(placeOf('😀b\n😀d', { line: 5, ch: 10 }, 2)).toEqual({ line: 5, ch: 11 });
+    expect(placeOf('😀b\n😀d', { line: 5, ch: 10 }, 6)).toEqual({ line: 6, ch: 2 });
   });
 });
 

@@ -1,5 +1,12 @@
 import catalog from './sql-split.cases.json';
-import { Dialect, offsetOf, splitForRun, splitStatements, statementAt } from './sql-split';
+import {
+  Dialect,
+  offsetOf,
+  positionOf,
+  splitForRun,
+  splitStatements,
+  statementAt,
+} from './sql-split';
 
 const DIALECTS: Dialect[] = ['postgres', 'mysql', 'sqlserver', 'sqlite'];
 
@@ -81,5 +88,28 @@ describe('offsetOf', () => {
   it('clamps beyond the text', () => {
     expect(offsetOf('ab\ncd', 2, 2)).toBe(4);
     expect(offsetOf('ab\ncd', 9, 1)).toBe(5);
+  });
+
+  it('takes the column as the editor counts it: an emoji is one', () => {
+    const script = "select '😀😀'; select 2;\nselect '😀' ; select 4";
+    // column 14 of line 1 is the `s` of `select 2` – 15 UTF-16 units into the text
+    expect(offsetOf(script, 1, 14)).toBe(15);
+    expect(statementAt(script, offsetOf(script, 1, 16))?.text).toBe('select 2');
+    expect(offsetOf(script, 2, 13)).toBe(script.indexOf(' ; select 4') + 2);
+    // a column behind the end of its line stays in the line
+    expect(offsetOf('ab\ncd', 1, 99)).toBe(2);
+  });
+});
+
+describe('positionOf', () => {
+  it('answers in lines and columns of the editor and is the inverse of offsetOf', () => {
+    const script = "select '😀😀'; select 2;\nselect '😀' ; select 4";
+    expect(positionOf(script, script.indexOf('select 2'))).toEqual({ line: 1, ch: 14 });
+    expect(positionOf(script, script.indexOf('select 4'))).toEqual({ line: 2, ch: 14 });
+    expect(positionOf(script, script.indexOf('select 4'), 10)).toEqual({ line: 11, ch: 14 });
+    for (const offset of [0, 7, 8, 10, 14, 26, 35, script.length]) {
+      const at = positionOf(script, offset);
+      expect(offsetOf(script, at.line, at.ch)).toBe(offset);
+    }
   });
 });
