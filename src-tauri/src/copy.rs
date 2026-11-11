@@ -54,14 +54,18 @@ pub fn merge_rows(ranges: &[(u64, u64)], total: u64) -> Vec<(u64, u64)> {
     out
 }
 
-/// The columns sorted, each once, only those that exist; none named = all.
+/// The columns in the order they are named (the grid may show them in another order than the result,
+/// prompt 029), each once, only those that exist; none named = all.
 pub fn pick_columns(columns: &[usize], count: usize) -> Vec<usize> {
     if columns.is_empty() {
         return (0..count).collect();
     }
-    let mut out: Vec<usize> = columns.iter().copied().filter(|c| *c < count).collect();
-    out.sort_unstable();
-    out.dedup();
+    let mut out: Vec<usize> = Vec::with_capacity(columns.len().min(count));
+    for &c in columns {
+        if c < count && !out.contains(&c) {
+            out.push(c);
+        }
+    }
     out
 }
 
@@ -197,7 +201,7 @@ mod tests {
     #[test]
     fn picks_columns_once_and_only_real_ones() {
         assert_eq!(pick_columns(&[], 3), vec![0, 1, 2]);
-        assert_eq!(pick_columns(&[2, 0, 2, 9], 3), vec![0, 2]);
+        assert_eq!(pick_columns(&[2, 0, 2, 9], 3), vec![2, 0]);
     }
 
     #[test]
@@ -211,7 +215,7 @@ mod tests {
         };
         let (text, copied) =
             render(&store, id, &selection, Format::Tsv, options(), &|| false).unwrap();
-        assert_eq!(text, "1\tn1\n2\tn2\n7\tn7\n8\tn8");
+        assert_eq!(text, "n1\t1\nn2\t2\nn7\t7\nn8\t8");
         assert_eq!((copied.rows, copied.columns), (4, 2));
         // a long text is copied whole, though a window shows only its start
         let one = Selection {

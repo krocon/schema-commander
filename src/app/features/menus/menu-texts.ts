@@ -20,6 +20,8 @@ export const MENU_EN = {
   format: 'More formatting',
   saved: 'Folder of the saved queries',
   filterCell: 'Filter by this cell',
+  resultColumns: 'Columns',
+  resultFind: 'Find and go to',
   failed: (reason: string) => `The menu bar could not be built: ${reason}`,
   /** The words of the items macOS provides. */
   native: {

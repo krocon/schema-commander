@@ -552,7 +552,7 @@ mod tests {
         assert_eq!(&text[..3], &[0xEF, 0xBB, 0xBF]);
         assert_eq!(
             String::from_utf8_lossy(&text[3..]),
-            "id\tname\n2\tn2\n3\tn3\n"
+            "name\tid\nn2\t2\nn3\t3\n"
         );
     }
 

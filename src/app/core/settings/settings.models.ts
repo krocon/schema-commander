@@ -102,6 +102,8 @@ export interface Settings {
   readonly tableFilters: Readonly<Record<string, TableSpecStored>>;
   /** The row for filtering a result locally is shown. */
   readonly filterBarVisible: boolean;
+  /** The column layout per table of a table view (prompt 029), by `tableKey`; read with `mergeLayout`. */
+  readonly columnLayouts: Readonly<Record<string, ColumnLayoutStored>>;
   /** The figures of a selection the status line shows (prompt 028): keys of `MEASURES`. */
   readonly statsMeasures: readonly string[];
   /** Look for parameters in statements and ask for their values (prompt 025). */
@@ -183,6 +185,7 @@ export const DEFAULT_SETTINGS: Settings = {
   valueWrap: true,
   tableFilters: {},
   filterBarVisible: false,
+  columnLayouts: {},
   statsMeasures: ['cells', 'sum', 'mean', 'min', 'max'],
   paramsEnabled: true,
   paramForms: {},
@@ -305,6 +308,18 @@ export function mergeSettings(saved: unknown): Settings {
           ) as Record<string, TableSpecStored>)
         : {},
     filterBarVisible: bool('filterBarVisible'),
+    columnLayouts:
+      s['columnLayouts'] &&
+      typeof s['columnLayouts'] === 'object' &&
+      !Array.isArray(s['columnLayouts'])
+        ? (Object.fromEntries(
+            Object.entries(s['columnLayouts'] as Record<string, unknown>)
+              .filter(
+                ([key, layout]) => key.length <= 600 && !!layout && typeof layout === 'object',
+              )
+              .slice(-200),
+          ) as Record<string, ColumnLayoutStored>)
+        : {},
     statsMeasures: Array.isArray(s['statsMeasures'])
       ? [
           ...new Set(
@@ -447,4 +462,12 @@ export function mergeKeymap(raw: unknown): { keymap: KeymapSetting; notice: stri
       .map((s) => s.slice(0, 60));
   }
   return { keymap: { version: KEYMAP_VERSION, bindings }, notice: null };
+}
+
+/** A column layout as it is stored (`ColumnLayout` in features/results/column-layout.ts). */
+export interface ColumnLayoutStored {
+  readonly order: readonly string[];
+  readonly hidden: readonly string[];
+  readonly pinned: readonly string[];
+  readonly widths: Readonly<Record<string, number>>;
 }

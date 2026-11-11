@@ -14,6 +14,7 @@ pub mod image_info;
 pub mod menu;
 pub mod results;
 pub mod saved;
+pub mod search;
 pub mod session;
 pub mod ssh;
 pub mod stats;
@@ -139,6 +140,8 @@ pub fn run() {
             commands::result_window,
             commands::result_view,
             commands::result_stats,
+            commands::result_search,
+            commands::result_seek,
             commands::table_query,
             commands::cell_value,
             commands::save_cell_value,

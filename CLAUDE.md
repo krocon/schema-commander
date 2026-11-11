@@ -48,11 +48,13 @@
   Filtern**: Tabellen-Ansicht mit Filterzeile und `ORDER BY` auf dem Server (Werte gebunden), jedes andere
   Ergebnis als Sicht im Ergebnisspeicher (Prompt 027); **Auswahl auswerten**: Anzahl, Summe, Mittel, Min, Max
   der markierten Zellen in der Statuszeile, exakt gerechnet in Rust; Spalte zusammenfassen mit den häufigsten
-  Werten (Prompt 028);
+  Werten (Prompt 028); **Spalten** fixieren, ausblenden, verschieben, Breiten merken (je Tabelle bzw. Tab),
+  Spaltenliste mit Sprung; **Suche im Ergebnis** (Text, Wort, Regex, je Spalte) in Rust mit Treffer-Sprung,
+  Gehe zu Zeile, nächster anderer Wert / nächstes NULL (Prompt 029);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–028),
+  erledigt: 001–029),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -124,6 +126,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/export/         ExportDialog, ExportService (Root: ein Job, Statuszeile), export-logic.ts (rein)
   app/features/filter/         FilterBar (Bedingungen der Tabellen-Ansicht, lokaler Filter), TableViews (Root:
                                Tabelle als Tabellen-Ansicht öffnen), filter-logic.ts (rein)
+  app/features/find/           ResultFind (je Tab: Suche stückweise, Treffer, Sprung; kein Injectable), FindBar
+                               (Suchzeile über dem Ergebnis), ColumnsPopover (Spaltenliste)
   app/features/stats/          StatsService (Root: Kennzahlen der Auswahl, gedrosselt, Überholtes verworfen),
                                StatsPopover (Spalte zusammenfassen), stats-logic.ts (rein: Kennzahlen → Anzeige)
   app/features/format/         FormatService (Root: ein Job, Statuszeile), format-logic.ts (rein: Stil,
@@ -148,7 +152,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/results/        ResultGrid (GuiExpert Table), result-model.ts (rein: Spalten, Breiten,
                                WindowAreaModel mit Seiten-Cache), cell-format.ts (rein: Zelle → Text + Klasse,
                                entschärfen, kürzen; Katalog cell-format.cases.json), CopyService (Root) +
-                               copy-logic.ts (rein: Auswahl → Zeilen/Spalten, Formate)
+                               copy-logic.ts (rein: Auswahl → Zeilen/Spalten, Formate), column-layout.ts (rein:
+                               Reihenfolge, versteckt, fixiert, Breiten; zusammenführen), ColumnLayouts (Root)
   app/features/tabs/           TabsStore (Root: Tabs, Sicherung, Dateien), QueryTab (Tab mit Ausführung, kein
                                Injectable), QueryPane (Editor + Ergebnis eines Tabs), TabBar,
                                tab-logic.ts (rein: Titel, Ids, Reihenfolge), layout-logic.ts (rein: zwei
@@ -173,6 +178,8 @@ src-tauri/                     Rust
   src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink; ganze Werte
                                getrennt (`<id>.values`) und stückweise (`value`) (rein, getestet)
   src/image_info.rs            Bildformat und Maße aus den ersten Bytes, nie dekodiert (rein, getestet)
+  src/search.rs                Suche im Ergebnisspeicher: Regex mit Grenzen, stückweise; nächster anderer Wert,
+                               nächstes NULL (rein, getestet)
   src/stats.rs                 Kennzahlen einer Auswahl über den Ergebnisspeicher: exakte Dezimalsumme (`Dec`),
                                Min/Max, Spanne, häufigste Werte (rein, getestet)
   src/saved.rs                 gespeicherte Abfragen: .sql-Dateien mit Kopfkommentar, Pfadprüfung, Suche,
@@ -234,6 +241,12 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   `core/text/places.ts` (`placeIn`, `offsetAt`).
 - **Tabellen-Ansicht**: Ihr SQL baut nur `db/filter.rs`; das Fenster setzt nie Werte oder Namen in SQL ein.
   Lokales Sortieren/Filtern geschieht im Ergebnisspeicher (`derive`), nie über die Zeilen im Fenster.
+- **Spalten des Ergebnisses**: Gitterspalte ≠ Ergebnisspalte (das Layout versteckt und verschiebt). Umgerechnet
+  wird nur im Gitter (`WindowAreaModel.resultColumn`, `ResultGrid.chosen/cursor`); nach außen gehen immer
+  Spalten des Ergebnisses. Ein neues Layout baut die Tabelle neu (das Layout ist unseres, nicht der Zustand der
+  Tabelle). Das Gitter hängt nur an der Zeilenhöhe, nie am ganzen Einstellungs-Signal.
+- **Aktionen im Ergebnis** (`scope: 'result'`): wirken nur, solange ein Ergebnisgitter die Tastatur hat – so
+  bleibt `Mod+F` im Editor dessen Suche.
 - **Kennzahlen**: Summen rechnet nur `stats.rs` (dezimal, exakt) – nie JavaScript und nie über die Zeilen im
   Fenster; das Fenster zeigt den Text, den es bekommt.
 - **Werte**: Eine `Cell` trägt den ganzen Wert; gekürzt wird nur beim Schreiben der Zeile. Nichts aus einem

@@ -7,7 +7,12 @@
  *   Mod/Ctrl/Alt or is an F-key; a plain key of a global action acts like `view`.
  * - `view`: only while no text field, editor, dialog, menu or own widget (tree, splitter, grid) has the focus.
  */
-export type ActionScope = 'global' | 'view';
+/**
+ * Where an action acts on a shortcut: everywhere (`global`), where no widget has the keyboard (`view`), or
+ * only while a result grid has it (`result`, prompt 029 – there `Mod+F` is the search in the result, not
+ * the editor's).
+ */
+export type ActionScope = 'global' | 'view' | 'result';
 
 export const ACTION_GROUPS = [
   'Query',
@@ -130,6 +135,51 @@ export const ACTIONS = [
     group: 'File',
     scope: 'global',
   },
+  // Columns of a result and searching in it (prompt 029)
+  { id: 'FIND_IN_RESULT', label: 'Result: search …', group: 'Query', scope: 'result' },
+  { id: 'FIND_NEXT', label: 'Result: next hit', group: 'Query', scope: 'result', repeat: true },
+  { id: 'FIND_PREV', label: 'Result: previous hit', group: 'Query', scope: 'result', repeat: true },
+  { id: 'GOTO_ROW', label: 'Result: go to row …', group: 'Navigation', scope: 'result' },
+  { id: 'RESULT_FIRST_ROW', label: 'Result: first row', group: 'Navigation', scope: 'global' },
+  { id: 'RESULT_LAST_ROW', label: 'Result: last row', group: 'Navigation', scope: 'global' },
+  {
+    id: 'NEXT_CHANGE',
+    label: 'Result: next other value in the column',
+    group: 'Navigation',
+    scope: 'result',
+    repeat: true,
+  },
+  {
+    id: 'NEXT_NULL',
+    label: 'Result: next NULL in the column',
+    group: 'Navigation',
+    scope: 'result',
+    repeat: true,
+  },
+  { id: 'RESULT_COLUMNS', label: 'Result: columns …', group: 'View', scope: 'global' },
+  { id: 'COLUMN_HIDE', label: 'Result: hide the column', group: 'View', scope: 'global' },
+  {
+    id: 'COLUMN_PIN',
+    label: 'Result: keep the column at the left',
+    group: 'View',
+    scope: 'global',
+  },
+  {
+    id: 'COLUMN_LEFT',
+    label: 'Result: move the column left',
+    group: 'View',
+    scope: 'result',
+    repeat: true,
+  },
+  {
+    id: 'COLUMN_RIGHT',
+    label: 'Result: move the column right',
+    group: 'View',
+    scope: 'result',
+    repeat: true,
+  },
+  { id: 'COLUMNS_FIT', label: 'Result: fit all column widths', group: 'View', scope: 'global' },
+  { id: 'COLUMNS_RESET', label: 'Result: reset the columns', group: 'View', scope: 'global' },
   // The figures of a selection (prompt 028)
   {
     id: 'SUMMARIZE_COLUMN',

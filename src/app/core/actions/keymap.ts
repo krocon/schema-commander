@@ -67,7 +67,8 @@ export function reservedReason(
 ): string | null {
   const own = RESERVED[platform][shortcut];
   if (own) return KEYMAP_TEXTS[own];
-  if (scope !== 'view' && TEXT_FIELD_KEYS.includes(shortcut)) {
+  // an action that acts only outside of fields (`view`) or in a result grid (`result`) may have them
+  if (scope === 'global' && TEXT_FIELD_KEYS.includes(shortcut)) {
     return KEYMAP_TEXTS.textEditing;
   }
   return null;

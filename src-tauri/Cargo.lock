@@ -4270,6 +4270,7 @@ dependencies = [
  "hmac 0.13.0",
  "keyring-core",
  "parking_lot",
+ "regex",
  "rusqlite",
  "russh",
  "rust_xlsxwriter",

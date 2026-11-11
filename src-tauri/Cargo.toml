@@ -16,6 +16,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# searching in a result (prompt 029): linear-time matching; was in the dependency tree already
+regex = "1"
 # Walking skeleton: an in-memory demo database, so editor → Rust → result grid works without a
 # server. Bundled (no system library), as in log-commander. The real drivers come with the
 # connection prompt (prompts/README.md).

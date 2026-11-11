@@ -158,3 +158,14 @@
 .sc-result .sc-head {
   cursor: pointer;
 }
+
+/* cells a search in the result found (prompt 029) */
+.sc-result .ge-table-col-div.sc-hit {
+  background: var(--hit-bg);
+  color: var(--hit-text);
+}
+
+.sc-result .ge-table-col-div.sc-hit-current {
+  background: var(--hit-current-bg);
+  color: var(--hit-current-text);
+}

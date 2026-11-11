@@ -1,4 +1,6 @@
 import { BuiltQuery, QueryColumn, ViewSpec } from '../../core/sql/query.models';
+import { ResultFind } from '../find/result-find';
+import { ColumnLayout, EMPTY_LAYOUT, ResultGridHandle } from '../results/column-layout';
 import {
   EMPTY_VIEW,
   QuickFilter,
@@ -153,6 +155,12 @@ export class QueryTab {
   readonly paramValues = signal<Readonly<Record<string, ParamValue>>>({});
   /** The statements of the last run that had parameters: to run them again with the same values. */
   private lastStatements: readonly string[] | null = null;
+  /** Searching in the result of this tab (prompt 029). */
+  readonly find: ResultFind;
+  /** How the columns of the results of this tab are laid out; a table view has a layout of its table. */
+  readonly columnLayout = signal<ColumnLayout>(EMPTY_LAYOUT);
+  /** The grid that shows the result of this tab, while there is one: to move its cursor from outside. */
+  grid: ResultGridHandle | null = null;
   /** The table this tab shows as a table (prompt 027); `null` = an ordinary query tab. */
   readonly tableView = signal<TableView | null>(null);
   /** How the result on screen is looked at locally, and the view of the store that shows it. */
@@ -216,6 +224,7 @@ export class QueryTab {
     readonly startText: string | null = null,
   ) {
     this.id = meta.id;
+    this.find = new ResultFind(services.api);
     this.title.set(meta.title);
     this.customTitle.set(meta.customTitle);
     this.connectionId.set(meta.connection ?? 'demo');
