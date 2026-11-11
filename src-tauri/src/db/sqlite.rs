@@ -69,6 +69,8 @@ pub fn demo_profile() -> Profile {
         folder: String::new(),
         color: 3,
         save_password: false,
+        protection: crate::db::guard::Protection::Free,
+        label: String::new(),
     }
 }
 

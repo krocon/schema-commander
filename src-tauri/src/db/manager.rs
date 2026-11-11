@@ -1,6 +1,7 @@
 //! The open connections (prompt 003): one session per profile, opened on request, each behind its own lock.
 //! A statement that runs can be stopped from another thread ([`ConnectionManager::cancel`]).
 
+use super::guard::{self, Class, Need, Protection};
 use super::profiles::{self, LoadedProfiles};
 use super::secrets::{self, Secret, SecretKind, SecretStore};
 use super::value::{MAX_ROWS, Outcome, QueryResult, RowSink, VecSink};
@@ -27,7 +28,27 @@ struct Open {
     stop: AtomicBool,
 }
 
+/// What a statement is and what it needs on its connection (prompt 012).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Verdict {
+    pub class: Class,
+    pub need: Need,
+}
+
+/// A confirmation lives this long.
+const CONFIRMATION_TTL: std::time::Duration = std::time::Duration::from_secs(600);
+
+struct Confirmation {
+    connection: String,
+    sql: String,
+    until: std::time::Instant,
+}
+
 pub struct ConnectionManager {
+    /// Confirmations given for statements, by their token. Each admits one run of exactly that statement
+    /// on exactly that connection.
+    confirmations: Mutex<HashMap<String, Confirmation>>,
     file: PathBuf,
     store: Arc<dyn SecretStore>,
     profiles: Mutex<Option<Vec<Profile>>>,
@@ -55,6 +76,7 @@ impl ConnectionManager {
             profiles: Mutex::new(None),
             notice: Mutex::new(None),
             open: Mutex::new(HashMap::new()),
+            confirmations: Mutex::new(HashMap::new()),
         }
     }
 
@@ -193,6 +215,13 @@ impl ConnectionManager {
         let secret = self.secret_for(&profile, password)?;
         let mut session = connect(&profile, secret.as_ref(), &|| false)?;
         let server_version = session.server_version(&|| false)?;
+        if profile.protection == Protection::Readonly
+            && let Some(sql) = guard::read_only_statement(profile.kind)
+        {
+            // the server refuses writes too, whatever reaches it; a connection that cannot be made read
+            // only is not opened as one
+            session.query(sql, Limits::rows(1), &|| false)?;
+        }
         if given
             && profile.save_password
             && let Some(secret) = secret.as_ref().filter(|s| !s.is_empty())
@@ -278,6 +307,107 @@ impl ConnectionManager {
         result
     }
 
+    /// What a statement is and what it needs on a connection.
+    pub fn verdict(&self, id: &str, sql: &str, allow_dangerous: bool) -> AppResult<Verdict> {
+        let profile = self.find(id)?;
+        let class = guard::classify(sql, profile.kind);
+        Ok(Verdict {
+            class,
+            need: guard::need(profile.protection, class, allow_dangerous),
+        })
+    }
+
+    fn token() -> String {
+        use std::hash::{BuildHasher, Hasher};
+        // unguessable enough: the keys of the hasher are random per call
+        let part = || {
+            std::collections::hash_map::RandomState::new()
+                .build_hasher()
+                .finish()
+        };
+        format!("{:016x}{:016x}", part(), part())
+    }
+
+    /// The user said yes to these statements: a token for each that needed it (`None` for the others).
+    /// Dangerous statements on a protected connection need its name, typed. Nothing that is refused gets a
+    /// token.
+    pub fn confirm(
+        &self,
+        id: &str,
+        sqls: &[String],
+        typed_name: Option<&str>,
+        allow_dangerous: bool,
+    ) -> AppResult<Vec<Option<String>>> {
+        let profile = self.find(id)?;
+        let verdicts: Vec<Verdict> = sqls
+            .iter()
+            .map(|sql| self.verdict(id, sql, allow_dangerous))
+            .collect::<AppResult<_>>()?;
+        if let Some(v) = verdicts.iter().find(|v| v.need == Need::Refused) {
+            return Err(guard::refusal(Need::Refused, v.class));
+        }
+        if verdicts.iter().any(|v| v.need == Need::TypeName)
+            && typed_name.map(str::trim) != Some(profile.name.trim())
+        {
+            return Err(AppError::new(
+                ErrorCode::ConfirmationRequired,
+                "the name of the connection was not typed as it is",
+            ));
+        }
+        let now = std::time::Instant::now();
+        let mut all = self.confirmations.lock();
+        all.retain(|_, c| c.until > now);
+        Ok(sqls
+            .iter()
+            .zip(&verdicts)
+            .map(|(sql, v)| {
+                (v.need != Need::Nothing).then(|| {
+                    let token = Self::token();
+                    all.insert(
+                        token.clone(),
+                        Confirmation {
+                            connection: id.to_string(),
+                            sql: sql.clone(),
+                            until: now + CONFIRMATION_TTL,
+                        },
+                    );
+                    token
+                })
+            })
+            .collect())
+    }
+
+    /// Whether a statement may run now: it needs nothing, or `token` confirms exactly this statement on
+    /// this connection. A token is spent by the run it admits.
+    pub fn admit(
+        &self,
+        id: &str,
+        sql: &str,
+        token: Option<&str>,
+        allow_dangerous: bool,
+    ) -> AppResult<()> {
+        let verdict = self.verdict(id, sql, allow_dangerous)?;
+        match verdict.need {
+            Need::Nothing => Ok(()),
+            Need::Refused => Err(guard::refusal(Need::Refused, verdict.class)),
+            need => {
+                let mut all = self.confirmations.lock();
+                let now = std::time::Instant::now();
+                all.retain(|_, c| c.until > now);
+                let fits = token
+                    .and_then(|t| all.get(t))
+                    .is_some_and(|c| c.connection == id && c.sql == sql);
+                if !fits {
+                    return Err(guard::refusal(need, verdict.class));
+                }
+                if let Some(t) = token {
+                    all.remove(t);
+                }
+                Ok(())
+            }
+        }
+    }
+
     /// Asks an open connection something of the app's own (metadata, prompt 008). It waits for the
     /// statement that runs on the session; `cancel` stops it like a statement.
     pub fn ask<T>(
@@ -315,6 +445,140 @@ impl ConnectionManager {
 mod tests {
     use super::*;
     use crate::db::meta;
+
+    fn protected(m: &ConnectionManager, dir: &std::path::Path, protection: Protection) -> String {
+        let file = dir.join(format!("{protection:?}.db"));
+        rusqlite::Connection::open(&file)
+            .unwrap()
+            .execute_batch("CREATE TABLE t (a INTEGER); INSERT INTO t VALUES (1), (2);")
+            .unwrap();
+        let mut p = crate::db::tests::profile(DbKind::Sqlite);
+        p.id = String::new();
+        p.name = format!("Kasse {protection:?}");
+        p.database = file.to_string_lossy().into_owned();
+        p.protection = protection;
+        p.label = "PROD".into();
+        let saved = m.save(p, None).unwrap();
+        m.open(&saved.id, None).unwrap();
+        saved.id
+    }
+
+    #[test]
+    fn a_free_connection_asks_only_for_what_destroys() {
+        let dir = tempdir().unwrap();
+        let (m, _) = manager(dir.path());
+        let id = protected(&m, dir.path(), Protection::Free);
+        m.admit(&id, "UPDATE t SET a = 5 WHERE a = 1", None, false)
+            .unwrap();
+        let e = m.admit(&id, "DELETE FROM t", None, false).unwrap_err();
+        assert_eq!(e.code, ErrorCode::ConfirmationRequired);
+        // the user's setting lets it pass
+        m.admit(&id, "DELETE FROM t", None, true).unwrap();
+        let tokens = m
+            .confirm(
+                &id,
+                &["DELETE FROM t".into(), "SELECT 1".into()],
+                None,
+                false,
+            )
+            .unwrap();
+        assert!(tokens[0].is_some() && tokens[1].is_none());
+        m.admit(&id, "DELETE FROM t", tokens[0].as_deref(), false)
+            .unwrap();
+    }
+
+    #[test]
+    fn a_confirmation_admits_one_run_of_exactly_that_statement_there() {
+        let dir = tempdir().unwrap();
+        let (m, _) = manager(dir.path());
+        let id = protected(&m, dir.path(), Protection::Ask);
+        let other = protected(&m, dir.path(), Protection::Free);
+        let sql = "UPDATE t SET a = 5 WHERE a = 1".to_string();
+        assert_eq!(
+            m.verdict(&id, &sql, true).unwrap(),
+            Verdict {
+                class: Class::Write,
+                need: Need::Confirm
+            }
+        );
+        // without a token, with a made-up one, with one for another statement or connection: no
+        let denied = |token: Option<&str>, sql: &str| {
+            m.admit(&id, sql, token, true).unwrap_err().code == ErrorCode::ConfirmationRequired
+        };
+        assert!(denied(None, &sql));
+        assert!(denied(Some("0000000000000000"), &sql));
+        let token = m
+            .confirm(&id, std::slice::from_ref(&sql), None, false)
+            .unwrap()[0]
+            .clone()
+            .unwrap();
+        assert!(denied(Some(&token), "UPDATE t SET a = 6 WHERE a = 1"));
+        let elsewhere = m
+            .confirm(&other, &["DELETE FROM t".into()], None, false)
+            .unwrap()[0]
+            .clone()
+            .unwrap();
+        assert!(denied(Some(&elsewhere), "DELETE FROM t"));
+        // the right one admits once
+        m.admit(&id, &sql, Some(&token), false).unwrap();
+        assert!(denied(Some(&token), &sql));
+        // reading never needs one
+        m.admit(&id, "SELECT * FROM t", None, false).unwrap();
+    }
+
+    #[test]
+    fn what_destroys_on_a_protected_connection_needs_its_name_typed() {
+        let dir = tempdir().unwrap();
+        let (m, _) = manager(dir.path());
+        let id = protected(&m, dir.path(), Protection::Ask);
+        let sqls = vec!["SELECT 1".to_string(), "DROP TABLE t".to_string()];
+        for wrong in [None, Some(""), Some("kasse ask"), Some("Kasse")] {
+            let e = m.confirm(&id, &sqls, wrong, true).unwrap_err();
+            assert_eq!(e.code, ErrorCode::ConfirmationRequired, "{wrong:?}");
+        }
+        let tokens = m.confirm(&id, &sqls, Some(" Kasse Ask "), true).unwrap();
+        assert!(tokens[0].is_none());
+        m.admit(&id, "DROP TABLE t", tokens[1].as_deref(), true)
+            .unwrap();
+    }
+
+    #[test]
+    fn a_read_only_connection_refuses_every_write_here_and_on_the_server() {
+        let dir = tempdir().unwrap();
+        let (m, _) = manager(dir.path());
+        let id = protected(&m, dir.path(), Protection::Readonly);
+        for sql in [
+            "INSERT INTO t VALUES (3)",
+            "WITH d AS (SELECT 1) DELETE FROM t WHERE a = 1",
+            "SELECT 1; DROP TABLE t",
+            "PRAGMA query_only = OFF",
+            "CREATE TABLE u (a)",
+        ] {
+            assert_eq!(
+                m.admit(&id, sql, None, true).unwrap_err().code,
+                ErrorCode::PermissionDenied,
+                "{sql}"
+            );
+            // no confirmation can be had for it
+            assert_eq!(
+                m.confirm(&id, &[sql.to_string()], Some("Kasse Readonly"), true)
+                    .unwrap_err()
+                    .code,
+                ErrorCode::PermissionDenied
+            );
+            // and whoever gets past the check meets the server – but for the one statement that turns
+            // the server's own guard off: that one only the check stops
+            if !sql.starts_with("PRAGMA") {
+                assert!(m.run(&id, sql, None).is_err(), "{sql}");
+            }
+        }
+        m.admit(&id, "SELECT * FROM t", None, false).unwrap();
+        let rows = m.run(&id, "SELECT count(*) FROM t", None).unwrap();
+        assert_eq!(
+            serde_json::to_value(&rows.rows).unwrap(),
+            serde_json::json!([[2]])
+        );
+    }
 
     #[test]
     fn asks_the_demo_database_what_is_in_it() {
@@ -362,6 +626,8 @@ mod tests {
             folder: String::new(),
             color: 2,
             save_password: true,
+            protection: crate::db::guard::Protection::Free,
+            label: String::new(),
         }
     }
 

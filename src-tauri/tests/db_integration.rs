@@ -26,6 +26,8 @@ fn profile(kind: DbKind, port: u16, user: &str, database: &str) -> Profile {
         folder: String::new(),
         color: 1,
         save_password: false,
+        protection: schema_commander_lib::db::guard::Protection::Free,
+        label: String::new(),
     }
 }
 

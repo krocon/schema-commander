@@ -32,6 +32,8 @@ pub enum ErrorCode {
     /// The work was stopped on request. Not an error for the user.
     Cancelled,
     /// The server refused the statement for lack of rights.
+    /// The statement writes or destroys and the connection wants a confirmation first (prompt 012).
+    ConfirmationRequired,
     PermissionDenied,
     /// A password is needed and none is known: the frontend asks for it.
     SecretRequired,
