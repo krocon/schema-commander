@@ -150,6 +150,7 @@ export const ACTION_LABELS_DE: Readonly<Record<ActionId, string>> = {
   CLOSE_OTHER_TABS: 'Andere Tabs schließen',
   OPEN_SHORTCUTS: 'Tastenkürzel bearbeiten …',
   SHOW_SHORTCUTS: 'Tastenkürzel anzeigen',
+  SHOW_ABOUT: 'Über Schema Commander',
 };
 
 /** German names of the groups; the key is the English name of the catalog. */

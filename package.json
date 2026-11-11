@@ -29,10 +29,13 @@
     "contrast": "node scripts/check-contrast.mjs",
     "texts": "node scripts/check-texts.mjs",
     "preview:csp": "node scripts/csp-preview.mjs",
+    "release:notes": "node scripts/release-notes.mjs",
+    "notices": "node scripts/notices.mjs",
+    "notices:check": "node scripts/notices.mjs --check",
     "version:check": "node scripts/version.mjs check",
     "version:set": "node scripts/version.mjs set",
     "scripts:test": "node --test \"scripts/*.test.mjs\"",
-    "check": "pnpm version:check && pnpm contrast && pnpm texts && pnpm scripts:test && pnpm format:check && pnpm lint && pnpm test && pnpm build && pnpm rust:fmt && pnpm rust:lint && pnpm rust:test"
+    "check": "pnpm version:check && pnpm contrast && pnpm texts && pnpm scripts:test && pnpm format:check && pnpm lint && pnpm test && pnpm build && pnpm rust:fmt && pnpm rust:lint && pnpm rust:test && pnpm notices:check"
   },
   "dependencies": {
     "@angular/common": "^22.2.0",

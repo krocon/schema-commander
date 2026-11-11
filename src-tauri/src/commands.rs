@@ -813,6 +813,22 @@ pub fn export_query(
     Ok(done)
 }
 
+/// What the About dialog shows (prompt 034): name, version, build, platform. Nothing about the user.
+#[tauri::command(async)]
+pub fn app_info(app: AppHandle) -> crate::about::AppInfo {
+    let info = app.package_info();
+    crate::about::app_info(&info.name, &info.version.to_string())
+}
+
+/// The licence texts of the third-party components, from the file in the package.
+#[tauri::command(async)]
+pub fn third_party_notices(app: AppHandle) -> AppResult<String> {
+    use tauri::Manager;
+    let resources = app.path().resource_dir().ok();
+    crate::about::read_notices(&crate::about::notices_candidates(resources.as_deref()))
+        .ok_or_else(|| AppError::new(ErrorCode::NotFound, "the notices are not in this package"))
+}
+
 /// A file that is to be loaded: it must be a full path (it comes from the open dialog).
 fn import_source(path: &str) -> AppResult<PathBuf> {
     let path = PathBuf::from(path);

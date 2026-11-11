@@ -58,11 +58,11 @@
   duplizieren, zum Löschen vormerken, Zellblock aus der Zwischenablage einfügen, nach unten füllen – ein Plan,
   geschrieben als Löschen → Ändern → Einfügen (Prompt 032); **Import** einer Datei (CSV/TSV, JSON, NDJSON, gzip)
   in eine vorhandene oder neue Tabelle: Vorschau, Zuordnung, gebundene Stapel-`INSERT`s, Fehlerdatei, als Job
-  (Prompt 033);
+  (Prompt 033); **Release** vorbereitet: Workflow für Pakete je System, Lizenzhinweise, About-Dialog (Prompt 034);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–033),
+  erledigt: 001–034),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -79,6 +79,8 @@
 | Rust | `pnpm rust:fmt`, `pnpm rust:lint` (clippy `-D warnings`), `pnpm rust:test` |
 | Farbschemata | `pnpm contrast` (WCAG AA aller Schemata), `pnpm contrast --write-base` (dark/light.json aus `styles.css`) |
 | Version | `pnpm version:check`, `pnpm version:set X.Y.Z` (Quelle `package.json`) |
+| Lizenzhinweise | `pnpm notices` (schreibt `THIRD-PARTY-NOTICES.txt`; nach jeder Änderung an Abhängigkeiten), `pnpm notices:check` |
+| Release-Notizen | `pnpm release:notes` (Conventional Commits seit dem letzten Tag); Ablauf in `docs/release.md` |
 | Treiber gegen echte Server | `sh scripts/db-test-servers.sh up` (Docker: PostgreSQL, MySQL, MariaDB, SQL Server auf 127.0.0.1), `pnpm rust:test:db`, danach `sh scripts/db-test-servers.sh down` |
 | Texte | `pnpm texts` (kein Text im Template, kein Deutsch außerhalb von `*.de.ts`) |
 | Alles prüfen | `pnpm check` |
@@ -95,6 +97,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   styles/ge-table-theme.css    Brücke Tokens → --ge-table-* der GuiExpert Table
   app/app.ts, app.css          Fenster: Toolbar, Seitenleiste, Tab-Leiste, Tabs, Statuszeile; registriert Aktionen
   app/app.config.ts            Provider: *Api-Fassaden → Tauri-Implementierungen
+  app/core/about/              AboutApi (app_info, third_party_notices) – spiegelt about.rs
   app/core/actions/            Aktionen: action-catalog.ts (Ids, Namen, Bereich), keymaps/*.json (je OS),
                                keymap.ts (Vorgabe + eigene Belegung, Reserviertes), shortcut.ts (Notation),
                                keyboard-dispatcher.ts (der eine keydown-Handler), ActionService (Root)
@@ -122,6 +125,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/theme/              Farbschemata: tokens.ts (Katalog), themes/*.json, theme-logic.ts (rein),
                                ThemeService (Root: Auswahl, Vorschau, eigene Schemata), ThemeApi (themes.json),
                                contrast-pairs.json
+  app/features/about/          AboutDialog, about-logic.ts (rein: Zeilen, Diagnose, WebView aus dem User-Agent)
   app/features/completion/     sql-lex.ts, sql-context.ts (rein: was an der Stelle passt, Katalog
                                sql-context.cases.json), suggest.ts (rein: die Liste, suggest.cases.json),
                                sql-words.ts (Wörter je Dialekt), CompletionService (Root: liest, was fehlt)
@@ -186,6 +190,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
 src-tauri/                     Rust
   src/lib.rs                   Builder: Plugins (store, window-state), State, Commands
   src/commands.rs              dünne Command-Schicht (Verbindungen, run_query, cancel_query, Fenster, Farbschemata)
+  src/about.rs                 Angaben für den About-Dialog, Ort der Lizenzhinweise (rein, getestet)
   src/session.rs               Sitzung der Tabs: session.json + tabs/<id>.sql (rein, getestet)
   src/textfile.rs              .sql lesen/schreiben mit Kodierung (UTF-8/-BOM, UTF-16, Windows-1252)
   src/menu.rs                  das Menü von macOS, solange das Fenster lädt (ohne Cmd+W)
@@ -230,9 +235,11 @@ src-tauri/                     Rust
   src/error.rs                 AppError { code, message, details } – details: was die Datenbank zum Fehler sagt
   capabilities/default.json    minimale Rechte (core:default, store:default, dialog:allow-open/-save)
   tauri.conf.json              Fenster, CSP, Bundle (Version aus package.json)
-scripts/                       check-contrast.mjs + theme-lib.mjs, version.mjs, csp-preview.mjs (+ Tests),
+scripts/                       check-contrast.mjs + theme-lib.mjs, version.mjs, csp-preview.mjs, notices.mjs,
+                               release-notes.mjs (+ Tests),
                                db-test-servers.sh (Container für die Treibertests)
-docs/                          architecture.md, best-practices.md, themes.md, feature-analysis.md, roadmap.md
+docs/                          architecture.md, best-practices.md, themes.md, feature-analysis.md, roadmap.md,
+                               release.md, macos-signing.md, distribution.md
 prompts/                       000-arbeitsweise.md, README.md (Index), offene Prompts; erledigte unter done/
 public/                        icon.svg (Quelle der App-Icons: `pnpm tauri icon public/icon.svg`), favicon.png
 ```
@@ -324,7 +331,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
 ## 7. Git & Zusammenarbeit
 
 - Pro Prompt ein Branch `feat/<slug>` von `main`, Commits nach jeder grünen Phase (Conventional Commits).
-- Kein Push, kein Force-Push, kein `git reset --hard`, keine Releases ohne ausdrückliche Anweisung.
+- Kein Push, kein Force-Push, kein `git reset --hard`, keine Releases ohne ausdrückliche Anweisung (auch kein Tag
+  `v*`: Er löst den Release-Workflow aus).
 - README und `docs/` bei relevanten Änderungen mitpflegen; `prompts/README.md` führt den Status.
 
 ## 8. Lizenzen

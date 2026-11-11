@@ -1,0 +1,30 @@
+import type { Translation } from '../../core/i18n/i18n';
+import type { ABOUT_EN } from './about-texts';
+
+export const ABOUT_DE: Translation<typeof ABOUT_EN> = {
+  title: 'Über Schema Commander',
+  tagline: 'Ein SQL-Client für die Tastatur',
+  version: 'Version',
+  crateMismatch: (crate: string) => `Rust-Crate ${crate}`,
+  build: 'Build',
+  buildDebug: 'Entwicklung',
+  buildRelease: 'Release',
+  platform: 'Plattform',
+  webview: 'WebView',
+  tauri: 'Tauri',
+  author: 'Autor',
+  license: 'Lizenz',
+  licenseValue: 'MIT',
+  source: 'Quelltext',
+  os: { macos: 'macOS', windows: 'Windows', linux: 'Linux' },
+  noBackend: 'Angaben zum Build gibt es nur in der Desktop-App.',
+  loading: 'Lädt …',
+  copy: 'Diagnose kopieren',
+  copied: 'In die Zwischenablage kopiert.',
+  copyFailed: 'Kopieren ist nicht gelungen.',
+  showNotices: 'Lizenzen Dritter',
+  hideNotices: 'Lizenzen ausblenden',
+  noticesLabel: 'Lizenzen der Komponenten Dritter',
+  noticesFailed: 'Die Lizenztexte ließen sich nicht lesen.',
+  close: 'Schließen',
+};

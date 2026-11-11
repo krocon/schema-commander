@@ -6,6 +6,7 @@ import {
   SavedQuery,
 } from '../app/core/saved/saved-api';
 import { FormatApi, FormatDialect, FormatMode, FormatStyle } from '../app/core/format/format-api';
+import { AboutApi, AppInfo } from '../app/core/about/about-api';
 import { ExportApi, ExportSpec, Exported } from '../app/core/backend/export-api';
 import {
   DataImportApi,
@@ -1528,5 +1529,32 @@ export class FakeDataImportApi extends DataImportApi {
   reveal(path: string): Promise<void> {
     this.revealed.push(path);
     return Promise.resolve();
+  }
+}
+
+/** What the app is, without a backend. `fail` makes both calls reject. */
+export class FakeAboutApi extends AboutApi {
+  fail = false;
+  info: AppInfo = {
+    name: 'Schema Commander',
+    version: '1.2.3',
+    crateVersion: '1.2.3',
+    tauriVersion: '2.9.0',
+    os: 'macos',
+    arch: 'aarch64',
+    debug: false,
+  };
+  text = 'THIRD-PARTY NOTICES\n<b>not markup</b>';
+
+  appInfo(): Promise<AppInfo> {
+    return this.fail
+      ? Promise.reject({ code: 'no_backend', message: '' })
+      : Promise.resolve(this.info);
+  }
+
+  notices(): Promise<string> {
+    return this.fail
+      ? Promise.reject({ code: 'not_found', message: '' })
+      : Promise.resolve(this.text);
   }
 }

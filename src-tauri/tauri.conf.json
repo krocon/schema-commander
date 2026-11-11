@@ -33,6 +33,9 @@
     "active": true,
     "license": "MIT",
     "licenseFile": "../LICENSE",
+    "resources": {
+      "../THIRD-PARTY-NOTICES.txt": "THIRD-PARTY-NOTICES.txt"
+    },
     "targets": ["deb", "rpm", "appimage", "dmg", "app", "msi", "nsis"],
     "publisher": "Marc Kronberg",
     "copyright": "© 2026 Marc Kronberg",

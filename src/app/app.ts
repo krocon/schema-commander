@@ -28,6 +28,7 @@ import {
 } from './features/results/copy-logic';
 import { DataImportDialog } from './features/data-import/data-import-dialog';
 import { DataImportService } from './features/data-import/data-import.service';
+import { AboutDialog } from './features/about/about-dialog';
 import { ExportDialog } from './features/export/export-dialog';
 import { ExportService } from './features/export/export.service';
 import { FormatMode } from './core/format/format-api';
@@ -123,6 +124,7 @@ const SIDEBAR_MIN = 140;
     ConnectionList,
     ContextMenu,
     ExportDialog,
+    AboutDialog,
     DataImportDialog,
     GuardDialog,
     HistoryDialog,
@@ -528,6 +530,11 @@ const SIDEBAR_MIN = 140;
         <app-data-import-dialog [target]="target" (closed)="dataImporter.close()" />
       }
     }
+    @if (aboutOpen()) {
+      @defer (on immediate) {
+        <app-about-dialog (closed)="aboutOpen.set(false)" />
+      }
+    }
     @if (importOpen()) {
       @defer (on immediate) {
         <app-import-dialog (closed)="importOpen.set(false)" />
@@ -602,6 +609,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly paletteQuery = signal('');
   protected readonly snippetsOpen = signal(false);
   protected readonly importOpen = signal(false);
+  protected readonly aboutOpen = signal(false);
   /** The shortcut editor, `read` as an overview. */
   protected readonly shortcutsOpen = signal<'edit' | 'read' | null>(null);
   protected readonly settingsOpen = signal(false);
@@ -1241,6 +1249,7 @@ export class App implements OnInit, OnDestroy {
         OPEN_SETTINGS: () => this.settingsOpen.set(true),
         OPEN_SHORTCUTS: () => this.shortcutsOpen.set('edit'),
         SHOW_SHORTCUTS: () => this.shortcutsOpen.set('read'),
+        SHOW_ABOUT: () => this.aboutOpen.set(true),
         FOCUS_EDITOR: () => this.focusArea('editor'),
         FOCUS_RESULT: () => this.focusArea('result'),
         FOCUS_SIDEBAR: () => this.focusArea('sidebar'),
