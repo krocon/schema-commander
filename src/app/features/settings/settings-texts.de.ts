@@ -64,6 +64,7 @@ export const SETTINGS_DE: Translation<typeof SETTINGS_EN> = {
     csvDelimiter: 'Trennzeichen von CSV',
     stopOnError: 'Skript beim ersten Fehler anhalten',
     statementTimeoutSec: 'Zeitlimit je Anweisung (Sekunden)',
+    paramsEnabled: 'Werte von Parametern abfragen',
     autoCommit: 'Neue Tabs bestätigen automatisch',
     txWarnMinutes: 'Vor offener Transaktion warnen nach (Minuten)',
     historyEnabled: 'Anweisungen im Verlauf notieren',
@@ -101,6 +102,8 @@ export const SETTINGS_DE: Translation<typeof SETTINGS_EN> = {
     csvDelimiter: '',
     stopOnError: 'Der Rest des Skripts wird ausgelassen.',
     statementTimeoutSec: '0 = so lange es dauert.',
+    paramsEnabled:
+      ':name, ${name}, $1 oder ? in einer Anweisung: Die Werte werden abgefragt und getrennt vom Text gesendet. Welche Formen gelten, wird je Verbindung eingestellt – im Dialog, der fragt.',
     autoCommit:
       'Aus: Neue Tabs beginnen mit manuellem Commit; Änderungen bleiben offen, bis sie bestätigt werden.',
     txWarnMinutes: '0 = nie.',

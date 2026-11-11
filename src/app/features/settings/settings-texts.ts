@@ -65,6 +65,7 @@ export const SETTINGS_EN = {
     csvDelimiter: 'Separator of CSV',
     stopOnError: 'Stop a script at the first error',
     statementTimeoutSec: 'Time limit per statement (seconds)',
+    paramsEnabled: 'Ask for the values of parameters',
     autoCommit: 'New tabs commit automatically',
     txWarnMinutes: 'Warn about an open transaction after (minutes)',
     historyEnabled: 'Note statements in the history',
@@ -101,6 +102,8 @@ export const SETTINGS_EN = {
     csvDelimiter: '',
     stopOnError: 'The rest of the script is left out.',
     statementTimeoutSec: '0 = as long as it takes.',
+    paramsEnabled:
+      ':name, ${name}, $1 or ? in a statement: the values are asked for and sent apart from the text. Which forms count is set per connection, in the dialog that asks.',
     autoCommit: 'Off: new tabs start with manual commit; changes stay open until you commit.',
     txWarnMinutes: '0 = never.',
     historyEnabled: 'Statements only – never results or passwords. Stays on this computer.',

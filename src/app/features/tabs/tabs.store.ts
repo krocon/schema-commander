@@ -1,3 +1,4 @@
+import { ParamService } from '../params/param.service';
 import { ConfirmService } from '../../shared/confirm';
 import { closeQuestion, txOpen } from './tx-logic';
 import { GuardedStatement } from '../guard/guard-logic';
@@ -72,11 +73,13 @@ export class TabsStore {
   private readonly completion = inject(CompletionService);
   private readonly history = inject(HistoryService);
   private readonly guard = inject(GuardService);
+  private readonly params = inject(ParamService);
   private readonly confirm = inject(ConfirmService);
   private readonly services = {
     api: inject(QueryApi),
     connections: this.connections,
     notify: (message: string) => this.notice.set(message),
+    params: this.params,
     record: (ran: RanStatement) => this.history.record(ran),
     confirmRun: (connection: string, statements: readonly GuardedStatement[], total: number) => {
       const profile = this.connections.profiles().find((p) => p.id === connection);

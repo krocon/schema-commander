@@ -50,6 +50,14 @@ export type RunEvent =
     }
   | { readonly kind: 'rows'; readonly rows: number };
 
+/**
+ * Mirrors `Bind` in src-tauri/src/db/mod.rs: a value bound to a placeholder of a statement (prompt 025).
+ * Numbers and dates travel as text, so no digit is lost on the way.
+ */
+export type BoundValue =
+  | { readonly kind: 'text' | 'int' | 'decimal' | 'date' | 'datetime'; readonly value: string }
+  | { readonly kind: 'bool'; readonly value: boolean };
+
 /** Mirrors `RunOutcome`: how a statement ended. */
 export interface RunOutcome {
   /** Where the rows are; `null` for a statement without a result. */

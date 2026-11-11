@@ -26,6 +26,7 @@ import { ObjectDetailsService } from '../details/details.service';
 import { CopyService } from '../results/copy.service';
 import { errorObjectText, errorReport } from './run-state';
 import { TabsStore } from './tabs.store';
+import { PARAM_TEXTS } from '../params/param-texts';
 import { TABS_TEXTS } from './tabs-texts';
 
 const RESULT_MIN = 80;
@@ -141,6 +142,9 @@ const EDITOR_MIN_W = 160;
                 <time>{{ time(entry.at) }}</time>
                 <code>{{ entry.sql }}</code>
                 <span class="text">{{ entry.text }}</span>
+                @if (entry.values) {
+                  <span class="values">{{ params.with(entry.values) }}</span>
+                }
                 @if (entry.elapsedMs !== null) {
                   <span class="ms">{{ entry.elapsedMs }} ms</span>
                 }
@@ -320,6 +324,12 @@ const EDITOR_MIN_W = 160;
     .log .text {
       overflow-wrap: anywhere;
     }
+    .log .values {
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
     .message {
       margin: 0;
       padding: 12px 16px;
@@ -380,6 +390,7 @@ const EDITOR_MIN_W = 160;
 })
 export class QueryPane implements OnInit, OnDestroy {
   protected readonly t = TABS_TEXTS;
+  protected readonly params = PARAM_TEXTS;
   private readonly tabs = inject(TabsStore);
   protected readonly settings = inject(SettingsService);
   private readonly connections = inject(ConnectionsStore);

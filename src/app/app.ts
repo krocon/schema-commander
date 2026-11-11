@@ -30,6 +30,9 @@ import { ExportDialog } from './features/export/export-dialog';
 import { ExportService } from './features/export/export.service';
 import { FormatMode } from './core/format/format-api';
 import { FormatService } from './features/format/format.service';
+import { ParamDialog } from './features/params/param-dialog';
+import { ParamService } from './features/params/param.service';
+import { PARAM_TEXTS } from './features/params/param-texts';
 import { SavedDialog } from './features/saved/saved-dialog';
 import { nameFromText } from './features/saved/saved-logic';
 import { SavedPanel } from './features/saved/saved-panel';
@@ -99,6 +102,7 @@ const SIDEBAR_MIN = 140;
     ImportDialog,
     PasswordDialog,
     SchemaTree,
+    ParamDialog,
     QueryPane,
     SavedDialog,
     SavedPanel,
@@ -473,6 +477,9 @@ const SIDEBAR_MIN = 140;
     @if (saved.request()) {
       <app-saved-dialog />
     }
+    @if (paramService.request()) {
+      <app-param-dialog />
+    }
     @if (snippetsOpen()) {
       <app-snippet-dialog (closed)="snippetsOpen.set(false)" />
     }
@@ -579,6 +586,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly exporter = inject(ExportService);
   protected readonly formatter = inject(FormatService);
   protected readonly saved = inject(SavedStore);
+  protected readonly paramService = inject(ParamService);
   private readonly fileDialogs = inject(FileDialogApi);
   protected readonly formatTexts = FORMAT_TEXTS;
   protected readonly confirm = inject(ConfirmService);
@@ -748,6 +756,13 @@ export class App implements OnInit, OnDestroy {
           if (!(await tab()?.expandStar())) this.ownNotice.set(APP_TEXTS.noStar);
         },
         () => !!tab(),
+      ),
+      this.actions.register(
+        'RUN_AGAIN',
+        () => {
+          if (!tab()?.runAgain()) this.ownNotice.set(PARAM_TEXTS.noValues);
+        },
+        () => !this.running() && !!tab(),
       ),
       this.actions.register(
         'RUN_SCRIPT',

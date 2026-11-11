@@ -191,6 +191,7 @@ export const MENU_BAR: readonly TopMenu[] = [
     items: [
       'RUN_STATEMENT',
       'RUN_SCRIPT',
+      'RUN_AGAIN',
       'CANCEL_QUERY',
       '-',
       'TOGGLE_AUTOCOMMIT',
