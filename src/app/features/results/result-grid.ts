@@ -1,10 +1,11 @@
 import {
   Component,
-  ElementRef,
-  OnDestroy,
   effect,
+  ElementRef,
   inject,
   input,
+  OnDestroy,
+  output,
   signal,
   untracked,
 } from '@angular/core';
@@ -43,6 +44,7 @@ import { RESULTS_TEXTS } from './results-texts';
         [tableOptions]="options"
         [debounceMouseClickDelay]="0"
         [(tableApi)]="api"
+        (focusChanged)="onFocus()"
       />
     } @else {
       <p class="message">{{ t.loadingRows }}</p>
@@ -80,6 +82,8 @@ export class ResultGrid implements OnDestroy {
    * copies its selection itself, and the actions for results leave it alone.
    */
   readonly local = input<RowWindow | null>(null);
+  /** The cell the cursor is on: `[row, column]`; `null` when a new result has none yet (prompt 026). */
+  readonly active = output<readonly [number, number] | null>();
 
   protected readonly settings = inject(SettingsService);
   private readonly copier = inject(CopyService);
@@ -174,8 +178,15 @@ export class ResultGrid implements OnDestroy {
     this.body?.dispose();
   }
 
+  /** The cursor of the table moved (the table says so outside of Angular's turn: only an output here). */
+  protected onFocus(): void {
+    const cell = this.api()?.getActiveCell();
+    this.active.emit(cell ? [cell[0], cell[1]] : null);
+  }
+
   private async show(result: ResultRef): Promise<void> {
     const generation = ++this.generation;
+    this.active.emit(null);
     this.unregister?.();
     const rowHeight = untracked(() => this.settings.settings().resultRowHeight);
     this.body?.dispose();

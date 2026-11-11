@@ -30,6 +30,7 @@ import '../../features/tabs/tab-bar-texts';
 import '../../features/tabs/tabs-texts';
 import '../../features/themes/theme-editor-texts';
 import '../../features/themes/theme-picker-texts';
+import '../../features/value/value-texts';
 import '../../shared/shared-texts';
 import '../theme/tokens';
 
@@ -73,8 +74,11 @@ const SAME = new Set<string>([
   'Schema Commander',
   'Schema',
   'TLS: ',
+  'Hex',
   'Tab',
   'Text',
+  'UTC',
+  'XML',
   'Tabs',
   'Tx: auto',
   'Views',
@@ -85,7 +89,7 @@ const SAME = new Set<string>([
   '~/.pgpass (PostgreSQL)',
 ]);
 
-const CATALOG_FILES = 30;
+const CATALOG_FILES = 31;
 const SAMPLE_ARGS: unknown[] = [2, 'x', 3, 4];
 
 function walk(path: string, en: unknown, de: unknown, problems: string[], same: string[]): void {

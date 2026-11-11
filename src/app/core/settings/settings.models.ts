@@ -91,6 +91,10 @@ export interface Settings {
   readonly recentSaved: readonly string[];
   /** Own snippets (prompt 024); they win over built-in ones with the same prefix. */
   readonly snippets: readonly OwnSnippet[];
+  /** The value panel beside the result (prompt 026): shown, its width in px, lines wrapped. */
+  readonly valuePanelVisible: boolean;
+  readonly valuePanelWidth: number;
+  readonly valueWrap: boolean;
   /** Look for parameters in statements and ask for their values (prompt 025). */
   readonly paramsEnabled: boolean;
   /**
@@ -161,6 +165,9 @@ export const DEFAULT_SETTINGS: Settings = {
   savedQueriesDir: '',
   recentSaved: [],
   snippets: [],
+  valuePanelVisible: false,
+  valuePanelWidth: 380,
+  valueWrap: true,
   paramsEnabled: true,
   paramForms: {},
   activeConnection: 'demo',
@@ -268,6 +275,9 @@ export function mergeSettings(saved: unknown): Settings {
           .slice(0, 20)
       : [],
     snippets: mergeSnippets(s['snippets']),
+    valuePanelVisible: bool('valuePanelVisible'),
+    valuePanelWidth: within('valuePanelWidth', 200, 4000),
+    valueWrap: bool('valueWrap'),
     paramsEnabled: bool('paramsEnabled'),
     paramForms:
       s['paramForms'] && typeof s['paramForms'] === 'object' && !Array.isArray(s['paramForms'])

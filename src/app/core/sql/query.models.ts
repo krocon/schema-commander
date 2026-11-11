@@ -58,6 +58,33 @@ export type BoundValue =
   | { readonly kind: 'text' | 'int' | 'decimal' | 'date' | 'datetime'; readonly value: string }
   | { readonly kind: 'bool'; readonly value: boolean };
 
+/** Mirrors `ImageInfo` in src-tauri/src/image_info.rs: what picture a binary value says it is. */
+export interface ImageInfo {
+  readonly mime: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+  /** As the header says; 0 = it did not say. */
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * Mirrors `CellValue` in src-tauri/src/results.rs: a part of the whole value of a cell (prompt 026). Long
+ * texts and binary data are not in the rows the grid gets; they are asked for piece by piece.
+ */
+export interface CellValuePart {
+  /** `unreadable`: `text` names the type. */
+  readonly kind: 'null' | 'text' | 'bytes' | 'unreadable';
+  /** Bytes of the whole value (of a text: in UTF-8). */
+  readonly total: number;
+  /** The bytes this part covers; `to` is the `from` of the next part. */
+  readonly from: number;
+  readonly to: number;
+  readonly text?: string;
+  /** Binary data, Base64. */
+  readonly base64?: string;
+  /** Only with the first part of binary data. */
+  readonly image?: ImageInfo;
+}
+
 /** Mirrors `RunOutcome`: how a statement ended. */
 export interface RunOutcome {
   /** Where the rows are; `null` for a statement without a result. */

@@ -94,6 +94,7 @@ export const MENU_BAR: readonly TopMenu[] = [
       'SAVE_FILE_AS',
       '-',
       'SAVE_QUERY',
+      'SAVE_CELL_VALUE',
       'GOTO_SAVED',
       { sub: () => T.saved, items: ['SAVED_FOLDER', 'SAVED_DEFAULT_FOLDER'] },
       '-',
@@ -122,6 +123,7 @@ export const MENU_BAR: readonly TopMenu[] = [
       { native: 'selectAll' },
       '-',
       'COPY_RESULT',
+      'COPY_CELL_VALUE',
       COPY_AS,
       'CANCEL_COPY',
       '-',
@@ -147,6 +149,7 @@ export const MENU_BAR: readonly TopMenu[] = [
       'SIDEBAR_DATABASE',
       'SIDEBAR_HISTORY',
       'SIDEBAR_SAVED',
+      'TOGGLE_VALUE_PANEL',
       '-',
       {
         sub: () => T.layout,
@@ -280,6 +283,9 @@ export const TAB_MENU: readonly MenuDef[] = [
 /** The context menu of a result: what can be done with the selection and the result. */
 export const RESULT_MENU: readonly MenuDef[] = [
   'COPY_RESULT',
+  'COPY_CELL_VALUE',
+  'SAVE_CELL_VALUE',
+  'TOGGLE_VALUE_PANEL',
   COPY_AS,
   '-',
   'EXPORT_RESULT',

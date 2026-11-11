@@ -27,6 +27,9 @@ import { CopyService } from '../results/copy.service';
 import { errorObjectText, errorReport } from './run-state';
 import { TabsStore } from './tabs.store';
 import { PARAM_TEXTS } from '../params/param-texts';
+import { ValuePanel } from '../value/value-panel';
+import { ActiveCell, ValueService } from '../value/value.service';
+import { VALUE_TEXTS } from '../value/value-texts';
 import { TABS_TEXTS } from './tabs-texts';
 
 const RESULT_MIN = 80;
@@ -41,7 +44,7 @@ const EDITOR_MIN_W = 160;
  */
 @Component({
   selector: 'app-query-pane',
-  imports: [ResultGrid, SplitterComponent, SqlEditor],
+  imports: [ResultGrid, SplitterComponent, SqlEditor, ValuePanel],
   host: {
     '[class.side]': 'side()',
     '[class.no-result]': '!settings.settings().resultVisible && !maximized()',
@@ -157,7 +160,28 @@ const EDITOR_MIN_W = 160;
           @switch (state().kind) {
             @case ('done') {
               @if (result(); as r) {
-                <app-result-grid [result]="r" [rows]="rows()" [fetch]="fetch" />
+                <div class="with-value">
+                  <app-result-grid
+                    [result]="r"
+                    [rows]="rows()"
+                    [fetch]="fetch"
+                    (active)="onActive(r, $event)"
+                  />
+                  @if (settings.settings().valuePanelVisible) {
+                    <app-splitter
+                      orientation="vertical"
+                      pane="after"
+                      [label]="value.width"
+                      [size]="valueW()"
+                      [min]="valueMinW"
+                      [max]="valueMaxW"
+                      [defaultSize]="defaults.valuePanelWidth"
+                      (sizeChange)="dragValue.set($event)"
+                      (sizeCommit)="commitValue($event)"
+                    />
+                    <app-value-panel [style.width.px]="valueW()" [cell]="activeCell()" />
+                  }
+                </div>
               } @else {
                 <p class="message">{{ status() }}</p>
               }
@@ -204,7 +228,28 @@ const EDITOR_MIN_W = 160;
             @case ('running') {
               <!-- rows are shown as soon as there are some, while the rest is still read -->
               @if (result(); as r) {
-                <app-result-grid [result]="r" [rows]="rows()" [fetch]="fetch" />
+                <div class="with-value">
+                  <app-result-grid
+                    [result]="r"
+                    [rows]="rows()"
+                    [fetch]="fetch"
+                    (active)="onActive(r, $event)"
+                  />
+                  @if (settings.settings().valuePanelVisible) {
+                    <app-splitter
+                      orientation="vertical"
+                      pane="after"
+                      [label]="value.width"
+                      [size]="valueW()"
+                      [min]="valueMinW"
+                      [max]="valueMaxW"
+                      [defaultSize]="defaults.valuePanelWidth"
+                      (sizeChange)="dragValue.set($event)"
+                      (sizeCommit)="commitValue($event)"
+                    />
+                    <app-value-panel [style.width.px]="valueW()" [cell]="activeCell()" />
+                  }
+                </div>
               } @else {
                 <p class="message">{{ t.runningNow }}</p>
               }
@@ -257,6 +302,19 @@ const EDITOR_MIN_W = 160;
       flex: 1 1 0;
       min-height: 0;
       overflow: auto;
+    }
+    /* the grid and, beside it, the value of the cell the cursor is on (prompt 026) */
+    .with-value {
+      display: flex;
+      height: 100%;
+      min-height: 0;
+    }
+    .with-value app-result-grid {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .with-value app-value-panel {
+      flex: none;
     }
     .subtabs {
       flex: none;
@@ -394,6 +452,19 @@ const EDITOR_MIN_W = 160;
 export class QueryPane implements OnInit, OnDestroy {
   protected readonly t = TABS_TEXTS;
   protected readonly params = PARAM_TEXTS;
+  protected readonly value = VALUE_TEXTS;
+  private readonly values = inject(ValueService);
+  /** The cell the cursor of this tab's grid is on. */
+  protected readonly activeCell = signal<ActiveCell | null>(null);
+  protected readonly valueMinW = 200;
+  protected readonly valueMaxW = 1200;
+  protected readonly dragValue = signal<number | null>(null);
+  protected readonly valueW = computed(() =>
+    Math.min(
+      this.valueMaxW,
+      Math.max(this.valueMinW, this.dragValue() ?? this.settings.settings().valuePanelWidth),
+    ),
+  );
   private readonly tabs = inject(TabsStore);
   protected readonly settings = inject(SettingsService);
   private readonly connections = inject(ConnectionsStore);
@@ -592,6 +663,22 @@ export class QueryPane implements OnInit, OnDestroy {
 
   protected onChanged(change: EdChange): void {
     this.tabs.textChanged(this.tab(), change.charCount, change.dirty);
+  }
+
+  /** The cursor of the grid moved: the value panel and the actions on the value follow. */
+  protected onActive(result: ResultRef, at: readonly [number, number] | null): void {
+    const column = at ? result.columns[at[1]] : undefined;
+    const cell: ActiveCell | null =
+      at && column ? { resultId: result.resultId, row: at[0], col: at[1], column } : null;
+    const before = this.activeCell();
+    this.activeCell.set(cell);
+    if (cell) this.values.cell.set(cell);
+    else if (before) this.values.forget(before.resultId);
+  }
+
+  protected commitValue(width: number): void {
+    this.dragValue.set(null);
+    this.settings.update({ valuePanelWidth: Math.round(width) });
   }
 
   protected commitWidth(width: number): void {

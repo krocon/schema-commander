@@ -78,6 +78,25 @@ export const ACTIONS = [
   { id: 'TOGGLE_COMMENT', label: 'Toggle line comment', group: 'Query', scope: 'global' },
   { id: 'CANCEL_FORMAT', label: 'Cancel formatting', group: 'Query', scope: 'global' },
   { id: 'SHOW_MESSAGES', label: 'Show messages', group: 'Query', scope: 'global' },
+  // The value panel (prompt 026)
+  {
+    id: 'TOGGLE_VALUE_PANEL',
+    label: 'Result: show the value panel',
+    group: 'View',
+    scope: 'global',
+  },
+  {
+    id: 'COPY_CELL_VALUE',
+    label: 'Result: copy the whole value of the cell',
+    group: 'Query',
+    scope: 'global',
+  },
+  {
+    id: 'SAVE_CELL_VALUE',
+    label: 'Result: save the value of the cell …',
+    group: 'File',
+    scope: 'global',
+  },
   {
     id: 'TOGGLE_DIGIT_GROUPING',
     label: 'Result: toggle digit grouping',

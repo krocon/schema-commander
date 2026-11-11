@@ -38,6 +38,8 @@ import { nameFromText } from './features/saved/saved-logic';
 import { SavedPanel } from './features/saved/saved-panel';
 import { SavedStore } from './features/saved/saved.store';
 import { SnippetDialog } from './features/snippets/snippet-dialog';
+import { extensionOf } from './features/value/value-logic';
+import { ValueService } from './features/value/value.service';
 import { FORMAT_TEXTS } from './features/format/format-texts';
 import { CopyService } from './features/results/copy.service';
 import { ConfirmDialog, ConfirmRequest, ConfirmService } from './shared/confirm';
@@ -587,6 +589,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly formatter = inject(FormatService);
   protected readonly saved = inject(SavedStore);
   protected readonly paramService = inject(ParamService);
+  private readonly values = inject(ValueService);
   private readonly fileDialogs = inject(FileDialogApi);
   protected readonly formatTexts = FORMAT_TEXTS;
   protected readonly confirm = inject(ConfirmService);
@@ -634,6 +637,14 @@ export class App implements OnInit, OnDestroy {
       untracked(() => {
         this.ownNotice.set(told);
         this.saved.notice.set(null);
+      });
+    });
+    effect(() => {
+      const told = this.values.notice();
+      if (told === null) return;
+      untracked(() => {
+        this.ownNotice.set(told);
+        this.values.notice.set(null);
       });
     });
   }
@@ -756,6 +767,19 @@ export class App implements OnInit, OnDestroy {
           if (!(await tab()?.expandStar())) this.ownNotice.set(APP_TEXTS.noStar);
         },
         () => !!tab(),
+      ),
+      this.actions.register(
+        'COPY_CELL_VALUE',
+        () => this.values.copy(),
+        () => this.values.cell() !== null,
+      ),
+      this.actions.register(
+        'SAVE_CELL_VALUE',
+        () => {
+          const cell = this.values.cell();
+          if (cell) void this.values.save(extensionOf(cell.column.kind));
+        },
+        () => this.values.cell() !== null,
       ),
       this.actions.register(
         'RUN_AGAIN',
@@ -998,6 +1022,11 @@ export class App implements OnInit, OnDestroy {
         OPEN_PALETTE: () => this.openPalette('commands'),
         GOTO_ANYTHING: () => this.openPalette('goto'),
         GOTO_SAVED: () => this.openPalette('goto', 'q: '),
+        TOGGLE_VALUE_PANEL: () =>
+          this.settings.update({
+            valuePanelVisible: !this.settings.settings().valuePanelVisible,
+            resultVisible: true,
+          }),
         SIDEBAR_SAVED: () => this.showSidebarView('saved'),
         SAVE_QUERY: () => void this.saveQuery(),
         SAVED_FOLDER: () => void this.chooseSavedFolder(),
@@ -1101,6 +1130,7 @@ export class App implements OnInit, OnDestroy {
       SIDEBAR_DATABASE: () => s().sidebarView === 'database',
       SIDEBAR_HISTORY: () => s().sidebarView === 'history',
       SIDEBAR_SAVED: () => s().sidebarView === 'saved',
+      TOGGLE_VALUE_PANEL: () => s().valuePanelVisible,
     };
     return Object.entries(checks).map(([id, on]) =>
       this.actions.registerCheck(id as ActionId, on as () => boolean),
