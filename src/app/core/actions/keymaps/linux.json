@@ -38,6 +38,9 @@
   "SCHEMA_FILTER": [
     "Mod+Shift+O"
   ],
+  "SCHEMA_DETAILS": [
+    "Mod+I"
+  ],
   "SCHEMA_REFRESH": [
     "F5"
   ],

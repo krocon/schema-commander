@@ -1,3 +1,4 @@
+import { RowWindow } from '../../core/sql/query.models';
 import { Copied, CopyFormat, CopySelection } from '../../core/backend/clipboard-api';
 import { RESULTS_TEXTS } from './results-texts';
 
@@ -59,6 +60,30 @@ export function selectionOf(
     rows,
     columns: wholeRows ? [] : [...columns].sort((a, b) => a - b),
   };
+}
+
+/**
+ * The selection of rows that live in the page (the lists of the object details, prompt 019), tab-separated.
+ * Tabs and line breaks inside a cell become blanks, so a cell stays a cell.
+ */
+export function localTsv(rows: RowWindow, selection: CopySelection): string {
+  const ranges: readonly (readonly [number, number])[] =
+    selection.rows.length === 0 ? [[0, rows.length - 1]] : selection.rows;
+  const lines: string[] = [];
+  for (const [from, to] of ranges) {
+    for (let r = Math.max(0, from); r <= Math.min(to, rows.length - 1); r++) {
+      const row = rows[r];
+      const cells = selection.columns.length === 0 ? row : selection.columns.map((c) => row[c]);
+      lines.push(
+        cells
+          .map((cell) =>
+            cell === null || cell === undefined ? '' : String(cell).replace(/[\t\r\n]+/g, ' '),
+          )
+          .join('\t'),
+      );
+    }
+  }
+  return lines.join('\n');
 }
 
 /** How many rows and cells a selection has (ranges that overlap count twice: an upper bound). */

@@ -1,5 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
+import { ObjectDetailsService } from '../details/details.service';
 import { ExportService } from '../export/export.service';
 import { CopyService } from '../results/copy.service';
 import { TabsStore } from '../tabs/tabs.store';
@@ -15,6 +16,7 @@ import { SchemaStore } from './schema.store';
 
 /** What can be done with a node of the schema tree (prompt 008); each is an action of the app. */
 export type NodeAction =
+  | 'SCHEMA_DETAILS'
   | 'SCHEMA_OPEN_DATA'
   | 'SCHEMA_EXPORT_TABLE'
   | 'SCHEMA_INSERT_NAME'
@@ -25,6 +27,7 @@ export type NodeAction =
   | 'SCHEMA_UPDATE_TEMPLATE';
 
 export const NODE_ACTIONS: readonly NodeAction[] = [
+  'SCHEMA_DETAILS',
   'SCHEMA_OPEN_DATA',
   'SCHEMA_EXPORT_TABLE',
   'SCHEMA_INSERT_NAME',
@@ -64,6 +67,7 @@ export function allows(action: NodeAction, row: TreeRow | null): boolean {
     case 'SCHEMA_COPY_NAME':
       return rowName(row) !== null;
     case 'SCHEMA_COPY_QUALIFIED':
+    case 'SCHEMA_DETAILS':
       return row?.kind === 'object';
     case 'SCHEMA_OPEN_DATA':
     case 'SCHEMA_EXPORT_TABLE':
@@ -82,6 +86,7 @@ export class SchemaActions {
   private readonly connections = inject(ConnectionsStore);
   private readonly copier = inject(CopyService);
   private readonly exporter = inject(ExportService);
+  private readonly details = inject(ObjectDetailsService);
 
   /** Whether `action` can run on the active row of the tree. */
   can(action: NodeAction): boolean {
@@ -95,6 +100,17 @@ export class SchemaActions {
     const qualified = rowQualified(row) ?? '';
     const kind = this.connections.active()?.kind ?? 'sqlite';
     switch (action) {
+      case 'SCHEMA_DETAILS':
+        if (!row.schema || !row.object) return;
+        this.details.open({
+          connectionId: this.connections.activeId(),
+          schema: row.schema.name,
+          name: row.object.name,
+          kind: row.object.kind,
+          // the arguments tell overloaded routines apart
+          detail: row.object.kind === 'routine' ? row.object.detail : '',
+        });
+        return;
       case 'SCHEMA_INSERT_NAME':
         this.tabs.active()?.insert(row.kind === 'object' ? qualified : name);
         return;

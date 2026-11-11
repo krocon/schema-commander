@@ -13,8 +13,9 @@ import {
 } from '@angular/core';
 import { SettingsService } from '../../core/settings/settings.service';
 import { ContextMenu, MenuItem } from '../../shared/context-menu';
+import { actionLabel } from '../../core/actions/action-texts';
 import { NodeAction, SchemaActions, allows, rowName, rowQualified } from './schema-actions';
-import { TreeRow, keyMove } from './schema-logic';
+import { TreeRow, keyMove, quickInfoLines, tableKey } from './schema-logic';
 import { SchemaStore } from './schema.store';
 import { SCHEMA_TEXTS } from './schema-texts';
 
@@ -35,6 +36,7 @@ export function visibleRange(
 
 /** The menu of a node; `label` is asked when the menu opens, so it follows the language. */
 const MENU: readonly { id: NodeAction; label: () => string; separator?: boolean }[] = [
+  { id: 'SCHEMA_DETAILS', label: () => actionLabel('SCHEMA_DETAILS') },
   { id: 'SCHEMA_OPEN_DATA', label: () => SCHEMA_TEXTS.openData },
   { id: 'SCHEMA_EXPORT_TABLE', label: () => SCHEMA_TEXTS.exportTable },
   { id: 'SCHEMA_INSERT_NAME', label: () => SCHEMA_TEXTS.insertName, separator: true },
@@ -124,7 +126,7 @@ const MENU: readonly { id: NodeAction; label: () => string; separator?: boolean 
             [style.top.px]="item.index * rowHeight"
             [style.padding-left.px]="(item.row.level - 1) * 14 + 4"
             [attr.draggable]="draggable(item.row) ? 'true' : null"
-            [title]="item.row.detail ? item.row.label + ' – ' + item.row.detail : item.row.label"
+            [title]="quickInfo(item.row)"
           >
             <span class="twisty" aria-hidden="true">{{
               item.row.expandable ? (item.row.expanded ? '▾' : '▸') : ''
@@ -361,6 +363,18 @@ export class SchemaTree implements OnDestroy {
 
   protected toggleSystem(): void {
     this.settings.update({ showSystemSchemas: !this.store.showSystem() });
+  }
+
+  /**
+   * The tooltip of a row (prompt 019): its name and what stands behind it; for a table or view whose parts
+   * are known already, its columns with their types – without asking the server.
+   */
+  protected quickInfo(row: TreeRow): string {
+    const head = row.detail ? `${row.label} – ${row.detail}` : row.label;
+    if (row.kind !== 'object' || !row.schema || !row.object) return head;
+    const known = this.store.state().tables[tableKey(row.schema.name, row.object.name)];
+    if (known?.state !== 'ready') return head;
+    return [head, ...quickInfoLines(known.value.columns)].join('\n');
   }
 
   protected draggable(row: TreeRow): boolean {

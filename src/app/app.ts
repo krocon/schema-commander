@@ -49,6 +49,8 @@ import { ConnectionDialog } from './features/connections/connection-dialog';
 import { ConnectionList } from './features/connections/connection-list';
 import { PasswordDialog } from './features/connections/password-dialog';
 import { CommandPalette } from './features/palette/command-palette';
+import { DetailsDialog } from './features/details/details-dialog';
+import { ObjectDetailsService } from './features/details/details.service';
 import { MenuBar } from './features/menus/menu-bar';
 import { MenuService } from './features/menus/menu.service';
 import { SettingsDialog } from './features/settings/settings-dialog';
@@ -87,6 +89,7 @@ const SIDEBAR_MIN = 140;
     PasswordDialog,
     SchemaTree,
     QueryPane,
+    DetailsDialog,
     MenuBar,
     SettingsDialog,
     ShortcutDialogComponent,
@@ -423,6 +426,11 @@ const SIDEBAR_MIN = 140;
         <app-command-palette (closed)="paletteOpen.set(false)" />
       }
     }
+    @if (objectDetails.current()) {
+      @defer (on immediate) {
+        <app-details-dialog />
+      }
+    }
     @if (settingsOpen()) {
       @defer (on immediate) {
         <app-settings-dialog (closed)="settingsOpen.set(false)" />
@@ -463,6 +471,7 @@ export class App implements OnInit, OnDestroy {
   /** The shortcut editor, `read` as an overview. */
   protected readonly shortcutsOpen = signal<'edit' | 'read' | null>(null);
   protected readonly settingsOpen = signal(false);
+  protected readonly objectDetails = inject(ObjectDetailsService);
   protected readonly menus = inject(MenuService);
   /** A message of the app itself (failed action, unreadable shortcuts). */
   private readonly ownNotice = signal<string | null>(null);

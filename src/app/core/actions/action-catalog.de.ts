@@ -63,6 +63,7 @@ export const ACTION_LABELS_DE: Readonly<Record<ActionId, string>> = {
   SCHEMA_FILTER: 'Im Schema filtern',
   TOGGLE_SYSTEM_SCHEMAS: 'Systemschemata ein-/ausblenden',
   SCHEMA_EXPORT_TABLE: 'Tabelle exportieren …',
+  SCHEMA_DETAILS: 'Objekt-Details und DDL …',
   SCHEMA_OPEN_DATA: 'Daten der Tabelle öffnen',
   SCHEMA_INSERT_NAME: 'Name in den Editor einfügen',
   SCHEMA_COPY_NAME: 'Name kopieren',

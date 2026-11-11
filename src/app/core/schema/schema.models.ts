@@ -51,3 +51,23 @@ export interface Found {
   readonly name: string;
   readonly quoted: string;
 }
+
+/** Mirrors `Section` in src-tauri/src/db/details.rs (prompt 019): one list of an object. */
+export interface DetailSection {
+  /** `columns`, `indexes`, `constraints`, `triggers`, `partitions`, `privileges`, `stats` … */
+  readonly id: string;
+  /** The keys of the columns; `refSchema` and `refName` name an object a row leads to. */
+  readonly columns: readonly string[];
+  readonly rows: readonly (readonly (string | null)[])[];
+  /** More rows than the backend hands over: the rest is left out. */
+  readonly cut: boolean;
+}
+
+/** Mirrors `ObjectDetails`. */
+export interface ObjectDetails {
+  readonly sections: readonly DetailSection[];
+  /** The statement(s) that create the object; `null` when the database gives none. */
+  readonly ddl: string | null;
+  /** Ids of lists the server refused; `ddl` when there is no DDL. */
+  readonly notes: readonly string[];
+}

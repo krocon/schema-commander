@@ -8,6 +8,7 @@ import {
   selectionOf,
   selectionSize,
   tableOf,
+  localTsv,
 } from './copy-logic';
 
 describe('selectionOf', () => {
@@ -114,5 +115,22 @@ describe('tableOf', () => {
     expect(tableOf('SELECT * FROM a JOIN b ON a.id = b.id')).toBeNull();
     expect(tableOf('SELECT * FROM a, b')).toBeNull();
     expect(tableOf('SELECT * FROM a WHERE x IN (SELECT y FROM b)')).toBeNull();
+  });
+
+  it('copies rows that live in the page, tab-separated', () => {
+    const rows = [
+      ['id', 'integer', null],
+      ['note', 'text\twith a tab', 'two\nlines'],
+      ['x', 'y', 'z'],
+    ];
+    // nothing selected: everything
+    expect(localTsv(rows, { rows: [], columns: [] })).toBe(
+      'id\tinteger\t\nnote\ttext with a tab\ttwo lines\nx\ty\tz',
+    );
+    // a range of rows, some columns
+    expect(localTsv(rows, { rows: [[1, 2]], columns: [0, 2] })).toBe('note\ttwo lines\nx\tz');
+    // a range beyond the end stops at the end
+    expect(localTsv(rows, { rows: [[2, 99]], columns: [] })).toBe('x\ty\tz');
+    expect(localTsv([], { rows: [], columns: [] })).toBe('');
   });
 });
