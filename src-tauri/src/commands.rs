@@ -409,6 +409,49 @@ pub fn result_stats(
     result
 }
 
+/// Looks for a text in a stretch of rows of a result (prompt 029): the window asks stretch by stretch
+/// (`next` of one answer is `from` of the next), so the first hits are there at once. A job.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn result_search(
+    store: State<'_, ResultStore>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    result_id: u64,
+    spec: crate::search::SearchSpec,
+    from: u64,
+    max_rows: u64,
+    max_hits: usize,
+) -> AppResult<crate::search::Found> {
+    use std::sync::atomic::Ordering;
+    let stop = jobs.start(job_id, None);
+    let result = crate::search::search(&store, result_id, &spec, from, max_rows, max_hits, &|| {
+        stop.load(Ordering::Relaxed)
+    });
+    jobs.end(job_id);
+    result
+}
+
+/// The next row of a column with another value, or with NULL (prompt 029). A job.
+#[tauri::command(async)]
+pub fn result_seek(
+    store: State<'_, ResultStore>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    result_id: u64,
+    col: usize,
+    from: u64,
+    seek: crate::search::Seek,
+) -> AppResult<Option<u64>> {
+    use std::sync::atomic::Ordering;
+    let stop = jobs.start(job_id, None);
+    let result = crate::search::seek(&store, result_id, col, from, seek, &|| {
+        stop.load(Ordering::Relaxed)
+    });
+    jobs.end(job_id);
+    result
+}
+
 /// The statement of a table view (prompt 027): names quoted here, every value a placeholder. The window
 /// runs what comes back with `run_query` – statement and values together, as it got them.
 #[tauri::command(async)]
