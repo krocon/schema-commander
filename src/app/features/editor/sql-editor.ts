@@ -80,6 +80,9 @@ export class SqlEditor implements OnInit {
   /** The text changed (revision, size – never the text itself). Not sent for the start text. */
   readonly changed = output<EdChange>();
 
+  /** The start text is in the editor (the caret of the last run can be set now). */
+  readonly seededText = output<void>();
+
   protected readonly state = signal<'loading' | 'ready' | 'failed'>('loading');
   /** All colours of the editor come from our tokens (design 001 E1). */
   protected readonly colors = EDITOR_COLORS;
@@ -122,6 +125,11 @@ export class SqlEditor implements OnInit {
 
   async setText(text: string): Promise<void> {
     await this.editor()?.nativeElement.setValue(text);
+  }
+
+  /** Puts the caret at a line and column (from 1) and shows the place. */
+  async goTo(line: number, ch: number): Promise<void> {
+    await this.editor()?.nativeElement.goTo(line, ch);
   }
 
   /** Text at the caret, over the selection; as a snippet its placeholders can be tabbed through. */
@@ -182,9 +190,10 @@ export class SqlEditor implements OnInit {
     const editor = this.editor()?.nativeElement;
     if (this.seeded || !editor) return;
     this.seeded = true;
-    void editor.setValue(this.initialValue()).then(
-      () => (this.seededDone = true),
-      () => (this.seededDone = true),
-    );
+    const done = () => {
+      this.seededDone = true;
+      this.seededText.emit();
+    };
+    void editor.setValue(this.initialValue()).then(done, done);
   }
 }

@@ -35,6 +35,14 @@ pub struct TabMeta {
     /// The encoding of that file (see [`crate::textfile`]).
     #[serde(default)]
     pub encoding: Option<String>,
+    /// The tab group it is in when the view is split: 0 or 1 (prompt 016).
+    #[serde(default)]
+    pub group: u8,
+    /// Where the caret was: line and column, both from 1; 0 = unknown.
+    #[serde(default)]
+    pub caret_line: u32,
+    #[serde(default)]
+    pub caret_ch: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -47,6 +55,12 @@ pub struct SessionFile {
     /// The id of the tab in front.
     #[serde(default)]
     pub active: Option<String>,
+    /// The tab shown in the other group of a split view.
+    #[serde(default)]
+    pub other: Option<String>,
+    /// How a split view lies: `row` (side by side) or `column`.
+    #[serde(default)]
+    pub split: String,
 }
 
 /// What `load` found; `notice` says when the file was broken.
@@ -85,6 +99,7 @@ fn meta_ok(t: &TabMeta) -> bool {
         && t.connection.as_deref().is_none_or(|c| plain(c, 64))
         && t.file_path.as_deref().is_none_or(|p| plain(p, 4096))
         && t.encoding.as_deref().is_none_or(|e| plain(e, 32))
+        && t.group <= 1
 }
 
 pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -170,6 +185,17 @@ impl SessionDir {
             .is_some_and(|a| session.tabs.iter().any(|t| &t.id == a))
         {
             session.active = session.tabs.first().map(|t| t.id.clone());
+        }
+        // the split layout, forgiving: a group that is not there, a tab that is gone, an unknown word
+        if !matches!(session.split.as_str(), "row" | "column") {
+            session.split = "row".to_string();
+        }
+        if !session
+            .other
+            .as_ref()
+            .is_some_and(|o| session.tabs.iter().any(|t| &t.id == o))
+        {
+            session.other = None;
         }
         LoadedSession {
             session,
@@ -257,7 +283,54 @@ mod tests {
             connection: Some("shop".into()),
             file_path: Some("/tmp/Meine Abfragen/ä.sql".into()),
             encoding: Some("utf-8".into()),
+            group: 0,
+            caret_line: 0,
+            caret_ch: 0,
         }
+    }
+
+    #[test]
+    fn keeps_groups_carets_and_the_split_and_repairs_what_is_broken() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = SessionDir::new(dir.path().to_path_buf());
+        let mut a = tab("a");
+        a.caret_line = 12;
+        a.caret_ch = 4;
+        let mut b = tab("b");
+        b.group = 1;
+        s.save(&SessionFile {
+            version: VERSION,
+            tabs: vec![a, b],
+            active: Some("a".into()),
+            other: Some("b".into()),
+            split: "column".into(),
+        })
+        .unwrap();
+        let loaded = s.load().session;
+        assert_eq!(
+            (loaded.tabs[0].caret_line, loaded.tabs[0].caret_ch),
+            (12, 4)
+        );
+        assert_eq!(loaded.tabs[1].group, 1);
+        assert_eq!(
+            (loaded.other.as_deref(), loaded.split.as_str()),
+            (Some("b"), "column")
+        );
+        // a file from before prompt 016, and one that names what is not there
+        std::fs::write(
+            dir.path().join(FILE_NAME),
+            r#"{"version":1,"tabs":[{"id":"a","title":"A"},{"id":"x","title":"X","group":7}],
+               "active":"a","other":"gone","split":"diagonal"}"#,
+        )
+        .unwrap();
+        let loaded = s.load().session;
+        assert_eq!(
+            loaded.tabs.len(),
+            1,
+            "a group that does not exist drops the tab"
+        );
+        assert_eq!(loaded.tabs[0].group, 0);
+        assert_eq!((loaded.other, loaded.split.as_str()), (None, "row"));
     }
 
     #[test]
@@ -268,6 +341,8 @@ mod tests {
             version: VERSION,
             tabs: vec![tab("b"), tab("a")],
             active: Some("a".into()),
+            other: None,
+            split: "row".to_string(),
         };
         s.save(&session).unwrap();
         let loaded = s.load();
@@ -297,6 +372,8 @@ mod tests {
             version: VERSION,
             tabs: vec![tab("a"), hostile.clone(), tab("a"), tab("b")],
             active: Some("gone".into()),
+            other: None,
+            split: "row".to_string(),
         };
         fs::write(
             dir.path().join(FILE_NAME),
@@ -317,7 +394,9 @@ mod tests {
             s.save(&SessionFile {
                 version: VERSION,
                 tabs: vec![hostile],
-                active: None
+                active: None,
+                other: None,
+                split: "row".to_string(),
             })
             .unwrap_err()
             .code,

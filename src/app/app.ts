@@ -15,6 +15,7 @@ import { GuardDialog } from './features/guard/guard-dialog';
 import { badgeText } from './features/guard/guard-logic';
 import { GuardService } from './features/guard/guard.service';
 import { HistoryDialog } from './features/history/history-dialog';
+import { HistoryPanel } from './features/history/history-panel';
 import { HistoryService } from './features/history/history.service';
 import { ActionId } from './core/actions/action-catalog';
 import {
@@ -41,7 +42,7 @@ import { txOpen, txStatus } from './features/tabs/tx-logic';
 import { ActionService } from './core/actions/action.service';
 import { DEMO_ID, Profile, emptyProfile } from './core/connections/connection.models';
 import { ConnectionsStore } from './core/connections/connections.store';
-import { DEFAULT_SETTINGS } from './core/settings/settings.models';
+import { DEFAULT_SETTINGS, SidebarView } from './core/settings/settings.models';
 import { SettingsService } from './core/settings/settings.service';
 import { ThemeService } from './core/theme/theme.service';
 import { ConnectionDialog } from './features/connections/connection-dialog';
@@ -76,6 +77,7 @@ const SIDEBAR_MIN = 140;
     ExportDialog,
     GuardDialog,
     HistoryDialog,
+    HistoryPanel,
     ImportDialog,
     PasswordDialog,
     SchemaTree,
@@ -87,123 +89,165 @@ const SIDEBAR_MIN = 140;
     ThemePickerComponent,
   ],
   template: `
-    <header class="toolbar" role="toolbar" aria-label="Werkzeugleiste">
-      <button
-        type="button"
-        aria-label="Seitenleiste ein-/ausblenden"
-        [title]="'Seitenleiste ein-/ausblenden' + actions.hint('TOGGLE_SIDEBAR')"
-        [attr.aria-pressed]="settings.settings().sidebarVisible"
-        (click)="actions.run('TOGGLE_SIDEBAR')"
-      >
-        ☰
-      </button>
-      <button
-        type="button"
-        class="primary"
-        [title]="
-          'Auswahl oder Anweisung unter dem Cursor ausführen' + actions.hint('RUN_STATEMENT')
-        "
-        [disabled]="running()"
-        (click)="actions.run('RUN_STATEMENT')"
-      >
-        ▶ Ausführen
-      </button>
-      <button
-        type="button"
-        [title]="'Ganzes Skript ausführen' + actions.hint('RUN_SCRIPT')"
-        [disabled]="running()"
-        (click)="actions.run('RUN_SCRIPT')"
-      >
-        ▶▶ Skript
-      </button>
-      @if (running()) {
+    @if (!zen()) {
+      <header class="toolbar" role="toolbar" aria-label="Werkzeugleiste">
         <button
           type="button"
-          [title]="'Laufende Anweisung abbrechen' + actions.hint('CANCEL_QUERY')"
-          (click)="actions.run('CANCEL_QUERY')"
+          aria-label="Seitenleiste ein-/ausblenden"
+          [title]="'Seitenleiste ein-/ausblenden' + actions.hint('TOGGLE_SIDEBAR')"
+          [attr.aria-pressed]="settings.settings().sidebarVisible"
+          (click)="actions.run('TOGGLE_SIDEBAR')"
         >
-          ■ Abbrechen
+          ☰
         </button>
-      }
-      @if (tabs.active(); as tab) {
         <button
           type="button"
-          class="tx-mode"
-          [attr.aria-pressed]="tab.manual()"
+          class="primary"
           [title]="
-            (tab.manual()
-              ? 'Manueller Commit: Änderungen bleiben offen, bis sie bestätigt werden'
-              : 'Auto-Commit: jede Anweisung gilt sofort') + actions.hint('TOGGLE_AUTOCOMMIT')
+            'Auswahl oder Anweisung unter dem Cursor ausführen' + actions.hint('RUN_STATEMENT')
           "
-          (click)="actions.run('TOGGLE_AUTOCOMMIT')"
+          [disabled]="running()"
+          (click)="actions.run('RUN_STATEMENT')"
         >
-          {{ tab.manual() ? 'Tx: manuell' : 'Tx: auto' }}
+          ▶ Ausführen
         </button>
-        @if (txIsOpen()) {
-          <button
-            type="button"
-            class="tx-commit"
-            [disabled]="running() || tab.tx() === 'failed'"
-            [title]="'Transaktion bestätigen' + actions.hint('TX_COMMIT')"
-            (click)="actions.run('TX_COMMIT')"
-          >
-            ✓ Commit
-          </button>
-          <button
-            type="button"
-            [disabled]="running()"
-            [title]="'Transaktion zurückrollen' + actions.hint('TX_ROLLBACK')"
-            (click)="actions.run('TX_ROLLBACK')"
-          >
-            ↶ Rollback
-          </button>
-        }
-      }
-      <span class="spacer"></span>
-      @if (connections.active(); as conn) {
-        @let cs = connections.activeState();
-        <span
-          [class]="'conn conn-' + conn.color"
-          [title]="cs.kind === 'open' ? cs.serverVersion : 'nicht verbunden'"
-          ><i [class.open]="cs.kind === 'open'"></i>{{ conn.name }}</span
+        <button
+          type="button"
+          [title]="'Ganzes Skript ausführen' + actions.hint('RUN_SCRIPT')"
+          [disabled]="running()"
+          (click)="actions.run('RUN_SCRIPT')"
         >
-        @if (badge(); as b) {
-          <span class="guard-badge" [attr.data-protection]="conn.protection">{{ b }}</span>
-        }
-        @if (conn.kind !== 'sqlite' && uncheckedTls(conn.tls)) {
-          <span class="guard-badge" title="Das Zertifikat des Servers wird nicht geprüft"
-            >TLS ungeprüft</span
+          ▶▶ Skript
+        </button>
+        @if (running()) {
+          <button
+            type="button"
+            [title]="'Laufende Anweisung abbrechen' + actions.hint('CANCEL_QUERY')"
+            (click)="actions.run('CANCEL_QUERY')"
           >
+            ■ Abbrechen
+          </button>
         }
-      }
-      <button
-        type="button"
-        aria-label="Befehlspalette"
-        [title]="'Befehlspalette' + actions.hint('OPEN_PALETTE')"
-        (click)="actions.run('OPEN_PALETTE')"
-      >
-        ⌘
-      </button>
-      <button
-        type="button"
-        aria-label="Farbschema wählen"
-        [title]="'Farbschema wählen' + actions.hint('COLOR_SCHEME')"
-        (click)="actions.run('COLOR_SCHEME')"
-      >
-        ◐
-      </button>
-    </header>
+        @if (tabs.active(); as tab) {
+          <button
+            type="button"
+            class="tx-mode"
+            [attr.aria-pressed]="tab.manual()"
+            [title]="
+              (tab.manual()
+                ? 'Manueller Commit: Änderungen bleiben offen, bis sie bestätigt werden'
+                : 'Auto-Commit: jede Anweisung gilt sofort') + actions.hint('TOGGLE_AUTOCOMMIT')
+            "
+            (click)="actions.run('TOGGLE_AUTOCOMMIT')"
+          >
+            {{ tab.manual() ? 'Tx: manuell' : 'Tx: auto' }}
+          </button>
+          @if (txIsOpen()) {
+            <button
+              type="button"
+              class="tx-commit"
+              [disabled]="running() || tab.tx() === 'failed'"
+              [title]="'Transaktion bestätigen' + actions.hint('TX_COMMIT')"
+              (click)="actions.run('TX_COMMIT')"
+            >
+              ✓ Commit
+            </button>
+            <button
+              type="button"
+              [disabled]="running()"
+              [title]="'Transaktion zurückrollen' + actions.hint('TX_ROLLBACK')"
+              (click)="actions.run('TX_ROLLBACK')"
+            >
+              ↶ Rollback
+            </button>
+          }
+        }
+        <span class="spacer"></span>
+        @if (connections.active(); as conn) {
+          @let cs = connections.activeState();
+          <span
+            [class]="'conn conn-' + conn.color"
+            [title]="cs.kind === 'open' ? cs.serverVersion : 'nicht verbunden'"
+            ><i [class.open]="cs.kind === 'open'"></i>{{ conn.name }}</span
+          >
+          @if (badge(); as b) {
+            <span class="guard-badge" [attr.data-protection]="conn.protection">{{ b }}</span>
+          }
+          @if (conn.kind !== 'sqlite' && uncheckedTls(conn.tls)) {
+            <span class="guard-badge" title="Das Zertifikat des Servers wird nicht geprüft"
+              >TLS ungeprüft</span
+            >
+          }
+        }
+        <button
+          type="button"
+          aria-label="Befehlspalette"
+          [title]="'Befehlspalette' + actions.hint('OPEN_PALETTE')"
+          (click)="actions.run('OPEN_PALETTE')"
+        >
+          ⌘
+        </button>
+        <button
+          type="button"
+          aria-label="Farbschema wählen"
+          [title]="'Farbschema wählen' + actions.hint('COLOR_SCHEME')"
+          (click)="actions.run('COLOR_SCHEME')"
+        >
+          ◐
+        </button>
+      </header>
+    }
     <div #workspace class="workspace">
-      @if (settings.settings().sidebarVisible) {
+      @if (sidebarShown()) {
+        @let view = settings.settings().sidebarView;
         <nav
           #sidebar
           id="sidebar"
           class="sidebar"
-          aria-label="Datenbank"
+          aria-label="Seitenleiste"
           [style.width.px]="sidebarW()"
         >
-          <app-connection-list class="connections" (edit)="connectionDialog.set($event)" />
-          <app-schema-tree />
+          <div class="views" role="tablist" aria-label="Ansicht der Seitenleiste">
+            <button
+              type="button"
+              role="tab"
+              id="view-database"
+              aria-controls="sidebar-view"
+              [attr.aria-selected]="view === 'database'"
+              [tabindex]="view === 'database' ? 0 : -1"
+              [title]="'Verbindungen und Schema' + actions.hint('SIDEBAR_DATABASE')"
+              (click)="actions.run('SIDEBAR_DATABASE')"
+              (keydown)="onViewKey($event)"
+            >
+              Datenbank
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="view-history"
+              aria-controls="sidebar-view"
+              [attr.aria-selected]="view === 'history'"
+              [tabindex]="view === 'history' ? 0 : -1"
+              [title]="'Zuletzt ausgeführte Anweisungen' + actions.hint('SIDEBAR_HISTORY')"
+              (click)="actions.run('SIDEBAR_HISTORY')"
+              (keydown)="onViewKey($event)"
+            >
+              Verlauf
+            </button>
+          </div>
+          <div
+            id="sidebar-view"
+            class="view"
+            role="tabpanel"
+            [attr.aria-labelledby]="'view-' + view"
+          >
+            @if (view === 'history') {
+              <app-history-panel />
+            } @else {
+              <app-connection-list class="connections" (edit)="connectionDialog.set($event)" />
+              <app-schema-tree />
+            }
+          </div>
         </nav>
         <app-splitter
           orientation="vertical"
@@ -218,63 +262,84 @@ const SIDEBAR_MIN = 140;
           (sizeCommit)="commitWidth($event)"
         />
       }
-      <div #column class="column">
-        <app-tab-bar />
+      <!--
+        Two tab groups at most (prompt 016). All panes are children of the one grid and only change their
+        cell: a tab that moves to the other group keeps its editor (undo history, caret, scroll).
+      -->
+      <div
+        #column
+        class="column"
+        [class.split]="tabs.isSplit()"
+        [class.stacked]="tabs.splitDir() === 'column'"
+      >
+        <app-tab-bar class="g0" [group]="0" />
+        @if (tabs.isSplit()) {
+          <app-tab-bar class="g1" [group]="1" />
+        }
         @for (tab of tabs.tabs(); track tab.id) {
           <!-- A tab is built when it is first shown and stays: undo history, caret and scroll survive. -->
           @if (tab.mounted()) {
+            @let shown = tabs.shownIds().includes(tab.id);
             <app-query-pane
               class="pane"
               [tab]="tab"
-              [class.hidden]="tab.id !== tabs.activeId()"
-              [inert]="tab.id !== tabs.activeId()"
+              [class.g1]="tab.group() === 1"
+              [class.front]="tab.id === tabs.activeId()"
+              [class.hidden]="!shown"
+              [inert]="!shown"
+              (focusin)="tabs.activate(tab.id)"
+              (pointerdown)="tabs.activate(tab.id)"
             />
           }
         }
       </div>
     </div>
-    <footer class="status" role="status">
-      @if (badge(); as b) {
-        <span class="guard-badge" [attr.data-protection]="connections.active()?.protection">{{
-          b
-        }}</span>
-      }
-      @if (txText(); as t) {
-        <span class="tx-status" [class.failed]="tabs.active()?.tx() === 'failed'">{{ t }}</span>
-      }
-      <span>{{ status() }}</span>
-      @if (exporter.job(); as job) {
-        @if (job.state === 'running') {
-          <button type="button" class="status-button" (click)="exporter.cancel()">Abbrechen</button>
-        } @else {
-          @if (job.state === 'done') {
-            <button type="button" class="status-button" (click)="exporter.reveal()">
-              Im Dateimanager zeigen
+    @if (!zen()) {
+      <footer class="status" role="status">
+        @if (badge(); as b) {
+          <span class="guard-badge" [attr.data-protection]="connections.active()?.protection">{{
+            b
+          }}</span>
+        }
+        @if (txText(); as t) {
+          <span class="tx-status" [class.failed]="tabs.active()?.tx() === 'failed'">{{ t }}</span>
+        }
+        <span>{{ status() }}</span>
+        @if (exporter.job(); as job) {
+          @if (job.state === 'running') {
+            <button type="button" class="status-button" (click)="exporter.cancel()">
+              Abbrechen
+            </button>
+          } @else {
+            @if (job.state === 'done') {
+              <button type="button" class="status-button" (click)="exporter.reveal()">
+                Im Dateimanager zeigen
+              </button>
+            }
+            <button
+              type="button"
+              class="status-button"
+              aria-label="Meldung des Exports schließen"
+              (click)="exporter.dismiss()"
+            >
+              ×
             </button>
           }
-          <button
-            type="button"
-            class="status-button"
-            aria-label="Meldung des Exports schließen"
-            (click)="exporter.dismiss()"
-          >
-            ×
-          </button>
         }
-      }
-      @if (copier.busy()) {
-        <button type="button" class="status-button" (click)="copier.cancel()">Abbrechen</button>
-      }
-      <span class="spacer"></span>
-      @if (tabs.active(); as tab) {
-        @if (tab.filePath()) {
-          <span>{{ encoding() }}</span>
+        @if (copier.busy()) {
+          <button type="button" class="status-button" (click)="copier.cancel()">Abbrechen</button>
         }
-        @if (tab.caret(); as c) {
-          <span>Zeile {{ c.line }}, Spalte {{ c.ch }}</span>
+        <span class="spacer"></span>
+        @if (tabs.active(); as tab) {
+          @if (tab.filePath()) {
+            <span>{{ encoding() }}</span>
+          }
+          @if (tab.caret(); as c) {
+            <span>Zeile {{ c.line }}, Spalte {{ c.ch }}</span>
+          }
         }
-      }
-    </footer>
+      </footer>
+    }
     @if (copier.menu(); as m) {
       <app-context-menu
         label="Kopieren als"
@@ -373,6 +438,11 @@ export class App implements OnInit, OnDestroy {
   /** A message of the app itself (failed action, unreadable shortcuts). */
   private readonly ownNotice = signal<string | null>(null);
   protected readonly notice = computed(() => this.ownNotice() ?? this.tabs.notice());
+  /** Only the tabs: toolbar, sidebar and status line are out of sight (not kept over a restart). */
+  protected readonly zen = signal(false);
+  protected readonly sidebarShown = computed(
+    () => this.settings.settings().sidebarVisible && !this.zen(),
+  );
   /** A file is dragged over the window. */
   protected readonly dropActive = signal(false);
   private readonly sidebar = viewChild<ElementRef<HTMLElement>>('sidebar');
@@ -716,8 +786,58 @@ export class App implements OnInit, OnDestroy {
         SAVE_FILE_AS: withTab((id) => this.tabs.save(id, true)),
         NEW_CONNECTION: () => this.connectionDialog.set(emptyProfile()),
         IMPORT_CONNECTIONS: () => this.importOpen.set(true),
-        TOGGLE_SIDEBAR: () =>
-          this.settings.update({ sidebarVisible: !this.settings.settings().sidebarVisible }),
+        TOGGLE_SIDEBAR: () => {
+          // in zen mode the sidebar is out of sight whatever the setting says: asking for it ends zen
+          if (this.zen()) {
+            this.zen.set(false);
+            this.settings.update({ sidebarVisible: true });
+          } else {
+            this.settings.update({ sidebarVisible: !this.settings.settings().sidebarVisible });
+          }
+        },
+        SPLIT_RIGHT: () => this.split('row'),
+        SPLIT_DOWN: () => this.split('column'),
+        MOVE_TAB_TO_OTHER_GROUP: withTab((id) => {
+          this.tabs.moveToOtherGroup(id);
+          this.focusFront();
+        }),
+        FOCUS_OTHER_GROUP: () => this.tabs.focusOtherGroup(),
+        UNSPLIT: () => {
+          this.tabs.unsplit();
+          this.focusFront();
+        },
+        TOGGLE_RESULT: () => {
+          const visible = this.settings.settings().resultVisible;
+          // a maximised result that is sent away gives the editor back
+          if (this.tabs.resultMaximized()) this.tabs.resultMaximized.set(false);
+          this.settings.update({ resultVisible: !visible });
+          if (visible) this.focusFront();
+        },
+        TOGGLE_RESULT_PLACEMENT: () =>
+          this.settings.update({
+            resultVisible: true,
+            resultPlacement:
+              this.settings.settings().resultPlacement === 'right' ? 'bottom' : 'right',
+          }),
+        MAXIMIZE_RESULT: () => {
+          const max = !this.tabs.resultMaximized();
+          this.tabs.resultMaximized.set(max);
+          // the focus must not stay in an editor that is out of sight
+          if (max) setTimeout(() => this.focusArea('result'));
+          else this.focusFront();
+        },
+        SIDEBAR_DATABASE: () => this.showSidebarView('database'),
+        SIDEBAR_HISTORY: () => this.showSidebarView('history'),
+        TOGGLE_ZEN: () => {
+          const zen = !this.zen();
+          this.zen.set(zen);
+          if (zen) {
+            this.ownNotice.set(
+              `Zen-Modus: nur die Abfragen.${this.actions.hint('TOGGLE_ZEN')} beendet ihn, die Befehlspalette${this.actions.hint('OPEN_PALETTE')} bleibt.`,
+            );
+            this.focusFront();
+          }
+        },
         COLOR_SCHEME: () => this.theme.pickerOpen.set(true),
         EDIT_COLOR_SCHEME: () => this.editCurrentScheme(),
         OPEN_PALETTE: () => this.paletteOpen.set(true),
@@ -731,6 +851,39 @@ export class App implements OnInit, OnDestroy {
       }),
     ];
     return () => offs.forEach((off) => off());
+  }
+
+  private split(direction: 'row' | 'column'): void {
+    this.tabs.split(direction);
+    this.focusFront();
+  }
+
+  /** The editor of the tab in front, once the page has followed a change of the layout. */
+  private focusFront(): void {
+    setTimeout(() => this.tabs.active()?.focus(), 50);
+  }
+
+  private showSidebarView(view: SidebarView): void {
+    this.zen.set(false);
+    this.settings.update({ sidebarVisible: true, sidebarView: view });
+    setTimeout(() => this.focusArea('sidebar'), 50);
+  }
+
+  /** The arrows of the view tabs of the sidebar (APG tabs, shown at once). */
+  protected onViewKey(event: KeyboardEvent): void {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const now = this.settings.settings().sidebarView;
+    const view: SidebarView =
+      event.key === 'Home'
+        ? 'database'
+        : event.key === 'End'
+          ? 'history'
+          : now === 'database'
+            ? 'history'
+            : 'database';
+    this.settings.update({ sidebarView: view });
+    setTimeout(() => document.getElementById(`view-${view}`)?.focus());
   }
 
   private async endTransaction(commit: boolean): Promise<void> {
@@ -811,17 +964,18 @@ export class App implements OnInit, OnDestroy {
 
   /** The areas that can take the focus right now, in their order on screen. */
   private areas(): Area[] {
-    return this.settings.settings().sidebarVisible
-      ? ['sidebar', 'editor', 'result']
-      : ['editor', 'result'];
+    const areas: Area[] = [];
+    if (this.sidebarShown()) areas.push('sidebar');
+    if (!this.tabs.resultMaximized()) areas.push('editor');
+    if (this.settings.settings().resultVisible || this.tabs.resultMaximized()) areas.push('result');
+    return areas;
   }
 
   /** The result area of the tab in front. */
   private results(): HTMLElement | null {
     return (
-      this.column()?.nativeElement.querySelector<HTMLElement>(
-        'app-query-pane:not(.hidden) .results',
-      ) ?? null
+      this.column()?.nativeElement.querySelector<HTMLElement>('app-query-pane.front .results') ??
+      null
     );
   }
 
@@ -836,16 +990,24 @@ export class App implements OnInit, OnDestroy {
 
   private focusArea(area: Area): void {
     if (area === 'editor') {
-      this.tabs.active()?.focus();
+      this.tabs.resultMaximized.set(false);
+      this.focusFront();
     } else if (area === 'sidebar') {
-      if (!this.settings.settings().sidebarVisible) {
+      const first = '#sidebar-view :is(button, input, [tabindex="0"])';
+      if (!this.sidebarShown()) {
+        this.zen.set(false);
         this.settings.update({ sidebarVisible: true });
         // the sidebar is drawn with the next change detection
-        setTimeout(() => this.sidebar()?.nativeElement.querySelector('button')?.focus());
+        setTimeout(() => this.sidebar()?.nativeElement.querySelector<HTMLElement>(first)?.focus());
         return;
       }
-      this.sidebar()?.nativeElement.querySelector('button')?.focus();
+      this.sidebar()?.nativeElement.querySelector<HTMLElement>(first)?.focus();
     } else {
+      if (!this.settings.settings().resultVisible && !this.tabs.resultMaximized()) {
+        this.settings.update({ resultVisible: true });
+        setTimeout(() => this.focusArea('result'));
+        return;
+      }
       const host = this.results();
       const grid = host?.querySelector<HTMLElement>('.ge-table [tabindex], .ge-table');
       (grid ?? host)?.focus();

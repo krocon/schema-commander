@@ -138,4 +138,46 @@ describe('TabBar', () => {
     fixture.detectChanges();
     expect(tabs()[0].querySelector('.dirty')).toBeNull();
   });
+
+  it('shows the tabs of its group and moves a dragged tab into it', async () => {
+    const { fixture, store, el, tabs } = await open();
+    store.split('row');
+    // tab-1 is in the second group now and has the focus
+    fixture.componentRef.setInput('group', 1);
+    fixture.detectChanges();
+    expect(tabs().map((t) => t.dataset['id'])).toEqual(['tab-1']);
+    expect(el.querySelector('[role=tablist]')?.getAttribute('aria-label')).toBe(
+      'Abfragen, Gruppe 2',
+    );
+    expect(el.classList.contains('focused')).toBe(true);
+    // a tab of the other strip is dropped behind the last tab of this one
+    store.dragged = 'tab-3';
+    el.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+    expect(tabs().map((t) => t.dataset['id'])).toEqual(['tab-1', 'tab-3']);
+    expect(store.dragged).toBeNull();
+    // the strip of the group without the focus steps back
+    store.activate('tab-2');
+    fixture.detectChanges();
+    expect(el.classList.contains('unfocused')).toBe(true);
+    expect(tabs().find((t) => t.getAttribute('aria-selected') === 'true')?.dataset['id']).toBe(
+      'tab-3',
+    );
+  });
+
+  it('offers the other group in the menu of a tab', async () => {
+    const { fixture, store, el, tabs, settle } = await open();
+    tabs()[1].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+    await settle();
+    const item = () =>
+      [...el.querySelectorAll<HTMLButtonElement>('.menu [role=menuitem]')].find((b) =>
+        /teilen|andere Gruppe/.test(b.textContent ?? ''),
+      );
+    expect(item()?.textContent).toContain('Nach rechts teilen');
+    item()?.click();
+    fixture.detectChanges();
+    expect(store.isSplit()).toBe(true);
+    expect(store.groups()[1].map((t) => t.id)).toEqual(['tab-2']);
+  });
 });

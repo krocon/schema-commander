@@ -8,6 +8,13 @@ export interface Settings {
   readonly sidebarWidth: number;
   /** Height of the result area, px. */
   readonly resultHeight: number;
+  /** Where the result of a tab lies (prompt 016): under the editor or beside it. For all tabs. */
+  readonly resultPlacement: ResultPlacement;
+  /** Width of the result area when it lies beside the editor, px. */
+  readonly resultWidth: number;
+  readonly resultVisible: boolean;
+  /** What the sidebar shows. */
+  readonly sidebarView: SidebarView;
   /** Own shortcuts (prompt 002): only the actions that differ from the default keymap, `[]` = none. */
   readonly keymap: KeymapSetting;
   /** The connection statements run on (prompt 003); unknown ids fall back to the demo database. */
@@ -48,6 +55,9 @@ export interface Settings {
   readonly recentActions: readonly string[];
 }
 
+export type ResultPlacement = 'bottom' | 'right';
+export type SidebarView = 'database' | 'history';
+
 export const KEYMAP_VERSION = 1;
 export const MAX_RECENT_ACTIONS = 12;
 
@@ -61,6 +71,10 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarVisible: true,
   sidebarWidth: 240,
   resultHeight: 300,
+  resultPlacement: 'bottom',
+  resultWidth: 480,
+  resultVisible: true,
+  sidebarView: 'database',
   keymap: { version: KEYMAP_VERSION, bindings: {} },
   recentActions: [],
   activeConnection: 'demo',
@@ -105,6 +119,11 @@ export function mergeSettings(saved: unknown): Settings {
         : DEFAULT_SETTINGS.sidebarVisible,
     sidebarWidth: size(s['sidebarWidth'], DEFAULT_SETTINGS.sidebarWidth),
     resultHeight: size(s['resultHeight'], DEFAULT_SETTINGS.resultHeight),
+    resultPlacement: s['resultPlacement'] === 'right' ? 'right' : 'bottom',
+    resultWidth: size(s['resultWidth'], DEFAULT_SETTINGS.resultWidth),
+    resultVisible:
+      typeof s['resultVisible'] === 'boolean' ? s['resultVisible'] : DEFAULT_SETTINGS.resultVisible,
+    sidebarView: s['sidebarView'] === 'history' ? 'history' : 'database',
     keymap: mergeKeymap(s['keymap']).keymap,
     recentActions: recent(s['recentActions']),
     stopOnError:

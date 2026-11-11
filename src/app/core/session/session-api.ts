@@ -12,6 +12,11 @@ export interface TabMeta {
   readonly filePath: string | null;
   /** The encoding of that file (`utf-8`, `utf-8-bom`, `utf-16le`, `utf-16be`, `windows-1252`). */
   readonly encoding: string | null;
+  /** The tab group it is in while the view is split: 0 or 1 (prompt 016). */
+  readonly group?: number;
+  /** Where the caret was: line and column from 1; 0 or missing = unknown. */
+  readonly caretLine?: number;
+  readonly caretCh?: number;
 }
 
 /** Mirrors `SessionFile`. */
@@ -19,6 +24,10 @@ export interface SessionFile {
   readonly version: number;
   readonly tabs: readonly TabMeta[];
   readonly active: string | null;
+  /** The tab the other group of a split view shows. */
+  readonly other?: string | null;
+  /** How a split view lies: `row` (side by side) or `column`. */
+  readonly split?: string;
 }
 
 /** Mirrors `LoadedSession`. */

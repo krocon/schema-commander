@@ -68,10 +68,41 @@
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   overflow: hidden;
   background: var(--bg-panel);
   padding: 8px;
+}
+
+/* what the sidebar shows (prompt 016): a tab list on top, its panel below */
+.sidebar .views {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar .views button {
+  width: auto;
+  flex: 1 1 0;
+  padding: 3px 8px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.sidebar .views button[aria-selected='true'] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.sidebar .view {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 /* the connections take what they need, up to a part of the height; the schema tree gets the rest */
@@ -101,16 +132,63 @@
   text-align: left;
 }
 
+/* The tabs: one group, or two side by side or stacked (prompt 016). A grid, so a pane changes its group by
+   changing its cell and stays the element it is. */
 .column {
   flex: 1 1 0;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.column > app-tab-bar {
+  grid-area: 1 / 1;
 }
 
 .pane {
-  flex: 1 1 0;
+  grid-area: 2 / 1;
+  min-width: 0;
   min-height: 0;
+  overflow: hidden;
+}
+
+.column.split {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.column.split > app-tab-bar.g1 {
+  grid-area: 1 / 2;
+}
+
+.column.split > .pane.g1 {
+  grid-area: 2 / 2;
+}
+
+.column.split > .g1 {
+  border-left: 1px solid var(--border);
+}
+
+.column.split.stacked {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.column.split.stacked > app-tab-bar.g1 {
+  grid-area: 3 / 1;
+}
+
+.column.split.stacked > .pane.g1 {
+  grid-area: 4 / 1;
+}
+
+.column.split.stacked > .g1 {
+  border-left: 0;
+}
+
+.column.split.stacked > app-tab-bar.g1 {
+  border-top: 1px solid var(--border);
 }
 
 /* kept in the page (editor state survives), out of sight and out of the tab order (`inert`) */
