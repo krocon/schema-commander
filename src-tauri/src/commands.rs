@@ -61,6 +61,81 @@ pub fn test_connection(
     )
 }
 
+/// A connection from what the user pasted (prompt 015): a URL, a JDBC URL, an ADO string or the path of an
+/// SQLite file. The password of the URL comes back for the password field of the dialog – it reaches the
+/// keychain only when the profile is stored with it, never the profile itself.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UrlDraft {
+    profile: Profile,
+    password: Option<String>,
+    problem: Option<String>,
+}
+
+#[tauri::command(async)]
+pub fn parse_connection_url(text: String) -> AppResult<UrlDraft> {
+    let found = crate::db::import::parse_url(&text)?;
+    Ok(UrlDraft {
+        profile: found.profile,
+        password: found.password.map(|s| s.expose().to_string()),
+        problem: found.problem,
+    })
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportPreview {
+    /// The file that was read; `None` for the environment.
+    path: Option<String>,
+    items: Vec<crate::db::manager::ImportItem>,
+}
+
+/// The file of a source: the one given (from the open dialog), else its usual place.
+fn import_path(source: crate::db::import::Source, path: Option<String>) -> Option<PathBuf> {
+    path.map(PathBuf::from).or_else(|| {
+        crate::ssh::ssh_config::home_dir()
+            .and_then(|home| crate::db::import::default_path(source, &home))
+    })
+}
+
+/// The connections another tool keeps, for the preview. Passwords stay in the backend.
+#[tauri::command(async)]
+pub fn import_preview(
+    manager: State<'_, ConnectionManager>,
+    source: crate::db::import::Source,
+    path: Option<String>,
+) -> AppResult<ImportPreview> {
+    let path = import_path(source, path);
+    let items = manager.import_preview(source, path.as_deref())?;
+    Ok(ImportPreview {
+        path: path.map(|p| p.display().to_string()),
+        items,
+    })
+}
+
+/// Stores the ticked connections of a source; returns them with their ids.
+#[tauri::command(async)]
+pub fn import_connections(
+    manager: State<'_, ConnectionManager>,
+    source: crate::db::import::Source,
+    path: Option<String>,
+    picks: Vec<crate::db::manager::ImportPick>,
+) -> AppResult<Vec<Profile>> {
+    let path = import_path(source, path);
+    manager.import_selected(source, path.as_deref(), &picks)
+}
+
+/// Writes the stored profiles to a file (from the save dialog) for another machine – without secrets.
+#[tauri::command(async)]
+pub fn export_connections(manager: State<'_, ConnectionManager>, path: String) -> AppResult<()> {
+    let path = PathBuf::from(path);
+    if !path.is_absolute() {
+        return Err(AppError::new(ErrorCode::Io, "the target is no full path"));
+    }
+    std::fs::write(&path, manager.export_profiles()?)
+        .map_err(|e| AppError::new(ErrorCode::Io, format!("the file could not be written: {e}")))
+}
+
 /// The hosts of `~/.ssh/config`, to fill in a jump host (prompt 014). Nothing in the file is ever run.
 #[tauri::command(async)]
 pub fn ssh_config_hosts() -> Vec<crate::ssh::ssh_config::HostConfig> {

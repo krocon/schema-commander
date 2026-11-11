@@ -21,6 +21,7 @@ const SHOW_FALLBACK: std::time::Duration = std::time::Duration::from_secs(1);
 pub fn run() {
     // The PostgreSQL driver reads libpq's environment variables (password, options, certificates). A
     // connection is what its profile says, nothing else (review 014 L1). Before any thread exists.
+    db::import::capture_environment();
     for name in [
         "PGHOST",
         "PGHOSTADDR",
@@ -88,6 +89,10 @@ pub fn run() {
             commands::run_query,
             commands::cancel_query,
             commands::ssh_config_hosts,
+            commands::parse_connection_url,
+            commands::import_preview,
+            commands::import_connections,
+            commands::export_connections,
             commands::end_transaction,
             commands::tx_state,
             commands::close_session,

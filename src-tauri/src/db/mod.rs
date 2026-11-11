@@ -5,6 +5,7 @@
 //! Rust, TLS over rustls with the roots of the OS.
 
 pub mod guard;
+pub mod import;
 pub mod manager;
 pub mod meta;
 pub mod mssql;
@@ -67,6 +68,11 @@ pub enum TlsMode {
 }
 
 impl TlsMode {
+    /// A CA file is given but this mode would not check against it (a profile must not hold both).
+    pub fn unchecked_ca_conflict(self, ca_file: &str) -> bool {
+        !ca_file.trim().is_empty() && !matches!(self, TlsMode::VerifyCa | TlsMode::Verify)
+    }
+
     /// TLS without a check of the certificate: shown as such wherever the connection is shown.
     pub fn unchecked(self) -> bool {
         matches!(self, TlsMode::Prefer | TlsMode::Require)
