@@ -1742,3 +1742,215 @@ fn every_server_binds_values() {
         run(&mut s, "DROP TABLE sc_bind");
     }
 }
+
+// --- foreign keys (prompt 030) ---------------------------------------------------------------------
+
+use schema_commander_lib::db::filter::{self, KeyColumn, KeySet, TableQuery, ValueKind};
+use schema_commander_lib::db::relations::{ForeignKey, relations};
+
+fn key_line(k: &ForeignKey) -> String {
+    format!(
+        "{}.{}({}) -> {}.{}({})",
+        k.schema,
+        k.table,
+        k.columns.join(","),
+        k.ref_schema,
+        k.ref_table,
+        k.ref_columns.join(",")
+    )
+}
+
+fn key_lines(keys: &[ForeignKey]) -> Vec<String> {
+    let mut lines: Vec<String> = keys.iter().map(key_line).collect();
+    lines.sort();
+    lines
+}
+
+/// The same tables on every server: a key over two columns, a key into another schema, a table that
+/// points to itself. Then the rows are followed with the statements the app builds – values bound.
+#[test]
+#[ignore]
+fn every_server_knows_its_foreign_keys_and_follows_them() {
+    let cases: Vec<(Profile, Vec<&str>, [&str; 2])> = vec![
+        (
+            pg(),
+            vec![
+                "DROP SCHEMA IF EXISTS sc_fk_a CASCADE",
+                "DROP SCHEMA IF EXISTS sc_fk_b CASCADE",
+                "CREATE SCHEMA sc_fk_a",
+                "CREATE SCHEMA sc_fk_b",
+            ],
+            ["int", "varchar(10)"],
+        ),
+        (
+            my(),
+            vec![
+                "DROP DATABASE IF EXISTS sc_fk_a",
+                "DROP DATABASE IF EXISTS sc_fk_b",
+                "CREATE DATABASE sc_fk_a",
+                "CREATE DATABASE sc_fk_b",
+            ],
+            ["int", "varchar(10)"],
+        ),
+        (
+            maria(),
+            vec![
+                "DROP DATABASE IF EXISTS sc_fk_a",
+                "DROP DATABASE IF EXISTS sc_fk_b",
+                "CREATE DATABASE sc_fk_a",
+                "CREATE DATABASE sc_fk_b",
+            ],
+            ["int", "varchar(10)"],
+        ),
+        (
+            ms(),
+            vec![
+                "IF OBJECT_ID('sc_fk_a.line') IS NOT NULL DROP TABLE sc_fk_a.line",
+                "IF OBJECT_ID('sc_fk_a.person') IS NOT NULL DROP TABLE sc_fk_a.person",
+                "IF OBJECT_ID('sc_fk_a.stock') IS NOT NULL DROP TABLE sc_fk_a.stock",
+                "IF OBJECT_ID('sc_fk_b.country') IS NOT NULL DROP TABLE sc_fk_b.country",
+                "IF SCHEMA_ID('sc_fk_a') IS NULL EXEC('CREATE SCHEMA sc_fk_a')",
+                "IF SCHEMA_ID('sc_fk_b') IS NULL EXEC('CREATE SCHEMA sc_fk_b')",
+            ],
+            ["int", "varchar(10)"],
+        ),
+    ];
+    for (p, setup, [int, text]) in cases {
+        let kind = p.kind;
+        let mut s = open(&p);
+        for sql in setup {
+            run(&mut s, sql);
+        }
+        for sql in [
+            format!("CREATE TABLE sc_fk_b.country (code {text} NOT NULL PRIMARY KEY, name {text})"),
+            format!(
+                "CREATE TABLE sc_fk_a.stock (warehouse {int} NOT NULL, item {text} NOT NULL, qty {int}, \
+                 PRIMARY KEY (warehouse, item))"
+            ),
+            format!(
+                "CREATE TABLE sc_fk_a.person (id {int} NOT NULL PRIMARY KEY, boss_id {int}, country {text}, \
+                 CONSTRAINT person_boss FOREIGN KEY (boss_id) REFERENCES sc_fk_a.person (id), \
+                 CONSTRAINT person_country FOREIGN KEY (country) REFERENCES sc_fk_b.country (code))"
+            ),
+            // the columns of the key in another order than those of the table
+            format!(
+                "CREATE TABLE sc_fk_a.line (id {int} NOT NULL PRIMARY KEY, item {text}, warehouse {int}, \
+                 CONSTRAINT line_stock FOREIGN KEY (warehouse, item) \
+                 REFERENCES sc_fk_a.stock (warehouse, item))"
+            ),
+            "INSERT INTO sc_fk_b.country VALUES ('DE', 'x'), ('FR', 'y')".to_string(),
+            "INSERT INTO sc_fk_a.stock VALUES (1, 'A', 5), (1, 'B', 0), (2, 'A', 9)".to_string(),
+            "INSERT INTO sc_fk_a.person VALUES (1, NULL, 'DE'), (2, 1, 'DE'), (3, 1, NULL), (4, 2, 'FR')"
+                .to_string(),
+            "INSERT INTO sc_fk_a.line VALUES (10, 'A', 1), (11, 'A', 2), (12, 'B', 1), (13, NULL, 1)"
+                .to_string(),
+        ] {
+            run(&mut s, &sql);
+        }
+        let stop = &|| false;
+        let person = relations(s.as_mut(), kind, "sc_fk_a", "person", stop).unwrap();
+        assert_eq!(
+            key_lines(&person.outgoing),
+            [
+                "sc_fk_a.person(boss_id) -> sc_fk_a.person(id)",
+                "sc_fk_a.person(country) -> sc_fk_b.country(code)"
+            ],
+            "{kind:?}"
+        );
+        // the table points to itself: the key is also one that points to it
+        assert_eq!(
+            key_lines(&person.incoming),
+            ["sc_fk_a.person(boss_id) -> sc_fk_a.person(id)"],
+            "{kind:?}"
+        );
+        let country = relations(s.as_mut(), kind, "sc_fk_b", "country", stop).unwrap();
+        assert!(country.outgoing.is_empty(), "{kind:?}");
+        assert_eq!(
+            key_lines(&country.incoming),
+            ["sc_fk_a.person(country) -> sc_fk_b.country(code)"],
+            "{kind:?}"
+        );
+        // a key over two columns keeps the order of the key
+        let line = relations(s.as_mut(), kind, "sc_fk_a", "line", stop).unwrap();
+        assert_eq!(
+            key_lines(&line.outgoing),
+            ["sc_fk_a.line(warehouse,item) -> sc_fk_a.stock(warehouse,item)"],
+            "{kind:?}"
+        );
+        let none = relations(s.as_mut(), kind, "sc_fk_a", "no_such_table", stop).unwrap();
+        assert!(
+            none.outgoing.is_empty() && none.incoming.is_empty(),
+            "{kind:?}"
+        );
+
+        // following: the statements the app builds, with every value bound
+        let column = |name: &str, number: bool| KeyColumn {
+            column: name.into(),
+            kind: if number {
+                ValueKind::Number
+            } else {
+                ValueKind::Text
+            },
+            type_name: if number {
+                "int4".into()
+            } else {
+                "varchar".into()
+            },
+        };
+        let follow =
+            |s: &mut Box<dyn Session>, table: &str, schema: &str, keys: KeySet, count: bool| {
+                let q = TableQuery {
+                    schema: Some(schema.into()),
+                    table: table.into(),
+                    keys: Some(keys),
+                    count,
+                    ..TableQuery::default()
+                };
+                let built = filter::build(kind, &q).unwrap();
+                bound(s, &built.sql, &built.params)
+            };
+        // forward over the composite key: the lines (1,A) and (2,A) → two rows of stock
+        let stock = follow(
+            &mut s,
+            "stock",
+            "sc_fk_a",
+            KeySet {
+                columns: vec![column("warehouse", true), column("item", false)],
+                rows: vec![vec!["1".into(), "A".into()], vec!["2".into(), "A".into()]],
+            },
+            false,
+        );
+        assert_eq!(stock.rows.len(), 2, "{kind:?}");
+        // backward to itself: who has person 1 as boss – and counted
+        let team = follow(
+            &mut s,
+            "person",
+            "sc_fk_a",
+            KeySet {
+                columns: vec![column("boss_id", true)],
+                rows: vec![vec!["1".into()]],
+            },
+            true,
+        );
+        assert_eq!(rows(&team), json!([[2]]), "{kind:?}");
+        // into the other schema, with a value that looks like SQL: bound, it finds nothing and harms nothing
+        let evil = follow(
+            &mut s,
+            "country",
+            "sc_fk_b",
+            KeySet {
+                columns: vec![column("code", false)],
+                rows: vec![
+                    vec!["DE".into()],
+                    vec!["'; DROP TABLE sc_fk_b.country; --".into()],
+                ],
+            },
+            false,
+        );
+        assert_eq!(evil.rows.len(), 1, "{kind:?}");
+        assert_eq!(
+            rows(&run(&mut s, "SELECT COUNT(*) FROM sc_fk_b.country")),
+            json!([[2]])
+        );
+    }
+}

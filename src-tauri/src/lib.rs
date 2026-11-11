@@ -133,6 +133,7 @@ pub fn run() {
             commands::meta_schemas,
             commands::meta_objects,
             commands::meta_table,
+            commands::meta_relations,
             commands::meta_details,
             commands::names_refresh,
             commands::names_query,

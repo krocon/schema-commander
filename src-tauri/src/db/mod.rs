@@ -15,6 +15,7 @@ pub mod mysql;
 pub mod names;
 pub mod pg;
 pub mod profiles;
+pub mod relations;
 pub mod secrets;
 pub mod sqlite;
 pub mod value;
