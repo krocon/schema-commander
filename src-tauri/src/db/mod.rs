@@ -11,6 +11,7 @@ pub mod manager;
 pub mod meta;
 pub mod mssql;
 pub mod mysql;
+pub mod names;
 pub mod pg;
 pub mod profiles;
 pub mod secrets;

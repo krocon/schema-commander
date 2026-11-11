@@ -172,8 +172,84 @@ pub fn open_connection(
 }
 
 #[tauri::command(async)]
-pub fn close_connection(manager: State<'_, ConnectionManager>, id: String) {
+pub fn close_connection(
+    manager: State<'_, ConnectionManager>,
+    names: State<'_, NameIndexes>,
+    id: String,
+) {
     manager.close(&id);
+    names.map.lock().remove(&id);
+}
+
+/// The name indexes of the open connections (prompt 020): each is read once and searched in memory.
+#[derive(Default)]
+pub struct NameIndexes {
+    map: parking_lot::Mutex<
+        std::collections::HashMap<
+            String,
+            std::sync::Arc<parking_lot::RwLock<crate::db::names::NameIndex>>,
+        >,
+    >,
+}
+
+/// Reads the names of a connection again (after it opened, after DDL). Answers with how many there are.
+/// The columns are dropped with the old index and read again when they are asked for.
+#[tauri::command(async)]
+pub fn names_refresh(
+    manager: State<'_, ConnectionManager>,
+    names: State<'_, NameIndexes>,
+    id: String,
+) -> AppResult<usize> {
+    let index = manager.ask(&id, |s, kind, stop| {
+        crate::db::names::read_objects(s, kind, stop)
+    })?;
+    let count = index.entries.len();
+    names
+        .map
+        .lock()
+        .insert(id, std::sync::Arc::new(parking_lot::RwLock::new(index)));
+    Ok(count)
+}
+
+/// Searches the names of a connection. The index is read on the first search if it is not there yet, the
+/// columns on the first search for columns (`c:`); from then on a search touches no database.
+#[tauri::command(async)]
+pub fn names_query(
+    manager: State<'_, ConnectionManager>,
+    names: State<'_, NameIndexes>,
+    id: String,
+    query: String,
+    context: Option<crate::db::names::Context>,
+) -> AppResult<crate::db::names::NameHits> {
+    use crate::db::names;
+    let kind = manager.kind_of(&id)?;
+    let known = names.map.lock().get(&id).cloned();
+    let index = match known {
+        Some(index) => index,
+        None => {
+            let read = manager.ask(&id, |s, kind, stop| names::read_objects(s, kind, stop))?;
+            let index = std::sync::Arc::new(parking_lot::RwLock::new(read));
+            names.map.lock().insert(id.clone(), index.clone());
+            index
+        }
+    };
+    let wants_columns = names::parse(&query)
+        .kinds
+        .is_some_and(|k| k.contains(&names::NameKind::Column));
+    if wants_columns && !index.read().columns {
+        let mut index = index.write();
+        if !index.columns {
+            manager.ask(&id, |s, kind, stop| {
+                names::read_columns(s, kind, &mut index, stop)
+            })?;
+        }
+    }
+    Ok(names::search(
+        &index.read(),
+        &query,
+        &context.unwrap_or_default(),
+        kind,
+    ))
 }
 
 /// What `run_query` reports while it runs, over its channel.

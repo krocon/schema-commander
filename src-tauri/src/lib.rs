@@ -72,6 +72,7 @@ pub fn run() {
             app.manage(results::ResultStore::new(&app.path().app_cache_dir()?));
             app.manage(commands::ClipState::default());
             app.manage(commands::MenuState::default());
+            app.manage(commands::NameIndexes::default());
             app.manage(commands::Jobs::default());
             app.manage(history::History::new(app.path().app_data_dir()?));
             // A frontend that never applies a scheme must not leave the window hidden.
@@ -117,6 +118,8 @@ pub fn run() {
             commands::meta_objects,
             commands::meta_table,
             commands::meta_details,
+            commands::names_refresh,
+            commands::names_query,
             commands::meta_search,
             commands::result_window,
             commands::free_results,

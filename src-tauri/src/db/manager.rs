@@ -150,6 +150,11 @@ impl ConnectionManager {
         }
     }
 
+    /// The kind of database a profile connects to.
+    pub fn kind_of(&self, id: &str) -> AppResult<DbKind> {
+        Ok(self.find(id)?.kind)
+    }
+
     fn find(&self, id: &str) -> AppResult<Profile> {
         if id == "demo" {
             return Ok(sqlite::demo_profile());
