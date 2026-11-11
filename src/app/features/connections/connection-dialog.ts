@@ -190,7 +190,7 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                 keine (nur für Server auf diesem Rechner)
               </option>
             </select>
-            @if (draft().tls !== 'off') {
+            @if (draft().tls === 'verify-ca' || draft().tls === 'verify') {
               <label for="conn-ca">CA-Datei</label>
               <span class="row">
                 <input
@@ -198,41 +198,42 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                   id="conn-ca"
                   type="text"
                   spellcheck="false"
-                  placeholder="(Zertifikate des Systems)"
+                  placeholder="(nur die Zertifikate des Systems)"
+                  title="Gilt zusätzlich zu den Zertifikaten des Systems, nicht an ihrer Stelle"
                   [value]="draft().caFile"
                   (input)="patch({ caFile: ca.value })"
                 />
                 <button type="button" (click)="choosePem('caFile')">Wählen …</button>
               </span>
-              @if (draft().kind !== 'sqlserver') {
-                <label for="conn-cert">Client-Zertifikat</label>
-                <span class="row">
-                  <input
-                    #cert
-                    id="conn-cert"
-                    type="text"
-                    spellcheck="false"
-                    placeholder="(keines)"
-                    [value]="draft().clientCert"
-                    (input)="patch({ clientCert: cert.value })"
-                  />
-                  <button type="button" (click)="choosePem('clientCert')">Wählen …</button>
-                </span>
-                <label for="conn-key">Client-Schlüssel</label>
-                <span class="row">
-                  <input
-                    #key
-                    id="conn-key"
-                    type="text"
-                    spellcheck="false"
-                    placeholder="(keiner)"
-                    [value]="draft().clientKey"
-                    [class.invalid]="shown('clientKey')"
-                    (input)="patch({ clientKey: key.value })"
-                  />
-                  <button type="button" (click)="choosePem('clientKey')">Wählen …</button>
-                </span>
-              }
+            }
+            @if (draft().tls !== 'off' && draft().kind !== 'sqlserver') {
+              <label for="conn-cert">Client-Zertifikat</label>
+              <span class="row">
+                <input
+                  #cert
+                  id="conn-cert"
+                  type="text"
+                  spellcheck="false"
+                  placeholder="(keines)"
+                  [value]="draft().clientCert"
+                  (input)="patch({ clientCert: cert.value })"
+                />
+                <button type="button" (click)="choosePem('clientCert')">Wählen …</button>
+              </span>
+              <label for="conn-key">Client-Schlüssel</label>
+              <span class="row">
+                <input
+                  #key
+                  id="conn-key"
+                  type="text"
+                  spellcheck="false"
+                  placeholder="(keiner)"
+                  [value]="draft().clientKey"
+                  [class.invalid]="shown('clientKey')"
+                  (input)="patch({ clientKey: key.value })"
+                />
+                <button type="button" (click)="choosePem('clientKey')">Wählen …</button>
+              </span>
             }
 
             <span id="conn-ssh-label">SSH-Tunnel</span>

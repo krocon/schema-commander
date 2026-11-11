@@ -97,6 +97,12 @@ describe('TLS and SSH in a profile', () => {
     ).toBeDefined();
   });
 
+  it('takes a CA file only where the certificate is checked', () => {
+    expect(profileProblems({ ...base, tls: 'require', caFile: '/ca.pem' }).tls).toBeDefined();
+    expect(profileProblems({ ...base, tls: 'verify-ca', caFile: '/ca.pem' })).toEqual({});
+    expect(profileProblems({ ...base, tls: 'verify', caFile: '/ca.pem' })).toEqual({});
+  });
+
   it('names the stage an error belongs to', () => {
     expect(stageOf('ssh_secret_required')).toBe('SSH-Tunnel: ');
     expect(stageOf('host_key_changed')).toBe('SSH-Tunnel: ');

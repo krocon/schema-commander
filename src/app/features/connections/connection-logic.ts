@@ -85,6 +85,10 @@ export function profileProblems(p: Profile): Partial<Record<Field, string>> {
   if (!p.clientCert.trim() !== !p.clientKey.trim()) {
     out.clientKey = 'Client-Zertifikat und Client-Schlüssel gehören zusammen.';
   }
+  if (p.caFile.trim() && p.tls !== 'verify-ca' && p.tls !== 'verify') {
+    out.tls =
+      'Eine CA-Datei wirkt nur, wenn das Zertifikat geprüft wird: einen prüfenden Modus wählen.';
+  }
   if (p.ssh) {
     const sshHost = p.ssh.host.trim();
     if (!sshHost || !/^[A-Za-z0-9._:[\]%-]{1,253}$/.test(sshHost)) {

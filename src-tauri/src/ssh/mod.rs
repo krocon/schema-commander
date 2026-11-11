@@ -16,12 +16,17 @@ use russh::keys::PublicKey;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use trust::{HostKeyCheck, KnownHosts, fingerprint};
 
 /// Connecting and logging in at most.
 pub const SSH_TIMEOUT: Duration = Duration::from_secs(20);
+/// A connection announced with [`Tunnel::permit`] must arrive within this time; then the permit is void
+/// (review 014 M5: a connect that failed before it reached the port leaves no open door).
+pub const PERMIT_TTL: Duration = Duration::from_secs(10);
+
+type Permits = Arc<Mutex<std::collections::VecDeque<std::time::Instant>>>;
+
 /// Keys of the agent that are offered at most (a server counts every offer as a failed login).
 pub const MAX_AGENT_TRIES: usize = 6;
 
@@ -418,7 +423,7 @@ pub struct Tunnel {
     port: u16,
     /// Connections the listener may still take: one per [`Tunnel::permit`]. Anything else that finds
     /// the port is hung up on.
-    permits: Arc<AtomicUsize>,
+    permits: Permits,
     task: tokio::task::JoinHandle<()>,
     handle: Arc<russh::client::Handle<Client>>,
 }
@@ -431,7 +436,9 @@ impl Tunnel {
 
     /// Lets the next connection to the local port through. Called right before a driver connects.
     pub fn permit(&self) {
-        self.permits.fetch_add(1, Ordering::SeqCst);
+        self.permits
+            .lock()
+            .push_back(std::time::Instant::now() + PERMIT_TTL);
     }
 
     /// Whether the SSH connection still stands.
@@ -622,7 +629,7 @@ pub fn open(
         });
     }
     let handle = Arc::new(handle);
-    let permits = Arc::new(AtomicUsize::new(0));
+    let permits: Permits = Arc::new(Mutex::new(std::collections::VecDeque::new()));
     // Only this machine can reach the listener, and it takes only connections we announced.
     let listener = crate::db::runtime()
         .block_on(tokio::net::TcpListener::bind(("127.0.0.1", 0)))
@@ -650,7 +657,7 @@ pub fn open(
 async fn forward(
     listener: tokio::net::TcpListener,
     handle: Arc<russh::client::Handle<Client>>,
-    permits: Arc<AtomicUsize>,
+    permits: Permits,
     db_host: String,
     db_port: u16,
 ) {
@@ -658,11 +665,15 @@ async fn forward(
         let Ok((mut socket, peer)) = listener.accept().await else {
             return;
         };
-        // a connection nobody announced: another program found the port
-        #[allow(deprecated)] // `try_update` is newer than the oldest Rust we build with
-        let allowed = permits
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
-            .is_ok();
+        // a connection nobody announced, or announced too long ago: another program found the port
+        let allowed = {
+            let mut permits = permits.lock();
+            let now = std::time::Instant::now();
+            while permits.front().is_some_and(|until| *until < now) {
+                permits.pop_front();
+            }
+            permits.pop_front().is_some()
+        };
         if !allowed || !peer.ip().is_loopback() {
             continue;
         }
@@ -685,6 +696,7 @@ async fn forward(
 mod tests {
     use super::*;
     use std::io::{Read, Write};
+    use std::sync::atomic::Ordering;
     use tempfile::tempdir;
 
     /// A TCP server that answers every line with `echo: <line>` – the "database" behind the tunnel.
@@ -914,6 +926,31 @@ mod tests {
         drop(tunnel);
         std::thread::sleep(Duration::from_millis(100));
         assert!(std::net::TcpStream::connect(("127.0.0.1", port)).is_err());
+    }
+
+    #[test]
+    fn a_permit_that_is_not_used_in_time_is_void() {
+        let dir = tempdir().unwrap();
+        let server = testserver::start(6, None).unwrap();
+        let creds = trusted(&server, dir.path(), SshAuth::Password);
+        let echo = echo_server();
+        let t = target(server.port, SshAuth::Password);
+        let tunnel = open(&t, "127.0.0.1", echo, &known(dir.path()), &creds).unwrap();
+        // announced long ago: as if the driver never came
+        tunnel
+            .permits
+            .lock()
+            .push_back(std::time::Instant::now() - Duration::from_secs(1));
+        let late = ask(tunnel.port(), "late\n");
+        assert!(matches!(late.as_deref(), Err(_) | Ok("")), "{late:?}");
+        assert_eq!(server.counters.tunnels.load(Ordering::SeqCst), 0);
+        // a fresh one still works behind the stale one
+        tunnel
+            .permits
+            .lock()
+            .push_back(std::time::Instant::now() - Duration::from_secs(1));
+        tunnel.permit();
+        assert_eq!(ask(tunnel.port(), "now\n").unwrap(), "echo: now\n");
     }
 
     #[test]

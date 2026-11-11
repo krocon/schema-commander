@@ -77,6 +77,9 @@ pub fn check(p: &Profile) -> AppResult<()> {
         }
     }
     if p.kind == DbKind::Sqlite {
+        if p.ssh.is_some() {
+            return Err(invalid("a database file has no SSH tunnel"));
+        }
         if p.database.trim().is_empty() {
             return Err(invalid("the path of the database file is missing"));
         }
@@ -101,10 +104,19 @@ pub fn check(p: &Profile) -> AppResult<()> {
             "client certificates are not supported for SQL Server",
         ));
     }
-    if (!p.ca_file.trim().is_empty() || !p.client_cert.trim().is_empty())
-        && matches!(p.tls, crate::db::TlsMode::Off)
+    if !p.client_cert.trim().is_empty() && matches!(p.tls, crate::db::TlsMode::Off) {
+        return Err(invalid("a client certificate is given, but TLS is off"));
+    }
+    // a CA nobody checks against would only look like safety (review 014 M3)
+    if !p.ca_file.trim().is_empty()
+        && !matches!(
+            p.tls,
+            crate::db::TlsMode::VerifyCa | crate::db::TlsMode::Verify
+        )
     {
-        return Err(invalid("certificates are given, but TLS is off"));
+        return Err(invalid(
+            "a CA file is given, but this TLS mode does not check the certificate",
+        ));
     }
     if let Some(ssh) = &p.ssh {
         if !host_ok(&ssh.host) {
@@ -285,6 +297,91 @@ mod tests {
             client_key: String::new(),
             ssh: None,
         }
+    }
+
+    #[test]
+    fn checks_tls_files_and_the_jump_host() {
+        use crate::db::TlsMode;
+        use crate::ssh::{SshAuth, SshTarget};
+        let base = || {
+            let mut p = crate::db::tests::profile(DbKind::Postgres);
+            p.host = "db.example".into();
+            p
+        };
+        let code = |p: &Profile| check(p).err().map(|e| e.message);
+        // a CA file only where the certificate is checked (review 014 M3)
+        for (mode, ok) in [
+            (TlsMode::Off, false),
+            (TlsMode::Prefer, false),
+            (TlsMode::Require, false),
+            (TlsMode::VerifyCa, true),
+            (TlsMode::Verify, true),
+        ] {
+            let mut p = base();
+            p.tls = mode;
+            p.ca_file = "/etc/ca.pem".into();
+            assert_eq!(check(&p).is_ok(), ok, "{mode:?}: {:?}", code(&p));
+        }
+        // certificate and key belong together; none for SQL Server; none without TLS
+        let mut p = base();
+        p.tls = TlsMode::Require;
+        p.client_cert = "/c.pem".into();
+        assert!(code(&p).unwrap().contains("needs its key"));
+        p.client_key = "/k.pem".into();
+        assert!(check(&p).is_ok());
+        p.tls = TlsMode::Off;
+        assert!(check(&p).is_err());
+        p.tls = TlsMode::Require;
+        p.kind = DbKind::Sqlserver;
+        assert!(code(&p).unwrap().contains("SQL Server"));
+        // the jump host: host and user, and no host name check through it
+        let ssh = |host: &str, user: &str| SshTarget {
+            host: host.into(),
+            port: 0,
+            user: user.into(),
+            auth: SshAuth::Agent,
+            key_file: String::new(),
+        };
+        let mut p = base();
+        p.ssh = Some(ssh("jump.example", "ops"));
+        assert!(check(&p).is_ok());
+        p.tls = TlsMode::Verify;
+        assert!(code(&p).unwrap().contains("host name of the certificate"));
+        p.tls = TlsMode::VerifyCa;
+        assert!(check(&p).is_ok());
+        p.ssh = Some(ssh("jump example; rm -rf", "ops"));
+        assert!(check(&p).is_err());
+        p.ssh = Some(ssh("jump.example", " "));
+        assert!(check(&p).is_err());
+        // a file has no tunnel (review 014 L4)
+        let mut lite = crate::db::tests::profile(DbKind::Sqlite);
+        lite.database = "/tmp/x.db".into();
+        assert!(check(&lite).is_ok());
+        lite.ssh = Some(ssh("jump.example", "ops"));
+        assert!(code(&lite).unwrap().contains("no SSH tunnel"));
+    }
+
+    #[test]
+    fn tls_modes_cross_the_bridge_in_kebab_case_and_old_files_still_read() {
+        use crate::db::TlsMode;
+        assert_eq!(
+            serde_json::to_string(&TlsMode::VerifyCa).unwrap(),
+            "\"verify-ca\""
+        );
+        assert_eq!(
+            serde_json::from_str::<TlsMode>("\"verify\"").unwrap(),
+            TlsMode::Verify
+        );
+        assert_eq!(
+            serde_json::from_str::<TlsMode>("\"off\"").unwrap(),
+            TlsMode::Off
+        );
+        assert!(TlsMode::Prefer.unchecked() && TlsMode::Require.unchecked());
+        assert!(!TlsMode::VerifyCa.unchecked() && !TlsMode::Off.unchecked());
+        // a profile stored before prompt 014 has none of the new fields
+        let old = r#"{"id":"a","name":"A","kind":"postgres","host":"h","user":"u","tls":"verify"}"#;
+        let p: Profile = serde_json::from_str(old).unwrap();
+        assert!(p.ssh.is_none() && p.ca_file.is_empty());
     }
 
     #[test]

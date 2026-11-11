@@ -27,6 +27,8 @@ use sqlx_postgres::{
 use std::time::Instant;
 
 pub struct Pg {
+    /// The SSH tunnel this session runs through, if any: held so its listener outlives the session.
+    tunnel: Option<std::sync::Arc<crate::ssh::Tunnel>>,
     conn: Option<PgConnection>,
     /// To ask the server to cancel a statement: a second connection and the id of this one's backend.
     options: PgConnectOptions,
@@ -73,6 +75,7 @@ pub fn connect(
             .map_err(|e| sqlx_error(profile, &e))
     })?;
     let mut pg = Pg {
+        tunnel: None,
         conn: Some(conn),
         options,
         backend: None,
@@ -201,8 +204,16 @@ fn cell(row: &PgRow, i: usize, kind: ColKind, type_name: &str) -> Cell {
 
 impl Pg {
     /// Asks the server to cancel what this connection runs, over a second connection.
-    async fn cancel(options: PgConnectOptions, backend: Option<i32>) {
+    async fn cancel(
+        options: PgConnectOptions,
+        backend: Option<i32>,
+        tunnel: Option<std::sync::Arc<crate::ssh::Tunnel>>,
+    ) {
         let Some(pid) = backend else { return };
+        // the side connection goes through the tunnel like the session itself
+        if let Some(tunnel) = &tunnel {
+            tunnel.permit();
+        }
         if let Ok(mut side) = PgConnection::connect_with(&options).await {
             let _ = side
                 .execute(AssertSqlSafe(format!("SELECT pg_cancel_backend({pid})")))
@@ -320,6 +331,10 @@ impl Pg {
 }
 
 impl Session for Pg {
+    fn via_tunnel(&mut self, tunnel: std::sync::Arc<crate::ssh::Tunnel>) {
+        self.tunnel = Some(tunnel);
+    }
+
     fn ask(
         &mut self,
         sql: &str,
@@ -345,13 +360,13 @@ impl Session for Pg {
     ) -> AppResult<Outcome> {
         let profile = self.profile.clone();
         let conn = self.conn.as_mut().ok_or_else(closed)?;
-        let cancel = Self::cancel(self.options.clone(), self.backend);
+        let cancel = Self::cancel(self.options.clone(), self.backend, self.tunnel.clone());
         let run = Self::run(conn, sql, sink, &profile);
         let (r, ended) = block_cancelling(limits.timeout, stop, run, cancel);
         if r.as_ref().is_ok_and(|o| o.truncated) {
             // Rows were left unread: end the statement on the server, so the connection is free at once.
             // Its „cancelled“ answer is still on the wire: it is read here, not by the next statement.
-            let cancel = Self::cancel(self.options.clone(), self.backend);
+            let cancel = Self::cancel(self.options.clone(), self.backend, self.tunnel.clone());
             let settled = match self.conn.as_mut() {
                 Some(conn) => block(Some(super::CANCEL_GRACE * 2), &|| false, async {
                     cancel.await;

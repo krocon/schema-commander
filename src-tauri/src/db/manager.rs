@@ -200,6 +200,20 @@ impl ConnectionManager {
         if gone.uses_password() && self.store.available() {
             let _ = self.store.delete(&Self::account(&gone));
         }
+        // what unlocked its tunnel goes too, unless another profile uses the same jump host
+        if let Some(target) = &gone.ssh
+            && self.store.available()
+        {
+            let account = Self::ssh_account(target);
+            let shared = self.stored().iter().any(|p| {
+                p.ssh
+                    .as_ref()
+                    .is_some_and(|t| Self::ssh_account(t) == account)
+            });
+            if !shared {
+                let _ = self.store.delete(&account);
+            }
+        }
         Ok(())
     }
 
@@ -238,9 +252,10 @@ impl ConnectionManager {
         ssh: SshCredentials,
     ) -> AppResult<String> {
         profiles::check(profile)?;
-        let (tunnel, _) = self.open_tunnel(profile, ssh)?;
+        // a test stores nothing: the profile may never be saved
+        let (tunnel, _) = self.open_tunnel(profile, ssh, false)?;
         let secret = self.secret_for(profile, password)?;
-        let mut session = Self::connect_through(profile, tunnel.as_deref(), secret.as_ref())?;
+        let mut session = Self::connect_through(profile, tunnel.as_ref(), secret.as_ref())?;
         session.server_version(&|| false)
     }
 
@@ -274,6 +289,7 @@ impl ConnectionManager {
         &self,
         profile: &Profile,
         mut creds: SshCredentials,
+        remember: bool,
     ) -> AppResult<(Option<Arc<Tunnel>>, Option<Secret>)> {
         let Some(target) = &profile.ssh else {
             return Ok((None, None));
@@ -294,6 +310,7 @@ impl ConnectionManager {
             &creds,
         )?;
         if given
+            && remember
             && profile.save_password
             && let Some(secret) = creds.secret.as_ref().filter(|s| !s.is_empty())
         {
@@ -306,7 +323,7 @@ impl ConnectionManager {
     /// to the local end, which takes exactly this one connection.
     fn connect_through(
         profile: &Profile,
-        tunnel: Option<&Tunnel>,
+        tunnel: Option<&Arc<Tunnel>>,
         secret: Option<&Secret>,
     ) -> AppResult<Box<dyn Session>> {
         match tunnel {
@@ -316,7 +333,10 @@ impl ConnectionManager {
                 local.port = tunnel.port();
                 local.ssh = None;
                 tunnel.permit();
-                Self::connect_guarded(&local, secret)
+                let mut session = Self::connect_guarded(&local, secret)?;
+                // the session keeps the tunnel: its port is not free for anybody else while it lives
+                session.via_tunnel(Arc::clone(tunnel));
+                Ok(session)
             }
             None => Self::connect_guarded(profile, secret),
         }
@@ -337,6 +357,7 @@ impl ConnectionManager {
                 secret,
                 trust_fingerprint: None,
             },
+            false,
         )?;
         if let Some(tunnel) = &tunnel {
             self.tunnels
@@ -363,9 +384,9 @@ impl ConnectionManager {
         let profile = self.find(id)?;
         let given = password.is_some();
         // the tunnel first: nobody is asked for a database password for a jump host that is not trusted
-        let (tunnel, ssh_secret) = self.open_tunnel(&profile, ssh)?;
+        let (tunnel, ssh_secret) = self.open_tunnel(&profile, ssh, true)?;
         let secret = self.secret_for(&profile, password)?;
-        let mut session = Self::connect_through(&profile, tunnel.as_deref(), secret.as_ref())?;
+        let mut session = Self::connect_through(&profile, tunnel.as_ref(), secret.as_ref())?;
         let server_version = session.server_version(&|| false)?;
         if given
             && profile.save_password
@@ -463,7 +484,7 @@ impl ConnectionManager {
         }
         let secret = self.kept.lock().get(id).cloned().flatten();
         let tunnel = self.tunnel_of(id, &profile)?;
-        let session = Self::connect_through(&profile, tunnel.as_deref(), secret.as_ref())?;
+        let session = Self::connect_through(&profile, tunnel.as_ref(), secret.as_ref())?;
         let open = Open::new(session);
         self.open.lock().insert(key.clone(), open.clone());
         Ok((key, open, profile))
@@ -967,6 +988,26 @@ mod tests {
                 serde_json::to_value(&r.rows).unwrap(),
                 serde_json::json!([[42]])
             );
+            // a statement is stopped on the server through the tunnel too (review 014 M2): the side
+            // connection that asks for it is announced like the session itself
+            if kind == DbKind::Postgres {
+                let started = std::time::Instant::now();
+                std::thread::scope(|scope| {
+                    scope.spawn(|| {
+                        std::thread::sleep(std::time::Duration::from_millis(400));
+                        m.cancel(&saved.id);
+                    });
+                    let e = m.run(&saved.id, "SELECT pg_sleep(30)", None).unwrap_err();
+                    assert_eq!(e.code, ErrorCode::Cancelled, "{e}");
+                });
+                assert!(
+                    started.elapsed() < std::time::Duration::from_secs(6),
+                    "{:?}",
+                    started.elapsed()
+                );
+                // the session survived: it was cancelled on the server, not dropped
+                assert!(m.run(&saved.id, "SELECT 1", None).is_ok());
+            }
             // a tab gets its own session through the same tunnel, without being asked again
             let mut sink = VecSink::new(5);
             let (r, _) = m.run_in(&saved.id, Some("tab-1"), "SELECT 1", None, &mut sink, false);

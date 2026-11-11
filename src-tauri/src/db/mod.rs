@@ -254,6 +254,9 @@ pub trait Session: Send {
         timeout: Option<Duration>,
         stop: Stop,
     ) -> AppResult<TextRows>;
+    /// The session runs through this SSH tunnel: it keeps the tunnel alive as long as it lives, and
+    /// announces every further connection it opens itself (to cancel a statement). Review 014 M1/M2.
+    fn via_tunnel(&mut self, _tunnel: std::sync::Arc<crate::ssh::Tunnel>) {}
     /// Asks the server whether a transaction is open on this session.
     fn transaction_state(&mut self, stop: Stop) -> TxState;
     /// Product and version as the server names itself.
