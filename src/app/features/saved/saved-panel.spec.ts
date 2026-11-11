@@ -78,6 +78,7 @@ describe('SavedPanel', () => {
     expect(items()).toEqual(['1:berichte', '2:Umsatz', '1:Kunden in Köln']);
     expect(el.querySelector('[role=treeitem]')?.getAttribute('aria-expanded')).toBe('true');
     expect(el.querySelector('.path')?.textContent).toBe('/queries');
+    expect(el.querySelector('footer')?.getAttribute('title')).toBe('/queries');
     // nothing selected yet: no preview
     expect(el.querySelector('.preview')).toBeNull();
   });

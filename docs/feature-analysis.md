@@ -78,7 +78,7 @@ Prompts) · **Stufe** = meine Empfehlung: **1** Grundlage (ohne das ist es kein 
 | C4 | **Fehler an der Stelle**: Position der Fehlermeldung im Editor markieren, dorthin springen; Meldung des Servers vollständig (Hinweis, Detail, Kontext) | pgAdmin, DataGrip | M | 2 | ☑ [022](../prompts/done/022-fehler-im-editor.md) |
 | C5 | **SQL formatieren** (Auswahl oder alles), Stil einstellbar; Groß-/Kleinschreibung der Schlüsselwörter | DataGrip, Beekeeper | S–M | 2 | ☑ [023](../prompts/done/023-sql-formatieren.md) |
 | C6 | **Verlauf** aller ausgeführten Anweisungen je Verbindung mit Zeit, Dauer, Zeilen, Fehler; durchsuchbar; zurück in den Editor | DBeaver, Beekeeper | M | 1 | ☑ [010](../prompts/done/010-verlauf.md) |
-| C7 | **Gespeicherte Abfragen und Snippets** mit Ordnern, Kürzeln und Platzhaltern (`sel` → `SELECT * FROM ▮`) | TablePlus, SSMS | M | 2 | ☑ [024](../prompts/024-snippets-gespeicherte-abfragen.md) |
+| C7 | **Gespeicherte Abfragen und Snippets** mit Ordnern, Kürzeln und Platzhaltern (`sel` → `SELECT * FROM ▮`) | TablePlus, SSMS | M | 2 | ☑ [024](../prompts/done/024-snippets-gespeicherte-abfragen.md) |
 | C8 | **Parameter** in Abfragen (`:name`, `$1`, `?`): Eingabefeld je Parameter, Werte werden gemerkt, immer gebunden gesendet | DbVisualizer, DataGrip | S–M | 2 | ☑ [025](../prompts/025-parameter.md) |
 | C9 | **Ausführungsplan**: `EXPLAIN (ANALYZE)` als Baumtabelle mit Kosten, Zeit, Zeilen; teuerste Knoten hervorgehoben | pgAdmin, SSMS | M–L | 3 | ☑ [039](../prompts/039-ausfuehrungsplan.md) |
 | C10 | **Transaktionen sichtbar**: Auto-Commit je Tab umschaltbar, Knöpfe Commit/Rollback, deutliche Anzeige einer offenen Transaktion, Warnung beim Schließen | DataGrip, SQL Developer | M | 2 | ☑ [013](../prompts/done/013-transaktionen.md) |

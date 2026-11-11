@@ -31,6 +31,10 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   OS and an editor for your own shortcuts (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>S</kbd>)
 - Split view: two tab groups side by side or stacked, each tab on its own connection; the result below or beside
   the editor, hidden or maximised; the sidebar shows connections and schema or the history; a zen mode
+- Saved queries: plain `.sql` files in a folder of your choice (share them with Git, edit them anywhere), with
+  name, description and tags in a comment header; a sidebar view with folders, search over names and texts and a
+  preview; `q:` in “go to anything”. Snippets: `sel` + <kbd>Tab</kbd> becomes a statement with placeholders to
+  tab through – a set per database, and your own
 - Format SQL (<kbd>Ctrl/⌘</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>): the selection, the statement under the caret or
   the whole script, as one undo step; keyword case, indentation, line width, commas and `AND`/`OR` are settings
   with a live preview. Strings, comments and quoted names are never touched – the formatter checks every result

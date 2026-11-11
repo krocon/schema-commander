@@ -5,12 +5,15 @@
 | 0 | Technischer Aufbau, Walking Skeleton (Editor → Rust → Gitter), Farbschemata, Best Practices | ✅ |
 | 1 | Feature-Analyse der wichtigsten SQL-Tools (`docs/feature-analysis.md`) | ✅ alle Features freigegeben |
 | 2 | Prompts 001–049 (`prompts/`) und E1–E5 für editlicious (`prompts/done/editlicious/`) | ✅ geschrieben |
-| 3 | Umsetzung Prompt für Prompt in der Reihenfolge von `prompts/README.md` | 001–023 ✅, nächster: 024; E1–E5 erledigt mit `editlicious-editor` 1.2.0 |
+| 3 | Umsetzung Prompt für Prompt in der Reihenfolge von `prompts/README.md` | 001–024 ✅, nächster: 025; E1–E5 erledigt mit `editlicious-editor` 1.2.0 |
 
 Bekannte Lücken des Skeletons (werden von den ersten Prompts geschlossen):
 
 - Das Gitter sortiert nicht mehr lokal (kommt mit 027); 10 Mio. Zeilen und ein Release-Build wurden nicht gemessen
   (Design 006).
+- Gespeicherte Abfragen und Snippets: im nativen Fenster nicht bedient (Neustart, Papierkorb, Ordner-Dialog);
+  keine Variable für die Zwischenablage (fehlt im Editor), kein Import aus VS Code; Ordner verwaltet man im
+  Dateimanager (Design 024).
 - Formatieren: im nativen Fenster nicht bedient, 20 MB nicht gemessen; Schlüsselwörter groß/klein kann auf einem
   SQL Server mit groß/klein-empfindlicher Sortierung Namen treffen; Rümpfe in Dollar-Quotes bleiben unformatiert
   (Design 023).

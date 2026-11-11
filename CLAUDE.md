@@ -40,11 +40,13 @@
   Stelle**: Details der Datenbank (Code, Detail, Hinweis, Position), Markierung im Editor, laufende Anweisung
   (Prompt 022); **SQL formatieren**: Auswahl, Anweisung oder Skript als ein Undo-Schritt, Stil einstellbar mit
   Vorschau, in Rust mit Selbstprüfung der Tokens; Schlüsselwörter groß/klein, eine Zeile, Zeilenkommentar
-  (Prompt 023);
+  (Prompt 023); **gespeicherte Abfragen** als `.sql`-Dateien mit Kopfkommentar in einem wählbaren Ordner
+  (Ansicht der Seitenleiste, Suche, `q:` in der Palette) und **Textbausteine** mit Platzhaltern je Dialekt
+  (Prompt 024);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–023),
+  erledigt: 001–024),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -94,6 +96,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                catalogs.spec.ts (jeder Katalog vollständig in beiden Sprachen)
   app/core/history/            HistoryApi (history_*) + DTOs – spiegelt history.rs
   app/core/menu/               MenuApi (set_app_menu, set_menu_state, subscribe_menu) + DTOs – spiegelt app_menu.rs
+  app/core/saved/              SavedApi (saved_*) + DTOs – spiegelt saved.rs
   app/core/schema/             SchemaApi (meta_*) + DTOs (SchemaInfo, ObjectInfo, TableInfo) – spiegelt db/meta.rs
   app/core/session/            SessionApi: session.json, Texte der Tabs, .sql lesen/schreiben
   app/core/settings/           Settings (Modell, mergeSettings), SettingsService (tauri-plugin-store)
@@ -122,6 +125,9 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                (Root: Menüleiste, Kontextmenü), MenuBar (APG-Menubar für Windows/Linux)
   app/features/palette/        die eine Palette: Befehle und „Springen zu allem“ (CommandPalette), palette-logic.ts
                                und goto-logic.ts (rein), GotoService (führt einen Treffer aus)
+  app/features/saved/          SavedPanel (Ansicht der Seitenleiste, APG-Baum), SavedDialog, SavedStore (Root:
+                               Listing, beobachten, öffnen als Datei-Tab), saved-logic.ts (rein)
+  app/features/snippets/       SnippetDialog, snippet-logic.ts (rein: mitgelieferte je Dialekt, Variablen)
   app/features/schema/         SchemaTree (virtuelle Liste, APG-Baum), SchemaStore (Root: Zustand je Verbindung),
                                SchemaActions, schema-logic.ts (rein: Zeilen, Filter, Tasten, Vorlagen)
   app/features/settings/       SettingsDialog (Gruppen, Suche, Zurücksetzen, Export/Import), settings-logic.ts
@@ -150,6 +156,8 @@ src-tauri/                     Rust
   src/db/mod.rs                Profile, DbKind, TlsMode, Session-Trait, Laufzeit, Fehler in Worten
   src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
   src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink (rein, getestet)
+  src/saved.rs                 gespeicherte Abfragen: .sql-Dateien mit Kopfkommentar, Pfadprüfung, Suche,
+                               Fingerabdruck des Ordners (rein, getestet)
   src/history.rs               Verlauf: history.sqlite, Suche, Aufbewahrung, endgültiges Löschen (rein, getestet)
   src/export.rs                Dateien schreiben: FileWriter (Text, gzip, xlsx), from_store, FileSink (rein, getestet)
   src/ssh/                     SSH-Tunnel: mod.rs (russh-Client, Anmeldung, Weiterleitung), trust.rs (known_hosts),

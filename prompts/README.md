@@ -45,7 +45,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 | 021 | [Vervollständigung, die das Schema kennt](done/021-vervollstaendigung.md) ([Design](done/021-vervollstaendigung.design.md)) | C3 | 008, E3 (editlicious: Vorschläge von außen), besser auch E5 | L | ✅ 11.11.2026 |
 | 022 | [Fehler an der Stelle zeigen](done/022-fehler-im-editor.md) ([Design](done/022-fehler-im-editor.design.md)) | C4 | 005, E4 (editlicious: Markierungen von außen) | M | ✅ 11.11.2026 |
 | 023 | [SQL formatieren](done/023-sql-formatieren.md) ([Design](done/023-sql-formatieren.design.md)) | C5 | 002, E2 (editlicious: Bereich ersetzen) | S–M | ✅ 11.11.2026 |
-| 024 | [Gespeicherte Abfragen und Snippets](024-snippets-gespeicherte-abfragen.md) | C7 | 004, E5 (editlicious: Snippets) | M | offen |
+| 024 | [Gespeicherte Abfragen und Snippets](done/024-snippets-gespeicherte-abfragen.md) ([Design](done/024-snippets-gespeicherte-abfragen.design.md)) | C7 | 004, E5 (editlicious: Snippets) | M | ✅ 11.11.2026 |
 | 025 | [Parameter in Abfragen](025-parameter.md) | C8 | 005 | S–M | offen |
 | 026 | [Wert-Ansicht](026-wert-ansicht.md) | D3 | 006, 007 | M | offen |
 | 027 | [Sortieren und Filtern](027-sortieren-filtern.md) | D5 | 006, 007, 008 | M | offen |

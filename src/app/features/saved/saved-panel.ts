@@ -108,7 +108,7 @@ const SEARCH_DELAY_MS = 200;
       </section>
     }
     <footer class="folder" [title]="store.listing()?.root ?? ''">
-      <span class="path" [attr.aria-label]="t.folder">{{ store.listing()?.root }}</span>
+      <span class="path" [attr.aria-label]="t.folder">{{ rootTail() }}</span>
       <button type="button" (click)="actions.run('SAVED_FOLDER')">{{ t.chooseFolder }}</button>
     </footer>
   `,
@@ -218,8 +218,6 @@ const SEARCH_DELAY_MS = 200;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      direction: rtl;
-      text-align: left;
       color: var(--text-dim);
       font-size: 11px;
     }
@@ -233,6 +231,12 @@ export class SavedPanel {
   private readonly connections = inject(ConnectionsStore);
   private readonly tree = viewChild.required<ElementRef<HTMLElement>>('tree');
 
+  /** The end of the folder's path: that is the part that tells folders apart. */
+  protected readonly rootTail = computed(() => {
+    const root = this.store.listing()?.root ?? '';
+    const parts = root.split(/[\\/]/).filter((p) => p !== '');
+    return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : root;
+  });
   protected readonly text = signal('');
   /** The ids a search found; `null` = no search. */
   private readonly hits = signal<ReadonlySet<string> | null>(null);
