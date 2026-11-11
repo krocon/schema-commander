@@ -2,7 +2,7 @@
 //! (`simple_query`); the first result set with columns is the result.
 
 use super::value::{Budget, Cell, ColKind, Column, QueryResult, text};
-use super::{Profile, Session, Stop, TlsMode, block, clean, closed, keeps_connection};
+use super::{Limits, Profile, Session, Stop, TlsMode, block, clean, closed, keeps_connection};
 use crate::error::{AppError, AppResult, ErrorCode};
 use futures_util::StreamExt;
 use std::time::Instant;
@@ -263,18 +263,26 @@ impl Ms {
 }
 
 impl Session for Ms {
-    fn execute(&mut self, sql: &str, max_rows: usize, stop: Stop) -> AppResult<QueryResult> {
+    fn execute(&mut self, sql: &str, limits: Limits, stop: Stop) -> AppResult<QueryResult> {
         let profile = self.profile.clone();
         let conn = self.conn.as_mut().ok_or_else(closed)?;
-        let r = block(None, stop, Self::run(conn, sql, max_rows, &profile));
-        if r.as_ref().is_err_and(|e| !keeps_connection(e.code)) {
+        // tiberius cannot send the attention signal: a stopped statement costs the connection
+        let r = block(
+            limits.timeout,
+            stop,
+            Self::run(conn, sql, limits.max_rows, &profile),
+        );
+        let lost = r.as_ref().is_err_and(|e| {
+            !keeps_connection(e.code) || matches!(e.code, ErrorCode::Cancelled | ErrorCode::Timeout)
+        });
+        if lost {
             self.conn = None;
         }
         r
     }
 
     fn server_version(&mut self, stop: Stop) -> AppResult<String> {
-        let r = self.execute("SELECT @@VERSION", 1, stop)?;
+        let r = self.execute("SELECT @@VERSION", Limits::rows(1), stop)?;
         Ok(match r.rows.first().and_then(|row| row.first()) {
             // the first line names product and version
             Some(Cell::Text(v)) => v.lines().next().unwrap_or("SQL Server").trim().to_string(),
