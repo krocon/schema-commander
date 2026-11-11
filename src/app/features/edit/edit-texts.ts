@@ -35,8 +35,16 @@ export const EDIT_EN = {
     tooLong: (max: number) => `Longer than the ${max} characters the column takes.`,
     date: 'A date is written 2026-11-11.',
   },
-  pending: (cells: number, rows: number) =>
-    `${cells === 1 ? '1 change' : `${cells} changes`} in ${rows === 1 ? '1 row' : `${rows} rows`}, not written`,
+  pending: (cells: number, rows: number, inserts: number, deletes: number) =>
+    `${[
+      cells > 0
+        ? `${cells === 1 ? '1 change' : `${cells} changes`} in ${rows === 1 ? '1 row' : `${rows} rows`}`
+        : '',
+      inserts > 0 ? (inserts === 1 ? '1 new row' : `${inserts} new rows`) : '',
+      deletes > 0 ? (deletes === 1 ? '1 row to delete' : `${deletes} rows to delete`) : '',
+    ]
+      .filter(Boolean)
+      .join(', ')} – not written`,
   preview: 'Preview',
   write: 'Write',
   discard: 'Discard',
@@ -45,11 +53,11 @@ export const EDIT_EN = {
   nothing: 'There are no changes to write.',
   tooMany: (max: number) => `More than ${max} changed rows: write them in parts.`,
   written: (rows: number) => (rows === 1 ? '1 row written.' : `${rows} rows written.`),
-  conflict: (row: number) =>
-    `Row ${row} was changed by someone else in the meantime (or is gone). Nothing was written.`,
+  conflict: (what: string) =>
+    `${what} was changed by someone else in the meantime (or is gone). Nothing was written.`,
   conflictSome:
     'A row was changed by someone else in the meantime (or is gone). Nothing was written.',
-  failed: (row: number, why: string) => `Row ${row}: ${why} Nothing was written.`,
+  failed: (what: string, why: string) => `${what}: ${why} Nothing was written.`,
   notWritten: (why: string) => `Nothing was written: ${why}`,
   txOpen: 'A transaction is open in this tab: commit or roll it back first.',
   unknownOutcome:
@@ -73,6 +81,45 @@ export const EDIT_EN = {
       ? 'One changed cell is not written. It is lost if you go on.'
       : `${cells} changed cells are not written. They are lost if you go on.`,
   discardYes: 'Discard',
+  rowN: (n: number) => `Row ${n}`,
+  newRowN: (n: number) => `New row ${n}`,
+  rowDeleted: 'This row is marked to be deleted: take the mark away to edit it.',
+  tooManyRows: (max: number) => `More than ${max} rows marked.`,
+  duplicated: (n: number) =>
+    n === 1 ? '1 row duplicated as a new row.' : `${n} rows duplicated as new rows.`,
+  nothingToPaste: 'There is no text on the clipboard.',
+  nothingToFill: 'Mark cells of two or more rows: the value of the top cell fills those below.',
+  pasteTitle: 'Paste the block?',
+  pasteQuestion: (rows: number, columns: number, over: number, added: number) =>
+    `${rows} rows of ${columns} ${columns === 1 ? 'cell' : 'cells'}: ${over} existing ${over === 1 ? 'row is' : 'rows are'} overwritten, ${added} new ${added === 1 ? 'row is' : 'rows are'} added. Nothing is written yet.`,
+  pasteYes: 'Paste',
+  pasted: (cells: number, added: number, invalid: number, skipped: number, cut: boolean) =>
+    [
+      `${cells} cells pasted`,
+      added > 0 ? `${added} new rows` : '',
+      invalid > 0 ? `${invalid} cells hold a value their column cannot take (marked)` : '',
+      skipped > 0 ? `${skipped} rows without a key left out` : '',
+      cut ? 'the block was longer than what is taken at once' : '',
+    ]
+      .filter(Boolean)
+      .join('; ') + '.',
+  invalidCells: (n: number) =>
+    n === 1
+      ? 'One cell holds a value its column cannot take (marked). Put it right first.'
+      : `${n} cells hold a value their column cannot take (marked). Put them right first.`,
+  writtenAll: (deleted: number, changed: number, inserted: number, keys: readonly string[]) =>
+    [
+      deleted > 0 ? `${deleted} deleted` : '',
+      changed > 0 ? `${changed} changed` : '',
+      inserted > 0 ? `${inserted} inserted` : '',
+    ]
+      .filter(Boolean)
+      .join(', ') +
+    ' – written.' +
+    (keys.length > 0 ? ` New keys: ${keys.join(', ')}.` : ''),
+  previewCounts: (deleted: number, changed: number, inserted: number) =>
+    `Rows to delete: ${deleted} · to change: ${changed} · to insert: ${inserted}. In this order.`,
+  addRow: 'New row',
   marked: { null: 'NULL', default: 'DEFAULT' },
 };
 

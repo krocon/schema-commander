@@ -628,7 +628,7 @@ export class QueryTab {
   }
 
   private async mayDropEdits(): Promise<boolean> {
-    if (editCount(this.edits()).cells === 0) {
+    if (editCount(this.edits()).total === 0) {
       // nothing to lose; steps of undo that lead to no change go with the rows
       if (this.edits() !== EMPTY_BUFFER) this.edits.set(EMPTY_BUFFER);
       return true;

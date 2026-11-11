@@ -175,7 +175,7 @@ export class TabsStore {
         queueMicrotask(() => this.connections.activate(old));
         return;
       }
-      if (editCount(tab.edits()).cells > 0) {
+      if (editCount(tab.edits()).total > 0) {
         // the changes belong to rows of the old connection: they are written or dropped first
         const old = tab.connectionId();
         this.notice.set(EDIT_TEXTS.blocksSwitch);
@@ -356,9 +356,9 @@ export class TabsStore {
    * are gone), or there were none.
    */
   async dropEdits(tabs: readonly QueryTab[]): Promise<boolean> {
-    const edited = tabs.filter((t) => editCount(t.edits()).cells > 0);
+    const edited = tabs.filter((t) => editCount(t.edits()).total > 0);
     if (edited.length === 0) return true;
-    const cells = edited.reduce((n, t) => n + editCount(t.edits()).cells, 0);
+    const cells = edited.reduce((n, t) => n + editCount(t.edits()).total, 0);
     const yes = await this.confirm.ask({
       title: EDIT_TEXTS.discardTitle,
       message: EDIT_TEXTS.discardMessage(cells),
@@ -370,7 +370,7 @@ export class TabsStore {
 
   async settleTransactions(tabs: readonly QueryTab[], what: string): Promise<boolean> {
     // asked only where there is something to lose (no extra turn for a tab that has nothing)
-    const edited = tabs.some((t) => editCount(t.edits()).cells > 0);
+    const edited = tabs.some((t) => editCount(t.edits()).total > 0);
     if (edited && !(await this.dropEdits(tabs))) return false;
     const open = tabs.filter((t) => txOpen(t.tx()));
     if (open.length === 0) return true;

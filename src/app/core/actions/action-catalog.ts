@@ -189,6 +189,22 @@ export const ACTIONS = [
     group: 'Query',
     scope: 'global',
   },
+  // Whole rows (prompt 032)
+  { id: 'EDIT_ADD_ROW', label: 'Edit: new row', group: 'Query', scope: 'result' },
+  { id: 'EDIT_DUPLICATE_ROW', label: 'Edit: duplicate the rows', group: 'Query', scope: 'result' },
+  {
+    id: 'EDIT_DELETE_ROW',
+    label: 'Edit: delete the rows (or keep them)',
+    group: 'Query',
+    scope: 'result',
+  },
+  {
+    id: 'EDIT_PASTE',
+    label: 'Edit: paste cells from the clipboard',
+    group: 'Query',
+    scope: 'global',
+  },
+  { id: 'EDIT_FILL_DOWN', label: 'Edit: fill down', group: 'Query', scope: 'result' },
   {
     id: 'EDIT_UNDO',
     label: 'Edit: undo the change',

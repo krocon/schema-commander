@@ -158,7 +158,7 @@ describe('EditService', () => {
     ]);
     expect(sent.plan.rows[1].set[0].default).toBe(true);
     expect(edit.count(tab).cells).toBe(0);
-    expect(tabs.notice()).toBe('3 Zeilen geschrieben.');
+    expect(tabs.notice()).toBe('3 geändert – geschrieben.');
     // read again: one more statement ran, and nobody was asked about discarding
     expect(query.statements.length).toBe(runs + 1);
     expect(TestBed.inject(ConfirmService).request()).toBeNull();
@@ -228,6 +228,142 @@ describe('EditService', () => {
     expect(await again).toBe(true);
     expect(query.applied.at(-1)!.confirmations).toHaveLength(1);
     expect(query.applied.at(-1)!.confirmations[0]).toContain('token');
+  });
+
+  // --- whole rows (prompt 032) ----------------------------------------------------------------------
+
+  it('adds a row, fills its cells, duplicates and deletes rows – all in the buffer', async () => {
+    const tab = await table();
+    edit.addRow(tab);
+    expect(edit.count(tab)).toMatchObject({ inserts: 1, total: 1 });
+    // the new row stands below the three rows of the table
+    cursor = [3, 2];
+    await edit.begin(tab);
+    expect(edit.editing()).toMatchObject({ newId: 1, text: '' });
+    edit.commit({ kind: 'value', text: 'brand new' });
+    expect(edit.marks(tab)!.newAt(0, 2)).toEqual({ kind: 'value', text: 'brand new' });
+    // duplicating a row of the table: its cells without the key
+    cursor = [0, 1];
+    await edit.duplicateRows(tab);
+    const copy = tab.edits().inserts[1];
+    expect(copy.cells).toEqual({
+      1: { kind: 'value', text: '42' },
+      2: { kind: 'value', text: 'first' },
+    });
+    expect(tabs.notice()).toBe('1 Zeile als neue Zeile dupliziert.');
+    // deleting: a row of the table is marked, a new row just goes
+    cursor = [1, 0];
+    await edit.deleteRows(tab);
+    expect(edit.marks(tab)!.deleted(1)).toBe(true);
+    await edit.begin(tab);
+    expect(edit.editing()).toBeNull();
+    expect(tabs.notice()).toContain('zum Löschen vorgemerkt');
+    cursor = [4, 0];
+    await edit.deleteRows(tab);
+    expect(edit.count(tab)).toMatchObject({ inserts: 1, deletes: 1 });
+    // the same row again: the mark goes
+    cursor = [1, 0];
+    await edit.deleteRows(tab);
+    expect(edit.count(tab).deletes).toBe(0);
+    edit.undo(tab);
+    expect(edit.count(tab).deletes).toBe(1);
+  });
+
+  it('pastes a block from the cursor over rows and on into new ones, asking for a big one', async () => {
+    const tab = await table();
+    cursor = [2, 1];
+    await edit.paste(tab, '8\tlast row\n9\tnew one\nten\tbad number\n');
+    expect(edit.count(tab)).toMatchObject({ cells: 2, rows: 1, inserts: 2 });
+    expect(edit.marks(tab)!.at(2, 2)).toEqual({ kind: 'value', text: 'last row' });
+    expect(tabs.notice()).toContain(
+      '6 Zellen eingefügt; 2 neue Zeilen; 1 Zellen halten einen Wert',
+    );
+    // the value a number column cannot take is marked, and writing waits for it
+    expect(edit.marks(tab, columns())!.newInvalid(1, 1)).toBe(true);
+    expect(await edit.save(tab)).toBe(false);
+    expect(tabs.notice()).toContain('Erst richtigstellen');
+    expect(query.applied).toHaveLength(0);
+    // one undo takes the block back
+    edit.undo(tab);
+    expect(edit.count(tab).total).toBe(0);
+    // a big block asks first; a no changes nothing
+    const big = Array.from({ length: 150 }, (_, i) => `${i}\tx`).join('\n');
+    const confirm = TestBed.inject(ConfirmService);
+    const pasting = edit.paste(tab, big);
+    await settle();
+    expect(confirm.request()?.title).toBe('Block einfügen?');
+    expect(confirm.request()?.message).toContain('150 Zeilen mit je 2 Zellen: 1 vorhandene Zeile');
+    confirm.answer(false);
+    await pasting;
+    expect(edit.count(tab).total).toBe(0);
+  });
+
+  it('fills the marked cells down and sets marked cells to NULL', async () => {
+    const tab = await table();
+    copier.register(copier.current()!.result.resultId, () => ({ rows: [[0, 2]], columns: [2] }));
+    cursor = [0, 2];
+    await edit.fillDown(tab);
+    expect(edit.marks(tab)!.at(1, 2)).toEqual({ kind: 'value', text: 'first' });
+    expect(edit.marks(tab)!.at(2, 2)).toEqual({ kind: 'value', text: 'first' });
+    expect(edit.marks(tab)!.at(0, 2)).toBeNull();
+    edit.undo(tab);
+    expect(edit.count(tab).total).toBe(0);
+    await edit.setCells(tab, { kind: 'null' });
+    // row 2 holds NULL already: two cells change
+    expect(edit.count(tab)).toMatchObject({ cells: 2, rows: 2 });
+  });
+
+  it('writes deleted, changed and new rows as one plan and says which row failed', async () => {
+    const tab = await table();
+    cursor = [0, 2];
+    await edit.begin(tab);
+    edit.commit({ kind: 'value', text: 'changed' });
+    cursor = [1, 0];
+    await edit.deleteRows(tab);
+    edit.addRow(tab);
+    cursor = [3, 2];
+    await edit.begin(tab);
+    edit.commit({ kind: 'value', text: 'new' });
+    await edit.showPreview(tab);
+    expect(edit.preview()?.counts).toEqual({ delete: 1, update: 1, insert: 1 });
+    expect(edit.preview()?.statements.map((s) => s.split(' ')[0])).toEqual([
+      'DELETE',
+      'UPDATE',
+      'INSERT',
+    ]);
+    edit.preview.set(null);
+    // the new row breaks a rule: nothing is written, and it is the one marked
+    query.applyAnswer = {
+      done: 0,
+      failed: 0,
+      failedKind: 'insert',
+      error: { code: 'invalid_query', message: 'null value in column "customer_id"' },
+    };
+    expect(await edit.save(tab)).toBe(false);
+    expect(tabs.notice()).toContain('Neue Zeile 1');
+    expect(edit.marks(tab)!.newFailed(0)).toBe(true);
+    expect(cursor[0]).toBe(3);
+    // the row to delete is held by others
+    query.applyAnswer = {
+      done: 0,
+      failed: 0,
+      failedKind: 'delete',
+      error: { code: 'invalid_query', message: 'still referenced from table "lines"' },
+    };
+    await edit.save(tab);
+    expect(tabs.notice()).toContain('Zeile 2');
+    expect(tabs.notice()).toContain('lines');
+    expect(edit.marks(tab)!.failed(1)).toBe(true);
+    // written: the keys the database gave are said
+    query.applyAnswer = { inserted: ['17'] };
+    expect(await edit.save(tab)).toBe(true);
+    const plan = query.applied.at(-1)!.plan;
+    expect([plan.deletes?.length, plan.rows.length, plan.inserts?.length]).toEqual([1, 1, 1]);
+    expect(plan.returning).toBe('id');
+    expect(tabs.notice()).toBe(
+      '1 gelöscht, 1 geändert, 1 eingefügt – geschrieben. Neue Schlüssel: 17.',
+    );
+    expect(edit.count(tab).total).toBe(0);
   });
 
   // --- review 031 -----------------------------------------------------------------------------------

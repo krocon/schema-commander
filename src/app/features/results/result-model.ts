@@ -169,7 +169,13 @@ export class WindowAreaModel extends AreaModel {
     this.short.clear();
   }
 
+  /** The rows of the result, and below them the rows that are new in the change buffer (prompt 032). */
   override getRowCount(): number {
+    return this.count + (this.edits?.extra ?? 0);
+  }
+
+  /** The rows the result has (without the new ones of the buffer). */
+  resultRows(): number {
     return this.count;
   }
 
@@ -185,6 +191,13 @@ export class WindowAreaModel extends AreaModel {
   }
 
   override getValueAt(row: number, col: number): string | number {
+    if (row >= this.count) {
+      // a new row: no number yet, and in every cell what was given – or what the database will give
+      if (col === 0) return '+';
+      const value = this.edits?.newAt(row - this.count, this.resultColumn(col));
+      if (!value) return this.editTexts.default;
+      return value.kind === 'value' ? cut(defuse(value.text)) : this.editTexts[value.kind];
+    }
     if (col === 0) return row + 1;
     const edit = this.edits?.at(row, this.resultColumn(col));
     if (edit) {
@@ -198,17 +211,41 @@ export class WindowAreaModel extends AreaModel {
   }
 
   override getCustomClassesAt(row: number, col: number): string[] {
-    if (col === 0) return this.edits?.failed(row) ? ['sc-edit-failed'] : [];
+    if (row >= this.count) {
+      const n = row - this.count;
+      const fresh = ['sc-new'];
+      if (col > 0) {
+        const value = this.edits?.newAt(n, this.resultColumn(col));
+        if (!value || value.kind !== 'value') fresh.push('sc-null');
+        if (this.edits?.newInvalid(n, this.resultColumn(col))) fresh.push('sc-edit-failed');
+      }
+      if (this.edits?.newFailed(n)) fresh.push('sc-edit-failed');
+      return fresh;
+    }
+    const gone = this.edits?.deleted(row) ?? false;
+    if (col === 0) {
+      const head: string[] = gone ? ['sc-deleted'] : [];
+      if (this.edits?.failed(row)) head.push('sc-edit-failed');
+      return head;
+    }
     const edit = this.edits?.at(row, this.resultColumn(col));
-    if (edit) {
+    if (edit && !gone) {
       // a changed cell: its new value, marked – and how its row fared when it was written
       const changed = ['sc-edited'];
       if (edit.kind !== 'value') changed.push('sc-null');
-      if (this.edits?.failed(row)) changed.push('sc-edit-failed');
+      if (this.edits?.failed(row) || this.edits?.invalid(row, this.resultColumn(col))) {
+        changed.push('sc-edit-failed');
+      }
       return changed;
     }
     const cls = this.shown(row, col)?.cls;
     const out: string[] = cls ? [cls] : [];
+    // a row that is to be deleted: struck through, whatever its cells hold
+    if (gone) {
+      out.push('sc-deleted');
+      if (this.edits?.failed(row)) out.push('sc-edit-failed');
+      return out;
+    }
     // a cell of a foreign key that holds a value is a link
     if (this.links?.has(this.resultColumn(col)) && cls !== 'sc-null') out.push('sc-fk');
     const mark = this.hits?.at(row, this.resultColumn(col));
@@ -218,6 +255,8 @@ export class WindowAreaModel extends AreaModel {
 
   /** The cell as it came from the backend; `undefined` while its page is not there. */
   cellAt(row: number, col: number): RowWindow[number][number] | undefined {
+    // a new row of the change buffer is no row of the result: nothing to read
+    if (row >= this.count) return null;
     const page = pageOf(row);
     const cells = this.pages.get(page)?.[row - page * PAGE_ROWS];
     if (!cells) {

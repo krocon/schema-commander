@@ -53,6 +53,7 @@ import { RESULTS_TEXTS } from './results-texts';
     '(contextmenu)': 'onContextMenu($event)',
     '(keydown)': 'onKey($event)',
     '(dblclick)': 'onDoubleClick($event)',
+    '(paste)': 'onPaste($event)',
     // font size and row height are settings (prompt 017); `ge-table-theme.css` reads them
     '[style.--result-font-size.px]': 'settings.settings().resultFontSize',
     '[style.--result-row-height.px]': 'settings.settings().resultRowHeight',
@@ -124,6 +125,8 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
   readonly edits = input<EditMarks | null>(null);
   /** A cell was double-clicked: edit it. */
   readonly editCell = output<void>();
+  /** Text was pasted into the grid (`Mod+V`): a block of cells for the table (prompt 032). */
+  readonly pasted = output<string>();
   /** The columns of the result whose cells are links to another table (prompt 030). */
   readonly links = input<ReadonlySet<number> | null>(null);
   /** A link was clicked with `Ctrl`/`Cmd`: follow it. */
@@ -164,7 +167,7 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
       const api = this.api();
       const body = this.body;
       if (!body || !this.model()) return;
-      if (rows === body.getRowCount()) return;
+      if (rows === body.resultRows()) return;
       body.setRowCount(rows);
       // the row count changed: the scroll bar and the visible rows follow, the position stays
       api?.repaintHard();
@@ -183,9 +186,13 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
     });
     effect(() => {
       const edits = this.edits();
-      if (!this.model()) return;
-      this.body?.setEdits(edits, EDIT_TEXTS.marked);
-      this.api()?.repaint();
+      const body = this.body;
+      if (!this.model() || !body) return;
+      const before = body.getRowCount();
+      body.setEdits(edits, EDIT_TEXTS.marked);
+      // new rows below the table (or fewer of them): the scroll bar follows
+      if (body.getRowCount() === before) this.api()?.repaint();
+      else this.api()?.repaintHard();
     });
     effect(() => {
       const links = this.links();
@@ -232,6 +239,14 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
       return;
     }
     void this.copier.copy();
+  }
+
+  /** `Mod+V` in the grid: what is on the clipboard goes to the table as a block of cells. */
+  protected onPaste(event: ClipboardEvent): void {
+    if (this.local()) return;
+    const text = event.clipboardData?.getData('text/plain') ?? '';
+    event.preventDefault();
+    if (text !== '') this.pasted.emit(text);
   }
 
   /** A double click on a cell of the body edits it (the click before it has put the cursor there). */
