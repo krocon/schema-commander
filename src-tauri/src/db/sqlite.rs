@@ -2,7 +2,7 @@
 //! and the demo database in memory the app ships with.
 
 use super::value::{Cell, ColKind, Column, Outcome, RowSink, text, text_bytes};
-use super::{DbKind, Limits, Profile, Session, Stop};
+use super::{Bind, DbKind, Limits, Profile, Session, Stop};
 use crate::error::{AppError, AppResult, ErrorCode};
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OpenFlags};
@@ -200,9 +200,10 @@ impl Session for Lite {
         Ok(rows)
     }
 
-    fn execute(
+    fn execute_bound(
         &mut self,
         sql: &str,
+        params: &[Bind],
         limits: Limits,
         sink: &mut dyn RowSink,
         stop: Stop,
@@ -239,7 +240,7 @@ impl Session for Lite {
                     }
                 }
             });
-            let result = Self::run(conn, sql, sink, &elapsed);
+            let result = Self::run(conn, sql, params, sink, &elapsed);
             done.store(true, Ordering::Relaxed);
             result
         });
@@ -282,10 +283,34 @@ impl Lite {
     fn run(
         conn: &Connection,
         sql: &str,
+        params: &[Bind],
         sink: &mut dyn RowSink,
         elapsed: &dyn Fn() -> u64,
     ) -> AppResult<Outcome> {
+        use rusqlite::types::Value;
+        // SQLite has no decimals and no dates: numbers as it stores them, the rest as text
+        let values = params
+            .iter()
+            .map(|p| {
+                Ok(match p {
+                    Bind::Text(v) | Bind::Date(v) | Bind::Datetime(v) => Value::Text(v.clone()),
+                    Bind::Int(v) => Value::Integer(Bind::int(v)?),
+                    Bind::Decimal(v) => Value::Real(Bind::float(v)?),
+                    Bind::Bool(v) => Value::Integer(i64::from(*v)),
+                })
+            })
+            .collect::<AppResult<Vec<Value>>>()?;
         let mut stmt = conn.prepare(sql).map_err(invalid)?;
+        if stmt.parameter_count() != values.len() {
+            return Err(AppError::new(
+                ErrorCode::InvalidQuery,
+                format!(
+                    "the statement has {} placeholders, {} values were given",
+                    stmt.parameter_count(),
+                    values.len()
+                ),
+            ));
+        }
         let count = stmt.column_count();
         let columns: Vec<Column> = stmt
             .columns()
@@ -296,7 +321,9 @@ impl Lite {
             })
             .collect();
         if count == 0 {
-            let changed = stmt.execute([]).map_err(invalid)?;
+            let changed = stmt
+                .execute(rusqlite::params_from_iter(values.iter()))
+                .map_err(invalid)?;
             return Ok(Outcome {
                 columns,
                 rows: 0,
@@ -308,7 +335,9 @@ impl Lite {
         sink.start(&columns);
         let mut rows: u64 = 0;
         let mut truncated = false;
-        let mut cursor = stmt.query([]).map_err(invalid)?;
+        let mut cursor = stmt
+            .query(rusqlite::params_from_iter(values.iter()))
+            .map_err(invalid)?;
         while let Some(row) = cursor.next().map_err(invalid)? {
             let mut cells = Vec::with_capacity(count);
             for i in 0..count {
@@ -343,6 +372,78 @@ mod tests {
 
     fn run(db: &mut Lite, sql: &str) -> AppResult<QueryResult> {
         db.query(sql, Limits::rows(MAX_ROWS), &|| false)
+    }
+
+    fn bound(db: &mut Lite, sql: &str, params: &[Bind]) -> AppResult<QueryResult> {
+        let mut sink = crate::db::value::VecSink::new(MAX_ROWS);
+        let outcome =
+            db.execute_bound(sql, params, Limits::rows(MAX_ROWS), &mut sink, &|| false)?;
+        Ok(QueryResult {
+            columns: outcome.columns,
+            rows: sink.rows,
+            truncated: outcome.truncated,
+            rows_affected: outcome.rows_affected,
+            elapsed_ms: outcome.elapsed_ms,
+        })
+    }
+
+    /// Prompt 025: a value is a value, whatever it looks like.
+    #[test]
+    fn binds_values_instead_of_writing_them_into_the_text() {
+        let mut db = demo();
+        run(
+            &mut db,
+            "CREATE TABLE p (id INTEGER, name TEXT, price REAL, ok INTEGER, day TEXT)",
+        )
+        .unwrap();
+        let evil = "'; DROP TABLE p; --";
+        let inserted = bound(
+            &mut db,
+            "INSERT INTO p VALUES (?1, ?2, ?3, ?4, ?5)",
+            &[
+                Bind::Int("7".into()),
+                Bind::Text(evil.into()),
+                Bind::Decimal("12.5".into()),
+                Bind::Bool(true),
+                Bind::Date("2026-11-11".into()),
+            ],
+        )
+        .unwrap();
+        assert_eq!(inserted.rows_affected, Some(1));
+        // the table is still there and the text is found as text
+        let found = bound(
+            &mut db,
+            "SELECT id, price, ok, day FROM p WHERE name = ?1",
+            &[Bind::Text(evil.into())],
+        )
+        .unwrap();
+        assert_eq!(
+            json_rows(&found),
+            serde_json::json!([[7, 12.5, 1, "2026-11-11"]])
+        );
+        // a list is as many placeholders as it has values
+        run(
+            &mut db,
+            "INSERT INTO p (id, name) VALUES (8, 'ä😀'), (9, NULL)",
+        )
+        .unwrap();
+        let list = bound(
+            &mut db,
+            "SELECT id FROM p WHERE id IN (?1, ?2) OR name = ?3 ORDER BY id",
+            &[
+                Bind::Int("8".into()),
+                Bind::Int("99".into()),
+                Bind::Text("ä😀".into()),
+            ],
+        )
+        .unwrap();
+        assert_eq!(json_rows(&list), serde_json::json!([[8]]));
+        // values and placeholders must match; a number must be one
+        let e = bound(&mut db, "SELECT ?1, ?2", &[Bind::Int("1".into())]).unwrap_err();
+        assert_eq!(e.code, ErrorCode::InvalidQuery);
+        let e = bound(&mut db, "SELECT ?1", &[Bind::Int("1; DROP TABLE p".into())]).unwrap_err();
+        assert_eq!(e.code, ErrorCode::InvalidQuery);
+        assert!(run(&mut db, "SELECT count(*) FROM p").is_ok());
     }
 
     fn json_rows(r: &QueryResult) -> serde_json::Value {

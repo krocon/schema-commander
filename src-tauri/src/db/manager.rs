@@ -562,6 +562,26 @@ impl ConnectionManager {
         sink: &mut dyn RowSink,
         manual: bool,
     ) -> (AppResult<Outcome>, TxState) {
+        self.run_bound(id, tab, sql, &[], timeout, sink, manual)
+    }
+
+    /// As [`ConnectionManager::run_in`], with values bound to the placeholders of the statement
+    /// (prompt 025).
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_bound(
+        &self,
+        id: &str,
+        tab: Option<&str>,
+        sql: &str,
+        params: &[super::Bind],
+        timeout: Option<std::time::Duration>,
+        sink: &mut dyn RowSink,
+        manual: bool,
+    ) -> (AppResult<Outcome>, TxState) {
+        if params.len() > super::MAX_BINDS {
+            let e = AppError::new(ErrorCode::InvalidQuery, "too many values to bind");
+            return (Err(e), TxState::Idle);
+        }
         let (key, open, profile) = match self.session_of(id, tab) {
             Ok(found) => found,
             Err(e) => return (Err(e), TxState::Idle),
@@ -581,7 +601,7 @@ impl ConnectionManager {
         {
             return (Err(e), *open.tx.lock());
         }
-        let result = session.execute(sql, limits, sink, &stop);
+        let result = session.execute_bound(sql, params, limits, sink, &stop);
         let lost = !session.is_open();
         let tx = if lost {
             TxState::Idle

@@ -226,6 +226,58 @@ pub fn begin_statement(kind: DbKind) -> &'static str {
 /// The rows of [`Session::ask`]: text or NULL.
 pub type TextRows = Vec<Vec<Option<String>>>;
 
+/// A value bound to a placeholder of a statement (prompt 025). The window says what a value is; numbers
+/// and dates travel as text and are read here or cast by the statement, so no digit is lost on the way.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "lowercase")]
+pub enum Bind {
+    Text(String),
+    /// A whole number as text (`-42`).
+    Int(String),
+    /// A number with a fraction as text (`3.14`): bound exactly where the driver can.
+    Decimal(String),
+    Bool(bool),
+    /// `2026-11-11`.
+    Date(String),
+    /// `2026-11-11 12:30:00`.
+    Datetime(String),
+}
+
+/// Values a statement may have at most (SQL Server takes 2100 parameters).
+pub const MAX_BINDS: usize = 2000;
+
+impl Bind {
+    /// The whole number of an [`Bind::Int`]; an error when it is none an `i64` holds.
+    pub fn int(text: &str) -> AppResult<i64> {
+        text.trim().parse::<i64>().map_err(|_| {
+            AppError::new(
+                ErrorCode::InvalidQuery,
+                format!(
+                    "„{}“ is not a whole number",
+                    text.chars().take(40).collect::<String>()
+                ),
+            )
+        })
+    }
+
+    /// The number of a [`Bind::Decimal`] for drivers without exact decimals.
+    pub fn float(text: &str) -> AppResult<f64> {
+        text.trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|f| f.is_finite())
+            .ok_or_else(|| {
+                AppError::new(
+                    ErrorCode::InvalidQuery,
+                    format!(
+                        "„{}“ is not a number",
+                        text.chars().take(40).collect::<String>()
+                    ),
+                )
+            })
+    }
+}
+
 /// An open connection.
 pub trait Session: Send {
     /// Runs one statement within its [`Limits`]; its rows go into `sink` as they arrive. A statement that is stopped or runs out of time is
@@ -234,6 +286,21 @@ pub trait Session: Send {
     fn execute(
         &mut self,
         sql: &str,
+        limits: Limits,
+        sink: &mut dyn RowSink,
+        stop: Stop,
+    ) -> AppResult<Outcome> {
+        self.execute_bound(sql, &[], limits, sink, stop)
+    }
+
+    /// As [`Session::execute`], with **bound** values (prompt 025): `sql` holds the placeholders of the
+    /// dialect (`$1`, `?`, `@P1`, `?1`), one per value, in their order. A value never becomes part of the
+    /// text. Without values the statement runs as typed (several statements, utility commands); with
+    /// values it must be one statement.
+    fn execute_bound(
+        &mut self,
+        sql: &str,
+        params: &[Bind],
         limits: Limits,
         sink: &mut dyn RowSink,
         stop: Stop,
