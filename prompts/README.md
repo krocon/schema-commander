@@ -55,7 +55,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 | 031 | [Daten bearbeiten mit Änderungsvorschau](done/031-daten-bearbeiten.md) ([Design](done/031-daten-bearbeiten.design.md)) | E1 | 007, 012, 013, 027 | L | ✅ 11.11.2026 |
 | 032 | [Zeilen einfügen, duplizieren, löschen, Block einfügen](done/032-zeilen-bearbeiten.md) ([Design](done/032-zeilen-bearbeiten.design.md)) | E2 | 031 | M | ✅ 11.11.2026 |
 | 033 | [Import aus CSV und JSON](done/033-import.md) ([Design](done/033-import.design.md)) | F2 | 008, 011 | M–L | ✅ 12.11.2026 |
-| 034 | [Release und Verteilung](034-release.md) | G6 | – (sinnvoll nach Stufe 1) | M | offen |
+| 034 | [Release und Verteilung](done/034-release.md) ([Design](done/034-release.design.md)) | G6 | – (sinnvoll nach Stufe 1) | M | ✅ 12.11.2026 (vorbereitet; kein Tag, kein Paket) |
 | | **Stufe 3 – nach Bedarf** | | | | |
 | 035 | [Weitere Datenbanken](035-weitere-datenbanken.md) | A6 | 003, 008 | L (je Treiber S–M) | offen |
 | 036 | [Suche auf dem Server](036-server-suche.md) | B4 | 008, 011 (Job-Engine) | M | offen |

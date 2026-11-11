@@ -1,6 +1,7 @@
 //! Schema Commander – the Rust side: database access behind Tauri commands; the web view only ever
 //! shows a window of the data.
 
+pub mod about;
 pub mod app_menu;
 pub mod commands;
 pub mod copy;
@@ -138,6 +139,8 @@ pub fn run() {
             commands::meta_relations,
             commands::edit_preview,
             commands::edit_apply,
+            commands::app_info,
+            commands::third_party_notices,
             commands::load_preview,
             commands::load_table_ddl,
             commands::load_create_table,

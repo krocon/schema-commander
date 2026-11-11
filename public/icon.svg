@@ -1,9 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <rect x="64" y="64" width="896" height="896" rx="200" fill="#14171c"/>
-  <g fill="none" stroke="#5aa2f7" stroke-width="56" stroke-linecap="round">
-    <ellipse cx="512" cy="330" rx="250" ry="96"/>
-    <path d="M262 330v182c0 53 112 96 250 96s250-43 250-96V330"/>
-    <path d="M262 512v182c0 53 112 96 250 96s250-43 250-96V512"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#232a36"/>
+      <stop offset="1" stop-color="#11141a"/>
+    </linearGradient>
+    <linearGradient id="db" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7cb8ff"/>
+      <stop offset="1" stop-color="#3f7fe0"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
+  <rect x="66" y="66" width="892" height="892" rx="198" fill="none" stroke="#3a4558" stroke-width="4"/>
+  <!-- the database: three discs -->
+  <g fill="none" stroke="url(#db)" stroke-width="52" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="440" cy="300" rx="236" ry="88"/>
+    <path d="M204 300v150c0 49 106 88 236 88s236-39 236-88V300"/>
+    <path d="M204 450v150c0 49 106 88 236 88 24 0 47-1 69-4"/>
+    <path d="M204 600v130c0 49 106 88 236 88 13 0 26 0 38-1"/>
   </g>
-  <path d="M440 470l72 60-72 60" fill="none" stroke="#4cc38a" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- the command: a prompt on its own panel -->
+  <rect x="520" y="560" width="336" height="256" rx="48" fill="#161b23" stroke="#4cc38a" stroke-width="20"/>
+  <path d="M592 640l64 48-64 48" fill="none" stroke="#4cc38a" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M700 744h92" fill="none" stroke="#e6edf3" stroke-width="40" stroke-linecap="round"/>
 </svg>

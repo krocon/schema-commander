@@ -156,7 +156,7 @@ export const MENU_BAR: readonly TopMenu[] = [
     label: () => T.appName,
     macosOnly: true,
     items: [
-      { native: 'about' },
+      'SHOW_ABOUT',
       '-',
       'OPEN_SETTINGS',
       '-',
@@ -359,7 +359,7 @@ export const MENU_BAR: readonly TopMenu[] = [
     macosOnly: true,
     items: [{ native: 'minimize' }, { native: 'maximize' }, { native: 'fullscreen' }],
   },
-  { id: 'help', label: () => T.help, items: ['SHOW_SHORTCUTS'] },
+  { id: 'help', label: () => T.help, items: ['SHOW_SHORTCUTS', '-', 'SHOW_ABOUT'] },
 ];
 
 /** The context menu of a tab (the tab is brought to the front first, so the actions mean it). */

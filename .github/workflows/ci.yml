@@ -33,11 +33,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm version:check # package.json ↔ tauri.conf.json ↔ Cargo.toml/.lock
       - run: pnpm contrast # WCAG AA of every colour scheme
+      - run: pnpm texts # no text in a template, no German outside *.de.ts
       - run: pnpm scripts:test
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
+      # THIRD-PARTY-NOTICES.txt goes into every package: it must fit the dependencies
+      - run: pnpm notices:check
 
   rust:
     name: Rust (${{ matrix.os }})
