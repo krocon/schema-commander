@@ -16,7 +16,12 @@ export interface ConfirmRequest {
   readonly message: string;
   /** The button that says yes (a verb: „Kopieren“, „Ausführen“). */
   readonly confirm: string;
+  /** A second way to go on ("Rollback" next to "Commit"); none by default. */
+  readonly second?: string;
 }
+
+/** How a question with a second way was answered. */
+export type Choice = 'yes' | 'second' | 'no';
 
 /**
  * Asks before something big or lasting happens. One question at a time: a second one while the first is
@@ -25,19 +30,24 @@ export interface ConfirmRequest {
 @Injectable({ providedIn: 'root' })
 export class ConfirmService {
   readonly request = signal<ConfirmRequest | null>(null);
-  private resolve: ((yes: boolean) => void) | null = null;
+  private resolve: ((choice: Choice) => void) | null = null;
 
   ask(request: ConfirmRequest): Promise<boolean> {
-    if (this.resolve) return Promise.resolve(false);
+    return this.choose(request).then((choice) => choice === 'yes');
+  }
+
+  /** Asks a question that may have a second way to go on. */
+  choose(request: ConfirmRequest): Promise<Choice> {
+    if (this.resolve) return Promise.resolve('no');
     this.request.set(request);
     return new Promise((resolve) => (this.resolve = resolve));
   }
 
-  answer(yes: boolean): void {
+  answer(choice: boolean | Choice): void {
     const resolve = this.resolve;
     this.resolve = null;
     this.request.set(null);
-    resolve?.(yes);
+    resolve?.(choice === true ? 'yes' : choice === false ? 'no' : choice);
   }
 }
 
@@ -56,6 +66,9 @@ export class ConfirmService {
       <p id="confirm-message">{{ request().message }}</p>
       <footer>
         <button #cancel type="button" (click)="answered.emit(false)">Abbrechen</button>
+        @if (request().second; as second) {
+          <button type="button" (click)="answered.emit('second')">{{ second }}</button>
+        }
         <button type="button" class="primary" (click)="answered.emit(true)">
           {{ request().confirm }}
         </button>
@@ -91,7 +104,7 @@ export class ConfirmService {
 })
 export class ConfirmDialog {
   readonly request = input.required<ConfirmRequest>();
-  readonly answered = output<boolean>();
+  readonly answered = output<boolean | Choice>();
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private readonly cancel = viewChild.required<ElementRef<HTMLButtonElement>>('cancel');
 

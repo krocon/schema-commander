@@ -69,6 +69,20 @@ export const ACTIONS = [
     group: 'Datei',
     scope: 'global',
   },
+  // Transactions (prompt 013)
+  { id: 'TX_COMMIT', label: 'Transaktion bestätigen (Commit)', group: 'Abfrage', scope: 'global' },
+  {
+    id: 'TX_ROLLBACK',
+    label: 'Transaktion zurückrollen (Rollback)',
+    group: 'Abfrage',
+    scope: 'global',
+  },
+  {
+    id: 'TOGGLE_AUTOCOMMIT',
+    label: 'Auto-Commit für diesen Tab ein/aus',
+    group: 'Abfrage',
+    scope: 'global',
+  },
   // History (prompt 010)
   { id: 'OPEN_HISTORY', label: 'Verlauf öffnen', group: 'Abfrage', scope: 'global' },
   {

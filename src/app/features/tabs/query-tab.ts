@@ -6,7 +6,8 @@ import { ConnectionsStore } from '../../core/connections/connections.store';
 import { describeError, toAppError } from '../../core/errors/app-error';
 import { TabMeta } from '../../core/session/session-api';
 import { QueryApi } from '../../core/sql/query-api';
-import { RowWindow, RunEvent, RunOutcome } from '../../core/sql/query.models';
+import { RowWindow, RunEvent, RunOutcome, TxState } from '../../core/sql/query.models';
+import { txOpen } from './tx-logic';
 import { EdCaret } from '../editor/editlicious';
 import {
   LogEntry,
@@ -48,6 +49,8 @@ export interface TabServices {
     statements: readonly GuardedStatement[],
     total: number,
   ) => Promise<GuardAnswer | null>;
+  /** Something the user must know and no result shows (a transaction lost with its connection). */
+  readonly notify?: (message: string) => void;
   /** A statement ended, one way or the other (the history notes it). */
   readonly record?: (ran: RanStatement) => void;
   /** Statements ended well on a connection (the schema tree reads again after DDL). */
@@ -103,6 +106,14 @@ export class QueryTab {
   );
 
   private editor: TabEditor | null = null;
+  /** What the server says about the transaction of this tab's session (prompt 013). */
+  readonly tx = signal<TxState>('idle');
+  /** When the open transaction was first seen (ms since the epoch). */
+  readonly txSince = signal<number | null>(null);
+  /** Statements that ran in the open transaction. */
+  readonly txStatements = signal(0);
+  /** Manual commit: statements open a transaction that stays open until commit or rollback. */
+  readonly manual = signal(false);
   /** The run `cancel` was asked for last. */
   private cancelledRun = 0;
   /** Who wrote the statements of the run that is on. */
@@ -259,7 +270,12 @@ export class QueryTab {
             continue;
           }
           const keep = kept < MAX_KEPT_RESULTS;
-          const guard = { confirmation: tokens[index] ?? null, allowDangerous };
+          const guard = {
+            confirmation: tokens[index] ?? null,
+            allowDangerous,
+            session: this.id,
+            manual: this.manual(),
+          };
           const outcome = await this.runOnce(
             connection,
             sql,
@@ -272,6 +288,7 @@ export class QueryTab {
             guard,
           );
           succeeded.push(sql);
+          this.sawTx(outcome.tx, true);
           const hasRows = outcome.resultId !== null;
           if (hasRows && keep) kept++;
           if (outcome.resultId !== null && (!keep || !latest())) this.free([outcome.resultId]);
@@ -301,6 +318,26 @@ export class QueryTab {
           ) {
             connections.markClosed(connection);
           }
+          const lost = ![
+            'invalid_query',
+            'permission_denied',
+            'confirmation_required',
+            'cancelled',
+            'timeout',
+          ].includes(error.code);
+          if (lost && txOpen(this.tx())) {
+            // the server rolled back what was open – or we cannot know
+            this.sawTx('idle', false);
+            this.services.notify?.(
+              'Die Verbindung ging mitten in einer Transaktion verloren. Was nicht bestätigt war, ist zurückgerollt oder sein Stand unbekannt – bitte prüfen.',
+            );
+          } else if (!lost) {
+            // a failed statement can poison the transaction (PostgreSQL): ask what the server says
+            void this.services.api
+              .txState(connection, this.id)
+              .then((tx) => latest() && this.sawTx(tx, true))
+              .catch(() => undefined);
+          }
           // a statement that did not end well leaves no result behind (the backend freed it)
           set(index, { result: null, rows: null });
           if (error.code === 'cancelled') {
@@ -328,7 +365,7 @@ export class QueryTab {
     // a run that is still being checked has nothing on the server yet: it ends before it starts
     this.cancelledRun = this.runId;
     if (this.runningOn !== null) {
-      void this.services.api.cancel(this.runningOn).catch(() => undefined);
+      void this.services.api.cancel(this.runningOn, this.id).catch(() => undefined);
     }
   }
 
@@ -352,8 +389,64 @@ export class QueryTab {
   }
 
   /** The tab goes: its statement is stopped and its results leave the store. */
+  /** Takes note of what the server says about the transaction; `counted`: a statement ran in it. */
+  private sawTx(tx: TxState, counted: boolean): void {
+    const was = txOpen(this.tx());
+    const now = txOpen(tx);
+    if (now && !was) {
+      this.txSince.set(Date.now());
+      this.txStatements.set(counted ? 1 : 0);
+    } else if (now && counted) {
+      this.txStatements.update((n) => n + 1);
+    } else if (!now) {
+      this.txSince.set(null);
+      this.txStatements.set(0);
+    }
+    this.tx.set(tx);
+  }
+
+  /**
+   * Ends the transaction of this tab with `COMMIT` or `ROLLBACK`. Resolves with `null` when it worked,
+   * else with what the server said.
+   */
+  async endTransaction(commit: boolean): Promise<string | null> {
+    try {
+      const tx = await this.services.api.endTransaction(this.connectionId(), this.id, commit);
+      this.sawTx(tx, false);
+      this.log.update((all) =>
+        [
+          ...all,
+          {
+            at: Date.now(),
+            kind: 'info' as const,
+            sql: commit ? 'COMMIT' : 'ROLLBACK',
+            text: commit ? 'Transaktion bestätigt' : 'Transaktion zurückgerollt',
+            elapsedMs: null,
+          },
+        ].slice(-MAX_LOG),
+      );
+      return null;
+    } catch (e) {
+      const error = toAppError(e);
+      void this.services.api
+        .txState(this.connectionId(), this.id)
+        .then((tx) => this.sawTx(tx, false))
+        .catch(() => undefined);
+      return describeError(error);
+    }
+  }
+
+  /** The tab moves to another connection: its session there starts without a transaction. */
+  leaveSession(): void {
+    void this.services.api.closeSession(this.connectionId(), this.id).catch(() => undefined);
+    this.sawTx('idle', false);
+  }
+
   dispose(): void {
     this.cancel();
+    // the session of the tab goes; the server rolls back what was open on it
+    void this.services.api.closeSession(this.connectionId(), this.id).catch(() => undefined);
+    this.sawTx('idle', false);
     this.runId++;
     this.stopTimer();
     this.freeAll();

@@ -61,6 +61,14 @@ interface Menu {
             />
           } @else {
             <span class="title">{{ tab.title() }}</span>
+            @if (tab.tx() === 'active' || tab.tx() === 'failed') {
+              <span
+                class="tx-mark"
+                [class.failed]="tab.tx() === 'failed'"
+                title="Offene Transaktion"
+                >TX</span
+              >
+            }
             @if (mark(tab); as m) {
               <span class="guard-mark">{{ m }}</span>
             }

@@ -166,6 +166,29 @@ pub const CANCEL_GRACE: Duration = Duration::from_secs(3);
 /// `true` when the work is stopped (cancelled, tab closed): requests end with [`cancelled`].
 pub type Stop<'a> = &'a (dyn Fn() -> bool + Sync);
 
+/// Whether a session is inside a transaction (prompt 013) – as the server says, not as we guess.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TxState {
+    /// No transaction is open.
+    Idle,
+    /// A transaction is open.
+    Active,
+    /// A transaction is open and has failed: only a rollback gets out of it (PostgreSQL, SQL Server).
+    Failed,
+    /// The server could not be asked.
+    Unknown,
+}
+
+/// The statement that opens a transaction in a dialect.
+pub fn begin_statement(kind: DbKind) -> &'static str {
+    match kind {
+        DbKind::Postgres | DbKind::Sqlite => "BEGIN",
+        DbKind::Mysql => "START TRANSACTION",
+        DbKind::Sqlserver => "BEGIN TRANSACTION",
+    }
+}
+
 /// The rows of [`Session::ask`]: text or NULL.
 pub type TextRows = Vec<Vec<Option<String>>>;
 
@@ -205,6 +228,8 @@ pub trait Session: Send {
         timeout: Option<Duration>,
         stop: Stop,
     ) -> AppResult<TextRows>;
+    /// Asks the server whether a transaction is open on this session.
+    fn transaction_state(&mut self, stop: Stop) -> TxState;
     /// Product and version as the server names itself.
     fn server_version(&mut self, stop: Stop) -> AppResult<String>;
     fn is_open(&self) -> bool;

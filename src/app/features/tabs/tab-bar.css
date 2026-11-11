@@ -153,3 +153,21 @@
   font-weight: 700;
   line-height: 15px;
 }
+
+/* a tab with an open transaction (prompt 013) */
+.tx-mark {
+  flex: none;
+  padding: 0 4px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+}
+
+.tx-mark.failed {
+  background: var(--badge-danger-bg);
+  color: var(--badge-danger-fg);
+  box-shadow: none;
+}

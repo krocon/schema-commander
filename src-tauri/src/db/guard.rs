@@ -746,6 +746,26 @@ pub fn classify(sql: &str, kind: DbKind) -> Class {
     worst
 }
 
+/// Whether a text is nothing but transaction control (`BEGIN`, `COMMIT`, `ROLLBACK`, savepoints): such a
+/// statement is sent as it is, also in manual mode.
+pub fn is_transaction_control(sql: &str, kind: DbKind) -> bool {
+    let scan = scan(sql, kind);
+    let mut any = false;
+    for statement in scan.toks.split(|t| *t == Tok::Semi) {
+        let Some(first) = statement.iter().find_map(word) else {
+            if statement.is_empty() {
+                continue;
+            }
+            return false;
+        };
+        if !TRANSACTION_STARTS.contains(&first) && first != "SET" {
+            return false;
+        }
+        any = true;
+    }
+    any
+}
+
 /// The statement that makes a session read only on the server, where the database has one.
 pub fn read_only_statement(kind: DbKind) -> Option<&'static str> {
     match kind {

@@ -42,6 +42,8 @@ export interface Settings {
   readonly exportChoices: Readonly<Record<string, unknown>>;
   /** Ask before `UPDATE`/`DELETE` without `WHERE`, `DROP`, `TRUNCATE` … on unprotected connections too. */
   readonly confirmDangerous: boolean;
+  /** Minutes after which an open transaction is said to hold locks; 0 = never (prompt 013). */
+  readonly txWarnMinutes: number;
   /** Ids of the actions run from the command palette, the latest first. */
   readonly recentActions: readonly string[];
 }
@@ -71,6 +73,7 @@ export const DEFAULT_SETTINGS: Settings = {
   csvDelimiter: ',',
   lastCopyFormat: null,
   confirmDangerous: true,
+  txWarnMinutes: 5,
   lastExportFormat: null,
   exportChoices: {},
   historyEnabled: true,
@@ -138,6 +141,7 @@ export function mergeSettings(saved: unknown): Settings {
               .slice(0, 16),
           )
         : {},
+    txWarnMinutes: Math.min(1440, numberOr(s['txWarnMinutes'], DEFAULT_SETTINGS.txWarnMinutes)),
     confirmDangerous:
       typeof s['confirmDangerous'] === 'boolean'
         ? s['confirmDangerous']

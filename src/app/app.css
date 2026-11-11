@@ -177,3 +177,24 @@
   color: var(--text);
   box-shadow: inset 0 0 0 1px var(--border);
 }
+
+/* transactions (prompt 013) */
+.tx-mode[aria-pressed='true'] {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.tx-status {
+  flex: none;
+  padding: 0 8px;
+  border-radius: 10px;
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.tx-status.failed {
+  color: var(--badge-danger-fg);
+  background: var(--badge-danger-bg);
+  box-shadow: none;
+}

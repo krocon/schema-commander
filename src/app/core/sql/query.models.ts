@@ -61,6 +61,8 @@ export interface RunOutcome {
   /** Rows changed by a statement without a result; `null` for a statement with one. */
   readonly rowsAffected: number | null;
   readonly elapsedMs: number;
+  /** What the server says about the transaction of the session afterwards (prompt 013). */
+  readonly tx: TxState;
 }
 
 /** A window of rows as it crosses the bridge. */
@@ -77,3 +79,9 @@ export interface Verdict {
   readonly class: StatementClass;
   readonly need: StatementNeed;
 }
+
+/**
+ * Mirrors `TxState` in src-tauri/src/db/mod.rs: whether a transaction is open on a session, as the server
+ * says. `failed`: open, but only a rollback gets out of it. `unknown`: the server could not be asked.
+ */
+export type TxState = 'idle' | 'active' | 'failed' | 'unknown';
