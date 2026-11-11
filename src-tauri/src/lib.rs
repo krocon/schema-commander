@@ -11,6 +11,7 @@ pub mod history;
 pub mod menu;
 pub mod results;
 pub mod session;
+pub mod ssh;
 pub mod textfile;
 pub mod themes;
 

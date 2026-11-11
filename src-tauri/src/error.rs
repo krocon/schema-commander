@@ -34,6 +34,13 @@ pub enum ErrorCode {
     /// The server refused the statement for lack of rights.
     /// The statement writes or destroys and the connection wants a confirmation first (prompt 012).
     ConfirmationRequired,
+    /// The SSH server shows a key that is in no known_hosts: the message holds type and fingerprint; a
+    /// connect that names this fingerprint records it (prompt 014).
+    HostKeyUnknown,
+    /// The SSH server shows another key than the one on record, or a revoked one. There is no way past.
+    HostKeyChanged,
+    /// The SSH tunnel needs a password or the passphrase of its key file.
+    SshSecretRequired,
     PermissionDenied,
     /// A password is needed and none is known: the frontend asks for it.
     SecretRequired,
