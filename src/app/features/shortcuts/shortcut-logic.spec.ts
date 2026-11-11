@@ -24,7 +24,7 @@ describe('shortcutGroups', () => {
     expect(ids('toggle_side')).toEqual(['TOGGLE_SIDEBAR']);
     expect(ids('mod+enter')).toEqual(['RUN_STATEMENT']);
     // as shown: ⌘↩ is also part of ⇧⌘↩
-    expect(ids('⌘↩')).toEqual(['RUN_STATEMENT', 'RUN_SCRIPT']);
+    expect(ids('⌘↩')).toEqual(['RUN_STATEMENT', 'RUN_SCRIPT', 'RUN_AGAIN']);
     expect(ids('zzz')).toEqual([]);
   });
 });

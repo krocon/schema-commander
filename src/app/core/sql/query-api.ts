@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Channel } from '@tauri-apps/api/core';
 import { call } from '../backend/call';
-import { RowWindow, RunEvent, RunOutcome, TxState, Verdict } from './query.models';
+import { BoundValue, RowWindow, RunEvent, RunOutcome, TxState, Verdict } from './query.models';
 
 /** What lets a guarded statement run (prompt 012). */
 export interface RunGuard {
@@ -13,6 +13,11 @@ export interface RunGuard {
   readonly session?: string;
   /** Manual commit: a transaction is opened before the statement when none is open. */
   readonly manual?: boolean;
+  /**
+   * Values for the placeholders of the statement (prompt 025), in their order: `$1`, `?`, `@P1`, `?1` –
+   * the form of the driver. The driver binds them; they are never part of the text.
+   */
+  readonly params?: readonly BoundValue[];
 }
 
 /**
@@ -87,6 +92,7 @@ export class TauriQueryApi extends QueryApi {
       allowDangerous: guard.allowDangerous ?? false,
       session: guard.session ?? null,
       manual: guard.manual ?? false,
+      params: guard.params && guard.params.length > 0 ? guard.params : null,
       onEvent: channel,
     });
   }

@@ -1,3 +1,17 @@
+import { Dialect } from '../editor/sql-split';
+import {
+  BoundStatement,
+  ParamValue,
+  bind,
+  describeValue,
+  findParams,
+  formsOf,
+  inPlace,
+  paramKeys,
+  writtenPosition,
+} from '../params/param-logic';
+import type { ParamRequest } from '../params/param.service';
+import { PARAM_TEXTS } from '../params/param-texts';
 import { FormatMode } from '../../core/format/format-api';
 import { FormatOutcome } from '../format/format-logic';
 import { RunGuard } from '../../core/sql/query-api';
@@ -80,6 +94,15 @@ export interface TabServices {
   ) => Promise<GuardAnswer | null>;
   /** Something the user must know and no result shows (a transaction lost with its connection). */
   readonly notify?: (message: string) => void;
+  /**
+   * Parameters in statements (prompt 025): whether they are looked for, which forms count on a connection,
+   * and the question for their values (`null` = the run is off). Without it statements run as written.
+   */
+  readonly params?: {
+    enabled(): boolean;
+    forms(connectionId: string): readonly string[] | undefined;
+    ask(request: ParamRequest): Promise<Readonly<Record<string, ParamValue>> | null>;
+  };
   /** A statement ended, one way or the other (the history notes it). */
   readonly record?: (ran: RanStatement) => void;
   /** Statements ended well on a connection (the schema tree reads again after DDL). */
@@ -107,6 +130,13 @@ export class QueryTab {
   /** The profile statements run on. */
   readonly connectionId = signal('demo');
   readonly filePath = signal<string | null>(null);
+  /**
+   * The values of parameters given in this tab, by name (prompt 025). Kept while the tab lives, in memory
+   * only: they are data of the user and go neither into the session nor into the history.
+   */
+  readonly paramValues = signal<Readonly<Record<string, ParamValue>>>({});
+  /** The statements of the last run that had parameters: to run them again with the same values. */
+  private lastStatements: readonly string[] | null = null;
   readonly encoding = signal<string | null>(null);
 
   /** The statements of the last run (one statement, a selection or a script) and how they went. */
@@ -262,7 +292,12 @@ export class QueryTab {
    * an error the rest is left out, unless the setting says to go on. A run started while another runs takes
    * its place: the older one is stopped and its answers are dropped.
    */
-  async runAll(statements: readonly string[], origin: 'user' | 'app' = 'user'): Promise<void> {
+  async runAll(
+    statements: readonly string[],
+    origin: 'user' | 'app' = 'user',
+    /** Use the values given last without asking, as far as they are all there (prompt 025). */
+    sameValues = false,
+  ): Promise<void> {
     this.origin = origin;
     const sqls = statements.filter((s) => s.trim() !== '');
     if (sqls.length === 0) return;
@@ -291,8 +326,66 @@ export class QueryTab {
       this.stopTimer();
       this.shown.set(0);
     };
+    // parameters (prompt 025): the values are asked for once, for the whole run; from here on `sent` is
+    // what the driver gets – the placeholders in the text, the values apart
+    let sent: readonly BoundStatement[] | null = null;
+    const params =
+      origin === 'user' && this.services.params?.enabled() ? this.services.params : null;
+    const dialect = this.dialectOf(connection);
+    if (params) {
+      const formsNow = () => formsOf(dialect, params.forms(connection));
+      const bindAll = (values: Readonly<Record<string, ParamValue>>) => {
+        const all: BoundStatement[] = [];
+        for (const sql of sqls) {
+          const bound = bind(sql, dialect, formsNow(), values);
+          if (!bound.ok) return bound;
+          all.push(bound.statement);
+        }
+        return all;
+      };
+      if (paramKeys(sqls, dialect, formsNow()).length > 0) {
+        let values = this.paramValues();
+        let bound = bindAll(values);
+        if (!sameValues || !Array.isArray(bound)) {
+          const answer = await params.ask({ connectionId: connection, dialect, sqls, values });
+          if (!latest()) return;
+          if (!answer) {
+            abandon();
+            return;
+          }
+          values = { ...values, ...answer };
+          this.paramValues.set(values);
+          bound = bindAll(values);
+        }
+        if (!Array.isArray(bound)) {
+          // the dialog checks before it answers; this is for an answer from elsewhere
+          this.services.notify?.(PARAM_TEXTS.notBound(bound.key));
+          abandon();
+          return;
+        }
+        sent = bound;
+        const usesNow = (sql: string) => {
+          const first = new Map<string, boolean>();
+          for (const u of findParams(sql, dialect, formsNow())) {
+            if (!first.has(u.key)) first.set(u.key, u.list);
+          }
+          return [...first];
+        };
+        this.runs.update((all) =>
+          all.map((r, i) => {
+            const described = usesNow(sqls[i]).map(([k, list]) =>
+              describeValue(k, inPlace(values[k], list)),
+            );
+            return described.length > 0 ? { ...r, values: described.join(' · ') } : r;
+          }),
+        );
+        this.lastStatements = statements;
+      }
+    }
+    /** What goes to the backend for a statement: as written, or with the placeholders of the driver. */
+    const texts = sent ? sent.map((s) => s.sql) : sqls;
     try {
-      const verdicts = await this.services.api.check(connection, sqls, allowDangerous);
+      const verdicts = await this.services.api.check(connection, texts, allowDangerous);
       const guarded = needingConfirmation(sqls, verdicts);
       if (guarded.length > 0 && latest()) {
         const answer = await this.services.confirmRun?.(connection, guarded, sqls.length);
@@ -304,7 +397,7 @@ export class QueryTab {
         }
         tokens = await this.services.api.confirm(
           connection,
-          sqls,
+          texts,
           answer.typedName,
           allowDangerous,
         );
@@ -352,10 +445,11 @@ export class QueryTab {
             allowDangerous,
             session: this.id,
             manual: this.manual(),
+            params: sent?.[index].params ?? [],
           };
           const outcome = await this.runOnce(
             connection,
-            sql,
+            texts[index],
             options.timeoutMs,
             (event) => {
               // rows can be looked at while the rest is still read
@@ -381,7 +475,13 @@ export class QueryTab {
             elapsedMs: outcome.elapsedMs,
           });
         } catch (e) {
-          const error = toAppError(e);
+          let error = toAppError(e);
+          const bound = sent?.[index];
+          if (bound && bound.replaced.length > 0 && error.details?.position) {
+            // the database counted in the statement it got: back to the one that is written
+            const position = writtenPosition(sql, bound, error.details.position);
+            error = { ...error, details: { ...error.details, position } };
+          }
           const elapsedMs = Date.now() - started;
           // the backend says whether the session survived; a lost one is opened again by the next run
           if (
@@ -450,6 +550,23 @@ export class QueryTab {
         this.showFirstOfInterest();
       }
     }
+  }
+
+  /**
+   * Runs the statements of the last run that had parameters again, with the same values and without a
+   * question (prompt 025). `false`: there is nothing to run again.
+   */
+  runAgain(): boolean {
+    const statements = this.lastStatements;
+    if (!statements) return false;
+    void this.runAll(statements, 'user', true);
+    return true;
+  }
+
+  /** The database of a connection, for the rules its statements are read by. */
+  private dialectOf(connection: string): Dialect {
+    const kind = this.services.connections.profiles().find((p) => p.id === connection)?.kind;
+    return (kind ?? 'sqlite') as Dialect;
   }
 
   /** Asks the backend to stop the statement that runs. */
@@ -570,6 +687,7 @@ export class QueryTab {
       sql: firstLine(run.sql),
       text: outcomeText(run),
       elapsedMs: run.elapsedMs,
+      values: run.values ?? null,
     };
     this.log.update((all) => [...all, entry].slice(-MAX_LOG));
     if (run.kind === 'done' || run.kind === 'failed' || run.kind === 'cancelled') {

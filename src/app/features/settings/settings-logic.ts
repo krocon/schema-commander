@@ -44,6 +44,7 @@ export type SettingKey =
   | 'csvDelimiter'
   | 'stopOnError'
   | 'statementTimeoutSec'
+  | 'paramsEnabled'
   | 'autoCommit'
   | 'txWarnMinutes'
   | 'historyEnabled'
@@ -96,6 +97,7 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   { key: 'csvDelimiter', group: 'result', kind: 'choice', values: [',', ';', '\t'] },
   { key: 'stopOnError', group: 'run', kind: 'bool' },
   { key: 'statementTimeoutSec', group: 'run', kind: 'number', min: 0, max: 86_400, step: 1 },
+  { key: 'paramsEnabled', group: 'run', kind: 'bool' },
   { key: 'autoCommit', group: 'run', kind: 'bool' },
   { key: 'txWarnMinutes', group: 'run', kind: 'number', min: 0, max: 1440, step: 1 },
   { key: 'historyEnabled', group: 'history', kind: 'bool' },
@@ -155,6 +157,7 @@ const LOCAL_KEYS: readonly string[] = [
   'recentObjects',
   'savedQueriesDir',
   'recentSaved',
+  'paramForms',
 ];
 
 export const EXPORT_FORMAT = 'schema-commander-settings';

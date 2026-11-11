@@ -48,6 +48,12 @@ export const ACTIONS = [
     scope: 'global',
   },
   {
+    id: 'RUN_AGAIN',
+    label: 'Run again with the same parameter values',
+    group: 'Query',
+    scope: 'global',
+  },
+  {
     id: 'EXPAND_STAR',
     label: 'Expand * to the list of columns',
     group: 'Query',

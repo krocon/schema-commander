@@ -42,11 +42,12 @@
   Vorschau, in Rust mit Selbstprüfung der Tokens; Schlüsselwörter groß/klein, eine Zeile, Zeilenkommentar
   (Prompt 023); **gespeicherte Abfragen** als `.sql`-Dateien mit Kopfkommentar in einem wählbaren Ordner
   (Ansicht der Seitenleiste, Suche, `q:` in der Palette) und **Textbausteine** mit Platzhaltern je Dialekt
-  (Prompt 024);
+  (Prompt 024); **Parameter** (`:name`, `${name}`, `?`, `$1` …): Werte werden abgefragt, je Tab gemerkt und vom
+  Treiber gebunden (Prompt 025);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–024),
+  erledigt: 001–025),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -133,6 +134,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/settings/       SettingsDialog (Gruppen, Suche, Zurücksetzen, Export/Import), settings-logic.ts
                                (rein: Schema des Dialogs, Suche, Datei)
   app/features/shortcuts/      Kürzel-Editor und -Übersicht (ShortcutDialog, shortcut-logic.ts)
+  app/features/params/         param-logic.ts (rein: Parameter finden, Typen, umschreiben je Dialekt, Katalog),
+                               ParamService (Root: die Frage), ParamDialog
   app/features/results/        ResultGrid (GuiExpert Table), result-model.ts (rein: Spalten, Breiten,
                                WindowAreaModel mit Seiten-Cache), cell-format.ts (rein: Zelle → Text + Klasse,
                                entschärfen, kürzen; Katalog cell-format.cases.json), CopyService (Root) +
@@ -211,6 +214,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   gegen die Tokens des Textes. Das Fenster ersetzt nur den Bereich (`replaceRange`), nie den ganzen Text.
   Stellen des Editors zählen Spalten in **Codepunkten**, JavaScript in UTF-16: umgerechnet wird nur mit
   `core/text/places.ts` (`placeIn`, `offsetAt`).
+- **Parameter**: Werte des Nutzers gehen nur als `Bind` über `run_query` und werden vom Treiber gebunden
+  (`Session::execute_bound`); nie in den SQL-Text, den Verlauf, die Sitzung oder ein Log schreiben.
 - **Schutz**: Was SQL ausführt, ruft im Backend `ConnectionManager::admit`; das Fenster fragt nur, entscheidet nie.
 - **Zustand in Signals**, Stores je Instanz ohne `providedIn`, Globales in Root-Services; veraltete Antworten verwerfen.
 - **Texte nur in Katalogen**: `*-texts.ts` (Englisch, Quelle) + `*-texts.de.ts` über `translatable()`; nie beim

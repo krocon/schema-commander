@@ -47,6 +47,8 @@ export interface StatementRun {
   /** What the database said about a failure beyond its message. */
   readonly details?: ErrorDetails | null;
   readonly elapsedMs: number | null;
+  /** The values its parameters were bound to, as text (prompt 025): `kunde = 42 · ab = 2026-01-01`. */
+  readonly values?: string | null;
 }
 
 /** A line of the messages of a tab. */
@@ -58,6 +60,8 @@ export interface LogEntry {
   readonly sql: string;
   readonly text: string;
   readonly elapsedMs: number | null;
+  /** The values of its parameters; shown here, never noted in the history. */
+  readonly values?: string | null;
 }
 
 /** Results with rows a run keeps (in the store of the backend); later ones are only counted. */

@@ -6,7 +6,7 @@
 
 use super::value::{Cell, ColKind, Column, Outcome, RowSink, pg_numeric, text, text_bytes};
 use super::{
-    Ended, Limits, Profile, Session, Stop, TlsMode, block, block_cancelling, closed,
+    Bind, Ended, Limits, Profile, Session, Stop, TlsMode, block, block_cancelling, closed,
     keeps_connection, sqlx_error,
 };
 use crate::error::AppResult;
@@ -241,6 +241,7 @@ impl Pg {
     async fn run(
         conn: &mut PgConnection,
         sql: &str,
+        params: &[Bind],
         sink: &mut dyn RowSink,
         profile: &Profile,
     ) -> AppResult<Outcome> {
@@ -251,8 +252,24 @@ impl Pg {
         let mut affected: u64 = 0;
         let mut truncated = false;
         {
-            let mut stream =
-                sqlx_core::raw_sql::raw_sql(AssertSqlSafe(sql.to_string())).fetch_many(&mut *conn);
+            // without values: the text protocol, everything a user can type runs; with values: the
+            // statement is prepared and the values travel apart from it
+            let mut stream = if params.is_empty() {
+                sqlx_core::raw_sql::raw_sql(AssertSqlSafe(sql.to_string())).fetch_many(&mut *conn)
+            } else {
+                let mut query = sqlx_core::query::query::<Postgres>(AssertSqlSafe(sql.to_string()));
+                for p in params {
+                    query = match p {
+                        // numbers with a fraction and dates are text here: the statement casts them
+                        Bind::Text(v) | Bind::Decimal(v) | Bind::Date(v) | Bind::Datetime(v) => {
+                            query.bind(v.clone())
+                        }
+                        Bind::Int(v) => query.bind(Bind::int(v)?),
+                        Bind::Bool(v) => query.bind(*v),
+                    };
+                }
+                sqlx_core::executor::Executor::fetch_many(&mut *conn, query)
+            };
             while let Some(item) = stream.next().await {
                 match item.map_err(fail)? {
                     Either::Left(done) => affected += done.rows_affected(),
@@ -351,9 +368,10 @@ impl Session for Pg {
         r
     }
 
-    fn execute(
+    fn execute_bound(
         &mut self,
         sql: &str,
+        params: &[Bind],
         limits: Limits,
         sink: &mut dyn RowSink,
         stop: Stop,
@@ -361,7 +379,7 @@ impl Session for Pg {
         let profile = self.profile.clone();
         let conn = self.conn.as_mut().ok_or_else(closed)?;
         let cancel = Self::cancel(self.options.clone(), self.backend, self.tunnel.clone());
-        let run = Self::run(conn, sql, sink, &profile);
+        let run = Self::run(conn, sql, params, sink, &profile);
         let (r, ended) = block_cancelling(limits.timeout, stop, run, cancel);
         if r.as_ref().is_ok_and(|o| o.truncated) {
             // Rows were left unread: end the statement on the server, so the connection is free at once.

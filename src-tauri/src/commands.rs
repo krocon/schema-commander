@@ -300,6 +300,7 @@ pub fn run_query(
     allow_dangerous: Option<bool>,
     session: Option<String>,
     manual: Option<bool>,
+    params: Option<Vec<crate::db::Bind>>,
     on_event: Channel<RunEvent>,
 ) -> AppResult<RunOutcome> {
     // the guard of the connection (prompt 012): here, not in the window
@@ -323,10 +324,12 @@ pub fn run_query(
         });
     };
     let mut sink = StoreSink::new(&store, &report);
-    let (result, tx) = manager.run_in(
+    // values of parameters (prompt 025) are bound by the driver; they are neither logged nor kept
+    let (result, tx) = manager.run_bound(
         &id,
         session.as_deref(),
         &sql,
+        params.as_deref().unwrap_or(&[]),
         timeout,
         &mut sink,
         manual.unwrap_or(false),

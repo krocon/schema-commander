@@ -91,6 +91,13 @@ export interface Settings {
   readonly recentSaved: readonly string[];
   /** Own snippets (prompt 024); they win over built-in ones with the same prefix. */
   readonly snippets: readonly OwnSnippet[];
+  /** Look for parameters in statements and ask for their values (prompt 025). */
+  readonly paramsEnabled: boolean;
+  /**
+   * Which ways of writing a parameter count, per connection id (`colon`, `brace`, `question` …); a
+   * connection that is not listed has the defaults of its database.
+   */
+  readonly paramForms: Readonly<Record<string, readonly string[]>>;
 }
 
 /** A snippet: typed as `prefix`, it becomes `body` (placeholders `${1:name}`, `$0`). */
@@ -154,6 +161,8 @@ export const DEFAULT_SETTINGS: Settings = {
   savedQueriesDir: '',
   recentSaved: [],
   snippets: [],
+  paramsEnabled: true,
+  paramForms: {},
   activeConnection: 'demo',
   stopOnError: true,
   statementTimeoutSec: 0,
@@ -259,6 +268,21 @@ export function mergeSettings(saved: unknown): Settings {
           .slice(0, 20)
       : [],
     snippets: mergeSnippets(s['snippets']),
+    paramsEnabled: bool('paramsEnabled'),
+    paramForms:
+      s['paramForms'] && typeof s['paramForms'] === 'object' && !Array.isArray(s['paramForms'])
+        ? Object.fromEntries(
+            Object.entries(s['paramForms'] as Record<string, unknown>)
+              .filter(
+                ([id, forms]) =>
+                  /^[a-z0-9-]{1,64}$/.test(id) &&
+                  Array.isArray(forms) &&
+                  forms.every((f) => typeof f === 'string' && /^[a-zA-Z]{1,16}$/.test(f)),
+              )
+              .slice(0, 500)
+              .map(([id, forms]) => [id, (forms as string[]).slice(0, 8)]),
+          )
+        : {},
     stopOnError:
       typeof s['stopOnError'] === 'boolean' ? s['stopOnError'] : DEFAULT_SETTINGS.stopOnError,
     groupDigits:

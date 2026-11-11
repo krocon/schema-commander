@@ -50,6 +50,7 @@ import {
   TableInfo,
 } from '../app/core/schema/schema.models';
 import {
+  BoundValue,
   Cell,
   QueryColumn,
   RowWindow,
@@ -139,6 +140,7 @@ export class FakeQueryApi extends QueryApi {
     this.statements.push({ connection, sql });
     this.tokens.push(guard.confirmation ?? null);
     this.sessions.push({ session: guard.session ?? null, manual: guard.manual ?? false });
+    this.params.push(guard.params ?? []);
     const need = this.verdict(sql).need;
     if (need === 'refused') {
       return Promise.reject({ code: 'permission_denied', message: 'this connection is read only' });
@@ -187,6 +189,8 @@ export class FakeQueryApi extends QueryApi {
   readonly closedSessions: string[] = [];
   /** The session and mode each statement ran with. */
   readonly sessions: { session: string | null; manual: boolean }[] = [];
+  /** The values bound to each statement that ran (prompt 025). */
+  readonly params: (readonly BoundValue[])[] = [];
 
   endTransaction(connection: string, session: string, commit: boolean): Promise<TxState> {
     this.ended.push({ connection, session, commit });

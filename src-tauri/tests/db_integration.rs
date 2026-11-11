@@ -1586,3 +1586,159 @@ fn every_server_says_where_and_why_a_statement_failed() {
     assert_eq!(d.near.as_deref(), Some("nmae"));
     assert_eq!(d.sqlstate.as_deref(), Some("207"));
 }
+
+use schema_commander_lib::db::Bind;
+use schema_commander_lib::db::value::VecSink;
+
+fn bound(s: &mut Box<dyn Session>, sql: &str, params: &[Bind]) -> QueryResult {
+    let mut sink = VecSink::new(1000);
+    let outcome = s
+        .execute_bound(sql, params, Limits::rows(1000), &mut sink, &|| false)
+        .unwrap_or_else(|e| panic!("{sql}: {e}"));
+    QueryResult {
+        columns: outcome.columns,
+        rows: sink.rows,
+        truncated: outcome.truncated,
+        rows_affected: outcome.rows_affected,
+        elapsed_ms: outcome.elapsed_ms,
+    }
+}
+
+/// Prompt 025: values are bound, in the form the window writes the placeholders for each server
+/// (`param-logic.ts`): text, whole numbers, exact decimals, booleans, dates, lists – and a text that looks
+/// like SQL stays a text.
+#[test]
+#[ignore = "needs the database containers"]
+fn every_server_binds_values() {
+    let evil = "'; DROP TABLE sc_bind; --";
+    let text = |v: &str| Bind::Text(v.into());
+    let int = |v: &str| Bind::Int(v.into());
+    // (profile, placeholder of value n, casts for decimal / date / datetime, boolean type)
+    type Form = fn(usize) -> String;
+    let cases: Vec<(Profile, Form, [&str; 3], &str, &str)> = vec![
+        (
+            pg(),
+            |n| format!("${n}"),
+            ["numeric", "date", "timestamp"],
+            "boolean",
+            "varchar(40)",
+        ),
+        (
+            my(),
+            |_| "?".into(),
+            ["DECIMAL(65,30)", "DATE", "DATETIME(6)"],
+            "boolean",
+            "char(40)",
+        ),
+        (
+            maria(),
+            |_| "?".into(),
+            ["DECIMAL(65,30)", "DATE", "DATETIME(6)"],
+            "boolean",
+            "char(40)",
+        ),
+        (
+            ms(),
+            |n| format!("@P{n}"),
+            ["", "date", "datetime2"],
+            "bit",
+            "varchar(40)",
+        ),
+    ];
+    for (p, ph, casts, boolean, chars) in cases {
+        let kind = p.kind;
+        let mut s = open(&p);
+        let cast = |n: usize, ty: &str| {
+            if ty.is_empty() {
+                ph(n)
+            } else {
+                format!("CAST({} AS {ty})", ph(n))
+            }
+        };
+        run(&mut s, "DROP TABLE IF EXISTS sc_bind");
+        run(
+            &mut s,
+            &format!(
+                "CREATE TABLE sc_bind (id int, name varchar(100), price decimal(20,6), ok {boolean}, day date)"
+            ),
+        );
+        let insert = format!(
+            "INSERT INTO sc_bind (id, name, price, ok, day) VALUES ({}, {}, {}, {}, {})",
+            ph(1),
+            ph(2),
+            cast(3, casts[0]),
+            ph(4),
+            cast(5, casts[1]),
+        );
+        let done = bound(
+            &mut s,
+            &insert,
+            &[
+                int("7"),
+                text(evil),
+                Bind::Decimal("1234567890.123456".into()),
+                Bind::Bool(true),
+                Bind::Date("2026-11-11".into()),
+            ],
+        );
+        assert_eq!(done.rows_affected, Some(1), "{kind:?}");
+        bound(
+            &mut s,
+            &insert,
+            &[
+                int("8"),
+                text("ä😀"),
+                Bind::Decimal("-0.5".into()),
+                Bind::Bool(false),
+                Bind::Date("2020-02-29".into()),
+            ],
+        );
+        // the text that looks like SQL did nothing and is found as text; the decimal kept every digit
+        let found = bound(
+            &mut s,
+            &format!(
+                "SELECT id, CAST(price AS {chars}), CAST(day AS {chars}) FROM sc_bind WHERE name = {} AND ok = {}",
+                ph(1),
+                ph(2)
+            ),
+            &[text(evil), Bind::Bool(true)],
+        );
+        assert_eq!(
+            rows(&found),
+            serde_json::json!([[7, "1234567890.123456", "2026-11-11"]]),
+            "{kind:?}"
+        );
+        // a list: one placeholder per value; a date and a time compared as what they are
+        let list = bound(
+            &mut s,
+            &format!(
+                "SELECT id FROM sc_bind WHERE id IN ({}, {}, {}) AND day >= {} AND day < {} ORDER BY id",
+                ph(1),
+                ph(2),
+                ph(3),
+                cast(4, casts[1]),
+                cast(5, casts[2]),
+            ),
+            &[
+                int("7"),
+                int("8"),
+                int("99"),
+                Bind::Date("2026-01-01".into()),
+                Bind::Datetime("2027-01-01 00:00:00".into()),
+            ],
+        );
+        assert_eq!(rows(&list), serde_json::json!([[7]]), "{kind:?}");
+        // a whole number compared with a decimal column, and the session is fine afterwards
+        let cmp = bound(
+            &mut s,
+            &format!("SELECT count(*) FROM sc_bind WHERE price > {}", ph(1)),
+            &[int("0")],
+        );
+        assert_eq!(rows(&cmp), serde_json::json!([[1]]), "{kind:?}");
+        assert_eq!(
+            rows(&run(&mut s, "SELECT count(*) FROM sc_bind")),
+            serde_json::json!([[2]])
+        );
+        run(&mut s, "DROP TABLE sc_bind");
+    }
+}

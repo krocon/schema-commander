@@ -2,7 +2,9 @@
 //! (`simple_query`); the first result set with columns is the result.
 
 use super::value::{Cell, ColKind, Column, Outcome, RowSink, text};
-use super::{Limits, Profile, Session, Stop, TlsMode, block, clean, closed, keeps_connection};
+use super::{
+    Bind, Limits, Profile, Session, Stop, TlsMode, block, clean, closed, keeps_connection,
+};
 use crate::error::{AppError, AppResult, ErrorCode};
 use futures_util::StreamExt;
 use std::time::Instant;
@@ -241,6 +243,26 @@ fn defines(sql: &str) -> bool {
     word.eq_ignore_ascii_case("CREATE") || word.eq_ignore_ascii_case("ALTER")
 }
 
+/// A decimal as text → an exact `numeric` (digits and scale); `None` when it is none or too long.
+fn numeric(text: &str) -> Option<tiberius::numeric::Numeric> {
+    let t = text.trim();
+    let (sign, digits) = match t.strip_prefix('-') {
+        Some(rest) => (-1i128, rest),
+        None => (1i128, t.strip_prefix('+').unwrap_or(t)),
+    };
+    let (whole, fraction) = digits.split_once('.').unwrap_or((digits, ""));
+    let all = format!("{whole}{fraction}");
+    if all.is_empty() || all.len() > 37 || !all.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let value = all.parse::<i128>().ok()?;
+    let scale = u8::try_from(fraction.len()).ok()?;
+    Some(tiberius::numeric::Numeric::new_with_scale(
+        sign * value,
+        scale,
+    ))
+}
+
 /// Statements that must be alone in their batch (`CREATE VIEW`, `CREATE PROCEDURE` …) are refused with the
 /// added `SELECT`: error 111, or a syntax error (102, 156) at the added statement. All three are found when
 /// the batch is compiled – nothing of it ran, so it is safe to send it again without the addition.
@@ -252,9 +274,30 @@ impl Ms {
     async fn batch(
         conn: &mut Conn,
         sql: String,
+        params: &[Bind],
         sink: &mut dyn RowSink,
     ) -> Result<(Vec<Column>, u64, bool, Option<u64>), tiberius::error::Error> {
-        let mut stream = conn.simple_query(sql).await?;
+        let mut stream = if params.is_empty() {
+            conn.simple_query(sql).await?
+        } else {
+            // sp_executesql: the values travel as parameters @P1 …, never in the text
+            let mut query = tiberius::Query::new(sql);
+            for p in params {
+                match p {
+                    Bind::Text(v) | Bind::Date(v) | Bind::Datetime(v) => query.bind(v.clone()),
+                    Bind::Int(v) => match v.trim().parse::<i64>() {
+                        Ok(n) => query.bind(n),
+                        Err(_) => query.bind(v.clone()),
+                    },
+                    Bind::Decimal(v) => match numeric(v) {
+                        Some(n) => query.bind(n),
+                        None => query.bind(v.clone()),
+                    },
+                    Bind::Bool(v) => query.bind(*v),
+                }
+            }
+            query.query(conn).await?
+        };
         let mut cols: Vec<Column> = Vec::new();
         let mut rows: u64 = 0;
         let mut current: Vec<Column> = Vec::new();
@@ -307,13 +350,14 @@ impl Ms {
     async fn run(
         conn: &mut Conn,
         sql: &str,
+        params: &[Bind],
         sink: &mut dyn RowSink,
         profile: &Profile,
     ) -> AppResult<Outcome> {
         let started = Instant::now();
-        let first = Self::batch(conn, with_rowcount(sql), sink).await;
+        let first = Self::batch(conn, with_rowcount(sql), params, sink).await;
         let (columns, rows, truncated, affected) = match first {
-            Err(e) if must_be_alone(&e) => Self::batch(conn, sql.to_string(), sink)
+            Err(e) if must_be_alone(&e) => Self::batch(conn, sql.to_string(), params, sink)
                 .await
                 .map_err(|e| ms_error(profile, &e))?,
             other => other.map_err(|e| ms_error(profile, &e))?,
@@ -376,9 +420,10 @@ impl Session for Ms {
         r
     }
 
-    fn execute(
+    fn execute_bound(
         &mut self,
         sql: &str,
+        params: &[Bind],
         limits: Limits,
         sink: &mut dyn RowSink,
         stop: Stop,
@@ -386,7 +431,11 @@ impl Session for Ms {
         let profile = self.profile.clone();
         let conn = self.conn.as_mut().ok_or_else(closed)?;
         // tiberius cannot send the attention signal: a stopped statement costs the connection
-        let r = block(limits.timeout, stop, Self::run(conn, sql, sink, &profile));
+        let r = block(
+            limits.timeout,
+            stop,
+            Self::run(conn, sql, params, sink, &profile),
+        );
         let lost = r.as_ref().is_err_and(|e| {
             !keeps_connection(e.code) || matches!(e.code, ErrorCode::Cancelled | ErrorCode::Timeout)
         });

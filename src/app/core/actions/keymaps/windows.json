@@ -5,6 +5,9 @@
   "RUN_SCRIPT": [
     "Mod+Shift+Enter"
   ],
+  "RUN_AGAIN": [
+    "Mod+Alt+Enter"
+  ],
   "EXPAND_STAR": [
     "Mod+K Mod+8"
   ],
