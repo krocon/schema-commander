@@ -46,11 +46,13 @@
   Treiber gebunden (Prompt 025); **Wert-Ansicht**: der ganze Wert der Zelle unter dem Cursor neben dem Gitter
   (Text, JSON/XML gesetzt, Hex, Bild, Zahl, Datum), stückweise aus dem Ergebnisspeicher (Prompt 026); **Sortieren und
   Filtern**: Tabellen-Ansicht mit Filterzeile und `ORDER BY` auf dem Server (Werte gebunden), jedes andere
-  Ergebnis als Sicht im Ergebnisspeicher (Prompt 027);
+  Ergebnis als Sicht im Ergebnisspeicher (Prompt 027); **Auswahl auswerten**: Anzahl, Summe, Mittel, Min, Max
+  der markierten Zellen in der Statuszeile, exakt gerechnet in Rust; Spalte zusammenfassen mit den häufigsten
+  Werten (Prompt 028);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–027),
+  erledigt: 001–028),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -122,6 +124,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/export/         ExportDialog, ExportService (Root: ein Job, Statuszeile), export-logic.ts (rein)
   app/features/filter/         FilterBar (Bedingungen der Tabellen-Ansicht, lokaler Filter), TableViews (Root:
                                Tabelle als Tabellen-Ansicht öffnen), filter-logic.ts (rein)
+  app/features/stats/          StatsService (Root: Kennzahlen der Auswahl, gedrosselt, Überholtes verworfen),
+                               StatsPopover (Spalte zusammenfassen), stats-logic.ts (rein: Kennzahlen → Anzeige)
   app/features/format/         FormatService (Root: ein Job, Statuszeile), format-logic.ts (rein: Stil,
                                Cursor nach dem Formatieren)
   app/features/guard/          GuardDialog (Rückfrage), GuardService, guard-logic.ts (rein)
@@ -169,6 +173,8 @@ src-tauri/                     Rust
   src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink; ganze Werte
                                getrennt (`<id>.values`) und stückweise (`value`) (rein, getestet)
   src/image_info.rs            Bildformat und Maße aus den ersten Bytes, nie dekodiert (rein, getestet)
+  src/stats.rs                 Kennzahlen einer Auswahl über den Ergebnisspeicher: exakte Dezimalsumme (`Dec`),
+                               Min/Max, Spanne, häufigste Werte (rein, getestet)
   src/saved.rs                 gespeicherte Abfragen: .sql-Dateien mit Kopfkommentar, Pfadprüfung, Suche,
                                Fingerabdruck des Ordners (rein, getestet)
   src/history.rs               Verlauf: history.sqlite, Suche, Aufbewahrung, endgültiges Löschen (rein, getestet)
@@ -228,6 +234,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   `core/text/places.ts` (`placeIn`, `offsetAt`).
 - **Tabellen-Ansicht**: Ihr SQL baut nur `db/filter.rs`; das Fenster setzt nie Werte oder Namen in SQL ein.
   Lokales Sortieren/Filtern geschieht im Ergebnisspeicher (`derive`), nie über die Zeilen im Fenster.
+- **Kennzahlen**: Summen rechnet nur `stats.rs` (dezimal, exakt) – nie JavaScript und nie über die Zeilen im
+  Fenster; das Fenster zeigt den Text, den es bekommt.
 - **Werte**: Eine `Cell` trägt den ganzen Wert; gekürzt wird nur beim Schreiben der Zeile. Nichts aus einem
   Wert wird als Markup in die Seite gesetzt; Bilder nur innerhalb der Grenzen von `value-logic.ts` als `blob:`.
 - **Parameter**: Werte des Nutzers gehen nur als `Bind` über `run_query` und werden vom Treiber gebunden

@@ -113,6 +113,66 @@ impl Dec {
         (a, b, scale)
     }
 
+    /// Adds the amount of `other` to the amount of this one, in place: the sign of neither is looked at.
+    /// This is what a sum over millions of cells does per cell, so it allocates only when the number grows.
+    fn add_amount(&mut self, other: &Dec) {
+        if other.scale > self.scale {
+            self.digits
+                .extend(std::iter::repeat_n(0, other.scale - self.scale));
+            self.scale = other.scale;
+        }
+        let shift = self.scale - other.scale;
+        if other.digits.len() + shift > self.digits.len() {
+            let missing = other.digits.len() + shift - self.digits.len();
+            self.digits.splice(0..0, std::iter::repeat_n(0, missing));
+        }
+        let mut at = self.digits.len() - shift;
+        let mut carry = 0u8;
+        for d in other.digits.iter().rev() {
+            at -= 1;
+            let sum = self.digits[at] + d + carry;
+            self.digits[at] = sum % 10;
+            carry = sum / 10;
+        }
+        while carry > 0 {
+            if at == 0 {
+                self.digits.insert(0, carry);
+                break;
+            }
+            at -= 1;
+            let sum = self.digits[at] + carry;
+            self.digits[at] = sum % 10;
+            carry = sum / 10;
+        }
+    }
+
+    /// Which amount is the larger, whatever the signs; nothing is copied.
+    fn order_amount(&self, other: &Dec) -> Ordering {
+        let lead = |d: &Dec| {
+            let int = d.digits.len() - d.scale;
+            int - d.digits[..int - 1].iter().take_while(|x| **x == 0).count()
+        };
+        let (a, b) = (lead(self), lead(other));
+        if a != b {
+            return a.cmp(&b);
+        }
+        let from = |d: &Dec| d.digits.len() - d.scale - lead(d);
+        let (fa, fb) = (from(self), from(other));
+        let len = (self.digits.len() - fa).max(other.digits.len() - fb);
+        for i in 0..len {
+            let x = self.digits.get(fa + i).copied().unwrap_or(0);
+            let y = other.digits.get(fb + i).copied().unwrap_or(0);
+            if x != y {
+                return x.cmp(&y);
+            }
+        }
+        Ordering::Equal
+    }
+
+    fn is_zero(&self) -> bool {
+        self.digits.iter().all(|d| *d == 0)
+    }
+
     fn cmp_abs(a: &[u8], b: &[u8]) -> Ordering {
         a.cmp(b)
     }
@@ -204,8 +264,7 @@ impl Dec {
             (false, true) => Ordering::Greater,
             (true, false) => Ordering::Less,
             (neg, _) => {
-                let (a, b, _) = self.aligned(other);
-                let abs = Self::cmp_abs(&a, &b);
+                let abs = self.order_amount(other);
                 if neg { abs.reverse() } else { abs }
             }
         }
@@ -345,7 +404,8 @@ pub fn stats(
     let mut out = Stats::default();
     let mut seen: HashSet<u64> = HashSet::new();
     let mut counts: HashMap<Option<String>, u64> = HashMap::new();
-    let mut sum = Dec::zero();
+    // what is above zero and what is below are added up apart, each in place; taken together at the end
+    let (mut above, mut below) = (Dec::zero(), Dec::zero());
     let (mut min, mut max): (Option<Dec>, Option<Dec>) = (None, None);
     // (moment, text) of the first and the last, and the one kind of time they are of
     let mut first: Option<(i64, String)> = None;
@@ -396,7 +456,11 @@ pub fn stats(
                 let number = if numeric[i] { Dec::parse(&text) } else { None };
                 if let Some(n) = number {
                     out.numbers += 1;
-                    sum = sum.add(&n);
+                    if n.neg {
+                        below.add_amount(&n);
+                    } else {
+                        above.add_amount(&n);
+                    }
                     if min.as_ref().is_none_or(|m| n.order(m) == Ordering::Less) {
                         min = Some(n.clone());
                     }
@@ -435,6 +499,8 @@ pub fn stats(
     }
     out.distinct = seen.len() as u64;
     if out.numbers > 0 {
+        below.neg = !below.is_zero();
+        let sum = above.add(&below);
         out.mean = Some(sum.div(out.numbers).to_string());
         out.sum = Some(sum.to_string());
         out.min = min.map(|d| d.to_string());
@@ -521,6 +587,46 @@ mod tests {
             ),
             "100000000000000000000000000000000000000.0000000000"
         );
+    }
+
+    #[test]
+    fn adds_amounts_in_place_like_the_slow_way() {
+        let values = [
+            "0",
+            "0.5",
+            "999.999",
+            "1",
+            "0.0000000001",
+            "99999999999999999999",
+            "12.50",
+            "7",
+            "0.001",
+        ];
+        for a in values {
+            for b in values {
+                let mut sum = dec(a);
+                sum.add_amount(&dec(b));
+                sum.normalise();
+                assert_eq!(
+                    sum.to_string(),
+                    dec(a).add(&dec(b)).to_string(),
+                    "{a} + {b}"
+                );
+            }
+        }
+        let order = |a: &str, b: &str| dec(a).order(&dec(b));
+        for (a, b, is) in [
+            ("0.5", "0.50", Ordering::Equal),
+            ("0.5", "0.49", Ordering::Greater),
+            ("10", "9.999", Ordering::Greater),
+            ("0", "0.000", Ordering::Equal),
+            ("-0.5", "-0.49", Ordering::Less),
+            ("123.4", "123.45", Ordering::Less),
+            ("-7", "7", Ordering::Less),
+        ] {
+            assert_eq!(order(a, b), is, "{a} ? {b}");
+            assert_eq!(order(b, a), is.reverse(), "{b} ? {a}");
+        }
     }
 
     #[test]
@@ -788,6 +894,24 @@ mod tests {
                 "topPartial": false
             })
         );
+    }
+
+    /// How long a big column takes (not part of the suite: `cargo test --lib stats::tests::big -- --ignored --nocapture`).
+    #[test]
+    #[ignore = "a measurement, not a check"]
+    fn big_column_is_summed_in_a_time_one_can_wait() {
+        let rows = (0..2_000_000i64)
+            .map(|i| vec![Cell::Decimal(format!("{}.{:010}", i * 37, i))])
+            .collect();
+        let (_dir, store, id) = store_with(&[("n", ColKind::Decimal)], rows);
+        let start = std::time::Instant::now();
+        let s = stats(&store, id, &all(), false, &|| false).unwrap();
+        eprintln!(
+            "2 million cells: {:?}, sum {}",
+            start.elapsed(),
+            s.sum.unwrap()
+        );
+        assert_eq!(s.numbers, 2_000_000);
     }
 
     #[test]

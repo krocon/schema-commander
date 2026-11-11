@@ -286,6 +286,12 @@
   overflow: hidden;
 }
 
+/* a narrow window cuts the figures, never the texts beside them */
+.status > span:not(.stats, .spacer) {
+  flex: none;
+  white-space: nowrap;
+}
+
 .stat {
   flex: none;
   max-width: 360px;
@@ -309,6 +315,12 @@
 .stats-note,
 .stats-busy {
   color: var(--text-dim);
+}
+
+.stats-note,
+.stats-busy {
+  flex: none;
+  white-space: nowrap;
 }
 
 .sr-only {
