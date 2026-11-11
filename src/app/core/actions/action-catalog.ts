@@ -195,6 +195,22 @@ export const ACTIONS = [
   { id: 'OPEN_FILE', label: 'Open SQL file …', group: 'File', scope: 'global' },
   { id: 'SAVE_FILE', label: 'Save tab as file', group: 'File', scope: 'global' },
   { id: 'SAVE_FILE_AS', label: 'Save tab as …', group: 'File', scope: 'global' },
+  // Saved queries and snippets (prompt 024)
+  { id: 'SAVE_QUERY', label: 'Save as query …', group: 'File', scope: 'global' },
+  { id: 'GOTO_SAVED', label: 'Go to saved query …', group: 'Navigation', scope: 'global' },
+  {
+    id: 'SAVED_FOLDER',
+    label: 'Choose the folder of the saved queries …',
+    group: 'File',
+    scope: 'global',
+  },
+  {
+    id: 'SAVED_DEFAULT_FOLDER',
+    label: 'Saved queries: use the default folder',
+    group: 'File',
+    scope: 'global',
+  },
+  { id: 'OPEN_SNIPPETS', label: 'Edit snippets …', group: 'Query', scope: 'global' },
   // Connection
   { id: 'NEW_CONNECTION', label: 'New connection …', group: 'Connection', scope: 'global' },
   {
@@ -258,6 +274,7 @@ export const ACTIONS = [
     scope: 'global',
   },
   { id: 'SIDEBAR_HISTORY', label: 'Sidebar: history', group: 'View', scope: 'global' },
+  { id: 'SIDEBAR_SAVED', label: 'Sidebar: saved queries', group: 'View', scope: 'global' },
   { id: 'TOGGLE_ZEN', label: 'Zen mode (only the queries)', group: 'View', scope: 'global' },
   { id: 'COLOR_SCHEME', label: 'Choose colour scheme …', group: 'View', scope: 'global' },
   {

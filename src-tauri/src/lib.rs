@@ -12,6 +12,7 @@ pub mod format;
 pub mod history;
 pub mod menu;
 pub mod results;
+pub mod saved;
 pub mod session;
 pub mod ssh;
 pub mod textfile;
@@ -75,6 +76,7 @@ pub fn run() {
             app.manage(commands::MenuState::default());
             app.manage(commands::NameIndexes::default());
             app.manage(commands::Jobs::default());
+            app.manage(saved::SavedDir::new(&app.path().app_data_dir()?));
             app.manage(history::History::new(app.path().app_data_dir()?));
             // A frontend that never applies a scheme must not leave the window hidden.
             let handle = app.handle().clone();
@@ -110,6 +112,15 @@ pub fn run() {
             commands::export_query,
             commands::cancel_job,
             commands::format_sql,
+            commands::saved_use_folder,
+            commands::saved_list,
+            commands::saved_stamp,
+            commands::saved_read,
+            commands::saved_save,
+            commands::saved_rename,
+            commands::saved_create_folder,
+            commands::saved_delete,
+            commands::saved_search,
             commands::export_preview,
             commands::reveal_export,
             commands::history_add,

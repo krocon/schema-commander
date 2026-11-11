@@ -18,6 +18,7 @@ export const MENU_EN = {
   layout: 'Split view',
   schema: 'Schema',
   format: 'More formatting',
+  saved: 'Folder of the saved queries',
   failed: (reason: string) => `The menu bar could not be built: ${reason}`,
   /** The words of the items macOS provides. */
   native: {

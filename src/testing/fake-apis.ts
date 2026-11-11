@@ -1,3 +1,10 @@
+import {
+  SavedApi,
+  SavedEntry,
+  SavedListing,
+  SavedMeta,
+  SavedQuery,
+} from '../app/core/saved/saved-api';
 import { FormatApi, FormatDialect, FormatMode, FormatStyle } from '../app/core/format/format-api';
 import { ExportApi, ExportSpec, Exported } from '../app/core/backend/export-api';
 import {
@@ -434,6 +441,11 @@ export class FakeFileDialogApi extends FileDialogApi {
 
   saveFile(title: string, defaultName: string): Promise<string | null> {
     this.asked.push(`${title}: ${defaultName}`);
+    return Promise.resolve(this.path);
+  }
+
+  openFolder(title: string): Promise<string | null> {
+    this.asked.push(title);
     return Promise.resolve(this.path);
   }
 }
@@ -899,5 +911,130 @@ export class FakeFormatApi extends FormatApi {
 
   async cancel(jobId: number): Promise<void> {
     this.cancelled.push(jobId);
+  }
+}
+
+/**
+ * Saved queries in memory: `files` is the folder (id → what the file holds). Ids are made like the backend
+ * makes them (`folder/Name.sql`, a taken name gets a number); `outside()` changes the folder as another
+ * program would.
+ */
+export class FakeSavedApi extends SavedApi {
+  readonly files = new Map<string, { meta: SavedMeta; text: string; modified: number }>();
+  readonly folders = new Set<string>();
+  readonly deleted: string[] = [];
+  readonly searched: string[] = [];
+  root = '/queries';
+  /** A folder `useFolder` refuses. */
+  gone: string | null = null;
+  fail: { code: string; message: string } | null = null;
+  stamps = 0;
+  private clock = 1;
+
+  /** Writes a file as another program would. */
+  outside(id: string, name: string, text: string): void {
+    this.files.set(id, {
+      meta: { name, description: '', tags: [], connection: null, dialect: null },
+      text,
+      modified: this.clock++,
+    });
+  }
+
+  private entry(id: string): SavedEntry {
+    const file = this.files.get(id)!;
+    return {
+      id,
+      path: `${this.root}/${id}`,
+      folder: id.includes('/') ? id.slice(0, id.lastIndexOf('/')) : '',
+      ...file.meta,
+      modified: file.modified,
+      size: file.text.length,
+    };
+  }
+
+  private listing(): SavedListing {
+    const ids = [...this.files.keys()].sort();
+    const folders = new Set(this.folders);
+    for (const id of ids) {
+      const parts = id.split('/').slice(0, -1);
+      for (let i = 1; i <= parts.length; i++) folders.add(parts.slice(0, i).join('/'));
+    }
+    return {
+      root: this.root,
+      entries: ids.map((id) => this.entry(id)),
+      folders: [...folders].sort(),
+      stamp: this.currentStamp(),
+      truncated: false,
+    };
+  }
+
+  private currentStamp(): string {
+    return [...this.files.entries()].map(([id, f]) => `${id}:${f.modified}`).join('|');
+  }
+
+  private freeId(folder: string, name: string, keep: string | null): string {
+    for (let n = 1; ; n++) {
+      const id = `${folder ? `${folder}/` : ''}${name}${n === 1 ? '' : ` ${n}`}.sql`;
+      if (!this.files.has(id) || id === keep) return id;
+    }
+  }
+
+  async useFolder(path: string | null): Promise<SavedListing> {
+    if (path !== null && path === this.gone) throw { code: 'not_found', message: 'gone' };
+    this.root = path ?? '/queries';
+    return this.listing();
+  }
+
+  async list(): Promise<SavedListing> {
+    if (this.fail) throw this.fail;
+    return this.listing();
+  }
+
+  async stamp(): Promise<string> {
+    this.stamps++;
+    return this.currentStamp();
+  }
+
+  async read(id: string): Promise<SavedQuery> {
+    const file = this.files.get(id);
+    if (!file) throw { code: 'not_found', message: id };
+    return { entry: this.entry(id), text: file.text };
+  }
+
+  async save(id: string | null, folder: string, meta: SavedMeta, text: string): Promise<string> {
+    if (this.fail) throw this.fail;
+    const target = id ?? this.freeId(folder, meta.name, null);
+    this.files.set(target, { meta, text, modified: this.clock++ });
+    return target;
+  }
+
+  async rename(id: string, folder: string, name: string): Promise<string> {
+    const file = this.files.get(id);
+    if (!file) throw { code: 'not_found', message: id };
+    const target = this.freeId(folder, name, id);
+    this.files.delete(id);
+    this.files.set(target, { ...file, meta: { ...file.meta, name }, modified: this.clock++ });
+    return target;
+  }
+
+  async createFolder(folder: string): Promise<void> {
+    this.folders.add(folder);
+  }
+
+  async delete(id: string): Promise<void> {
+    if (this.fail) throw this.fail;
+    this.deleted.push(id);
+    this.files.delete(id);
+  }
+
+  async search(query: string): Promise<readonly string[]> {
+    this.searched.push(query);
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+    return [...this.files.entries()]
+      .filter(([id, f]) => {
+        const hay = `${id}\n${f.meta.name}\n${f.text}`.toLowerCase();
+        return words.every((w) => hay.includes(w));
+      })
+      .map(([id]) => id);
   }
 }

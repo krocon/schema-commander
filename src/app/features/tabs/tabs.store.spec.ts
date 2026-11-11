@@ -36,6 +36,7 @@ function attachEditor(tab: QueryTab, text: string) {
     text,
     goTo: () => Promise.resolve(),
     getText: () => Promise.resolve(editor.text),
+    selectedText: () => Promise.resolve(''),
     setText: (t) => {
       editor.text = t;
       return Promise.resolve();

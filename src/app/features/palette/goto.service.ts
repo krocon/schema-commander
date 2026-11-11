@@ -4,6 +4,7 @@ import { MAX_RECENT_OBJECTS } from '../../core/settings/settings.models';
 import { SettingsService } from '../../core/settings/settings.service';
 import { ObjectDetailsService } from '../details/details.service';
 import { selectTemplate } from '../schema/schema-logic';
+import { SavedStore } from '../saved/saved.store';
 import { SchemaStore } from '../schema/schema.store';
 import { TabsStore } from '../tabs/tabs.store';
 import { GotoHit, GotoVariant, allowsVariant, recentKey } from './goto-logic';
@@ -20,6 +21,7 @@ export class GotoService {
   private readonly details = inject(ObjectDetailsService);
   private readonly schema = inject(SchemaStore);
   private readonly settings = inject(SettingsService);
+  private readonly saved = inject(SavedStore);
 
   async run(hit: GotoHit, wanted: GotoVariant, connectionId: string): Promise<void> {
     if (hit.kind === 'tab' && hit.id) {
@@ -29,6 +31,14 @@ export class GotoService {
     }
     if (hit.kind === 'connection' && hit.id) {
       this.connections.activate(hit.id);
+      return;
+    }
+    if (hit.kind === 'saved' && hit.id) {
+      const entry = this.saved.entries().find((e) => e.id === hit.id);
+      if (!entry) return;
+      if (wanted === 'insert') await this.saved.insert(entry);
+      else if (wanted === 'select') await this.saved.run(entry);
+      else await this.saved.open(entry);
       return;
     }
     const object = hit.object;

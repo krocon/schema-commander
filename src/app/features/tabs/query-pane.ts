@@ -464,6 +464,7 @@ export class QueryPane implements OnInit, OnDestroy {
   private readonly handle: TabEditor = {
     goTo: (line, ch) => this.editor()?.goTo(line, ch) ?? Promise.resolve(),
     getText: () => this.editor()?.getText() ?? Promise.resolve(this.startText()?.text ?? ''),
+    selectedText: () => this.editor()?.selectedText() ?? Promise.resolve(''),
     setText: (text) => this.editor()?.setText(text) ?? Promise.resolve(),
     focus: () => this.editor()?.focus(),
     insert: (text, snippet) => this.editor()?.insert(text, snippet) ?? Promise.resolve(),

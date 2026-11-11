@@ -85,7 +85,23 @@ export interface Settings {
   readonly recentActions: readonly string[];
   /** `schema.name` of the objects jumped to (prompt 020), the latest first. */
   readonly recentObjects: readonly string[];
+  /** The folder of the saved queries (prompt 024), from the folder dialog; `''` = the app's own. */
+  readonly savedQueriesDir: string;
+  /** Ids of the saved queries used lately, the latest first. */
+  readonly recentSaved: readonly string[];
+  /** Own snippets (prompt 024); they win over built-in ones with the same prefix. */
+  readonly snippets: readonly OwnSnippet[];
 }
+
+/** A snippet: typed as `prefix`, it becomes `body` (placeholders `${1:name}`, `$0`). */
+export interface OwnSnippet {
+  readonly prefix: string;
+  readonly description: string;
+  readonly body: string;
+}
+
+export const MAX_SNIPPETS = 300;
+export const MAX_SNIPPET_BODY = 8000;
 
 export type LanguageSetting = 'system' | 'en' | 'de';
 export type LineNumbers = 'absolute' | 'relative' | 'off';
@@ -93,7 +109,8 @@ export const NULL_TEXTS = ['NULL', '∅', '(null)', ''] as const;
 /** Fonts are names for CSS: letters, digits, blanks, commas, quotes, hyphens. */
 const FONT = /^[\p{L}\p{N} ,'"_-]{0,120}$/u;
 export type ResultPlacement = 'bottom' | 'right';
-export type SidebarView = 'database' | 'history';
+export type SidebarView = 'database' | 'history' | 'saved';
+export const SIDEBAR_VIEWS: readonly SidebarView[] = ['database', 'history', 'saved'];
 
 export const KEYMAP_VERSION = 1;
 export const MAX_RECENT_ACTIONS = 12;
@@ -134,6 +151,9 @@ export const DEFAULT_SETTINGS: Settings = {
   keymap: { version: KEYMAP_VERSION, bindings: {} },
   recentActions: [],
   recentObjects: [],
+  savedQueriesDir: '',
+  recentSaved: [],
+  snippets: [],
   activeConnection: 'demo',
   stopOnError: true,
   statementTimeoutSec: 0,
@@ -218,7 +238,10 @@ export function mergeSettings(saved: unknown): Settings {
     resultWidth: size(s['resultWidth'], DEFAULT_SETTINGS.resultWidth),
     resultVisible:
       typeof s['resultVisible'] === 'boolean' ? s['resultVisible'] : DEFAULT_SETTINGS.resultVisible,
-    sidebarView: s['sidebarView'] === 'history' ? 'history' : 'database',
+    sidebarView:
+      s['sidebarView'] === 'history' || s['sidebarView'] === 'saved'
+        ? s['sidebarView']
+        : 'database',
     keymap: mergeKeymap(s['keymap']).keymap,
     recentActions: recent(s['recentActions']),
     recentObjects: Array.isArray(s['recentObjects'])
@@ -226,6 +249,16 @@ export function mergeSettings(saved: unknown): Settings {
           .filter((n): n is string => typeof n === 'string' && n.length > 0 && n.length <= 600)
           .slice(0, MAX_RECENT_OBJECTS)
       : [],
+    savedQueriesDir:
+      typeof s['savedQueriesDir'] === 'string' && s['savedQueriesDir'].length <= 2000
+        ? s['savedQueriesDir']
+        : '',
+    recentSaved: Array.isArray(s['recentSaved'])
+      ? s['recentSaved']
+          .filter((id): id is string => typeof id === 'string' && id.length > 0 && id.length <= 600)
+          .slice(0, 20)
+      : [],
+    snippets: mergeSnippets(s['snippets']),
     stopOnError:
       typeof s['stopOnError'] === 'boolean' ? s['stopOnError'] : DEFAULT_SETTINGS.stopOnError,
     groupDigits:
@@ -288,6 +321,27 @@ export function mergeSettings(saved: unknown): Settings {
         ? s['activeConnection']
         : DEFAULT_SETTINGS.activeConnection,
   };
+}
+
+/** Stored snippets, forgiving: what is no snippet is left out, a prefix counts once. */
+export function mergeSnippets(raw: unknown): OwnSnippet[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: OwnSnippet[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as Record<string, unknown>;
+    const prefix = o['prefix'];
+    const body = o['body'];
+    if (typeof prefix !== 'string' || !/^[\p{L}\p{N}_-]{1,32}$/u.test(prefix)) continue;
+    if (typeof body !== 'string' || body.trim() === '' || body.length > MAX_SNIPPET_BODY) continue;
+    if (seen.has(prefix)) continue;
+    seen.add(prefix);
+    const description = typeof o['description'] === 'string' ? o['description'].slice(0, 200) : '';
+    out.push({ prefix, description, body });
+    if (out.length >= MAX_SNIPPETS) break;
+  }
+  return out;
 }
 
 function recent(raw: unknown): string[] {

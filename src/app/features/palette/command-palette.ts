@@ -1,3 +1,4 @@
+import { SavedStore } from '../saved/saved.store';
 import {
   Component,
   ElementRef,
@@ -127,7 +128,7 @@ interface Row {
       }
       <p class="status" role="status">{{ status() }}</p>
       @if (mode() === 'goto') {
-        <p class="keys">{{ t.gotoKeys }}</p>
+        <p class="keys">{{ savedScope() ? t.gotoSavedKeys : t.gotoKeys }}</p>
       }
     </dialog>
   `,
@@ -273,12 +274,15 @@ export class CommandPalette implements OnInit {
   private readonly connections = inject(ConnectionsStore);
   private readonly schema = inject(SchemaStore);
   private readonly goto = inject(GotoService);
+  private readonly saved = inject(SavedStore);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private readonly field = viewChild.required<ElementRef<HTMLInputElement>>('field');
   private readonly list = viewChild.required<ElementRef<HTMLElement>>('list');
 
   /** What the palette searches when it opens. */
   readonly start = input<'commands' | 'goto'>('commands');
+  /** What stands in the field when it opens (`q: ` for the saved queries). */
+  readonly initial = input('');
   readonly closed = output<void>();
 
   protected readonly mode = signal<'commands' | 'goto'>('commands');
@@ -337,6 +341,19 @@ export class CommandPalette implements OnInit {
         )
       : [];
     const names = scope.objects ? (this.names()?.hits ?? []).map(objectHit) : [];
+    if (scope.saved) {
+      // without a text: those used lately first, then the rest by name
+      const recent = this.saved.recent();
+      const known = new Set(recent.map((e) => e.id));
+      const all = scope.text
+        ? this.saved.entries()
+        : [...recent, ...this.saved.entries().filter((e) => !known.has(e.id))];
+      return localHits(
+        'saved',
+        all.map((e) => ({ id: e.id, name: e.name, where: e.folder })),
+        scope.text,
+      );
+    }
     return mergeHits(tabs, connections, names);
   });
 
@@ -363,13 +380,17 @@ export class CommandPalette implements OnInit {
     const row = this.rows()[this.index()];
     return row ? `palette-option-${row.id}` : null;
   });
+  protected readonly savedScope = computed(() => gotoScope(this.query()).saved);
   /** What a screen reader hears after every key: how many there are, or why there are none. */
   protected readonly status = computed(() => {
     if (this.mode() === 'commands') {
       return this.hits().length === 0 ? this.t.none : this.t.count(this.hits().length);
     }
     const scope = gotoScope(this.query());
-    if (scope.saved) return this.t.gotoNoSaved;
+    if (scope.saved) {
+      const n = this.gotoHits().length;
+      return n === 0 ? this.t.gotoNoSaved : this.t.gotoCount(n);
+    }
     const problem = this.problem();
     const shown = this.gotoHits().length;
     if (scope.objects && problem && shown === 0) return problem;
@@ -402,6 +423,8 @@ export class CommandPalette implements OnInit {
 
   ngOnInit(): void {
     this.mode.set(this.start());
+    this.query.set(this.initial());
+    if (gotoScope(this.initial()).saved) void this.saved.start().then(() => this.saved.check());
     this.dialog().nativeElement.showModal();
     this.field().nativeElement.focus();
   }
@@ -418,6 +441,8 @@ export class CommandPalette implements OnInit {
 
   private async search(connectionId: string, query: string): Promise<void> {
     const mine = ++this.asked;
+    // `q:` typed here: the saved queries are read when they are asked for first
+    if (gotoScope(query).saved) void this.saved.start();
     if (!gotoScope(query).objects) {
       this.searching.set(false);
       return;

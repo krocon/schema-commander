@@ -31,6 +31,8 @@ export const APP_EN = {
   database: 'Database',
   historyHint: 'Recently run statements',
   history: 'History',
+  savedHint: 'Saved queries',
+  saved: 'Saved',
   sidebarWidth: 'Width of the sidebar',
   revealExport: 'Show in the file manager',
   dismissExport: 'Close the message of the export',

@@ -110,6 +110,15 @@
   "SIDEBAR_HISTORY": [
     "Mod+K Mod+H"
   ],
+  "SIDEBAR_SAVED": [
+    "Mod+K Mod+Q"
+  ],
+  "SAVE_QUERY": [
+    "Mod+Alt+S"
+  ],
+  "GOTO_SAVED": [
+    "Mod+Alt+O"
+  ],
   "TOGGLE_ZEN": [
     "Mod+K Mod+N"
   ],

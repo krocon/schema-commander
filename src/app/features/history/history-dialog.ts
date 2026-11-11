@@ -1,3 +1,5 @@
+import { nameFromText } from '../saved/saved-logic';
+import { SavedStore } from '../saved/saved.store';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -145,6 +147,9 @@ export const HISTORY_SEARCH_DELAY_MS = 200;
         <button type="button" [disabled]="!selected()" (click)="copy()">{{ t.copy }}</button>
         <button type="button" [disabled]="!selected()" (click)="newTab(false)">
           {{ t.inNewTab }}
+        </button>
+        <button type="button" [disabled]="!selected()" (click)="saveAsQuery()">
+          {{ t.saveAsQuery }}
         </button>
         <button type="button" [disabled]="!selected()" (click)="newTab(true)">
           {{ t.runAgain }}
@@ -327,6 +332,7 @@ export class HistoryDialog {
   private readonly api = inject(HistoryApi);
   private readonly history = inject(HistoryService);
   private readonly tabs = inject(TabsStore);
+  private readonly saved = inject(SavedStore);
   private readonly copier = inject(CopyService);
   private readonly confirm = inject(ConfirmService);
   protected readonly connections = inject(ConnectionsStore);
@@ -488,6 +494,14 @@ export class HistoryDialog {
     this.closed.emit();
     // the dialog gives the focus back first
     setTimeout(() => this.tabs.active()?.insert(text));
+  }
+
+  /** Keeps the statement as a saved query (prompt 024): the dialog for its name takes over. */
+  protected async saveAsQuery(): Promise<void> {
+    const text = await this.fullText();
+    if (text === null) return;
+    this.closed.emit();
+    setTimeout(() => this.saved.ask(text, nameFromText(text)));
   }
 
   protected async newTab(run: boolean): Promise<void> {

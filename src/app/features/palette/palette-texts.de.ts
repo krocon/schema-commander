@@ -11,11 +11,12 @@ export const PALETTE_DE: Translation<typeof PALETTE_EN> = {
   gotoTitle: 'Springen zu allem',
   gotoSearch: 'Tabellen, Views, Routinen, Tabs und Verbindungen suchen',
   gotoPlaceholder:
-    'Springen zu … (t: Tabellen, c: Spalten, f: Routinen, @ Verbindungen, > Befehle)',
+    'Springen zu … (t: Tabellen, c: Spalten, f: Routinen, q: gespeicherte Abfragen, @ Verbindungen, > Befehle)',
   gotoList: 'Treffer',
   gotoNone: 'Nichts passt.',
   gotoReading: 'Die Namen der Datenbank werden gelesen …',
-  gotoNoSaved: 'Gespeicherte Abfragen gibt es noch nicht.',
+  gotoNoSaved: 'Keine gespeicherte Abfrage passt.',
+  gotoSavedKeys: 'Enter: öffnen · Alt+Enter: Text einfügen · Strg/⌘+Enter: öffnen und ausführen',
   gotoCount: (n) => (n === 1 ? '1 Treffer' : `${n} Treffer`),
   gotoCountOf: (shown, all) => `${shown} von ${all} Treffern – mehr tippen grenzt ein`,
   gotoKeys:
@@ -29,6 +30,7 @@ export const PALETTE_DE: Translation<typeof PALETTE_EN> = {
     column: 'Spalte',
     tab: 'Offener Tab',
     connection: 'Verbindung',
+    saved: 'Gespeicherte Abfrage',
   },
   icons: {
     table: 'T',
@@ -39,5 +41,6 @@ export const PALETTE_DE: Translation<typeof PALETTE_EN> = {
     column: 'c',
     tab: '▭',
     connection: '@',
+    saved: 'Q',
   },
 };

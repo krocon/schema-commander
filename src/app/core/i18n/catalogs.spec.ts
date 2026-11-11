@@ -20,9 +20,11 @@ import '../../features/history/history-texts';
 import '../../features/menus/menu-texts';
 import '../../features/palette/palette-texts';
 import '../../features/results/results-texts';
+import '../../features/saved/saved-texts';
 import '../../features/schema/schema-texts';
 import '../../features/settings/settings-texts';
 import '../../features/shortcuts/shortcut-dialog-texts';
+import '../../features/snippets/snippet-texts';
 import '../../features/tabs/tab-bar-texts';
 import '../../features/tabs/tabs-texts';
 import '../../features/themes/theme-editor-texts';
@@ -71,6 +73,7 @@ const SAME = new Set<string>([
   'Schema',
   'TLS: ',
   'Tab',
+  'Text',
   'Tabs',
   'Tx: auto',
   'Views',
@@ -81,7 +84,7 @@ const SAME = new Set<string>([
   '~/.pgpass (PostgreSQL)',
 ]);
 
-const CATALOG_FILES = 27;
+const CATALOG_FILES = 29;
 const SAMPLE_ARGS: unknown[] = [2, 'x', 3, 4];
 
 function walk(path: string, en: unknown, de: unknown, problems: string[], same: string[]): void {

@@ -21,6 +21,7 @@ export const HISTORY_EN = {
   copy: 'Copy',
   inNewTab: 'In a new tab',
   runAgain: 'Run again',
+  saveAsQuery: 'Save as query …',
   insert: 'Insert',
   clearTitle: 'Clear history',
   clearConnection: (name: string) =>
