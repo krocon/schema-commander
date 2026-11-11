@@ -33,8 +33,8 @@ importers:
         specifier: ^2
         version: 2.5.1
       editlicious-editor:
-        specifier: ^1.1.0
-        version: 1.1.0
+        specifier: ^1.2.0
+        version: 1.2.0
       rxjs:
         specifier: ~7.8.0
         version: 7.8.2
@@ -1695,8 +1695,8 @@ packages:
     resolution: {integrity: sha512-qI4JLRKnSzqFqr7hAlS5xQDusBCjKSEG4t4+7aNrIQMHBcsC2TGEhuyABJdYkgSewL57PNLYEiibY2iPKhKpaA==}
     engines: {node: '>=20.19.0'}
 
-  editlicious-editor@1.1.0:
-    resolution: {integrity: sha512-1CtxQGOmcSvyZYd1PZqpgv4TH9a75zAChtuS4LM/vFTNxWXlM6CVgKnEvvN2IbKocd63ZSa9oTR/TVMPyBfVww==}
+  editlicious-editor@1.2.0:
+    resolution: {integrity: sha512-bV1tFy3KC9bPRoLM4id4eRBPUG2cJ40gLlY2iCFVJau0QJGLVEhW8GJmiZulbvWrvvz5AdJzYh0GKF40xIqKTg==}
 
   electron-to-chromium@1.5.479:
     resolution: {integrity: sha512-uAJdJQ7vHa4TvPfzt1TOqoRgHmav5gwmqHMPLxBH6m8Cbj5R9/z/rygTOQiZ8pe5g0ZAEogga1bP6HoKcOzx/Q==}
@@ -4099,7 +4099,7 @@ snapshots:
       domelementtype: 3.0.0
       domhandler: 6.0.1
 
-  editlicious-editor@1.1.0: {}
+  editlicious-editor@1.2.0: {}
 
   electron-to-chromium@1.5.479: {}
 

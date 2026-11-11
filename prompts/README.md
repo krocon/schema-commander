@@ -14,8 +14,8 @@ freigegeben). **Die Nummern sind die Ausführungsreihenfolge**: Jeder Prompt bra
 (Spalte „Braucht“). Innerhalb einer Stufe kann vorgezogen werden, was seine Abhängigkeiten erfüllt.
 
 **Erweiterungen an editlicious** (E1–E5) sind eigene Prompts unter [`editlicious/`](editlicious/README.md) und
-werden im Repo `../editlicious` ausgeführt – jeweils **vor** dem Prompt, der sie braucht (E1 vor 001, E2 vor 005,
-E3 vor 021, E4 vor 022, E5 vor 024).
+wurden im Repo `../editlicious` umgesetzt (dort Prompts 026–030) und sind seit `editlicious-editor` **1.2.0**
+verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README.md` und `editlicious-editor.d.ts`.
 
 | Nr. | Prompt | Feature | Braucht | Umfang | Status |
 |---|---|---|---|---|---|
@@ -52,8 +52,8 @@ E3 vor 021, E4 vor 022, E5 vor 024).
 | 028 | [Auswahl auswerten](028-auswahl-auswerten.md) | D7 | 007 | S | offen |
 | 029 | [Spalten verwalten und im Ergebnis suchen](029-spalten-suche.md) | D8 | 006, 007 | S–M | offen |
 | 030 | [Fremdschlüsseln folgen](030-fremdschluessel-folgen.md) | D10 | 008, 027 | M | offen |
-| 031 | [Daten bearbeiten mit Änderungsvorschau](031-daten-bearbeiten.md) | E1 | 007, 012, 013, 027 | L | offen |
-| 032 | [Zeilen einfügen, duplizieren, löschen, Block einfügen](032-zeilen-bearbeiten.md) | E2 | 031 | M | offen |
+| 031 | [Daten bearbeiten mit Änderungsvorschau](031-daten-bearbeiten.md) | E1 | 007, 012, 013, 027 | L | ✅ editlicious 026, in `editlicious-editor` 1.2.0 |
+| 032 | [Zeilen einfügen, duplizieren, löschen, Block einfügen](032-zeilen-bearbeiten.md) | E2 | 031 | M | ✅ editlicious 027, in `editlicious-editor` 1.2.0 |
 | 033 | [Import aus CSV und JSON](033-import.md) | F2 | 008, 011 | M–L | offen |
 | 034 | [Release und Verteilung](034-release.md) | G6 | – (sinnvoll nach Stufe 1) | M | offen |
 | | **Stufe 3 – nach Bedarf** | | | | |
@@ -65,7 +65,7 @@ E3 vor 021, E4 vor 022, E5 vor 024).
 | 040 | [Zeile als Formular](040-zeilen-formular.md) | D4 | 007 (026 und 031 für Wert-Ansicht/Bearbeiten) | S–M | offen |
 | 041 | [Mehrere Ergebnisse, Anpinnen, Vergleichen](041-ergebnisse-vergleichen.md) | D9 | 005, 006 | M | offen |
 | 042 | [Diagramm aus dem Ergebnis](042-diagramme.md) | D11 | 006 | M | offen |
-| 043 | [Struktur bearbeiten](043-struktur-bearbeiten.md) | E3 | 012, 019 | L | offen |
+| 043 | [Struktur bearbeiten](043-struktur-bearbeiten.md) | E3 | 012, 019 | L | ✅ editlicious 028, in `editlicious-editor` 1.2.0 |
 | 044 | [Sichern und Wiederherstellen](044-sichern-wiederherstellen.md) | F3 | 003, 011 (Job-Engine), 012 | M | offen |
 | 045 | [Daten zwischen Datenbanken kopieren](045-daten-kopieren.md) | F4 | 011, 033, 043 | L | offen |
 | 046 | [Server-Monitor](046-server-monitor.md) | H1 | 003, 012 | M | offen |
@@ -77,8 +77,8 @@ E3 vor 021, E4 vor 022, E5 vor 024).
 
 | Nr. | Prompt | Gebraucht von | Status |
 |---|---|---|---|
-| E1 | [Farben von außen](editlicious/E1-farben-von-aussen.md) | 001 | offen |
-| E2 | [Auswahl und Bereiche abfragen](editlicious/E2-auswahl-abfragen.md) | 005, 023 | offen |
-| E3 | [Vervollständigung von außen](editlicious/E3-vervollstaendigung-von-aussen.md) | 021 | offen |
-| E4 | [Markierungen von außen](editlicious/E4-markierungen-von-aussen.md) | 022 | offen |
-| E5 | [Textbausteine mit Platzhaltern](editlicious/E5-snippets.md) | 024 | offen |
+| E1 | [Farben von außen](editlicious/E1-farben-von-aussen.md) | 001 | ✅ editlicious 026, in `editlicious-editor` 1.2.0 |
+| E2 | [Auswahl und Bereiche abfragen](editlicious/E2-auswahl-abfragen.md) | 005, 023 | ✅ editlicious 027, in `editlicious-editor` 1.2.0 |
+| E3 | [Vervollständigung von außen](editlicious/E3-vervollstaendigung-von-aussen.md) | 021 | ✅ editlicious 028, in `editlicious-editor` 1.2.0 |
+| E4 | [Markierungen von außen](editlicious/E4-markierungen-von-aussen.md) | 022 | ✅ editlicious 029, in `editlicious-editor` 1.2.0 |
+| E5 | [Textbausteine mit Platzhaltern](editlicious/E5-snippets.md) | 024 | ✅ editlicious 030, in `editlicious-editor` 1.2.0 |

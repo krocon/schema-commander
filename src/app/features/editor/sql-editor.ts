@@ -76,7 +76,8 @@ export class SqlEditor implements OnInit {
     return editorScheme(applied?.id ?? '', applied?.dark ?? this.theme.systemDark());
   });
   private readonly editor = viewChild<ElementRef<EditliciousEditorElement>>('editor');
-  private lastCaret: EdCaret = { line: 1, ch: 1, selChars: 0, selLines: 0, carets: 1 };
+  /** The last caret the editor reported; `null` = still at the start. */
+  private lastCaret: EdCaret | null = null;
   private seeded = false;
 
   constructor() {
@@ -105,7 +106,10 @@ export class SqlEditor implements OnInit {
     const editor = this.editor()?.nativeElement;
     if (!editor) return;
     const script = await editor.getValue();
-    const statement = statementAt(script, offsetOf(script, this.lastCaret.line, this.lastCaret.ch));
+    const statement = statementAt(
+      script,
+      offsetOf(script, this.lastCaret?.line ?? 1, this.lastCaret?.ch ?? 1),
+    );
     if (statement) this.run.emit(statement.text);
   }
 

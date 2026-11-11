@@ -1,5 +1,8 @@
 # Prompts für editlicious
 
+> **Stand 11.11.2026: E1–E5 sind umgesetzt** (editlicious Prompts 026–030) und in `editlicious-editor` 1.2.0
+> veröffentlicht. Die Dateien hier bleiben als Referenz, was Schema Commander vom Editor braucht.
+
 Schema Commander nutzt `<editlicious-editor>` als SQL-Editor. Wo dem Editor etwas fehlt, wird es **in editlicious
 ergänzt und als neue Version von `editlicious-editor` veröffentlicht**, nicht hier umgangen. Diese Prompts beschreiben
 die Erweiterungen aus Sicht des Verbrauchers.

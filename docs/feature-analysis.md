@@ -163,6 +163,10 @@ Vorschau · D5 Filter · D10 Fremdschlüssel folgen · C10 Transaktionen · B2 S
 
 ## 5. Was dafür in den eigenen Bausteinen fehlt
 
+> Stand 11.11.2026: Die fünf Punkte zu editlicious sind mit `editlicious-editor` 1.2.0 erledigt (`scheme="none"` und
+> alle Farben als Variablen, `getSelection`/`getRange`/`replaceRange`, `completionProvider`, `setMarkers`,
+> `insertSnippet`/`snippets`).
+
 | Baustein | Fehlt | Gebraucht für |
 |---|---|---|
 | editlicious-editor | markierten Text bzw. Auswahlbereich abfragen | C2 (Auswahl ausführen) |
