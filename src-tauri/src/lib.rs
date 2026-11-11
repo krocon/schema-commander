@@ -4,6 +4,7 @@
 pub mod app_menu;
 pub mod commands;
 pub mod copy;
+pub mod data_import;
 pub mod db;
 pub mod error;
 pub mod export;

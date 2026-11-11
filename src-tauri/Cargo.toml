@@ -57,7 +57,8 @@ arboard = { version = "3", default-features = false, features = ["wayland-data-c
 # Saved queries (prompt 024): deleting moves the file to the trash of the OS (as in files-and-folders-tauri).
 trash = { version = "5.2", default-features = false, features = ["coinit_apartmentthreaded"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# raw_value: the import (prompt 033) keeps numbers of a JSON file digit for digit
+serde_json = { version = "1", features = ["raw_value"] }
 tauri = { version = "2", features = [] }
 # Native open/save dialogs (import and export of colour schemes, later SQL files and exports).
 tauri-plugin-dialog = "2"
