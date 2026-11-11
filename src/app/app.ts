@@ -12,7 +12,15 @@ import {
 import { HistoryDialog } from './features/history/history-dialog';
 import { HistoryService } from './features/history/history.service';
 import { ActionId } from './core/actions/action-catalog';
-import { COPY_FORMATS, isCopyFormat, orderedFormats } from './features/results/copy-logic';
+import {
+  COPY_FORMATS,
+  TABLE_PLACEHOLDER,
+  isCopyFormat,
+  orderedFormats,
+  tableOf,
+} from './features/results/copy-logic';
+import { ExportDialog } from './features/export/export-dialog';
+import { ExportService } from './features/export/export.service';
 import { CopyService } from './features/results/copy.service';
 import { ConfirmDialog, ConfirmService } from './shared/confirm';
 import { ContextMenu, MenuItem } from './shared/context-menu';
@@ -56,6 +64,7 @@ const SIDEBAR_MIN = 140;
     ConfirmDialog,
     ConnectionList,
     ContextMenu,
+    ExportDialog,
     HistoryDialog,
     PasswordDialog,
     SchemaTree,
@@ -173,6 +182,25 @@ const SIDEBAR_MIN = 140;
     </div>
     <footer class="status" role="status">
       <span>{{ status() }}</span>
+      @if (exporter.job(); as job) {
+        @if (job.state === 'running') {
+          <button type="button" class="status-button" (click)="exporter.cancel()">Abbrechen</button>
+        } @else {
+          @if (job.state === 'done') {
+            <button type="button" class="status-button" (click)="exporter.reveal()">
+              Im Dateimanager zeigen
+            </button>
+          }
+          <button
+            type="button"
+            class="status-button"
+            aria-label="Meldung des Exports schließen"
+            (click)="exporter.dismiss()"
+          >
+            ×
+          </button>
+        }
+      }
       @if (copier.busy()) {
         <button type="button" class="status-button" (click)="copier.cancel()">Abbrechen</button>
       }
@@ -216,6 +244,11 @@ const SIDEBAR_MIN = 140;
     @if (connections.passwordRequest(); as request) {
       @defer (on immediate) {
         <app-password-dialog [request]="request" />
+      }
+    }
+    @if (exporter.request(); as source) {
+      @defer (on immediate) {
+        <app-export-dialog [source]="source" (closed)="exporter.request.set(null)" />
       }
     }
     @if (history.open()) {
@@ -278,11 +311,14 @@ export class App implements OnInit, OnDestroy {
   protected readonly status = computed(() => {
     const copied = this.copier.message();
     if (copied !== null) return copied;
+    const job = this.exporter.job();
+    if (job) return job.message;
     const tab = this.tabs.active();
     return tab ? runStatus(tab.runs(), tab.elapsedMs()) : '';
   });
   protected readonly copier = inject(CopyService);
   protected readonly history = inject(HistoryService);
+  protected readonly exporter = inject(ExportService);
   protected readonly confirm = inject(ConfirmService);
   /** The formats of "copy as", the one used last on top. */
   protected readonly copyItems = computed<MenuItem[]>(() => {
@@ -414,6 +450,21 @@ export class App implements OnInit, OnDestroy {
           () => this.schemaActions.can(id),
         ),
       ),
+      this.actions.register(
+        'EXPORT_RESULT',
+        () => this.exportResult(),
+        () => this.copier.current() !== null && !this.exporter.running(),
+      ),
+      this.actions.register(
+        'CANCEL_EXPORT',
+        () => this.exporter.cancel(),
+        () => this.exporter.running(),
+      ),
+      this.actions.register(
+        'REVEAL_EXPORT',
+        () => this.exporter.reveal(),
+        () => this.exporter.job()?.state === 'done',
+      ),
       this.actions.register('OPEN_HISTORY', () => this.history.open.set(true)),
       this.actions.register(
         'HISTORY_PREV',
@@ -528,6 +579,24 @@ export class App implements OnInit, OnDestroy {
       }),
     ];
     return () => offs.forEach((off) => off());
+  }
+
+  /** Opens the export dialog for the result in front: what is selected in its grid, or all of it. */
+  private exportResult(): void {
+    const current = this.copier.current();
+    if (!current) return;
+    const table = tableOf(current.sql);
+    this.exporter.request.set({
+      kind: 'result',
+      resultId: current.result.resultId,
+      columns: current.result.columns,
+      rows: current.rows,
+      ranges: this.copier.selection().rows,
+      sql: current.sql,
+      connectionId: current.connectionId,
+      name: table?.replace(/["`[\]]/g, '') ?? this.tabs.active()?.title() ?? 'export',
+      table: table ?? TABLE_PLACEHOLDER,
+    });
   }
 
   /** The statement before or after the one in the editor, from the history of the tab's connection. */

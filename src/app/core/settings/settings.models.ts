@@ -36,6 +36,10 @@ export interface Settings {
   readonly historyMaxEntries: number;
   /** Days an entry is kept; 0 = any age. */
   readonly historyMaxDays: number;
+  /** The format the export dialog used last (prompt 011); `null` = none yet. */
+  readonly lastExportFormat: string | null;
+  /** The choices of the export dialog per format, as stored (read forgivingly by `mergeChoices`). */
+  readonly exportChoices: Readonly<Record<string, unknown>>;
   /** Ids of the actions run from the command palette, the latest first. */
   readonly recentActions: readonly string[];
 }
@@ -64,6 +68,8 @@ export const DEFAULT_SETTINGS: Settings = {
   copyNullAs: '',
   csvDelimiter: ',',
   lastCopyFormat: null,
+  lastExportFormat: null,
+  exportChoices: {},
   historyEnabled: true,
   historyOff: [],
   historyMaxEntries: 100_000,
@@ -115,6 +121,20 @@ export function mergeSettings(saved: unknown): Settings {
       typeof s['lastCopyFormat'] === 'string' && /^[a-z]{1,16}$/.test(s['lastCopyFormat'])
         ? s['lastCopyFormat']
         : null,
+    lastExportFormat:
+      typeof s['lastExportFormat'] === 'string' && /^[a-z]{1,16}$/.test(s['lastExportFormat'])
+        ? s['lastExportFormat']
+        : null,
+    exportChoices:
+      s['exportChoices'] &&
+      typeof s['exportChoices'] === 'object' &&
+      !Array.isArray(s['exportChoices'])
+        ? Object.fromEntries(
+            Object.entries(s['exportChoices'] as Record<string, unknown>)
+              .filter(([key]) => /^[a-z]{1,16}$/.test(key))
+              .slice(0, 16),
+          )
+        : {},
     historyEnabled:
       typeof s['historyEnabled'] === 'boolean'
         ? s['historyEnabled']

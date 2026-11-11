@@ -59,6 +59,12 @@ export class CopyService {
   });
   readonly can = computed(() => this.current() !== null && !this.busy());
 
+  /** What is selected in the grid of the result in front (nothing = everything). */
+  selection(): CopySelection {
+    const current = this.current();
+    return (current && this.sources.get(current.result.resultId)?.()) ?? { rows: [], columns: [] };
+  }
+
   /** A grid says what is selected in it; the function returned ends that. */
   register(resultId: number, selection: () => CopySelection): () => void {
     this.sources.set(resultId, selection);

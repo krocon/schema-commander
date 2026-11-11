@@ -54,6 +54,15 @@ export const ACTIONS = [
     group: 'Abfrage',
     scope: 'global',
   },
+  // Export (prompt 011)
+  { id: 'EXPORT_RESULT', label: 'Ergebnis exportieren …', group: 'Datei', scope: 'global' },
+  { id: 'CANCEL_EXPORT', label: 'Export abbrechen', group: 'Datei', scope: 'global' },
+  {
+    id: 'REVEAL_EXPORT',
+    label: 'Exportierte Datei im Dateimanager zeigen',
+    group: 'Datei',
+    scope: 'global',
+  },
   // History (prompt 010)
   { id: 'OPEN_HISTORY', label: 'Verlauf öffnen', group: 'Abfrage', scope: 'global' },
   {
@@ -173,6 +182,7 @@ export const ACTIONS = [
     group: 'Schema',
     scope: 'global',
   },
+  { id: 'SCHEMA_EXPORT_TABLE', label: 'Tabelle exportieren …', group: 'Schema', scope: 'global' },
   { id: 'SCHEMA_OPEN_DATA', label: 'Daten der Tabelle öffnen', group: 'Schema', scope: 'global' },
   {
     id: 'SCHEMA_INSERT_NAME',
