@@ -2,6 +2,7 @@ import {
   AreaModel,
   CellRendererIf,
   ColumnDef,
+  FocusModel,
   SelectionModel,
   Size,
   TableFactory,
@@ -11,6 +12,7 @@ import {
 } from '@guiexpert/table';
 import { QueryColumn, RowWindow } from '../../core/sql/query.models';
 import { CellFormat, PLAIN_FORMAT, showCell, typeLabel } from './cell-format';
+import { ResolvedLayout } from './column-layout';
 
 /** Row heights in px; the line height of the cells follows them in `ge-table-theme.css`. */
 export const HEADER_ROW_HEIGHT = 26;
@@ -25,12 +27,15 @@ export const MAX_FIT_WIDTH = 800;
  */
 export function resultOptions(rowHeight = BODY_ROW_HEIGHT): TableOptionsIf {
   const selection = new SelectionModel('range', 'multi');
+  // a focus model of our own: the cursor is moved from outside too (a hit, a row number; prompt 029)
+  const focus = new FocusModel('cell');
   const base = new TableOptions();
   return {
     ...base,
     hoverColumnVisible: false,
     defaultRowHeights: { header: HEADER_ROW_HEIGHT, body: rowHeight, footer: 0 },
     getSelectionModel: () => selection,
+    getFocusModel: () => focus,
     columnAutoWidth: {
       ...base.columnAutoWidth,
       doubleClick: true,
@@ -96,6 +101,26 @@ export class WindowAreaModel extends AreaModel {
    */
   private readonly short = new Map<number, number>();
   private disposed = false;
+  /** Grid column − 1 → column of the result (the layout hides and moves columns); `null` = as they come. */
+  private map: readonly number[] | null = null;
+  /** The cells a search found, and the one it stands on (prompt 029). */
+  private hits: HitMarks | null = null;
+
+  /** Which result column each grid column shows (the caller builds a new table model). */
+  setShown(shown: readonly number[] | null): void {
+    this.map = shown;
+  }
+
+  /** The hits to mark from now on (the caller repaints). */
+  setHits(hits: HitMarks | null): void {
+    this.hits = hits;
+  }
+
+  /** The column of the result a grid column shows; `-1` for the row number. */
+  resultColumn(col: number): number {
+    if (col < 1) return -1;
+    return this.map ? (this.map[col - 1] ?? -1) : col - 1;
+  }
 
   constructor(
     private readonly fetch: (from: number, count: number) => Promise<RowWindow>,
@@ -156,7 +181,10 @@ export class WindowAreaModel extends AreaModel {
   override getCustomClassesAt(row: number, col: number): string[] {
     if (col === 0) return [];
     const cls = this.shown(row, col)?.cls;
-    return cls ? [cls] : [];
+    const out: string[] = cls ? [cls] : [];
+    const mark = this.hits?.at(row, this.resultColumn(col));
+    if (mark) out.push(mark === 'current' ? 'sc-hit-current' : 'sc-hit');
+    return out;
   }
 
   /** The cell as it came from the backend; `undefined` while its page is not there. */
@@ -168,13 +196,13 @@ export class WindowAreaModel extends AreaModel {
       this.request(page);
       return undefined;
     }
-    return cells[col - 1] ?? null;
+    return cells[this.resultColumn(col)] ?? null;
   }
 
   private shown(row: number, col: number) {
     const cell = this.cellAt(row, col);
     if (cell === undefined) return undefined;
-    return showCell(cell, this.columns[col - 1]?.kind ?? 'other', this.format);
+    return showCell(cell, this.columns[this.resultColumn(col)]?.kind ?? 'other', this.format);
   }
 
   /** Whether a page is there (for tests). */
@@ -205,6 +233,11 @@ export class WindowAreaModel extends AreaModel {
       },
     );
   }
+}
+
+/** The cells a search found: what the grid asks while it paints. Columns are those of the result. */
+export interface HitMarks {
+  at(row: number, column: number): 'hit' | 'current' | null;
 }
 
 /**
@@ -255,12 +288,15 @@ export function resultModel(
   options: TableOptionsIf,
   /** The sort keys to mark in the heads (prompt 027). */
   marks: readonly { column: number; desc: boolean; rank: number }[] = [],
+  /** Which columns are shown, in which order, how many stay at the left, and widths the user set. */
+  layout: ResolvedLayout | null = null,
 ): TableModelIf {
   const markOf = (c: number) => {
     const m = marks.find((k) => k.column === c);
     return m ? `${m.desc ? '▼' : '▲'}${m.rank > 0 ? m.rank : ''}` : '';
   };
   const widths = columnWidths(columns, first);
+  const shown = layout?.shown ?? columns.map((_, c) => c);
   const columnDefs = [
     ColumnDef.create({
       property: '#',
@@ -271,18 +307,18 @@ export function resultModel(
       resizable: false,
       movable: false,
     }),
-    ...columns.map((column, c) =>
+    ...shown.map((c, i) =>
       ColumnDef.create({
+        // the property names the column of the result: a drag reports the new order in these
         property: `c${c}`,
-        headerLabel: column.name,
-        width: new Size(widths[c], 'px'),
-        headerRenderer: new HeaderRenderer(column, markOf(c)),
+        headerLabel: columns[c].name,
+        width: new Size(layout?.widths[i] ?? widths[c], 'px'),
+        headerRenderer: new HeaderRenderer(columns[c], markOf(c)),
         // the table centres cells by default; numbers move to the right by the class of the cell
         headerClasses: ['ge-table-text-align-left', 'sc-head'],
         bodyClasses: ['ge-table-text-align-left'],
         // the table itself sorts nothing: a click on a head asks the server or the store (prompt 027)
         sortable: () => false,
-        movable: false,
       }),
     ),
   ];
@@ -290,6 +326,6 @@ export function resultModel(
     bodyAreaModel: body,
     columnDefs,
     tableOptions: options,
-    fixedLeftColumnCount: 1,
+    fixedLeftColumnCount: 1 + (layout?.pinned ?? 0),
   });
 }

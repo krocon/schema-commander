@@ -62,6 +62,38 @@ const COPY_AS: MenuDef = {
   ],
 };
 
+/** The columns of a result (prompt 029). */
+const RESULT_COLUMNS: MenuDef = {
+  sub: () => T.resultColumns,
+  items: [
+    'RESULT_COLUMNS',
+    '-',
+    'COLUMN_HIDE',
+    'COLUMN_PIN',
+    'COLUMN_LEFT',
+    'COLUMN_RIGHT',
+    '-',
+    'COLUMNS_FIT',
+    'COLUMNS_RESET',
+  ],
+};
+
+/** Finding things in a result (prompt 029). */
+const RESULT_FIND: MenuDef = {
+  sub: () => T.resultFind,
+  items: [
+    'FIND_IN_RESULT',
+    'FIND_NEXT',
+    'FIND_PREV',
+    '-',
+    'GOTO_ROW',
+    'RESULT_FIRST_ROW',
+    'RESULT_LAST_ROW',
+    'NEXT_CHANGE',
+    'NEXT_NULL',
+  ],
+};
+
 /** Conditions from the cell under the cursor (prompt 027). */
 const FILTER_CELL: MenuDef = {
   sub: () => T.filterCell,
@@ -219,6 +251,8 @@ export const MENU_BAR: readonly TopMenu[] = [
       'SHOW_MESSAGES',
       '-',
       FILTER_CELL,
+      RESULT_FIND,
+      RESULT_COLUMNS,
       'SUMMARIZE_COLUMN',
       'COPY_SELECTION_SUM',
       '-',
@@ -306,6 +340,8 @@ export const RESULT_MENU: readonly MenuDef[] = [
   'SAVE_CELL_VALUE',
   'TOGGLE_VALUE_PANEL',
   FILTER_CELL,
+  RESULT_FIND,
+  RESULT_COLUMNS,
   'SUMMARIZE_COLUMN',
   'COPY_SELECTION_SUM',
   COPY_AS,

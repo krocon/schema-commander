@@ -14,6 +14,8 @@ export const CHORD_TIMEOUT_MS = 1500;
 
 /** Widgets with their own keys (arrows, Enter, Space, letters): view actions stay out. */
 const OWN_KEYS = '[role=separator], [role=tree], [role=grid], [role=listbox], .ge-table';
+/** A result grid: like any grid, and the place where the actions of scope `result` act. */
+const RESULT = 'app-result-grid .ge-table';
 /** Menus: their keys are theirs. */
 const MENUS = '[role=menu]';
 /** The SQL editor: a text field with a shadow root (the event's target is the element itself). */
@@ -41,7 +43,7 @@ export interface DispatchHost {
 }
 
 /** Where the focus is, as far as shortcuts care. */
-export type Place = 'dialog' | 'menu' | 'input' | 'widget' | 'control' | 'view';
+export type Place = 'dialog' | 'menu' | 'input' | 'result' | 'widget' | 'control' | 'view';
 
 export function placeOf(target: EventTarget | null): Place {
   const el = target instanceof Element ? target : null;
@@ -49,6 +51,7 @@ export function placeOf(target: EventTarget | null): Place {
   if (el.closest('dialog')) return 'dialog';
   if (el.closest(MENUS)) return 'menu';
   if (el.closest(EDITOR) || isTextInput(el)) return 'input';
+  if (el.closest(RESULT)) return 'result';
   if (el.closest(OWN_KEYS)) return 'widget';
   if (el.closest(CONTROLS)) return 'control';
   return 'view';
@@ -63,6 +66,7 @@ export function placeOf(target: EventTarget | null): Place {
  * focus in a field or editor  → only global actions with Mod/Ctrl/Alt or an F-key; never a key that
  *                               types a character through AltGr (`@`, `{`, `\\`, `€` …)
  * focus in tree, grid, list   → their keys stay there; global shortcuts with a modifier act
+ * focus in a result grid      → as in any grid, and the actions of scope `result` (`Mod+F`, `F3` …)
  * Space/Enter on a button     → the button's
  * chord open                  → second stroke within 1.5 s
  * hit                         → preventDefault, stopPropagation, ActionService.run
@@ -132,6 +136,8 @@ export function typesWithAltGr(evt: DispatchEvent, platform: Platform): boolean 
 function acts(id: ActionId, place: Place, command: boolean, key: string): boolean {
   const def = actionDef(id);
   if (def.scope === 'global' && command) return true;
+  // only where a result has the keyboard, and only with a modifier or an F-key: plain keys are the grid's
+  if (def.scope === 'result') return place === 'result' && command;
   // view actions, and global actions on a plain key
   switch (place) {
     case 'view':

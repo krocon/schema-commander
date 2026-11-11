@@ -223,3 +223,24 @@ export interface ResultStats {
   readonly top: readonly FrequentValue[];
   readonly topPartial: boolean;
 }
+
+/** Mirrors `SearchSpec` in src-tauri/src/search.rs (prompt 029): what is looked for in a result. */
+export interface SearchSpec {
+  readonly text: string;
+  readonly caseSensitive: boolean;
+  readonly wholeWord: boolean;
+  /** `text` is a regular expression (of the Rust `regex` crate: no backreferences, no lookaround). */
+  readonly regex: boolean;
+  /** Indices of result columns to look in; empty = all. */
+  readonly columns: readonly number[];
+}
+
+/** Mirrors `Found`: the hits of a stretch of rows (`[row, column]`) and where to go on. */
+export interface SearchFound {
+  readonly hits: readonly (readonly [number, number])[];
+  readonly next: number;
+  readonly done: boolean;
+}
+
+/** Mirrors `Seek`: the next cell with another value, or the next NULL. */
+export type SeekKind = 'change' | 'null';

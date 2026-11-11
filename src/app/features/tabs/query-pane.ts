@@ -27,6 +27,9 @@ import { CopyService } from '../results/copy.service';
 import { errorObjectText, errorReport } from './run-state';
 import { TabsStore } from './tabs.store';
 import { FilterBar } from '../filter/filter-bar';
+import { FindBar } from '../find/find-bar';
+import { ColumnLayout } from '../results/column-layout';
+import { ColumnLayouts } from '../results/column-layouts.service';
 import { sortMarks, toggleLocalSort, toggleServerOrder } from '../filter/filter-logic';
 import { PARAM_TEXTS } from '../params/param-texts';
 import { ValuePanel } from '../value/value-panel';
@@ -46,7 +49,7 @@ const EDITOR_MIN_W = 160;
  */
 @Component({
   selector: 'app-query-pane',
-  imports: [FilterBar, ResultGrid, SplitterComponent, SqlEditor, ValuePanel],
+  imports: [FilterBar, FindBar, ResultGrid, SplitterComponent, SqlEditor, ValuePanel],
   host: {
     '[class.side]': 'side()',
     '[class.no-result]': '!settings.settings().resultVisible && !maximized()',
@@ -147,6 +150,18 @@ const EDITOR_MIN_W = 160;
           [local]="settings.settings().filterBarVisible"
         />
       }
+      @if (tab().find.open() && filterBar()) {
+        <app-find-bar
+          [find]="tab().find"
+          [resultId]="result()?.resultId ?? null"
+          [rows]="rows()"
+          [columns]="result()?.columns ?? []"
+          [cursor]="cursor"
+          (go)="grid()?.goTo($event[0], $event[1])"
+          (goRow)="grid()?.goTo($event, null); grid()?.focusGrid()"
+          (closed)="grid()?.focusGrid()"
+        />
+      }
       <div class="body" role="tabpanel">
         @if (tab().shown() === 'messages') {
           <ol class="log" [attr.aria-label]="t.messages">
@@ -176,6 +191,9 @@ const EDITOR_MIN_W = 160;
                     [rows]="rows()"
                     [fetch]="fetch"
                     [marks]="marks()"
+                    [layout]="layout()"
+                    [hits]="hits()"
+                    (layoutChange)="setLayout($event)"
                     (active)="onActive(r, $event)"
                     (headClick)="onHeadClick(r, $event)"
                   />
@@ -246,6 +264,9 @@ const EDITOR_MIN_W = 160;
                     [rows]="rows()"
                     [fetch]="fetch"
                     [marks]="marks()"
+                    [layout]="layout()"
+                    [hits]="hits()"
+                    (layoutChange)="setLayout($event)"
                     (active)="onActive(r, $event)"
                     (headClick)="onHeadClick(r, $event)"
                   />
@@ -585,6 +606,21 @@ export class QueryPane implements OnInit, OnDestroy {
   );
 
   private readonly editor = viewChild(SqlEditor);
+  protected readonly grid = viewChild(ResultGrid);
+  private readonly layouts = inject(ColumnLayouts);
+  /** How the columns of the result are laid out: of the table of a table view, else of this tab. */
+  protected readonly layout = computed(() => this.layouts.of(this.tab()));
+  /** The cells the search of the tab found, for the grid (a new object whenever they change). */
+  protected readonly hits = computed(() => {
+    const find = this.tab().find;
+    void find.version();
+    return find.open() && find.count() > 0 ? { at: find.marks.at } : null;
+  });
+  protected readonly cursor = () => this.grid()?.cursor() ?? null;
+
+  protected setLayout(layout: ColumnLayout): void {
+    this.layouts.set(this.tab(), layout);
+  }
   private observer: ResizeObserver | null = null;
   private readonly handle: TabEditor = {
     goTo: (line, ch) => this.editor()?.goTo(line, ch) ?? Promise.resolve(),
@@ -611,6 +647,15 @@ export class QueryPane implements OnInit, OnDestroy {
       if (!this.tab().running()) return;
       untracked(() => {
         if (!this.settings.settings().resultVisible) this.settings.update({ resultVisible: true });
+      });
+    });
+    effect((onCleanup) => {
+      // the app moves the cursor of the grid from outside (search, go to row, column list)
+      const tab = this.tab();
+      const grid = this.grid() ?? null;
+      tab.grid = grid;
+      onCleanup(() => {
+        if (tab.grid === grid) tab.grid = null;
       });
     });
     effect(() => {

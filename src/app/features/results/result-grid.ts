@@ -12,14 +12,31 @@ import {
 import { RESULT_MENU } from '../menus/menu-model';
 import { MenuService } from '../menus/menu.service';
 import { TableSignalComponent } from '@guiexpert/angular-table';
-import { TableApi, TableModelIf } from '@guiexpert/table';
+import {
+  CellRange,
+  GeColumnMoveEvent,
+  GeColumnResizeEvent,
+  TableApi,
+  TableModelIf,
+} from '@guiexpert/table';
+import { CopySelection } from '../../core/backend/clipboard-api';
 import { ResultRef, RowWindow } from '../../core/sql/query.models';
 import { SettingsService } from '../../core/settings/settings.service';
 import { CellFormat } from './cell-format';
+import {
+  ColumnLayout,
+  EMPTY_LAYOUT,
+  ResolvedLayout,
+  ResultGridHandle,
+  columnKeys,
+  reorder,
+  resolveLayout,
+  setWidth,
+} from './column-layout';
 import { localTsv, selectionOf } from './copy-logic';
 import { CopyService } from './copy.service';
 import { StatsService } from '../stats/stats.service';
-import { PAGE_ROWS, WindowAreaModel, resultModel, resultOptions } from './result-model';
+import { HitMarks, PAGE_ROWS, WindowAreaModel, resultModel, resultOptions } from './result-model';
 import { RESULTS_TEXTS } from './results-texts';
 
 /**
@@ -47,6 +64,8 @@ import { RESULTS_TEXTS } from './results-texts';
         [(tableApi)]="api"
         (focusChanged)="onFocus()"
         (selectionChanged)="onSelection()"
+        (columnResizeEnd)="onResized($event)"
+        (columnMoveEnd)="onMoved($event)"
         (mouseClicked)="onMouse($event)"
       />
     } @else {
@@ -70,7 +89,7 @@ import { RESULTS_TEXTS } from './results-texts';
     }
   `,
 })
-export class ResultGrid implements OnDestroy {
+export class ResultGrid implements OnDestroy, ResultGridHandle {
   protected readonly t = RESULTS_TEXTS;
   /** The result to show. */
   readonly result = input.required<ResultRef>();
@@ -91,6 +110,12 @@ export class ResultGrid implements OnDestroy {
   readonly headClick = output<{ readonly column: number; readonly additive: boolean }>();
   /** The cell the cursor is on: `[row, column]`; `null` when a new result has none yet (prompt 026). */
   readonly active = output<readonly [number, number] | null>();
+  /** Which columns are shown, where, and how wide (prompt 029). */
+  readonly layout = input<ColumnLayout>(EMPTY_LAYOUT);
+  /** The user dragged a column or its edge. */
+  readonly layoutChange = output<ColumnLayout>();
+  /** The cells a search found. */
+  readonly hits = input<HitMarks | null>(null);
 
   protected readonly settings = inject(SettingsService);
   private readonly copier = inject(CopyService);
@@ -126,6 +151,28 @@ export class ResultGrid implements OnDestroy {
       body.setRowCount(rows);
       // the row count changed: the scroll bar and the visible rows follow, the position stays
       api?.repaintHard();
+    });
+    effect(() => {
+      // another layout for the result on screen: the same rows in a new table
+      const layout = this.layout();
+      if (!this.model() || !this.body) return;
+      untracked(() => this.relayout(layout));
+    });
+    effect(() => {
+      const hits = this.hits();
+      if (!this.model()) return;
+      this.body?.setHits(hits);
+      this.api()?.repaint();
+    });
+    effect(() => {
+      // a table built for a new layout starts at the top: back to the row that was first
+      const api = this.api();
+      const row = this.backTo;
+      if (!api || row === null || !this.model()) return;
+      this.backTo = null;
+      setTimeout(() => {
+        if (this.api() === api) api.scrollToIndex(-1, row);
+      });
     });
     effect(() => {
       const format = this.format();
@@ -196,18 +243,138 @@ export class ResultGrid implements OnDestroy {
     originalEvent?: MouseEvent;
   }): void {
     if (event.areaIdent !== 'header' || event.columnIndex < 1 || this.local()) return;
+    const column = this.body?.resultColumn(event.columnIndex) ?? -1;
+    if (column < 0) return;
     const e = event.originalEvent;
     this.headClick.emit({
-      column: event.columnIndex - 1,
+      column,
       additive: !!e && (e.shiftKey || e.metaKey || e.ctrlKey),
     });
   }
 
   /** The cursor of the table moved (the table says so outside of Angular's turn: only an output here). */
   protected onFocus(): void {
+    this.active.emit(this.cursor());
+  }
+
+  /** The cell the cursor is on: its row and its column of the result. */
+  cursor(): readonly [number, number] | null {
     const cell = this.api()?.getActiveCell();
     // grid column 0 is the row number: it has no value of the result
-    this.active.emit(cell && cell[1] >= 1 ? [cell[0], cell[1] - 1] : null);
+    const column = cell ? (this.body?.resultColumn(cell[1]) ?? -1) : -1;
+    return cell && column >= 0 ? [cell[0], column] : null;
+  }
+
+  /**
+   * Puts the cursor on a cell and brings it into view (prompt 029). `column`: of the result; a hidden one
+   * or `null` keeps the column the cursor is in.
+   */
+  goTo(row: number, column: number | null): void {
+    const api = this.api();
+    const body = this.body;
+    if (!api || !body || body.getRowCount() === 0) return;
+    const at = column === null ? -1 : this.resolved.shown.indexOf(column);
+    const col = at >= 0 ? at + 1 : Math.max(1, api.getActiveCell()?.[1] ?? 1);
+    const r = Math.max(0, Math.min(row, body.getRowCount() - 1));
+    this.options.getFocusModel?.()?.setFocus(r, col);
+    const selection = this.options.getSelectionModel?.();
+    selection?.clear();
+    selection?.addSelection(CellRange.singleCell(r, col));
+    api.ensureRowIsVisible(r);
+    api.ensureColumnIsVisible(col);
+    api.repaint();
+    this.onFocus();
+    this.onSelection();
+  }
+
+  /** Gives the keyboard to the grid. */
+  focusGrid(): void {
+    this.host.nativeElement.querySelector<HTMLElement>('.ge-table')?.focus();
+  }
+
+  /** Fits every column to what it shows and remembers the widths. */
+  fitWidths(): void {
+    const api = this.api();
+    if (!api) return;
+    const keys = columnKeys(this.result().columns);
+    let layout = this.layout();
+    this.resolved.shown.forEach((c, i) => {
+      const width = api.autoResizeColumn(i + 1);
+      if (width !== undefined) layout = setWidth(layout, keys[c], width);
+    });
+    this.keep(layout);
+  }
+
+  /** A layout the table shows already (the user dragged): told, but not built again. */
+  private keep(layout: ColumnLayout): void {
+    this.resolved = resolveLayout(layout, this.result().columns);
+    this.layoutChange.emit(layout);
+  }
+
+  protected onResized(event: GeColumnResizeEvent): void {
+    if (event.type !== 'end' || this.local()) return;
+    const column = this.body?.resultColumn(event.columnIndex) ?? -1;
+    if (column < 0) return;
+    this.keep(setWidth(this.layout(), columnKeys(this.result().columns)[column], event.newWidth));
+  }
+
+  protected onMoved(event: GeColumnMoveEvent): void {
+    if (!event.moved || this.local()) return;
+    const keys = columnKeys(this.result().columns);
+    const order = event.columnOrder
+      .map((p) => /^c(\d+)$/.exec(p)?.[1])
+      .filter((c): c is string => c !== undefined)
+      .map((c) => keys[Number(c)]);
+    // the table moved its columns itself; the new table is built from the layout
+    this.layoutChange.emit(reorder(this.layout(), this.result().columns, order));
+  }
+
+  /** What the table on screen was built for. */
+  private resolved: ResolvedLayout = { shown: [], pinned: 0, widths: [] };
+  /** The first rows of the result: the widths are measured on them. */
+  private first: RowWindow = [];
+  /** The row to scroll back to once the next table stands. */
+  private backTo: number | null = null;
+
+  private relayout(layout: ColumnLayout): void {
+    const result = this.result();
+    const next = resolveLayout(layout, result.columns);
+    if (JSON.stringify(next) === JSON.stringify(this.resolved)) return;
+    const body = this.body;
+    if (!body) return;
+    this.backTo = this.api()?.getFirstVisibleRowIndex() ?? null;
+    this.resolved = next;
+    body.setShown(next.shown);
+    this.options.getSelectionModel?.()?.clear();
+    this.stats.forget(this.shownId);
+    this.active.emit(null);
+    this.model.set(
+      resultModel(
+        result.columns,
+        this.first,
+        body,
+        Math.max(this.rows(), 1000),
+        this.options,
+        this.marks(),
+        next,
+      ),
+    );
+  }
+
+  /** The selection of the table as columns of the result: what is shown, in the order shown. */
+  private chosen(): CopySelection {
+    const selection = this.options.getSelectionModel?.();
+    const shown = this.resolved.shown;
+    const raw = selectionOf(
+      selection?.getRanges() ?? [],
+      selection?.isAllSelected() ?? false,
+      shown.length,
+    );
+    const plain = shown.length === this.result().columns.length && shown.every((c, i) => c === i);
+    return {
+      rows: raw.rows,
+      columns: raw.columns.length > 0 ? raw.columns.map((c) => shown[c]) : plain ? [] : [...shown],
+    };
   }
 
   /** What is marked changed: the status line shows its figures (prompt 028). */
@@ -219,7 +386,7 @@ export class ResultGrid implements OnDestroy {
     const all = selection?.isAllSelected() ?? false;
     this.stats.selectionChanged(
       result.resultId,
-      selectionOf(ranges, all, result.columns.length),
+      this.chosen(),
       this.rows(),
       result.columns.length,
       all || ranges.length > 0,
@@ -242,13 +409,7 @@ export class ResultGrid implements OnDestroy {
     // rows in the page are no result of the store: the copy actions do not know them
     this.unregister = untracked(() => this.local())
       ? null
-      : this.copier.register(result.resultId, () =>
-          selectionOf(
-            selection?.getRanges() ?? [],
-            selection?.isAllSelected() ?? false,
-            result.columns.length,
-          ),
-        );
+      : this.copier.register(result.resultId, () => this.chosen());
     const fetch = this.fetch();
     let first: RowWindow = [];
     try {
@@ -258,6 +419,12 @@ export class ResultGrid implements OnDestroy {
       // the result is gone already: an empty table with its header
     }
     if (generation !== this.generation) return;
+    this.first = first;
+    this.backTo = null;
+    this.resolved = resolveLayout(
+      untracked(() => this.layout()),
+      result.columns,
+    );
     const body = new WindowAreaModel(
       (from, count) => fetch(result.resultId, from, count),
       () => this.api()?.repaint(),
@@ -267,6 +434,8 @@ export class ResultGrid implements OnDestroy {
     );
     body.rowHeight = rowHeight;
     body.setFormat(untracked(() => this.format()));
+    body.setShown(this.resolved.shown);
+    body.setHits(untracked(() => this.hits()));
     const rows = untracked(() => this.rows());
     body.setRowCount(Math.max(rows, first.length));
     this.body = body;
@@ -278,6 +447,7 @@ export class ResultGrid implements OnDestroy {
         Math.max(rows, 1000),
         this.options,
         untracked(() => this.marks()),
+        this.resolved,
       ),
     );
   }

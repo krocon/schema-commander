@@ -41,6 +41,19 @@ import { SavedPanel } from './features/saved/saved-panel';
 import { SavedStore } from './features/saved/saved.store';
 import { SnippetDialog } from './features/snippets/snippet-dialog';
 import { StatsPopover } from './features/stats/stats-popover';
+import { ColumnsPopover } from './features/find/columns-popover';
+import { QueryColumn } from './core/sql/query.models';
+import { FIND_TEXTS } from './features/find/find-texts';
+import {
+  ColumnLayout,
+  EMPTY_LAYOUT,
+  columnKeys,
+  moveColumn,
+  resolveLayout,
+  setHidden,
+  setPinned,
+} from './features/results/column-layout';
+import { ColumnLayouts } from './features/results/column-layouts.service';
 import { STATS_TEXTS } from './features/stats/stats-texts';
 import { StatsService } from './features/stats/stats.service';
 import { extensionOf } from './features/value/value-logic';
@@ -115,6 +128,7 @@ const SIDEBAR_MIN = 140;
     SavedPanel,
     SnippetDialog,
     StatsPopover,
+    ColumnsPopover,
     DetailsDialog,
     MenuBar,
     SettingsDialog,
@@ -421,6 +435,16 @@ const SIDEBAR_MIN = 140;
     @if (stats.summary()) {
       <app-stats-popover />
     }
+    @if (columnsOf(); as c) {
+      <app-columns-popover
+        [columns]="c.columns"
+        [layout]="c.layout"
+        (layoutChange)="layouts.set(c.tab, $event)"
+        (jump)="jumpToColumn($event)"
+        (fit)="c.tab.grid?.fitWidths()"
+        (closed)="closeColumns()"
+      />
+    }
     @if (menus.context(); as m) {
       <app-context-menu
         [label]="m.label"
@@ -622,6 +646,70 @@ export class App implements OnInit, OnDestroy {
   protected readonly paramService = inject(ParamService);
   private readonly values = inject(ValueService);
   protected readonly stats = inject(StatsService);
+  protected readonly layouts = inject(ColumnLayouts);
+  /** The column list is open. */
+  private readonly columnsOpen = signal(false);
+  /** What the column list shows: the columns of the result in front and their layout. */
+  protected readonly columnsOf = computed(() => {
+    const tab = this.tabs.active();
+    const current = this.copier.current();
+    if (!this.columnsOpen() || !tab || !current) return null;
+    return { tab, columns: current.result.columns, layout: this.layouts.of(tab) };
+  });
+
+  protected closeColumns(): void {
+    const tab = this.tabs.active();
+    this.columnsOpen.set(false);
+    setTimeout(() => tab?.grid?.focusGrid());
+  }
+
+  /** From the column list: the cursor goes into a column (a hidden one is shown first). */
+  protected jumpToColumn(index: number): void {
+    const c = this.columnsOf();
+    if (!c) return;
+    const key = columnKeys(c.columns)[index];
+    if (c.layout.hidden.includes(key)) {
+      this.layouts.set(c.tab, setHidden(c.layout, c.columns, key, false));
+    }
+    this.columnsOpen.set(false);
+    // the grid may be built anew for the layout: the cursor moves once it stands
+    setTimeout(() => {
+      const grid = c.tab.grid;
+      grid?.goTo(grid.cursor()?.[0] ?? 0, index);
+      grid?.focusGrid();
+    }, 50);
+  }
+
+  /** Changes the layout of the result in front by the column the cursor is in. */
+  private onColumn(
+    change: (layout: ColumnLayout, columns: readonly QueryColumn[], key: string) => ColumnLayout,
+  ): void {
+    const tab = this.tabs.active();
+    const current = this.copier.current();
+    const at = tab?.grid?.cursor();
+    if (!tab || !current || !at) return this.ownNotice.set(FIND_TEXTS.noCursor);
+    const columns = current.result.columns;
+    const row = at[0];
+    this.layouts.set(tab, change(this.layouts.of(tab), columns, columnKeys(columns)[at[1]]));
+    // the cursor stays with its column, wherever that is now
+    setTimeout(() => {
+      const shown = resolveLayout(this.layouts.of(tab), columns).shown;
+      tab.grid?.goTo(row, shown.includes(at[1]) ? at[1] : null);
+      tab.grid?.focusGrid();
+    }, 50);
+  }
+
+  /** The next row of the cursor's column with another value, or with NULL. */
+  private async seek(kind: 'change' | 'null'): Promise<void> {
+    const tab = this.tabs.active();
+    const current = this.copier.current();
+    const at = tab?.grid?.cursor();
+    if (!tab || !current || !at) return this.ownNotice.set(FIND_TEXTS.noCursor);
+    const row = await tab.find.seek(current.result.resultId, at[1], at[0], kind);
+    if (row === null) {
+      this.ownNotice.set(kind === 'null' ? FIND_TEXTS.noNull : FIND_TEXTS.noOther);
+    } else tab.grid?.goTo(row, at[1]);
+  }
   protected readonly statsTexts = STATS_TEXTS;
   /** The figures belong to the result in front (or one is being worked out). */
   protected readonly statsShown = computed(() => {
@@ -836,6 +924,7 @@ export class App implements OnInit, OnDestroy {
         () => this.values.copy(),
         () => this.values.cell() !== null,
       ),
+      ...this.resultActions(),
       this.actions.register(
         'SUMMARIZE_COLUMN',
         () => {
@@ -1232,6 +1321,56 @@ export class App implements OnInit, OnDestroy {
         await window.destroy();
       }
     });
+  }
+
+  /** Columns of the result and searching in it (prompt 029). */
+  private resultActions(): (() => void)[] {
+    const tab = () => this.tabs.active();
+    const has = () => this.copier.current() !== null;
+    const hits = () => has() && (tab()?.find.count() ?? 0) > 0;
+    const step = (direction: 1 | -1) => () => {
+      const t = tab();
+      const hit = t?.find.step(t.grid?.cursor() ?? null, direction);
+      if (hit) t?.grid?.goTo(hit[0], hit[1]);
+    };
+    const find = (field: 'text' | 'row') => () => {
+      if (!has()) return this.ownNotice.set(FIND_TEXTS.noResult);
+      this.settings.update({ resultVisible: true });
+      tab()?.find.show(field);
+    };
+    const register = this.actions.register.bind(this.actions);
+    return [
+      register('FIND_IN_RESULT', find('text'), has),
+      register('FIND_NEXT', step(1), hits),
+      register('FIND_PREV', step(-1), hits),
+      register('GOTO_ROW', find('row'), has),
+      register('RESULT_FIRST_ROW', () => tab()?.grid?.goTo(0, null), has),
+      register(
+        'RESULT_LAST_ROW',
+        () => tab()?.grid?.goTo((this.copier.current()?.rows ?? 1) - 1, null),
+        has,
+      ),
+      register('NEXT_CHANGE', () => this.seek('change'), has),
+      register('NEXT_NULL', () => this.seek('null'), has),
+      register('RESULT_COLUMNS', () => this.columnsOpen.set(true), has),
+      register('COLUMN_HIDE', () => this.onColumn((l, c, key) => setHidden(l, c, key, true)), has),
+      register(
+        'COLUMN_PIN',
+        () => this.onColumn((l, c, key) => setPinned(l, c, key, !l.pinned.includes(key))),
+        has,
+      ),
+      register('COLUMN_LEFT', () => this.onColumn((l, c, key) => moveColumn(l, c, key, -1)), has),
+      register('COLUMN_RIGHT', () => this.onColumn((l, c, key) => moveColumn(l, c, key, 1)), has),
+      register('COLUMNS_FIT', () => tab()?.grid?.fitWidths(), has),
+      register(
+        'COLUMNS_RESET',
+        () => {
+          const t = tab();
+          if (t) this.layouts.set(t, EMPTY_LAYOUT);
+        },
+        has,
+      ),
+    ];
   }
 
   /** Opens the export dialog for the result in front: what is selected in its grid, or all of it. */

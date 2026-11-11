@@ -19,6 +19,8 @@ export const MENU_DE: Translation<typeof MENU_EN> = {
   format: 'Weitere Formatierung',
   saved: 'Ordner der gespeicherten Abfragen',
   filterCell: 'Nach dieser Zelle filtern',
+  resultColumns: 'Spalten',
+  resultFind: 'Suchen und springen',
   failed: (reason) => `Die Menüleiste ließ sich nicht aufbauen: ${reason}`,
   native: {
     about: 'Über Schema Commander',

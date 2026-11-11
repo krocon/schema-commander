@@ -64,6 +64,9 @@ import {
   Verdict,
   ViewSpec,
   ResultStats,
+  SearchFound,
+  SearchSpec,
+  SeekKind,
   ViewedResult,
 } from '../app/core/sql/query.models';
 import { FileDialogApi } from '../app/core/backend/file-dialog-api';
@@ -357,6 +360,77 @@ export class FakeQueryApi extends QueryApi {
 
   cancelStats(jobId: number): Promise<void> {
     this.cancelledStats.push(jobId);
+    return Promise.resolve();
+  }
+
+  /**
+   * Searching (prompt 029): the fake looks through `results` like the backend – texts and numbers as
+   * written, without case unless asked; a „regex“ is a JavaScript one here.
+   */
+  readonly searches: {
+    jobId: number;
+    resultId: number;
+    spec: SearchSpec;
+    from: number;
+    maxRows: number;
+  }[] = [];
+  readonly cancelledSearches: number[] = [];
+  searchError: { code: string; message: string } | null = null;
+  searchGate: Promise<void> | null = null;
+
+  async resultSearch(
+    jobId: number,
+    resultId: number,
+    spec: SearchSpec,
+    from: number,
+    maxRows: number,
+    maxHits: number,
+  ): Promise<SearchFound> {
+    this.searches.push({ jobId, resultId, spec, from, maxRows });
+    if (this.searchGate) await this.searchGate;
+    if (this.searchError) throw this.searchError;
+    if (this.cancelledSearches.includes(jobId)) throw { code: 'cancelled', message: '' };
+    const rows = this.results.get(resultId);
+    if (!rows) throw { code: 'unknown_result', message: '' };
+    const source = spec.regex ? spec.text : spec.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(
+      spec.wholeWord ? `\\b(?:${source})\\b` : source,
+      spec.caseSensitive ? 'u' : 'iu',
+    );
+    const hits: [number, number][] = [];
+    let row = from;
+    const to = Math.min(rows.length, from + maxRows);
+    for (; row < to && hits.length < maxHits; row++) {
+      rows[row].forEach((cell, c) => {
+        if (spec.columns.length > 0 && !spec.columns.includes(c)) return;
+        if ((typeof cell === 'string' || typeof cell === 'number') && re.test(String(cell)))
+          hits.push([row, c]);
+      });
+    }
+    return { hits, next: row, done: row >= rows.length };
+  }
+
+  readonly seeks: { resultId: number; col: number; from: number; seek: SeekKind }[] = [];
+
+  resultSeek(
+    _jobId: number,
+    resultId: number,
+    col: number,
+    from: number,
+    seek: SeekKind,
+  ): Promise<number | null> {
+    this.seeks.push({ resultId, col, from, seek });
+    const rows = this.results.get(resultId) ?? [];
+    for (let row = from + 1; row < rows.length; row++) {
+      const cell = rows[row][col] ?? null;
+      if (seek === 'null' ? cell === null : cell !== (rows[from][col] ?? null))
+        return Promise.resolve(row);
+    }
+    return Promise.resolve(null);
+  }
+
+  cancelSearch(jobId: number): Promise<void> {
+    this.cancelledSearches.push(jobId);
     return Promise.resolve();
   }
 }

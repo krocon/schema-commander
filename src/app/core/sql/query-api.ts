@@ -14,6 +14,9 @@ import {
   Verdict,
   ViewSpec,
   ResultStats,
+  SearchFound,
+  SearchSpec,
+  SeekKind,
   ViewedResult,
 } from './query.models';
 
@@ -125,6 +128,28 @@ export abstract class QueryApi {
     top: boolean,
   ): Promise<ResultStats>;
   abstract cancelStats(jobId: number): Promise<void>;
+  /**
+   * Looks for a text in the rows `from …` of a result (prompt 029): at most `maxRows` rows, until
+   * `maxHits` cells were found. Asked stretch by stretch (`next` of an answer is the next `from`). A job:
+   * `cancelSearch` stops it. Rejects with `invalid_query` for a pattern that is none.
+   */
+  abstract resultSearch(
+    jobId: number,
+    resultId: number,
+    spec: SearchSpec,
+    from: number,
+    maxRows: number,
+    maxHits: number,
+  ): Promise<SearchFound>;
+  /** The next row below `from` whose cell in `col` has another value or is NULL; `null` = none. A job. */
+  abstract resultSeek(
+    jobId: number,
+    resultId: number,
+    col: number,
+    from: number,
+    seek: SeekKind,
+  ): Promise<number | null>;
+  abstract cancelSearch(jobId: number): Promise<void>;
 }
 
 @Injectable()
@@ -232,6 +257,31 @@ export class TauriQueryApi extends QueryApi {
   }
 
   cancelStats(jobId: number): Promise<void> {
+    return call('cancel_job', { jobId });
+  }
+
+  resultSearch(
+    jobId: number,
+    resultId: number,
+    spec: SearchSpec,
+    from: number,
+    maxRows: number,
+    maxHits: number,
+  ): Promise<SearchFound> {
+    return call('result_search', { jobId, resultId, spec, from, maxRows, maxHits });
+  }
+
+  resultSeek(
+    jobId: number,
+    resultId: number,
+    col: number,
+    from: number,
+    seek: SeekKind,
+  ): Promise<number | null> {
+    return call('result_seek', { jobId, resultId, col, from, seek });
+  }
+
+  cancelSearch(jobId: number): Promise<void> {
     return call('cancel_job', { jobId });
   }
 }

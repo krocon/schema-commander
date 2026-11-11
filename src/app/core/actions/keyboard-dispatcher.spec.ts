@@ -135,6 +135,37 @@ describe('KeyboardDispatcher', () => {
     );
   });
 
+  it('searches in the result only while a result grid has the keyboard', () => {
+    const grid = '<app-result-grid><div class="ge-table"><div>x</div></div></app-result-grid>';
+    expect(placeOf(el(grid, '.ge-table div'))).toBe('result');
+    const h = host();
+    const d = new KeyboardDispatcher(h);
+    // Ctrl+F in the grid is the search in the result …
+    expect(d.handle(key('f', 'KeyF', el(grid, '.ge-table div'), { ctrlKey: true }))).toBe(
+      'FIND_IN_RESULT',
+    );
+    expect(d.handle(key('F3', 'F3', el(grid, '.ge-table div')))).toBe('FIND_NEXT');
+    expect(d.handle(key('F3', 'F3', el(grid, '.ge-table div'), { shiftKey: true }))).toBe(
+      'FIND_PREV',
+    );
+    // … and stays the editor's, a field's and any other grid's elsewhere
+    const editor = el('<editlicious-editor></editlicious-editor>', 'editlicious-editor');
+    expect(d.handle(key('f', 'KeyF', editor, { ctrlKey: true }))).toBeNull();
+    expect(d.handle(key('F3', 'F3', editor))).toBeNull();
+    const field = el('<app-result-grid><input type="search" /></app-result-grid>', 'input');
+    expect(d.handle(key('f', 'KeyF', field, { ctrlKey: true }))).toBeNull();
+    const other = el('<div class="ge-table"><div>x</div></div>', '.ge-table div');
+    expect(d.handle(key('f', 'KeyF', other, { ctrlKey: true }))).toBeNull();
+    expect(
+      d.handle(key('f', 'KeyF', el('<main><p>x</p></main>', 'p'), { ctrlKey: true })),
+    ).toBeNull();
+    // global shortcuts still act in the result
+    expect(
+      d.handle(key('Enter', 'Enter', el(grid, '.ge-table div'), { ctrlKey: true })),
+    ).not.toBeNull();
+    expect(h.ran.slice(0, 3)).toEqual(['FIND_IN_RESULT', 'FIND_NEXT', 'FIND_PREV']);
+  });
+
   it('leaves Space and Enter to a focused button', () => {
     const h = host({ SHOW_SHORTCUTS: ['Space'] });
     const d = new KeyboardDispatcher(h);
