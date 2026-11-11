@@ -1,3 +1,5 @@
+import { CONNECTION_MODEL_TEXTS } from './connection-model-texts';
+
 /** Mirrors `DbKind` in src-tauri/src/db/mod.rs. */
 export type DbKind = 'postgres' | 'mysql' | 'sqlserver' | 'sqlite';
 
@@ -100,7 +102,14 @@ export const DB_KINDS: readonly {
   { kind: 'postgres', label: 'PostgreSQL', port: 5432 },
   { kind: 'mysql', label: 'MySQL / MariaDB', port: 3306 },
   { kind: 'sqlserver', label: 'SQL Server', port: 1433 },
-  { kind: 'sqlite', label: 'SQLite (Datei)', port: 0 },
+  {
+    kind: 'sqlite',
+    // a getter: the language may change while the app runs
+    get label() {
+      return CONNECTION_MODEL_TEXTS.sqliteFile;
+    },
+    port: 0,
+  },
 ];
 
 export function kindLabel(kind: DbKind): string {

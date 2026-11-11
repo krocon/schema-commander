@@ -1,0 +1,42 @@
+import type { Translation } from '../i18n/i18n';
+import type { KEYMAP_EN } from './keymap-texts';
+
+export const KEYMAP_DE: Translation<typeof KEYMAP_EN> = {
+  mods: { ctrl: 'Strg', alt: 'Alt', shift: 'Umschalt' },
+  keys: {
+    Enter: 'Eingabe',
+    Backspace: 'Rücktaste',
+    Delete: 'Entf',
+    Insert: 'Einfg',
+    Escape: 'Esc',
+    Tab: 'Tab',
+    Home: 'Pos1',
+    End: 'Ende',
+    PageUp: 'Bild↑',
+    PageDown: 'Bild↓',
+    Space: 'Leertaste',
+    ContextMenu: 'Menütaste',
+    NumpadDecimal: 'Num,',
+  },
+  macQuit: 'Beenden im macOS-Menü',
+  macHide: 'Ausblenden im macOS-Menü',
+  macHideOthers: 'Andere ausblenden im macOS-Menü',
+  macMinimize: 'Im Dock ablegen im macOS-Menü',
+  macFullScreen: 'Vollbild im macOS-Menü',
+  macAppSwitch: 'Programmwechsel von macOS',
+  macSpotlight: 'Spotlight von macOS',
+  closeWindow: 'Fenster schließen',
+  appSwitch: 'Programmwechsel',
+  textEditing: 'Bearbeiten in Eingabefeldern und im Editor',
+  ownBindings: 'eigene Belegung',
+  defaults: 'Vorgabe',
+  notAList: (action, where) => `„${action}“ (${where}): keine Liste von Kürzeln, übergangen.`,
+  invalidShortcut: (raw, action, where) =>
+    `„${raw}“ ist kein gültiges Kürzel (${action}, ${where}).`,
+  reserved: (shortcut, action, why) => `${shortcut} für „${action}“ ist reserviert: ${why}.`,
+  unknownInDefaults: (id) => `Unbekannte Aktion „${id}“ in der Vorgabe.`,
+  unknownInOwn: (id) => `Unbekannte Aktion „${id}“ in der eigenen Belegung, übergangen.`,
+  conflict: (shortcut, owner, loser) => `${shortcut} gehört „${owner}“, „${loser}“ verliert es.`,
+  hidesChord: (first, chord) => `${first} allein verdeckt den Akkord ${chord}.`,
+  startNotice: (n) => `Tastenkürzel: ${n} Hinweis(e), siehe „Tastenkürzel bearbeiten“.`,
+};

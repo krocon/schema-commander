@@ -12,6 +12,7 @@ import {
 } from '@angular/core';
 import { FileDialogApi } from '../../core/backend/file-dialog-api';
 import { errorText } from '../../core/errors/app-error';
+import { COMMON_TEXTS } from '../../core/i18n/common-texts';
 import { DARK, LIGHT } from '../../core/theme/builtin-themes';
 import { tokenValueOk } from '../../core/theme/theme-logic';
 import { ThemeEditRequest } from '../../core/theme/theme.models';
@@ -28,6 +29,7 @@ import {
   tokenContrast,
   withBrightness,
 } from './theme-editor-logic';
+import { THEME_EDITOR_TEXTS } from './theme-editor-texts';
 
 /** The id of the scheme shown while editing; never stored. */
 const PREVIEW_ID = 'user-preview';
@@ -41,14 +43,17 @@ interface Row {
 }
 
 interface Group {
+  /** The key of the group (English). */
   readonly name: string;
+  /** What the user reads. */
+  readonly label: string;
   readonly rows: readonly Row[];
 }
 
 /**
  * The scheme editor (design 001): every token of an own scheme with colour picker and text field. Each
- * change shows at once in the window behind (the preview of the `ThemeService`); „Speichern“ writes
- * `themes.json`, „Abbrechen“/Esc bring back what was on screen before. A panel at the right edge, so the
+ * change shows at once in the window behind (the preview of the `ThemeService`); "Save" writes
+ * `themes.json`, "Cancel"/Esc bring back what was on screen before. A panel at the right edge, so the
  * app stays visible while its colours change.
  */
 @Component({
@@ -61,11 +66,11 @@ interface Group {
       (close)="closed.emit()"
     >
       <header>
-        <h2 id="theme-editor-title">Schema bearbeiten</h2>
-        <button type="button" aria-label="Schließen" (click)="cancel()">×</button>
+        <h2 id="theme-editor-title">{{ t.title }}</h2>
+        <button type="button" [attr.aria-label]="c.close" (click)="cancel()">×</button>
       </header>
       <div class="head">
-        <label for="theme-name">Name</label>
+        <label for="theme-name">{{ c.name }}</label>
         <input
           #nameInput
           id="theme-name"
@@ -79,7 +84,7 @@ interface Group {
           (input)="setName(nameInput.value)"
         />
         <fieldset>
-          <legend>Helligkeit</legend>
+          <legend>{{ t.brightness }}</legend>
           <label
             ><input
               type="radio"
@@ -87,7 +92,7 @@ interface Group {
               [checked]="draft().dark"
               (change)="setDark(true)"
             />
-            dunkel</label
+            {{ t.dark }}</label
           >
           <label
             ><input
@@ -96,34 +101,31 @@ interface Group {
               [checked]="!draft().dark"
               (change)="setDark(false)"
             />
-            hell</label
+            {{ t.light }}</label
           >
         </fieldset>
         @if (nameError(); as problem) {
           <p id="theme-name-error" class="problem" role="alert">{{ problem }}</p>
         }
-        <label for="theme-token-filter">Filter</label>
+        <label for="theme-token-filter">{{ t.filter }}</label>
         <input
           #filterInput
           id="theme-token-filter"
           type="search"
           autocomplete="off"
           spellcheck="false"
-          placeholder="Name eines Tokens"
+          [placeholder]="t.filterPlaceholder"
           [value]="filter()"
           (input)="filter.set(filterInput.value)"
         />
       </div>
       @if (request().dropped.length > 0) {
-        <p class="note" role="note">
-          {{ request().dropped.length }} Einträge der Datei wurden verworfen:
-          {{ droppedText() }}
-        </p>
+        <p class="note" role="note">{{ t.dropped(request().dropped.length, droppedText()) }}</p>
       }
       <div class="tokens">
         @for (group of groups(); track group.name) {
-          <section [attr.aria-label]="group.name">
-            <h3>{{ group.name }}</h3>
+          <section [attr.aria-label]="group.label">
+            <h3>{{ group.label }}</h3>
             @for (row of group.rows; track row.def.name) {
               <div class="row" [class.changed]="row.changed">
                 <span class="label" [title]="row.def.name">{{ row.def.label }}</span>
@@ -132,7 +134,7 @@ interface Group {
                     #color
                     type="color"
                     [value]="row.swatch"
-                    [attr.aria-label]="row.def.label + ', Farbe wählen'"
+                    [attr.aria-label]="t.chooseColor(row.def.label)"
                     (input)="setToken(row.def.name, color.value)"
                   />
                 } @else {
@@ -146,14 +148,14 @@ interface Group {
                   [value]="row.value"
                   [class.invalid]="invalid().has(row.def.name)"
                   [attr.aria-invalid]="invalid().has(row.def.name)"
-                  [attr.aria-label]="row.def.label + ', Wert'"
+                  [attr.aria-label]="t.valueOf(row.def.label)"
                   (change)="typeToken(row.def.name, text)"
                 />
                 <button
                   type="button"
                   [disabled]="!row.changed"
-                  [attr.aria-label]="row.def.label + ' zurücksetzen'"
-                  title="Auf den Wert der Basis zurücksetzen"
+                  [attr.aria-label]="t.resetToken(row.def.label)"
+                  [title]="t.resetHint"
                   (click)="resetToken(row.def.name)"
                 >
                   ↺
@@ -168,36 +170,33 @@ interface Group {
           </section>
         }
         @if (groups().length === 0) {
-          <p class="none" role="status">Kein Token passt zum Filter.</p>
+          <p class="none" role="status">{{ t.noToken }}</p>
         }
       </div>
       <p class="summary" role="status">
-        @if (failing() === 0) {
-          Alle Kontrastpaare erfüllen WCAG AA.
-        } @else {
-          ⚠ {{ failing() }} {{ failing() === 1 ? 'Kontrastpaar liegt' : 'Kontrastpaare liegen' }}
-          unter WCAG AA.
-        }
+        {{ failing() === 0 ? t.allPairsOk : t.failingPairs(failing()) }}
       </p>
       @if (error(); as message) {
         <p class="problem" role="alert">{{ message }}</p>
       }
       <footer>
-        <button type="button" [disabled]="busy()" (click)="exportFile()">Exportieren …</button>
+        <button type="button" [disabled]="busy()" (click)="exportFile()">
+          {{ t.export }}
+        </button>
         @if (stored()) {
           <button type="button" class="danger" [disabled]="busy()" (click)="remove()">
-            {{ confirmDelete() ? 'Wirklich löschen?' : 'Löschen' }}
+            {{ confirmDelete() ? t.reallyDelete : c.delete }}
           </button>
         }
         <span class="spacer"></span>
-        <button type="button" (click)="cancel()">Abbrechen</button>
+        <button type="button" (click)="cancel()">{{ c.cancel }}</button>
         <button
           type="button"
           class="primary"
           [disabled]="busy() || nameError() !== null"
           (click)="save()"
         >
-          Speichern
+          {{ c.save }}
         </button>
       </footer>
     </dialog>
@@ -206,6 +205,8 @@ interface Group {
 })
 export class ThemeEditor implements OnInit {
   private readonly theme = inject(ThemeService);
+  protected readonly t = THEME_EDITOR_TEXTS;
+  protected readonly c = COMMON_TEXTS;
   private readonly files = inject(FileDialogApi);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
@@ -230,7 +231,7 @@ export class ThemeEditor implements OnInit {
     const taken = this.theme
       .themes()
       .some((t) => t.id !== own && t.name.toLowerCase() === name.trim().toLowerCase());
-    return taken ? 'Diesen Namen gibt es schon.' : null;
+    return taken ? this.t.nameTaken : null;
   });
   protected readonly failing = computed(() => failingPairs(this.draft().tokens));
   protected readonly droppedText = computed(() => {
@@ -244,7 +245,7 @@ export class ThemeEditor implements OnInit {
     const words = this.filter().toLowerCase().split(/\s+/).filter(Boolean);
     const out: Group[] = [];
     for (const def of TOKENS) {
-      const hay = `${def.label} ${def.name} ${def.group}`.toLowerCase();
+      const hay = `${def.label} ${def.name} ${def.groupLabel}`.toLowerCase();
       if (!words.every((w) => hay.includes(w))) continue;
       const value = draft.tokens[def.name] ?? '';
       const row: Row = {
@@ -256,7 +257,7 @@ export class ThemeEditor implements OnInit {
       };
       const last = out[out.length - 1];
       if (last?.name === def.group) (last.rows as Row[]).push(row);
-      else out.push({ name: def.group, rows: [row] });
+      else out.push({ name: def.group, label: def.groupLabel, rows: [row] });
     }
     return out;
   });
@@ -347,12 +348,12 @@ export class ThemeEditor implements OnInit {
   protected async exportFile(): Promise<void> {
     if (this.busy()) return;
     const draft = this.draft();
-    const name = draft.name.trim() || 'Schema';
+    const name = draft.name.trim() || this.t.unnamed;
     this.busy.set(true);
     this.error.set(null);
     try {
-      const path = await this.files.saveFile('Farbschema exportieren', `${name}.theme.json`, [
-        { name: 'Farbschema', extensions: ['json'] },
+      const path = await this.files.saveFile(this.t.exportTitle, `${name}.theme.json`, [
+        { name: this.t.fileKind, extensions: ['json'] },
       ]);
       if (path !== null) {
         const id = draft.id ?? newUserId(name, new Set());
@@ -365,7 +366,7 @@ export class ThemeEditor implements OnInit {
     }
   }
 
-  /** Esc / Abbrechen / ×: what was on screen before comes back. */
+  /** Esc / Cancel / ×: what was on screen before comes back. */
   protected cancel(): void {
     this.theme.preview.set(null);
     this.dialog().nativeElement.close();
@@ -393,6 +394,6 @@ function contrastBadge(name: string, tokens: Readonly<Record<string, string>>): 
   return {
     text: c.ok ? ratio : `⚠ ${ratio}`,
     ok: c.ok,
-    title: `Kontrast ${ratio}:1 gegen ${c.against} (Soll ${c.min}:1)`,
+    title: THEME_EDITOR_TEXTS.contrast(ratio, c.against, c.min),
   };
 }

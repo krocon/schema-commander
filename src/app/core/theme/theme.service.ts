@@ -2,6 +2,7 @@ import { DestroyRef, Injectable, computed, effect, inject, signal } from '@angul
 import { WindowApi } from '../backend/window-api';
 import { ThemeApi } from './theme-api';
 import { SettingsService } from '../settings/settings.service';
+import { THEME_TEXTS } from './theme-texts';
 import {
   BUILT_IN_DARK,
   Theme,
@@ -22,10 +23,36 @@ export interface ThemeCatalog {
   readonly applicable: (name: string, value: string) => boolean;
 }
 
+/** The name of a base scheme in the current language (the scheme files hold one fixed name). */
+function baseName(id: 'dark' | 'light'): string {
+  return id === 'dark' ? THEME_TEXTS.dark : THEME_TEXTS.light;
+}
+
+/** A built-in scheme as the user reads it: dark and light are named in the current language. */
+function localized(theme: Theme): Theme {
+  return theme.id === 'dark' || theme.id === 'light'
+    ? { ...theme, name: baseName(theme.id) }
+    : theme;
+}
+
 /** dark and light before the schemes are loaded: their tokens are `styles.css` itself. */
 const BASE_STUB: Readonly<Record<'dark' | 'light', Theme>> = {
-  dark: { id: 'dark', name: 'Dunkel', dark: true, tokens: {} },
-  light: { id: 'light', name: 'Hell', dark: false, tokens: {} },
+  dark: {
+    id: 'dark',
+    get name() {
+      return baseName('dark');
+    },
+    dark: true,
+    tokens: {},
+  },
+  light: {
+    id: 'light',
+    get name() {
+      return baseName('light');
+    },
+    dark: false,
+    tokens: {},
+  },
 };
 
 /**
@@ -62,10 +89,11 @@ export class ThemeService {
   /** What reading the own schemes had to say (broken file, ignored entries). */
   readonly notice = signal<string | null>(null);
   /** Built-in and own schemes, once the built-in ones are loaded. */
-  readonly themes = computed<readonly Theme[]>(() => [
-    ...(this.catalog()?.themes ?? []),
-    ...this.userThemes(),
-  ]);
+  readonly themes = computed<readonly Theme[]>(() => [...this.builtIn(), ...this.userThemes()]);
+  /** The built-in schemes with the names of the current language. */
+  private readonly builtIn = computed<readonly Theme[]>(() =>
+    (this.catalog()?.themes ?? []).map(localized),
+  );
 
   readonly activeId = computed(() => selectedId(this.selection(), this.systemDark()));
 
@@ -78,7 +106,7 @@ export class ThemeService {
     // an own scheme that is not read yet: wait, do not flash the base
     if (isUserTheme(id) && !own && !this.userLoaded()) return null;
     if (catalog) {
-      return own ?? catalog.themes.find((t) => t.id === id) ?? this.base(dark);
+      return own ?? this.builtIn().find((t) => t.id === id) ?? this.base(dark);
     }
     return isBaseTheme(id) || this.failed() ? this.base(dark) : null;
   });
@@ -205,7 +233,7 @@ export class ThemeService {
 
   private base(dark: boolean): Theme {
     const id = dark ? 'dark' : 'light';
-    return this.catalog()?.themes.find((t) => t.id === id) ?? BASE_STUB[id];
+    return this.builtIn().find((t) => t.id === id) ?? BASE_STUB[id];
   }
 
   private apply(theme: Theme): void {

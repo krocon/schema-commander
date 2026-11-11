@@ -1,4 +1,5 @@
 import { ACTIONS, ACTION_GROUPS, ActionGroup, ActionId } from '../../core/actions/action-catalog';
+import { actionLabel } from '../../core/actions/action-texts';
 import { ResolvedKeymap } from '../../core/actions/keymap';
 import { Platform } from '../../core/actions/platform';
 import { formatShortcut } from '../../core/actions/shortcut';
@@ -16,6 +17,7 @@ export type Pending =
 
 export interface ShortcutRow {
   id: ActionId;
+  /** The name of the action in the language at the time the rows were made. */
   label: string;
   keys: { value: string; text: string }[];
   /** Differs from the default (has an entry in the override). */
@@ -23,6 +25,7 @@ export interface ShortcutRow {
 }
 
 export interface ShortcutGroup {
+  /** The key of the group (`groupLabel` gives what the user reads). */
   name: ActionGroup;
   rows: ShortcutRow[];
 }
@@ -44,7 +47,7 @@ export function shortcutGroups(
       group: a.group as ActionGroup,
       row: {
         id: a.id,
-        label: a.label,
+        label: actionLabel(a.id),
         keys,
         changed: Object.prototype.hasOwnProperty.call(override, a.id),
       } satisfies ShortcutRow,

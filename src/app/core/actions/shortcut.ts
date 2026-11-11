@@ -1,3 +1,4 @@
+import { KEYMAP_TEXTS } from './keymap-texts';
 import { Platform } from './platform';
 
 /**
@@ -12,7 +13,7 @@ import { Platform } from './platform';
  *   (⌥O gives `ø`), dead keys give `Dead`.
  * - Digits and the numpad come from `code`: German Shift+7 gives `/`, ⌥1 gives `¡`.
  * - Punctuation comes from `key`, so `?`, `<`, `>` and `,` are the characters the user sees on the keycap,
- *   whatever the layout (German `?` is Shift+ß, US `?` is Shift+/). Shift is part of making the character and
+ *   whatever the layout (on a German layout `?` is Shift plus the sharp-s key, on a US layout Shift+/). Shift is part of making the character and
  *   is dropped for punctuation: `?` and `Shift+?` are the same shortcut. With ⌥ on macOS `key` is a different
  *   character again, then the physical key (`code`, US names) decides.
  */
@@ -234,7 +235,8 @@ export function typesText(s: Stroke): boolean {
 
 // ---- display ----
 
-const MAC_KEYS: Readonly<Record<string, string>> = {
+/** macOS shows these keys as symbols; the names of the others come from the catalog. */
+const MAC_SYMBOLS: Readonly<Record<string, string>> = {
   Enter: '↩',
   Backspace: '⌫',
   Delete: '⌦',
@@ -244,49 +246,41 @@ const MAC_KEYS: Readonly<Record<string, string>> = {
   End: '↘',
   PageUp: '⇞',
   PageDown: '⇟',
-  Space: 'Leertaste',
 };
-const KEYS: Readonly<Record<string, string>> = {
-  Enter: 'Eingabe',
-  Backspace: 'Rücktaste',
-  Delete: 'Entf',
-  Insert: 'Einfg',
-  Escape: 'Esc',
-  Tab: 'Tab',
-  Home: 'Pos1',
-  End: 'Ende',
-  PageUp: 'Bild↑',
-  PageDown: 'Bild↓',
-  Space: 'Leertaste',
-  ContextMenu: 'Menütaste',
-};
-const BOTH: Readonly<Record<string, string>> = {
+/** Keys macOS has no symbol for: named as everywhere. */
+const MAC_NAMED: ReadonlySet<string> = new Set(['Space', 'ContextMenu', 'NumpadDecimal']);
+const SYMBOLS: Readonly<Record<string, string>> = {
   ArrowUp: '↑',
   ArrowDown: '↓',
   ArrowLeft: '←',
   ArrowRight: '→',
-  ContextMenu: 'Menütaste',
   NumpadAdd: 'Num+',
   NumpadSubtract: 'Num−',
   NumpadMultiply: 'Num*',
   NumpadDivide: 'Num/',
-  NumpadDecimal: 'Num,',
 };
 
+/** The name of a key in the current language (read at call time: the language may change). */
 function keyLabel(key: string, platform: Platform): string {
-  const own = platform === 'macos' ? MAC_KEYS[key] : KEYS[key];
-  if (own) return own;
-  if (BOTH[key]) return BOTH[key];
+  const names: Readonly<Record<string, string>> = KEYMAP_TEXTS.keys;
+  if (platform === 'macos') {
+    if (MAC_SYMBOLS[key]) return MAC_SYMBOLS[key];
+    if (MAC_NAMED.has(key)) return names[key];
+  } else if (names[key]) {
+    return names[key];
+  }
+  if (SYMBOLS[key]) return SYMBOLS[key];
   return key.startsWith('Numpad') ? `Num${key.slice(6)}` : key;
 }
 
-/** Display text: `⌃⌥⇧⌘S` on macOS (Apple order), `Strg+Alt+Umschalt+S` elsewhere. */
+/** Display text: `⌃⌥⇧⌘S` on macOS (Apple order), `Ctrl+Alt+Shift+S` elsewhere (in the current language). */
 export function formatStroke(s: Stroke, platform: Platform): string {
   const key = keyLabel(s.key, platform);
   if (platform === 'macos') {
     return `${s.ctrl ? '⌃' : ''}${s.alt ? '⌥' : ''}${s.shift ? '⇧' : ''}${s.mod ? '⌘' : ''}${key}`;
   }
-  return `${s.mod ? 'Strg+' : ''}${s.alt ? 'Alt+' : ''}${s.shift ? 'Umschalt+' : ''}${key}`;
+  const mods = KEYMAP_TEXTS.mods;
+  return `${s.mod ? mods.ctrl + '+' : ''}${s.alt ? mods.alt + '+' : ''}${s.shift ? mods.shift + '+' : ''}${key}`;
 }
 
 export function formatShortcut(text: string, platform: Platform): string {

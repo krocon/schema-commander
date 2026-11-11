@@ -9,12 +9,13 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { COMMON_TEXTS } from '../core/i18n/common-texts';
 
 /** A question with two answers. */
 export interface ConfirmRequest {
   readonly title: string;
   readonly message: string;
-  /** The button that says yes (a verb: „Kopieren“, „Ausführen“). */
+  /** The button that says yes (a verb: "Copy", "Run"). */
   readonly confirm: string;
   /** A second way to go on ("Rollback" next to "Commit"); none by default. */
   readonly second?: string;
@@ -51,7 +52,7 @@ export class ConfirmService {
   }
 }
 
-/** The dialog of `ConfirmService`; Escape and "Abbrechen" say no, the focus starts on "Abbrechen". */
+/** The dialog of `ConfirmService`; Escape and "Cancel" say no, the focus starts on "Cancel". */
 @Component({
   selector: 'app-confirm-dialog',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -65,7 +66,7 @@ export class ConfirmService {
       <h2 id="confirm-title">{{ request().title }}</h2>
       <p id="confirm-message">{{ request().message }}</p>
       <footer>
-        <button #cancel type="button" (click)="answered.emit(false)">Abbrechen</button>
+        <button #cancel type="button" (click)="answered.emit(false)">{{ c.cancel }}</button>
         @if (request().second; as second) {
           <button type="button" (click)="answered.emit('second')">{{ second }}</button>
         }
@@ -103,6 +104,7 @@ export class ConfirmService {
   `,
 })
 export class ConfirmDialog {
+  protected readonly c = COMMON_TEXTS;
   readonly request = input.required<ConfirmRequest>();
   readonly answered = output<boolean | Choice>();
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');

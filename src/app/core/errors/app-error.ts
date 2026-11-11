@@ -1,3 +1,5 @@
+import { ERROR_TEXTS } from './error-texts';
+
 /** Mirrors `ErrorCode` in src-tauri/src/error.rs. */
 export type ErrorCode =
   | 'invalid_query'
@@ -77,45 +79,18 @@ export function toAppError(e: unknown): AppError {
   return { code: 'unknown', message: typeof e === 'string' ? e : 'unknown error' };
 }
 
-const TEXTS: Readonly<Record<ErrorCode, string>> = {
-  invalid_query: 'Die Anweisung ist ungültig.',
-  unsupported: 'Das wird nicht unterstützt.',
-  invalid_theme: 'Das ist kein gültiges Farbschema.',
-  too_large: 'Die Datei ist zu groß.',
-  not_found: 'Nicht gefunden.',
-  invalid_session: 'Die gespeicherte Sitzung ist ungültig.',
-  unknown_result: 'Dieses Ergebnis gibt es nicht mehr.',
-  encoding_failed: 'Die Kodierung der Datei kann nicht alle Zeichen des Textes darstellen.',
-  connection_failed: 'Die Verbindung ist fehlgeschlagen.',
-  auth_failed: 'Die Anmeldung wurde abgelehnt.',
-  tls_failed: 'Die verschlüsselte Verbindung (TLS) kam nicht zustande.',
-  timeout: 'Keine Antwort in der vorgesehenen Zeit.',
-  cancelled: 'Abgebrochen.',
-  permission_denied: 'Dafür fehlen die Rechte.',
-  confirmation_required: 'Diese Anweisung braucht eine Bestätigung.',
-  secret_required: 'Ein Passwort ist nötig.',
-  host_key_unknown: 'Der SSH-Server zeigt einen Schlüssel, der noch nicht bestätigt ist.',
-  host_key_changed:
-    'Der Schlüssel des SSH-Servers passt nicht zum bekannten. Die Verbindung wird nicht aufgebaut.',
-  ssh_secret_required: 'Der SSH-Tunnel braucht ein Passwort oder die Passphrase des Schlüssels.',
-  keychain_unavailable: 'Der Schlüsselbund des Systems ist nicht verfügbar.',
-  invalid_profile: 'Die Angaben der Verbindung sind unvollständig oder ungültig.',
-  unknown_connection: 'Diese Verbindung gibt es nicht (mehr).',
-  not_connected: 'Die Verbindung ist nicht geöffnet.',
-  io: 'Die Datei konnte nicht gelesen oder geschrieben werden.',
-  backend_unavailable: 'Das geht nur in der Desktop-App.',
-  unknown: 'Unerwarteter Fehler.',
-};
-
-/** What the user reads for an error of the app itself (not the message of a database server). */
+/**
+ * What the user reads for an error of the app itself (not the message of a database server), in the
+ * current language (`error-texts.ts`).
+ */
 export function errorText(e: unknown): string {
-  return TEXTS[toAppError(e).code];
+  return ERROR_TEXTS[toAppError(e).code];
 }
 
 /** The text of the code and, where it says more, what the backend or the server reported. */
 export function describeError(e: unknown): string {
   const error = toAppError(e);
-  const text = TEXTS[error.code];
+  const text = ERROR_TEXTS[error.code];
   const detail = error.message.trim();
   const says = [
     'invalid_query',
