@@ -28,6 +28,10 @@ export const ERROR_EN = {
   invalid_profile: 'The details of the connection are incomplete or invalid.',
   unknown_connection: 'This connection does not exist (any more).',
   not_connected: 'The connection is not open.',
+  format_incomplete: 'Not formatted: the text ends inside a string, a quoted name or a comment.',
+  format_too_deep: 'Not formatted: brackets and blocks are nested too deep.',
+  format_unsafe:
+    'Not formatted: the result would not have been the same SQL. The text is unchanged.',
   io: 'The file could not be read or written.',
   backend_unavailable: 'This only works in the desktop app.',
   unknown: 'Unexpected error.',

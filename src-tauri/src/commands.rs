@@ -10,6 +10,7 @@ use crate::db::{Profile, TxState};
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::export;
 use crate::extract::{Format, Options};
+use crate::format;
 use crate::history::{self, History};
 use crate::results::{Progress, ResultStore, StoreSink};
 use crate::session::{LoadedSession, SessionDir, SessionFile};
@@ -584,6 +585,45 @@ pub fn confirm_statements(
     manager.confirm(&id, &sqls, typed_name.as_deref(), allow_dangerous)
 }
 
+/// Lays SQL out or changes the case of its keywords (prompt 023). Pure work on the text, but a script can
+/// be large: it is a job that `cancel_job` stops. The text is neither kept nor logged.
+#[tauri::command(async)]
+pub fn format_sql(
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    sql: String,
+    dialect: format::Dialect,
+    mode: format::Mode,
+    style: format::Style,
+    crlf: bool,
+) -> AppResult<String> {
+    use std::sync::atomic::Ordering;
+    let stop = jobs.start(job_id, None);
+    let result = format::format(&sql, dialect, &style, mode, crlf, &|| {
+        stop.load(Ordering::Relaxed)
+    });
+    jobs.end(job_id);
+    result.map_err(format_error)
+}
+
+fn format_error(e: format::FormatError) -> AppError {
+    use format::FormatError as E;
+    let (code, message) = match e {
+        E::Cancelled => (ErrorCode::Cancelled, "formatting was stopped"),
+        E::Incomplete => (
+            ErrorCode::FormatIncomplete,
+            "the text ends inside a string, a quoted name or a comment",
+        ),
+        E::TooDeep => (ErrorCode::FormatTooDeep, "nested too deep"),
+        E::Unsafe => (
+            ErrorCode::FormatUnsafe,
+            "the result would not have had the tokens of the text",
+        ),
+        E::TooLarge => (ErrorCode::TooLarge, "too much text"),
+    };
+    AppError::new(code, message)
+}
+
 /// Stops a job (its statement on the server too).
 #[tauri::command(async)]
 pub fn cancel_job(manager: State<'_, ConnectionManager>, jobs: State<'_, Jobs>, job_id: u64) {
@@ -995,5 +1035,33 @@ mod tests {
         assert_eq!(parse_hex_rgb("14171c"), None);
         assert_eq!(parse_hex_rgb("#14171g"), None);
         assert_eq!(parse_hex_rgb("#ééé"), None);
+    }
+
+    /// The contract of prompt 023 with `format-api.ts`: what the window sends, and the codes it reads.
+    #[test]
+    fn the_format_contract_is_what_the_window_speaks() {
+        let style: format::Style = serde_json::from_value(serde_json::json!({
+            "keywordCase": "preserve", "indent": 2, "comma": "leading", "width": 80,
+            "andOr": "trailing", "blankLines": 0
+        }))
+        .unwrap();
+        assert_eq!(style.keyword_case, format::KeywordCase::Preserve);
+        assert_eq!(style.comma, format::Place::Leading);
+        assert_eq!(style.and_or, format::Place::Trailing);
+        for (mode, dialect) in [
+            ("format", "postgres"),
+            ("oneline", "mysql"),
+            ("upper", "sqlserver"),
+            ("lower", "sqlite"),
+        ] {
+            serde_json::from_value::<format::Mode>(serde_json::json!(mode)).unwrap();
+            serde_json::from_value::<format::Dialect>(serde_json::json!(dialect)).unwrap();
+        }
+        let code = |e| serde_json::to_value(format_error(e)).unwrap()["code"].clone();
+        assert_eq!(code(format::FormatError::Cancelled), "cancelled");
+        assert_eq!(code(format::FormatError::Incomplete), "format_incomplete");
+        assert_eq!(code(format::FormatError::TooDeep), "format_too_deep");
+        assert_eq!(code(format::FormatError::Unsafe), "format_unsafe");
+        assert_eq!(code(format::FormatError::TooLarge), "too_large");
     }
 }

@@ -52,6 +52,12 @@ pub enum ErrorCode {
     UnknownConnection,
     /// The profile is not connected (any more).
     NotConnected,
+    /// Formatting (prompt 023): the text ends inside a string, a quoted name or a comment.
+    FormatIncomplete,
+    /// Brackets and blocks inside each other deeper than the formatter follows.
+    FormatTooDeep,
+    /// The formatted text would not have had the tokens of the text; nothing was changed.
+    FormatUnsafe,
     Io,
 }
 

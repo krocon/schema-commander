@@ -16,6 +16,7 @@ export const MENU_DE: Translation<typeof MENU_EN> = {
   navigation: 'Gehe zu',
   layout: 'Geteilte Ansicht',
   schema: 'Schema',
+  format: 'Weitere Formatierung',
   failed: (reason) => `Die Menüleiste ließ sich nicht aufbauen: ${reason}`,
   native: {
     about: 'Über Schema Commander',

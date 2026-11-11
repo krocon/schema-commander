@@ -31,6 +31,11 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   OS and an editor for your own shortcuts (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>S</kbd>)
 - Split view: two tab groups side by side or stacked, each tab on its own connection; the result below or beside
   the editor, hidden or maximised; the sidebar shows connections and schema or the history; a zen mode
+- Format SQL (<kbd>Ctrl/⌘</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>): the selection, the statement under the caret or
+  the whole script, as one undo step; keyword case, indentation, line width, commas and `AND`/`OR` are settings
+  with a live preview. Strings, comments and quoted names are never touched – the formatter checks every result
+  against the tokens of your text and leaves the text alone if they differ. Also: join into one line, keywords
+  to upper or lower case, toggle line comment (<kbd>Ctrl/⌘</kbd>+<kbd>/</kbd>)
 - Errors where they happen: the place the database names is underlined in the editor and the caret jumps
   there; code, detail and hint of the server are shown apart; the running statement is highlighted
 - Completion that knows the schema: tables behind `FROM`, the columns of an alias behind `o.`, the join

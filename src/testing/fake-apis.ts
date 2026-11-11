@@ -1,3 +1,4 @@
+import { FormatApi, FormatDialect, FormatMode, FormatStyle } from '../app/core/format/format-api';
 import { ExportApi, ExportSpec, Exported } from '../app/core/backend/export-api';
 import {
   ConnectionInfo,
@@ -857,4 +858,46 @@ function hit(kind: NameHit['kind'], schema: string, name: string, detail = ''): 
     quotedName: name,
     marks: [0],
   };
+}
+
+/**
+ * A formatter that does not format: it remembers what was asked and answers with `answer(sql)` (default:
+ * the text in upper case). `fail` makes it reject; with `hold` it waits for `finish()`.
+ */
+export class FakeFormatApi extends FormatApi {
+  readonly calls: {
+    jobId: number;
+    sql: string;
+    dialect: FormatDialect;
+    mode: FormatMode;
+    style: FormatStyle;
+    crlf: boolean;
+  }[] = [];
+  readonly cancelled: number[] = [];
+  fail: { code: string; message: string } | null = null;
+  hold = false;
+  answer: (sql: string) => string = (sql) => sql.toUpperCase();
+  private settle: (() => void) | null = null;
+
+  finish(): void {
+    this.settle?.();
+  }
+
+  async format(
+    jobId: number,
+    sql: string,
+    dialect: FormatDialect,
+    mode: FormatMode,
+    style: FormatStyle,
+    crlf: boolean,
+  ): Promise<string> {
+    this.calls.push({ jobId, sql, dialect, mode, style, crlf });
+    if (this.hold) await new Promise<void>((resolve) => (this.settle = resolve));
+    if (this.fail) throw this.fail;
+    return this.answer(sql);
+  }
+
+  async cancel(jobId: number): Promise<void> {
+    this.cancelled.push(jobId);
+  }
 }

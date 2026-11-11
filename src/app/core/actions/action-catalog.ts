@@ -53,6 +53,24 @@ export const ACTIONS = [
     group: 'Query',
     scope: 'global',
   },
+  // Formatting (prompt 023)
+  {
+    id: 'FORMAT_SQL',
+    label: 'Format the selection or the statement under the cursor',
+    group: 'Query',
+    scope: 'global',
+  },
+  { id: 'FORMAT_SCRIPT', label: 'Format the whole script', group: 'Query', scope: 'global' },
+  {
+    id: 'SQL_ONE_LINE',
+    label: 'Join the selection or the statement into one line',
+    group: 'Query',
+    scope: 'global',
+  },
+  { id: 'KEYWORDS_UPPER', label: 'Keywords to upper case', group: 'Query', scope: 'global' },
+  { id: 'KEYWORDS_LOWER', label: 'Keywords to lower case', group: 'Query', scope: 'global' },
+  { id: 'TOGGLE_COMMENT', label: 'Toggle line comment', group: 'Query', scope: 'global' },
+  { id: 'CANCEL_FORMAT', label: 'Cancel formatting', group: 'Query', scope: 'global' },
   { id: 'SHOW_MESSAGES', label: 'Show messages', group: 'Query', scope: 'global' },
   {
     id: 'TOGGLE_DIGIT_GROUPING',

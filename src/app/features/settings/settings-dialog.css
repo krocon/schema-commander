@@ -174,3 +174,25 @@ input[type='number'].control {
     border-bottom: 1px solid var(--border);
   }
 }
+
+.preview-title {
+  margin: 14px 0 6px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.preview {
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  max-height: 260px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-app);
+  color: var(--text);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
+}

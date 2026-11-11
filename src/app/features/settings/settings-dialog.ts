@@ -3,6 +3,7 @@ import {
   ElementRef,
   OnInit,
   computed,
+  effect,
   inject,
   output,
   signal,
@@ -16,6 +17,8 @@ import { SessionApi } from '../../core/session/session-api';
 import { DEFAULT_SETTINGS, Settings } from '../../core/settings/settings.models';
 import { SettingsService } from '../../core/settings/settings.service';
 import { ConfirmService } from '../../shared/confirm';
+import { FormatService } from '../format/format.service';
+import { styleOf } from '../format/format-logic';
 import {
   GROUPS,
   GroupId,
@@ -181,6 +184,16 @@ const JSON_FILES = [{ name: 'JSON', extensions: ['json'] }];
               <p class="help" [id]="id + '-help'">{{ t.help[def.key] }}</p>
             </div>
           }
+          @if (previewing()) {
+            <h3 class="preview-title" id="format-preview-title">{{ t.formatPreview }}</h3>
+            @if (preview(); as text) {
+              <pre class="preview" tabindex="0" aria-labelledby="format-preview-title">{{
+                text
+              }}</pre>
+            } @else if (previewFailed()) {
+              <p class="found">{{ t.formatPreviewFailed }}</p>
+            }
+          }
         </div>
       </div>
       @if (message(); as m) {
@@ -222,6 +235,33 @@ export class SettingsDialog implements OnInit {
   );
   protected readonly message = signal<{ text: string; problem: boolean } | null>(null);
   protected readonly choice = choiceLabel;
+  private readonly formatter = inject(FormatService);
+  /** The group of the formatter shows what its style does to a sample (prompt 023). */
+  protected readonly previewing = computed(() => !this.searching() && this.group() === 'format');
+  protected readonly preview = signal('');
+  protected readonly previewFailed = signal(false);
+  private previewAsked = 0;
+
+  constructor() {
+    effect(() => {
+      if (!this.previewing()) return;
+      const style = styleOf(this.settings.settings());
+      const mine = ++this.previewAsked;
+      this.formatter.preview(style).then(
+        (text) => {
+          // a later style has asked already
+          if (mine !== this.previewAsked) return;
+          this.preview.set(text);
+          this.previewFailed.set(false);
+        },
+        () => {
+          if (mine !== this.previewAsked) return;
+          this.preview.set('');
+          this.previewFailed.set(true);
+        },
+      );
+    });
+  }
 
   ngOnInit(): void {
     this.dialog().nativeElement.showModal();

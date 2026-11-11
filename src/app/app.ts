@@ -27,6 +27,9 @@ import {
 } from './features/results/copy-logic';
 import { ExportDialog } from './features/export/export-dialog';
 import { ExportService } from './features/export/export.service';
+import { FormatMode } from './core/format/format-api';
+import { FormatService } from './features/format/format.service';
+import { FORMAT_TEXTS } from './features/format/format-texts';
 import { CopyService } from './features/results/copy.service';
 import { ConfirmDialog, ConfirmRequest, ConfirmService } from './shared/confirm';
 import { tlsUnchecked } from './core/connections/connection.models';
@@ -312,6 +315,12 @@ const SIDEBAR_MIN = 140;
           <span class="tx-status" [class.failed]="tabs.active()?.tx() === 'failed'">{{ tx }}</span>
         }
         <span>{{ status() }}</span>
+        @if (formatter.visible()) {
+          <span>{{ formatTexts.running }}</span>
+          <button type="button" class="status-button" (click)="formatter.cancel()">
+            {{ formatTexts.cancel }}
+          </button>
+        }
         @if (exporter.job(); as job) {
           @if (job.state === 'running') {
             <button type="button" class="status-button" (click)="exporter.cancel()">
@@ -529,6 +538,8 @@ export class App implements OnInit, OnDestroy {
   /** The mark of the active connection: its label and how it is protected. */
   protected readonly badge = computed(() => badgeText(this.connections.active()));
   protected readonly exporter = inject(ExportService);
+  protected readonly formatter = inject(FormatService);
+  protected readonly formatTexts = FORMAT_TEXTS;
   protected readonly confirm = inject(ConfirmService);
   /** The formats of "copy as", the one used last on top. */
   protected readonly copyItems = computed<MenuItem[]>(() => {
@@ -649,7 +660,33 @@ export class App implements OnInit, OnDestroy {
       const id = this.tabs.activeId();
       if (id) void run(id);
     };
+    /** Formats in the active tab and says what happened, if there is something to say. */
+    const format = (mode: FormatMode, whole: boolean) => async () => {
+      try {
+        const outcome = (await tab()?.format(mode, whole)) ?? 'nothing';
+        const notice = this.formatter.notice(outcome);
+        if (notice) this.ownNotice.set(notice);
+      } catch (e) {
+        this.ownNotice.set(this.formatter.failure(e));
+      }
+    };
+    const canFormat = () => !!tab() && !this.formatter.running();
     const offs = [
+      this.actions.register('FORMAT_SQL', format('format', false), canFormat),
+      this.actions.register('FORMAT_SCRIPT', format('format', true), canFormat),
+      this.actions.register('SQL_ONE_LINE', format('oneline', false), canFormat),
+      this.actions.register('KEYWORDS_UPPER', format('upper', false), canFormat),
+      this.actions.register('KEYWORDS_LOWER', format('lower', false), canFormat),
+      this.actions.register(
+        'TOGGLE_COMMENT',
+        () => tab()?.toggleComment(),
+        () => !!tab(),
+      ),
+      this.actions.register(
+        'CANCEL_FORMAT',
+        () => this.formatter.cancel(),
+        () => this.formatter.running(),
+      ),
       this.actions.register(
         'RUN_STATEMENT',
         () => tab()?.runCurrent(),

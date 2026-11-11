@@ -26,6 +26,11 @@ export const ERROR_DE: Translation<typeof ERROR_EN> = {
   invalid_profile: 'Die Angaben der Verbindung sind unvollständig oder ungültig.',
   unknown_connection: 'Diese Verbindung gibt es nicht (mehr).',
   not_connected: 'Die Verbindung ist nicht geöffnet.',
+  format_incomplete:
+    'Nicht formatiert: Der Text endet in einem String, einem Namen in Anführungszeichen oder einem Kommentar.',
+  format_too_deep: 'Nicht formatiert: Klammern und Blöcke sind zu tief verschachtelt.',
+  format_unsafe:
+    'Nicht formatiert: Das Ergebnis wäre nicht dasselbe SQL gewesen. Der Text ist unverändert.',
   io: 'Die Datei konnte nicht gelesen oder geschrieben werden.',
   backend_unavailable: 'Das geht nur in der Desktop-App.',
   unknown: 'Unerwarteter Fehler.',

@@ -17,6 +17,7 @@ export const MENU_EN = {
   navigation: 'Go to',
   layout: 'Split view',
   schema: 'Schema',
+  format: 'More formatting',
   failed: (reason: string) => `The menu bar could not be built: ${reason}`,
   /** The words of the items macOS provides. */
   native: {

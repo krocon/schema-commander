@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { FakeFileDialogApi, FakeSessionApi } from '../../../testing/fake-apis';
+import { FakeFileDialogApi, FakeFormatApi, FakeSessionApi } from '../../../testing/fake-apis';
+import { FormatApi } from '../../core/format/format-api';
 import { FileDialogApi } from '../../core/backend/file-dialog-api';
 import { language } from '../../core/i18n/i18n';
 import { SessionApi } from '../../core/session/session-api';
@@ -11,11 +12,13 @@ import { SettingsDialog } from './settings-dialog';
 describe('SettingsDialog', () => {
   let files: FakeFileDialogApi;
   let session: FakeSessionApi;
+  let formatter: FakeFormatApi;
 
   beforeEach(() => {
     TestBed.resetTestingModule();
     files = new FakeFileDialogApi();
     session = new FakeSessionApi();
+    formatter = new FakeFormatApi();
     // jsdom has no modal dialogs
     HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
       this.setAttribute('open', '');
@@ -28,6 +31,7 @@ describe('SettingsDialog', () => {
       providers: [
         { provide: FileDialogApi, useValue: files },
         { provide: SessionApi, useValue: session },
+        { provide: FormatApi, useValue: formatter },
       ],
     });
   });
@@ -62,6 +66,7 @@ describe('SettingsDialog', () => {
     expect(tabs().map((t) => t.textContent?.trim())).toEqual([
       'Allgemein',
       'Editor',
+      'Formatierung',
       'Ergebnis',
       'Ausführen',
       'Verlauf',
@@ -76,10 +81,35 @@ describe('SettingsDialog', () => {
     expect(labels()).toContain('Tab-Breite');
     tabs()[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
     await settle();
-    expect(tabs()[5].getAttribute('aria-selected')).toBe('true');
-    tabs()[5].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    expect(tabs()[6].getAttribute('aria-selected')).toBe('true');
+    tabs()[6].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     await settle();
     expect(tabs()[0].getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('shows what the style of the formatter does to a sample, again after every change', async () => {
+    formatter.answer = () => 'SELECT 1\nFROM t';
+    const { el, tabs, control, change, settle } = await open();
+    expect(el.querySelector('.preview')).toBeNull();
+    expect(formatter.calls).toHaveLength(0);
+    tabs()[2].click();
+    await settle();
+    expect(el.querySelector('.preview')?.textContent).toBe('SELECT 1\nFROM t');
+    expect(formatter.calls.at(-1)?.style.indent).toBe(4);
+    const indent = control<HTMLInputElement>('formatIndent');
+    indent.value = '2';
+    await change(indent);
+    expect(formatter.calls.at(-1)?.style.indent).toBe(2);
+    const commas = control<HTMLSelectElement>('formatComma');
+    commas.value = 'leading';
+    await change(commas);
+    expect(formatter.calls.at(-1)?.style.comma).toBe('leading');
+    // without the desktop app there is no formatter: the dialog says so instead of showing nothing
+    formatter.fail = { code: 'backend_unavailable', message: '' };
+    indent.value = '3';
+    await change(indent);
+    expect(el.querySelector('.preview')).toBeNull();
+    expect(el.textContent).toContain('Keine Vorschau');
   });
 
   it('applies a change at once and resets a single value', async () => {
@@ -141,7 +171,7 @@ describe('SettingsDialog', () => {
     await settle();
     expect(el.querySelector('.found')?.textContent).toContain('Keine Einstellung passt.');
     // a group ends the search
-    tabs()[2].click();
+    tabs()[3].click();
     await settle();
     expect(search.value).toBe('');
     expect(labels()).toContain('Zeilenhöhe (px)');

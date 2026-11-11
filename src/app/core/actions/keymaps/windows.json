@@ -8,6 +8,15 @@
   "EXPAND_STAR": [
     "Mod+K Mod+8"
   ],
+  "FORMAT_SQL": [
+    "Mod+Shift+F"
+  ],
+  "FORMAT_SCRIPT": [
+    "Mod+K Mod+F"
+  ],
+  "TOGGLE_COMMENT": [
+    "Mod+/"
+  ],
   "CANCEL_QUERY": [
     "Mod+."
   ],
