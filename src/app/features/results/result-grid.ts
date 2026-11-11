@@ -18,6 +18,9 @@ import { RESULTS_TEXTS } from './results-texts';
   host: {
     '(copy)': 'onCopy($event)',
     '(contextmenu)': 'onContextMenu($event)',
+    // font size and row height are settings (prompt 017); `ge-table-theme.css` reads them
+    '[style.--result-font-size.px]': 'settings.settings().resultFontSize',
+    '[style.--result-row-height.px]': 'settings.settings().resultRowHeight',
   },
   imports: [TableSignalComponent],
   template: `
@@ -60,11 +63,12 @@ export class ResultGrid implements OnDestroy {
   readonly fetch =
     input.required<(resultId: number, from: number, count: number) => Promise<RowWindow>>();
 
-  private readonly settings = inject(SettingsService);
+  protected readonly settings = inject(SettingsService);
   private readonly copier = inject(CopyService);
   /** Ends telling the copy service what is selected here. */
   private unregister: (() => void) | null = null;
-  protected readonly options = resultOptions();
+  /** The options of the table on screen; a new result (or row height) gets new ones. */
+  protected options = resultOptions();
   /** A new result is a new model: the table starts over. `null` while its first rows are read. */
   protected readonly model = signal<TableModelIf | null>(null);
   protected readonly api = signal<TableApi | undefined>(undefined);
@@ -75,6 +79,8 @@ export class ResultGrid implements OnDestroy {
   constructor() {
     effect(() => {
       const result = this.result();
+      // the row height is part of the table: another one builds it again
+      void this.settings.settings().resultRowHeight;
       untracked(() => void this.show(result));
     });
     effect(() => {
@@ -96,7 +102,8 @@ export class ResultGrid implements OnDestroy {
   }
 
   private format(): CellFormat {
-    return { groupDigits: this.settings.settings().groupDigits };
+    const s = this.settings.settings();
+    return { groupDigits: s.groupDigits, nullText: s.nullText };
   }
 
   /** `Mod+C` in the grid: the selection, tab-separated. */
@@ -119,6 +126,11 @@ export class ResultGrid implements OnDestroy {
   private async show(result: ResultRef): Promise<void> {
     const generation = ++this.generation;
     this.unregister?.();
+    const rowHeight = untracked(() => this.settings.settings().resultRowHeight);
+    this.body?.dispose();
+    this.body = null;
+    this.model.set(null);
+    this.options = resultOptions(rowHeight);
     const selection = this.options.getSelectionModel?.();
     selection?.clear();
     this.unregister = this.copier.register(result.resultId, () =>
@@ -128,9 +140,6 @@ export class ResultGrid implements OnDestroy {
         result.columns.length,
       ),
     );
-    this.body?.dispose();
-    this.body = null;
-    this.model.set(null);
     const fetch = this.fetch();
     let first: RowWindow = [];
     try {
@@ -147,6 +156,7 @@ export class ResultGrid implements OnDestroy {
       first,
       result.columns,
     );
+    body.rowHeight = rowHeight;
     body.setFormat(untracked(() => this.format()));
     const rows = untracked(() => this.rows());
     body.setRowCount(Math.max(rows, first.length));

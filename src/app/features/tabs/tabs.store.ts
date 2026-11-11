@@ -215,6 +215,8 @@ export class TabsStore {
           this.services,
         ),
     );
+    // the commit mode is not kept over a restart: every tab starts with the default (prompt 017)
+    for (const tab of tabs) tab.manual.set(!this.settings.settings().autoCommit);
     this.tabs.set(tabs);
     this.activeId.set(active);
     this.otherId.set(other);
@@ -255,6 +257,7 @@ export class TabsStore {
       this.services,
       text,
     );
+    tab.manual.set(!this.settings.settings().autoCommit);
     this.tabs.set([...tabs, tab]);
     this.front(id);
     if (text) this.backupNow(tab, text);

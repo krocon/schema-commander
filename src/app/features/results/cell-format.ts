@@ -6,6 +6,8 @@ import { Cell, ColKind } from '../../core/sql/query.models';
 export interface CellFormat {
   /** Group the digits of numbers in threes. */
   readonly groupDigits: boolean;
+  /** What stands for NULL (a setting, prompt 017); missing = `NULL`. */
+  readonly nullText?: string;
 }
 
 export const PLAIN_FORMAT: CellFormat = { groupDigits: false };
@@ -89,7 +91,10 @@ const isNumberKind = (kind: ColKind) => kind === 'int' || kind === 'float' || ki
  * have signs of their own, numbers keep every digit, text is one line without invisible characters.
  */
 export function showCell(cell: Cell, kind: ColKind, format: CellFormat = PLAIN_FORMAT): ShownCell {
-  if (cell === null) return NULL;
+  if (cell === null) {
+    const text = format.nullText;
+    return text === undefined || text === NULL.text ? NULL : { text, cls: 'sc-null' };
+  }
   if (typeof cell === 'boolean') return { text: cell ? 'true' : 'false', cls: 'sc-bool' };
   if (typeof cell === 'number') {
     const text = String(cell);

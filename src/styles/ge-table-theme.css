@@ -72,7 +72,7 @@
   --ge-table-spinner-track-color: var(--border);
 
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--result-font-size, 12px);
 }
 
 /*
@@ -80,7 +80,7 @@
  * features/results/result-model.ts (HEADER_ROW_HEIGHT, BODY_ROW_HEIGHT).
  */
 .ge-table .ge-table-col-div {
-  line-height: 22px;
+  line-height: var(--result-row-height, 22px);
 }
 
 .ge-table .ge-table-header .ge-table-col-div {

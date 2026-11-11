@@ -1,3 +1,4 @@
+import { onTestFinished } from 'vitest';
 import { setLanguage } from '../../core/i18n/i18n';
 import { byteSize } from '../results/cell-format';
 import { COPY_FORMATS } from '../results/copy-logic';
@@ -19,6 +20,12 @@ describe('texts follow the language', () => {
   });
 
   it('reads labels and numbers when they are asked for, not when the module loads', () => {
+    // numbers follow the region of the system (`en-DE` writes a comma): here the system is English
+    const system = navigator.languages;
+    Object.defineProperty(navigator, 'languages', { value: ['en-US'], configurable: true });
+    onTestFinished(() => {
+      Object.defineProperty(navigator, 'languages', { value: system, configurable: true });
+    });
     setLanguage('en');
     expect(COPY_FORMATS[0].label).toBe('TSV (for spreadsheets)');
     expect(runStatus([{ ...pending('a'), kind: 'running' }], 1234)).toBe('Running … 1.23 s');

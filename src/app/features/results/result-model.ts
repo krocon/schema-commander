@@ -23,13 +23,13 @@ export const MAX_FIT_WIDTH = 800;
  * The options of one result grid. Each grid has a selection of its own: cells, ranges, rows and columns by
  * mouse and keyboard (the ground for copying, prompt 009).
  */
-export function resultOptions(): TableOptionsIf {
+export function resultOptions(rowHeight = BODY_ROW_HEIGHT): TableOptionsIf {
   const selection = new SelectionModel('range', 'multi');
   const base = new TableOptions();
   return {
     ...base,
     hoverColumnVisible: false,
-    defaultRowHeights: { header: HEADER_ROW_HEIGHT, body: BODY_ROW_HEIGHT, footer: 0 },
+    defaultRowHeights: { header: HEADER_ROW_HEIGHT, body: rowHeight, footer: 0 },
     getSelectionModel: () => selection,
     columnAutoWidth: {
       ...base.columnAutoWidth,
@@ -133,12 +133,15 @@ export class WindowAreaModel extends AreaModel {
     return this.count;
   }
 
+  /** The height of every row in px (a setting; a new height needs a new table). */
+  rowHeight = BODY_ROW_HEIGHT;
+
   override getRowHeight(): number {
-    return BODY_ROW_HEIGHT;
+    return this.rowHeight;
   }
 
   override getConstantRowHeight(): number {
-    return BODY_ROW_HEIGHT;
+    return this.rowHeight;
   }
 
   override getValueAt(row: number, col: number): string | number {
