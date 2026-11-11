@@ -12,8 +12,11 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { language } from '../../core/i18n/i18n';
+import { SettingsService } from '../../core/settings/settings.service';
 import { ThemeService } from '../../core/theme/theme.service';
 import { EDITOR_COLORS } from './editor-colors';
+import { EDITOR_TEXTS } from './editor-texts';
 import { EdCaret, EdChange, EditliciousEditorElement, loadEditlicious } from './editlicious';
 import { Dialect, offsetOf, splitForRun, statementAt } from './sql-split';
 
@@ -33,15 +36,22 @@ import { Dialect, offsetOf, splitForRun, statementAt } from './sql-split';
         scheme="none"
         [attr.color-scheme]="dark() ? 'dark' : 'light'"
         [style]="colors"
-        [attr.aria-label]="label()"
+        [attr.aria-label]="label() || t.label"
         [attr.readonly]="readonly() ? '' : null"
+        [attr.ui-language]="uiLanguage()"
+        [attr.font-family]="look().editorFontFamily || null"
+        [attr.font-size]="look().editorFontSize"
+        [attr.tab-width]="look().editorTabWidth"
+        [attr.line-numbers]="look().editorLineNumbers"
+        [attr.word-wrap]="look().editorWordWrap ? '' : null"
+        [attr.word-suggest]="look().editorSuggest ? '' : null"
         (ed-caret)="onCaret($event)"
         (ed-change)="onChange($event)"
       />
     } @else if (state() === 'failed') {
-      <p class="message error" role="alert">Der Editor konnte nicht geladen werden.</p>
+      <p class="message error" role="alert">{{ t.loadFailed }}</p>
     } @else {
-      <p class="message">Editor wird geladen …</p>
+      <p class="message">{{ t.loading }}</p>
     }
   `,
   styles: `
@@ -65,11 +75,17 @@ import { Dialect, offsetOf, splitForRun, statementAt } from './sql-split';
   `,
 })
 export class SqlEditor implements OnInit {
+  protected readonly t = EDITOR_TEXTS;
   private readonly theme = inject(ThemeService);
+  /** Font, tab width, wrapping … of every editor are settings (prompt 017). */
+  protected readonly look = inject(SettingsService).settings;
+  /** The editor's own texts (search bar, menus) follow the language of the window. */
+  protected readonly uiLanguage = language;
 
   /** Text the editor starts with. */
   readonly initialValue = input('');
-  readonly label = input('SQL-Editor');
+  /** The accessible name; empty = "SQL editor" in the current language. */
+  readonly label = input('');
   /** Shows text that cannot be changed (the preview of the history). */
   readonly readonly = input(false);
   /** The rules statements are split by. */

@@ -21,6 +21,7 @@ import {
   pending,
   stateOf,
 } from './run-state';
+import { TABS_TEXTS } from './tabs-texts';
 
 /** What a tab needs of its editor; the pane of the tab registers it. */
 export interface TabEditor {
@@ -351,9 +352,7 @@ export class QueryTab {
           if (lost && txOpen(this.tx())) {
             // the server rolled back what was open – or we cannot know
             this.sawTx('idle', false);
-            this.services.notify?.(
-              'Die Verbindung ging mitten in einer Transaktion verloren. Was nicht bestätigt war, ist zurückgerollt oder sein Stand unbekannt – bitte prüfen.',
-            );
+            this.services.notify?.(TABS_TEXTS.connectionLostInTx);
           } else if (!lost) {
             // a failed statement can poison the transaction (PostgreSQL): ask what the server says
             void this.services.api
@@ -443,7 +442,7 @@ export class QueryTab {
             at: Date.now(),
             kind: 'info' as const,
             sql: commit ? 'COMMIT' : 'ROLLBACK',
-            text: commit ? 'Transaktion bestätigt' : 'Transaktion zurückgerollt',
+            text: commit ? TABS_TEXTS.txCommitted : TABS_TEXTS.txRolledBack,
             elapsedMs: null,
           },
         ].slice(-MAX_LOG),

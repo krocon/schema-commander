@@ -7,6 +7,8 @@ import {
   SchemaInfo,
   TableInfo,
 } from '../../core/schema/schema.models';
+import { locale } from '../../core/i18n/i18n';
+import { SCHEMA_TEXTS } from './schema-texts';
 
 /** Something that is asked of the backend. */
 export type Loadable<T> =
@@ -69,14 +71,14 @@ export const objectId = (schema: string, o: Pick<ObjectInfo, 'kind' | 'name' | '
   `o${SEP}${schema}${SEP}${o.kind}${SEP}${o.name}${SEP}${o.kind === 'routine' ? o.detail : ''}`;
 export const tableKey = (schema: string, table: string) => `${schema}${SEP}${table}`;
 
-/** The sorts of objects in the order of the tree. */
-export const GROUPS: readonly { kind: ObjectKind; label: string; icon: string }[] = [
-  { kind: 'table', label: 'Tabellen', icon: 'T' },
-  { kind: 'view', label: 'Views', icon: 'V' },
-  { kind: 'matview', label: 'Materialisierte Views', icon: 'M' },
-  { kind: 'routine', label: 'Routinen', icon: 'ƒ' },
-  { kind: 'sequence', label: 'Sequenzen', icon: 'S' },
-  { kind: 'type', label: 'Typen', icon: 'Y' },
+/** The sorts of objects in the order of the tree; their names are `SCHEMA_TEXTS.groups`. */
+export const GROUPS: readonly { kind: ObjectKind; icon: string }[] = [
+  { kind: 'table', icon: 'T' },
+  { kind: 'view', icon: 'V' },
+  { kind: 'matview', icon: 'M' },
+  { kind: 'routine', icon: 'ƒ' },
+  { kind: 'sequence', icon: 'S' },
+  { kind: 'type', icon: 'Y' },
 ];
 
 /** Tables, views and materialized views have columns. */
@@ -87,8 +89,10 @@ export const hasColumns = (kind: ObjectKind) =>
 export function rowEstimate(rows: number | null): string {
   if (rows === null) return '';
   if (rows < 1000) return `~${rows}`;
-  if (rows < 1_000_000) return `~${Math.round(rows / 100) / 10}k`.replace('.', ',');
-  return `~${Math.round(rows / 100_000) / 10} Mio.`.replace('.', ',');
+  const short = (n: number) =>
+    new Intl.NumberFormat(locale(), { maximumFractionDigits: 1, useGrouping: false }).format(n);
+  if (rows < 1_000_000) return SCHEMA_TEXTS.thousands(short(Math.round(rows / 100) / 10));
+  return SCHEMA_TEXTS.millions(short(Math.round(rows / 100_000) / 10));
 }
 
 /**
@@ -127,7 +131,7 @@ function info(id: string, level: number, label: string, error = false): TreeRow 
 
 function tableRows(out: TreeRow[], id: string, level: number, table: Loadable<TableInfo>): void {
   if (table.state === 'loading') {
-    out.push(info(id, level, 'Lädt …'));
+    out.push(info(id, level, SCHEMA_TEXTS.loading));
     return;
   }
   if (table.state === 'error') {
@@ -150,9 +154,9 @@ function tableRows(out: TreeRow[], id: string, level: number, table: Loadable<Ta
     );
   }
   const sections: [string, string, readonly { name: string; detail: string }[]][] = [
-    ['Indizes', 'x', t.indexes],
-    ['Schlüssel', 'k', t.keys],
-    ['Trigger', 't', t.triggers],
+    [SCHEMA_TEXTS.indexes, 'x', t.indexes],
+    [SCHEMA_TEXTS.keys, 'k', t.keys],
+    [SCHEMA_TEXTS.triggers, 't', t.triggers],
   ];
   for (const [label, key, list] of sections) {
     if (list.length === 0) continue;
@@ -188,7 +192,7 @@ export function flatten(state: SchemaState, showSystem: boolean, filter = ''): T
   const out: TreeRow[] = [];
   const schemas = state.schemas;
   if (schemas === null) return out;
-  if (schemas.state === 'loading') return [info('root', 1, 'Lädt …')];
+  if (schemas.state === 'loading') return [info('root', 1, SCHEMA_TEXTS.loading)];
   if (schemas.state === 'error') return [info('root', 1, schemas.message, true)];
   const query = filter.trim().toLowerCase();
   const filtering = query !== '';
@@ -215,7 +219,7 @@ export function flatten(state: SchemaState, showSystem: boolean, filter = ''): T
         level: 1,
         kind: 'schema',
         label: schema.name,
-        detail: schema.current ? 'aktuell' : '',
+        detail: schema.current ? SCHEMA_TEXTS.current : '',
         icon: '▣',
         tone: schema.system ? 'st-system' : 'st-schema',
         expandable: true,
@@ -226,11 +230,11 @@ export function flatten(state: SchemaState, showSystem: boolean, filter = ''): T
     if (!open) continue;
     if (list === null) {
       if (loaded?.state === 'error') out.push(info(sid, 2, loaded.message, true));
-      else out.push(info(sid, 2, 'Lädt …'));
+      else out.push(info(sid, 2, SCHEMA_TEXTS.loading));
       continue;
     }
     if (list.length === 0) {
-      out.push(info(sid, 2, 'leer'));
+      out.push(info(sid, 2, SCHEMA_TEXTS.empty));
       continue;
     }
     for (const group of GROUPS) {
@@ -243,7 +247,7 @@ export function flatten(state: SchemaState, showSystem: boolean, filter = ''): T
           id: gid,
           level: 2,
           kind: 'group',
-          label: group.label,
+          label: SCHEMA_TEXTS.groups[group.kind],
           detail: String(members.length),
           expandable: true,
           expanded: groupOpen,
@@ -281,7 +285,7 @@ export function flatten(state: SchemaState, showSystem: boolean, filter = ''): T
       }
     }
   }
-  if (filtering && out.length === 0) out.push(info('none', 1, 'Nichts gefunden.'));
+  if (filtering && out.length === 0) out.push(info('none', 1, SCHEMA_TEXTS.nothingFound));
   return out;
 }
 
@@ -376,7 +380,7 @@ export function updateSnippet(name: string, columns: readonly ColumnInfo[]): str
       ? keys
           .map((c) => `${snippetText(c.quoted)} = \${${++n}:${snippetText(c.name)}}`)
           .join(' AND ')
-      : `\${${++n}:bedingung}`;
+      : `\${${++n}:${snippetText(SCHEMA_TEXTS.condition)}}`;
   return `UPDATE ${snippetText(name)}\nSET ${set}\nWHERE ${where};$0`;
 }
 

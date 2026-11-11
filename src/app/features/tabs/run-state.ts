@@ -1,5 +1,7 @@
 /** The outcome of statements in a tab (prompts 004 and 005). */
+import { locale } from '../../core/i18n/i18n';
 import { ResultRef } from '../../core/sql/query.models';
+import { TABS_TEXTS } from './tabs-texts';
 
 /** What the result area shows for one statement. */
 export type RunState =
@@ -92,32 +94,42 @@ export function stateOf(run: StatementRun | undefined): RunState {
         : {
             kind: 'failed',
             sql: run.sql,
-            message: `Dieses Ergebnis (${run.rows ?? 0} Zeilen) wurde nicht behalten: Ein Lauf behält die ersten ${MAX_KEPT_RESULTS} Ergebnisse. Die Anweisung einzeln ausführen zeigt es.`,
+            message: TABS_TEXTS.resultNotKept(run.rows ?? 0, MAX_KEPT_RESULTS),
           };
   }
 }
 
-const seconds = (ms: number) =>
-  ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(ms < 10_000 ? 2 : 1).replace('.', ',')} s`;
+/** `12 ms`, `1.23 s`, `12.3 s` with the decimal sign of the language. */
+const seconds = (ms: number) => {
+  if (ms < 1000) return `${ms} ms`;
+  const digits = ms < 10_000 ? 2 : 1;
+  const value = (ms / 1000).toLocaleString(locale(), {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+    useGrouping: false,
+  });
+  return `${value} s`;
+};
 
 /** `1 234 567` (a thin space every three digits). */
 export const count = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f');
 
-/** `1 Zeile`, `2 Zeilen`. */
-const rowsText = (n: number) => `${count(n)} ${n === 1 ? 'Zeile' : 'Zeilen'}`;
+/** `1 row`, `2 rows`. */
+const rowsText = (n: number) => TABS_TEXTS.rows(n, count(n));
+const changedText = (n: number) => TABS_TEXTS.rowsChanged(n, count(n));
 
 /** What a finished statement says in the messages. */
 export function outcomeText(run: StatementRun): string {
   switch (run.kind) {
     case 'done':
-      if (run.rowsAffected !== null) return `${rowsText(run.rowsAffected)} geändert`;
-      return `${rowsText(run.rows ?? 0)}${run.truncated ? ' (abgeschnitten)' : ''}`;
+      if (run.rowsAffected !== null) return changedText(run.rowsAffected);
+      return `${rowsText(run.rows ?? 0)}${run.truncated ? TABS_TEXTS.truncated : ''}`;
     case 'failed':
-      return run.message ?? 'Fehler';
+      return run.message ?? TABS_TEXTS.error;
     case 'cancelled':
-      return 'Abgebrochen';
+      return TABS_TEXTS.cancelled;
     case 'skipped':
-      return 'Nicht ausgeführt';
+      return TABS_TEXTS.notRun;
     default:
       return '';
   }
@@ -138,18 +150,18 @@ export function firstLine(sql: string): string {
 export function statusText(state: RunState): string {
   switch (state.kind) {
     case 'idle':
-      return 'Bereit';
+      return TABS_TEXTS.ready;
     case 'running':
-      return 'Läuft …';
+      return TABS_TEXTS.runningNow;
     case 'failed':
-      return 'Fehler';
+      return TABS_TEXTS.error;
     case 'cancelled':
-      return 'Abgebrochen';
+      return TABS_TEXTS.cancelled;
     case 'done': {
       if (state.rowsAffected !== null) {
-        return `${rowsText(state.rowsAffected)} geändert · ${seconds(state.elapsedMs)}`;
+        return `${changedText(state.rowsAffected)} · ${seconds(state.elapsedMs)}`;
       }
-      return `${rowsText(state.rows)}${state.truncated ? ' (abgeschnitten)' : ''} · ${seconds(state.elapsedMs)}`;
+      return `${rowsText(state.rows)}${state.truncated ? TABS_TEXTS.truncated : ''} · ${seconds(state.elapsedMs)}`;
     }
   }
 }
@@ -159,20 +171,20 @@ export function statusText(state: RunState): string {
  * `elapsedMs` is the time of the run so far.
  */
 export function runStatus(runs: readonly StatementRun[], elapsedMs: number): string {
-  if (runs.length === 0) return 'Bereit';
+  if (runs.length === 0) return TABS_TEXTS.ready;
   const at = runs.findIndex((r) => r.kind === 'running');
-  const of = runs.length > 1 ? ` (${at + 1} von ${runs.length})` : '';
+  const of = runs.length > 1 ? TABS_TEXTS.position(at + 1, runs.length) : '';
   if (at >= 0) {
     const rows = runs[at].rows;
-    const read = rows ? ` · ${count(rows)} Zeilen gelesen` : '';
-    return `Läuft … ${seconds(elapsedMs)}${of}${read}`;
+    const read = rows ? TABS_TEXTS.rowsRead(count(rows)) : '';
+    return `${TABS_TEXTS.runningNow} ${seconds(elapsedMs)}${of}${read}`;
   }
   if (runs.length === 1) return statusText(stateOf(runs[0]));
   const of_ = (kind: StatementRun['kind']) => runs.filter((r) => r.kind === kind).length;
-  const parts = [`${runs.length} Anweisungen`, `${of_('done')} ausgeführt`];
-  if (of_('failed')) parts.push(`${of_('failed')} mit Fehler`);
-  if (of_('cancelled')) parts.push(`${of_('cancelled')} abgebrochen`);
-  if (of_('skipped')) parts.push(`${of_('skipped')} nicht ausgeführt`);
+  const parts = [TABS_TEXTS.statements(runs.length), TABS_TEXTS.executed(of_('done'))];
+  if (of_('failed')) parts.push(TABS_TEXTS.withError(of_('failed')));
+  if (of_('cancelled')) parts.push(TABS_TEXTS.someCancelled(of_('cancelled')));
+  if (of_('skipped')) parts.push(TABS_TEXTS.someNotRun(of_('skipped')));
   const total = runs.reduce((sum, r) => sum + (r.elapsedMs ?? 0), 0);
   return `${parts.join(' · ')} · ${seconds(total)}`;
 }

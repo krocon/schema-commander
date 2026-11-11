@@ -16,6 +16,7 @@ import { ContextMenu, MenuItem } from '../../shared/context-menu';
 import { NodeAction, SchemaActions, allows, rowName, rowQualified } from './schema-actions';
 import { TreeRow, keyMove } from './schema-logic';
 import { SchemaStore } from './schema.store';
+import { SCHEMA_TEXTS } from './schema-texts';
 
 /** Row height in px (the rows are placed by it). */
 export const TREE_ROW_HEIGHT = 22;
@@ -32,15 +33,16 @@ export function visibleRange(
   return { first, last: Math.max(first, last) };
 }
 
-const MENU: readonly { id: NodeAction; label: string; separator?: boolean }[] = [
-  { id: 'SCHEMA_OPEN_DATA', label: 'Daten öffnen' },
-  { id: 'SCHEMA_EXPORT_TABLE', label: 'Exportieren …' },
-  { id: 'SCHEMA_INSERT_NAME', label: 'Name in den Editor einfügen', separator: true },
-  { id: 'SCHEMA_COPY_NAME', label: 'Name kopieren' },
-  { id: 'SCHEMA_COPY_QUALIFIED', label: 'Qualifizierten Namen kopieren' },
-  { id: 'SCHEMA_SELECT_TEMPLATE', label: 'SELECT-Vorlage einfügen', separator: true },
-  { id: 'SCHEMA_INSERT_TEMPLATE', label: 'INSERT-Vorlage einfügen' },
-  { id: 'SCHEMA_UPDATE_TEMPLATE', label: 'UPDATE-Vorlage einfügen' },
+/** The menu of a node; `label` is asked when the menu opens, so it follows the language. */
+const MENU: readonly { id: NodeAction; label: () => string; separator?: boolean }[] = [
+  { id: 'SCHEMA_OPEN_DATA', label: () => SCHEMA_TEXTS.openData },
+  { id: 'SCHEMA_EXPORT_TABLE', label: () => SCHEMA_TEXTS.exportTable },
+  { id: 'SCHEMA_INSERT_NAME', label: () => SCHEMA_TEXTS.insertName, separator: true },
+  { id: 'SCHEMA_COPY_NAME', label: () => SCHEMA_TEXTS.copyName },
+  { id: 'SCHEMA_COPY_QUALIFIED', label: () => SCHEMA_TEXTS.copyQualified },
+  { id: 'SCHEMA_SELECT_TEMPLATE', label: () => SCHEMA_TEXTS.selectTemplate, separator: true },
+  { id: 'SCHEMA_INSERT_TEMPLATE', label: () => SCHEMA_TEXTS.insertTemplate },
+  { id: 'SCHEMA_UPDATE_TEMPLATE', label: () => SCHEMA_TEXTS.updateTemplate },
 ];
 
 /**
@@ -53,12 +55,12 @@ const MENU: readonly { id: NodeAction; label: string; separator?: boolean }[] = 
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <header>
-      <h2 id="schema-title">Schema</h2>
+      <h2 id="schema-title">{{ t.title }}</h2>
       <button
         type="button"
         class="tool"
-        title="Systemschemata zeigen"
-        aria-label="Systemschemata zeigen"
+        [title]="t.showSystem"
+        [attr.aria-label]="t.showSystem"
         [attr.aria-pressed]="store.showSystem()"
         (click)="toggleSystem()"
       >
@@ -67,8 +69,8 @@ const MENU: readonly { id: NodeAction; label: string; separator?: boolean }[] = 
       <button
         type="button"
         class="tool"
-        title="Aktualisieren"
-        aria-label="Schema aktualisieren"
+        [title]="t.refresh"
+        [attr.aria-label]="t.refreshSchema"
         [disabled]="!store.connected()"
         (click)="store.refresh()"
       >
@@ -79,8 +81,8 @@ const MENU: readonly { id: NodeAction; label: string; separator?: boolean }[] = 
       #filter
       type="search"
       class="filter"
-      placeholder="Filtern …"
-      aria-label="Objekte filtern"
+      [placeholder]="t.filterPlaceholder"
+      [attr.aria-label]="t.filterLabel"
       autocomplete="off"
       spellcheck="false"
       [value]="store.filter()"
@@ -89,7 +91,7 @@ const MENU: readonly { id: NodeAction; label: string; separator?: boolean }[] = 
       (keydown.escape)="clearFilter($event)"
     />
     @if (!store.connected()) {
-      <p class="note">Nicht verbunden.</p>
+      <p class="note">{{ t.notConnected }}</p>
     }
     <div
       #viewport
@@ -142,7 +144,7 @@ const MENU: readonly { id: NodeAction; label: string; separator?: boolean }[] = 
     </div>
     @if (menu(); as m) {
       <app-context-menu
-        label="Aktionen für das Objekt"
+        [label]="t.menuLabel"
         [items]="m.items"
         [x]="m.x"
         [y]="m.y"
@@ -294,6 +296,7 @@ export class SchemaTree implements OnDestroy {
   private readonly actions = inject(SchemaActions);
   private readonly settings = inject(SettingsService);
 
+  protected readonly t = SCHEMA_TEXTS;
   protected readonly rowHeight = TREE_ROW_HEIGHT;
   private readonly viewport = viewChild.required<ElementRef<HTMLElement>>('viewport');
   private readonly filterField = viewChild.required<ElementRef<HTMLInputElement>>('filter');
@@ -444,11 +447,11 @@ export class SchemaTree implements OnDestroy {
   private openMenu(row: TreeRow, x: number, y: number): void {
     const items: MenuItem[] = MENU.filter((m) => allows(m.id, row)).map((m) => ({
       id: m.id,
-      label: m.label,
+      label: m.label(),
       separator: m.separator,
     }));
     if (items.length > 0) items[0] = { ...items[0], separator: false };
-    items.push({ id: 'refresh', label: 'Aktualisieren', separator: items.length > 0 });
+    items.push({ id: 'refresh', label: this.t.refresh, separator: items.length > 0 });
     this.menu.set({ row, x, y, items });
   }
 

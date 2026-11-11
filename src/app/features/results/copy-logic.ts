@@ -1,17 +1,18 @@
 import { Copied, CopyFormat, CopySelection } from '../../core/backend/clipboard-api';
+import { RESULTS_TEXTS } from './results-texts';
+
+/** A format whose label is read when it is asked for: it follows the language. */
+const format = (id: CopyFormat): { readonly id: CopyFormat; readonly label: string } => ({
+  id,
+  get label() {
+    return RESULTS_TEXTS.formats[id];
+  },
+});
 
 /** The formats in the order of the menu. */
-export const COPY_FORMATS: readonly { id: CopyFormat; label: string }[] = [
-  { id: 'tsv', label: 'TSV (für Tabellenkalkulationen)' },
-  { id: 'csv', label: 'CSV' },
-  { id: 'json', label: 'JSON' },
-  { id: 'markdown', label: 'Markdown-Tabelle' },
-  { id: 'html', label: 'HTML-Tabelle' },
-  { id: 'insert', label: 'INSERT-Anweisungen' },
-  { id: 'inlist', label: 'IN (…)-Liste der ersten Spalte' },
-  { id: 'where', label: 'WHERE-Bedingung' },
-  { id: 'values', label: 'Werte der ersten Spalte' },
-];
+export const COPY_FORMATS: readonly { readonly id: CopyFormat; readonly label: string }[] = (
+  ['tsv', 'csv', 'json', 'markdown', 'html', 'insert', 'inlist', 'where', 'values'] as const
+).map(format);
 
 export const isCopyFormat = (id: unknown): id is CopyFormat =>
   COPY_FORMATS.some((f) => f.id === id);
@@ -19,7 +20,7 @@ export const isCopyFormat = (id: unknown): id is CopyFormat =>
 /** The formats with the one used last on top. */
 export function orderedFormats(
   last: CopyFormat | null,
-): readonly { id: CopyFormat; label: string }[] {
+): readonly { readonly id: CopyFormat; readonly label: string }[] {
   const first = COPY_FORMATS.find((f) => f.id === last);
   return first ? [first, ...COPY_FORMATS.filter((f) => f !== first)] : COPY_FORMATS;
 }
@@ -85,14 +86,13 @@ const count = (n: number) => String(n).replace(/\B(?=(\d{3})+$)/g, ' ');
 
 /** The question before a big copy. */
 export function bigCopyQuestion(rows: number, cells: number): string {
-  return `${count(rows)} Zeilen (${count(cells)} Zellen) in die Zwischenablage kopieren? Das kann dauern und viel Speicher belegen.`;
+  return RESULTS_TEXTS.bigCopyQuestion(count(rows), count(cells));
 }
 
 /** What the status line says after a copy. */
 export function copiedMessage(copied: Copied, format: CopyFormat): string {
   const label = COPY_FORMATS.find((f) => f.id === format)?.label.replace(/ \(.*$/, '') ?? format;
-  const rows = copied.rows === 1 ? '1 Zeile' : `${count(copied.rows)} Zeilen`;
-  return `${rows} kopiert (${label})`;
+  return RESULTS_TEXTS.copied(copied.rows, count(copied.rows), label);
 }
 
 /**
@@ -111,5 +111,5 @@ export function tableOf(sql: string): string | null {
   return found[0][1].replace(/\s*\.\s*/g, '.');
 }
 
-/** The placeholder for the table of `INSERT` when the statement names none. */
-export const TABLE_PLACEHOLDER = 'tabelle';
+/** The placeholder for the table of `INSERT` when the statement names none (in the current language). */
+export const tablePlaceholder = (): string => RESULTS_TEXTS.tablePlaceholder;

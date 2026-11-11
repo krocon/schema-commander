@@ -17,6 +17,7 @@ import { ConnectionsStore } from '../../core/connections/connections.store';
 import { SessionApi, TabMeta } from '../../core/session/session-api';
 import { QueryApi } from '../../core/sql/query-api';
 import { QueryTab, TabEditor } from './query-tab';
+import { SettingsService } from '../../core/settings/settings.service';
 import { TabsStore } from './tabs.store';
 
 const meta = (id: string, over: Partial<TabMeta> = {}): TabMeta => ({
@@ -468,5 +469,17 @@ describe('TabsStore', () => {
       expect(store.otherId()).toBeNull();
       expect(store.splitDir()).toBe('row');
     });
+  });
+
+  it('starts new and restored tabs with the commit mode of the settings', async () => {
+    session.session = { version: 1, tabs: [meta('a')], active: 'a' };
+    TestBed.inject(SettingsService).update({ autoCommit: false });
+    await start();
+    expect(store.active()?.manual()).toBe(true);
+    expect(store.newTab().manual()).toBe(true);
+    TestBed.inject(SettingsService).update({ autoCommit: true });
+    expect(store.newTab().manual()).toBe(false);
+    // a tab that is open keeps the mode it has
+    expect(store.tabs()[0].manual()).toBe(true);
   });
 });

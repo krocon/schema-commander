@@ -1,7 +1,9 @@
 import { Component, ElementRef, computed, inject, input, signal } from '@angular/core';
 import { ActionService } from '../../core/actions/action.service';
 import { ConnectionsStore } from '../../core/connections/connections.store';
+import { COMMON_TEXTS } from '../../core/i18n/common-texts';
 import { Group } from './layout-logic';
+import { TAB_BAR_TEXTS } from './tab-bar-texts';
 import { QueryTab } from './query-tab';
 import { TabsStore } from './tabs.store';
 
@@ -52,7 +54,7 @@ interface Menu {
               #rename
               class="rename"
               type="text"
-              aria-label="Name des Tabs"
+              [attr.aria-label]="t.tabName"
               autocomplete="off"
               spellcheck="false"
               [value]="tab.title()"
@@ -67,7 +69,7 @@ interface Menu {
               <span
                 class="tx-mark"
                 [class.failed]="tab.tx() === 'failed'"
-                title="Offene Transaktion"
+                [title]="t.openTransaction"
                 >TX</span
               >
             }
@@ -75,15 +77,17 @@ interface Menu {
               <span class="guard-mark">{{ m }}</span>
             }
             @if (tab.filePath() && tab.dirty()) {
-              <span class="dirty" title="Geändert seit dem Speichern" aria-label="geändert">●</span>
+              <span class="dirty" [title]="t.changedSinceSave" [attr.aria-label]="t.changed"
+                >●</span
+              >
             }
           }
           <button
             type="button"
             class="close"
             tabindex="-1"
-            [attr.aria-label]="tab.title() + ' schließen'"
-            title="Schließen"
+            [attr.aria-label]="t.closeTab(tab.title())"
+            [title]="common.close"
             (click)="$event.stopPropagation(); store.close(tab.id)"
           >
             ×
@@ -94,8 +98,8 @@ interface Menu {
     <button
       type="button"
       class="new"
-      aria-label="Neuer Tab"
-      [title]="'Neuer Tab' + actions.hint('NEW_TAB')"
+      [attr.aria-label]="t.newTab"
+      [title]="t.newTab + actions.hint('NEW_TAB')"
       (click)="newTab()"
     >
       +
@@ -105,7 +109,7 @@ interface Menu {
         type="button"
         class="backdrop"
         tabindex="-1"
-        aria-label="Menü schließen"
+        [attr.aria-label]="common.closeMenu"
         (click)="menu.set(null)"
         (contextmenu)="$event.preventDefault(); menu.set(null)"
       ></button>
@@ -113,15 +117,19 @@ interface Menu {
         class="menu"
         role="menu"
         tabindex="-1"
-        aria-label="Tab"
+        [attr.aria-label]="t.menu"
         [style.left.px]="m.x"
         [style.top.px]="m.y"
         (keydown)="onMenuKey($event)"
       >
-        <button type="button" role="menuitem" (click)="pick(m.id, 'rename')">Umbenennen</button>
-        <button type="button" role="menuitem" (click)="pick(m.id, 'duplicate')">Duplizieren</button>
+        <button type="button" role="menuitem" (click)="pick(m.id, 'rename')">
+          {{ t.rename }}
+        </button>
+        <button type="button" role="menuitem" (click)="pick(m.id, 'duplicate')">
+          {{ t.duplicate }}
+        </button>
         <button type="button" role="menuitem" (click)="pick(m.id, 'save')">
-          Als Datei speichern …
+          {{ t.saveAsFile }}
         </button>
         <hr />
         <button
@@ -130,22 +138,24 @@ interface Menu {
           [disabled]="store.tabs().length < 2"
           (click)="pick(m.id, 'other')"
         >
-          {{ store.isSplit() ? 'In die andere Gruppe' : 'Nach rechts teilen' }}
+          {{ store.isSplit() ? t.toOtherGroup : t.splitRight }}
         </button>
         @if (store.isSplit()) {
           <button type="button" role="menuitem" (click)="pick(m.id, 'unsplit')">
-            Teilung aufheben
+            {{ t.unsplit }}
           </button>
         }
         <hr />
-        <button type="button" role="menuitem" (click)="pick(m.id, 'close')">Schließen</button>
+        <button type="button" role="menuitem" (click)="pick(m.id, 'close')">
+          {{ common.close }}
+        </button>
         <button
           type="button"
           role="menuitem"
           [disabled]="store.tabs().length < 2"
           (click)="pick(m.id, 'others')"
         >
-          Andere schließen
+          {{ t.closeOthers }}
         </button>
         <button
           type="button"
@@ -153,7 +163,7 @@ interface Menu {
           [disabled]="!store.canReopen()"
           (click)="pick(m.id, 'reopen')"
         >
-          Geschlossenen Tab wiederherstellen
+          {{ t.reopen }}
         </button>
       </div>
     }
@@ -168,6 +178,8 @@ interface Menu {
   },
 })
 export class TabBar {
+  protected readonly t = TAB_BAR_TEXTS;
+  protected readonly common = COMMON_TEXTS;
   protected readonly store = inject(TabsStore);
   protected readonly actions = inject(ActionService);
   private readonly connections = inject(ConnectionsStore);
@@ -182,7 +194,7 @@ export class TabBar {
     () => !this.store.isSplit() || this.store.focusedGroup() === this.group(),
   );
   protected readonly label = computed(() =>
-    this.store.isSplit() ? `Abfragen, Gruppe ${this.group() + 1}` : 'Abfragen',
+    this.store.isSplit() ? this.t.queriesOfGroup(this.group() + 1) : this.t.queries,
   );
 
   protected readonly renaming = signal<string | null>(null);

@@ -15,6 +15,7 @@ import {
 import { ExportApi, ExportFormat } from '../../core/backend/export-api';
 import { FileDialogApi } from '../../core/backend/file-dialog-api';
 import { ConnectionsStore } from '../../core/connections/connections.store';
+import { COMMON_TEXTS } from '../../core/i18n/common-texts';
 import { SettingsService } from '../../core/settings/settings.service';
 import {
   EXPORT_FORMATS,
@@ -26,6 +27,7 @@ import {
   specOf,
 } from './export-logic';
 import { ExportService, ExportSource } from './export.service';
+import { EXPORT_TEXTS } from './export-texts';
 
 /**
  * What to write and how (prompt 011): format, its options, the columns, a look at the first lines. The
@@ -41,34 +43,34 @@ import { ExportService, ExportSource } from './export.service';
       (cancel)="$event.preventDefault(); closed.emit()"
     >
       <form (submit)="$event.preventDefault(); go()">
-        <h2 id="export-title">Exportieren</h2>
+        <h2 id="export-title">{{ t.title }}</h2>
         <p class="what">{{ what() }}</p>
         <div class="grid">
-          <label for="export-format">Format</label>
+          <label for="export-format">{{ t.format }}</label>
           <select #fmt id="export-format" (change)="setFormat(fmt.value)">
             @for (f of formats; track f.id) {
               <option [value]="f.id" [selected]="f.id === format()">{{ f.label }}</option>
             }
           </select>
           @if (has().delimiter) {
-            <label for="export-delimiter">Trenner</label>
+            <label for="export-delimiter">{{ t.delimiter }}</label>
             <select #del id="export-delimiter" (change)="set({ delimiter: del.value })">
-              <option value="," [selected]="choices().delimiter === ','">Komma</option>
-              <option value=";" [selected]="choices().delimiter === ';'">Semikolon</option>
-              <option value="&#9;" [selected]="choices().delimiter === tab">Tabulator</option>
-              <option value="|" [selected]="choices().delimiter === '|'">Senkrechter Strich</option>
+              <option value="," [selected]="choices().delimiter === ','">{{ t.comma }}</option>
+              <option value=";" [selected]="choices().delimiter === ';'">{{ t.semicolon }}</option>
+              <option value="&#9;" [selected]="choices().delimiter === tab">{{ t.tab }}</option>
+              <option value="|" [selected]="choices().delimiter === '|'">{{ t.pipe }}</option>
             </select>
           }
           @if (has().nullAs) {
-            <label for="export-null">NULL als</label>
+            <label for="export-null">{{ t.nullAs }}</label>
             <select #nul id="export-null" (change)="set({ nullAs: nul.value })">
-              <option value="" [selected]="choices().nullAs === ''">leer</option>
+              <option value="" [selected]="choices().nullAs === ''">{{ t.empty }}</option>
               <option value="NULL" [selected]="choices().nullAs === 'NULL'">NULL</option>
               <option value="\\N" [selected]="choices().nullAs === '\\\\N'">\\N</option>
             </select>
           }
           @if (has().insert) {
-            <label for="export-batch">Zeilen je INSERT</label>
+            <label for="export-batch">{{ t.rowsPerInsert }}</label>
             <input
               #batch
               id="export-batch"
@@ -78,7 +80,7 @@ import { ExportService, ExportSource } from './export.service';
               [value]="choices().batch"
               (change)="set({ batch: +batch.value })"
             />
-            <label for="export-table">Tabelle</label>
+            <label for="export-table">{{ t.table }}</label>
             <input
               #tab
               id="export-table"
@@ -98,7 +100,7 @@ import { ExportService, ExportSource } from './export.service';
                 [checked]="choices().header"
                 (change)="set({ header: hd.checked })"
               />
-              Kopfzeile
+              {{ t.header }}
             </label>
           }
           @if (has().delimiter) {
@@ -109,7 +111,7 @@ import { ExportService, ExportSource } from './export.service';
                 [checked]="choices().crlf"
                 (change)="set({ crlf: cr.checked })"
               />
-              Zeilenende CR LF
+              {{ t.crlf }}
             </label>
           }
           @if (format() === 'csv' || format() === 'tsv') {
@@ -120,7 +122,7 @@ import { ExportService, ExportSource } from './export.service';
                 [checked]="choices().bom"
                 (change)="set({ bom: bm.checked })"
               />
-              UTF-8 mit BOM (für Excel)
+              {{ t.bom }}
             </label>
           }
           @if (has().text) {
@@ -131,22 +133,22 @@ import { ExportService, ExportSource } from './export.service';
                 [checked]="choices().gzip"
                 (change)="set({ gzip: gz.checked })"
               />
-              gzip
+              {{ t.gzip }}
             </label>
           }
           @if (source().kind === 'result') {
             <label>
               <input #re type="checkbox" [checked]="rerun()" (change)="rerun.set(re.checked)" />
-              Anweisung neu ausführen (alle Zeilen, direkt vom Server)
+              {{ t.rerun }}
             </label>
           }
         </div>
         @if (columns().length > 0) {
           <fieldset>
             <legend>
-              Spalten
-              <button type="button" class="link" (click)="allColumns(true)">alle</button>
-              <button type="button" class="link" (click)="allColumns(false)">keine</button>
+              {{ t.columns }}
+              <button type="button" class="link" (click)="allColumns(true)">{{ t.all }}</button>
+              <button type="button" class="link" (click)="allColumns(false)">{{ t.none }}</button>
             </legend>
             <div class="columns">
               @for (c of columns(); track $index) {
@@ -161,15 +163,15 @@ import { ExportService, ExportSource } from './export.service';
               }
             </div>
           </fieldset>
-          <label class="preview-label" for="export-preview">Vorschau der ersten Zeilen</label>
+          <label class="preview-label" for="export-preview">{{ t.preview }}</label>
           <pre id="export-preview" class="preview" tabindex="0">{{ preview() }}</pre>
         }
         @if (problem(); as p) {
           <p class="problem" role="alert">{{ p }}</p>
         }
         <footer>
-          <button type="button" (click)="closed.emit()">Abbrechen</button>
-          <button type="submit" class="primary" [disabled]="!canGo()">Speichern unter …</button>
+          <button type="button" (click)="closed.emit()">{{ common.cancel }}</button>
+          <button type="submit" class="primary" [disabled]="!canGo()">{{ t.saveAs }}</button>
         </footer>
       </form>
     </dialog>
@@ -283,6 +285,8 @@ export class ExportDialog {
   private readonly connections = inject(ConnectionsStore);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
+  protected readonly t = EXPORT_TEXTS;
+  protected readonly common = COMMON_TEXTS;
   protected readonly formats = EXPORT_FORMATS;
   protected readonly tab = '\t';
   protected readonly format = signal<ExportFormat>('csv');
@@ -302,9 +306,10 @@ export class ExportDialog {
   });
   protected readonly what = computed(() => {
     const source = this.source();
-    if (source.kind === 'query') return `${source.name}: alle Zeilen, direkt vom Server`;
-    const some = source.ranges.length > 0;
-    return `${source.name}: ${some ? 'die markierten Zeilen' : `${source.rows} Zeilen`} des Ergebnisses`;
+    if (source.kind === 'query') return this.t.whatQuery(source.name);
+    return source.ranges.length > 0
+      ? this.t.whatSelected(source.name)
+      : this.t.whatRows(source.name, source.rows);
   });
   protected readonly canGo = computed(() => this.columns().length === 0 || this.picked().size > 0);
 
@@ -337,7 +342,7 @@ export class ExportDialog {
       this.choices(),
       // every column: say nothing, so a statement run again may have others
       picked.length === all ? [] : picked,
-      this.table().trim() || 'tabelle',
+      this.table().trim() || this.t.defaultTable,
       this.connections.profiles().find((p) => p.id === source.connectionId)?.kind ?? 'sqlite',
     );
   });
@@ -385,11 +390,11 @@ export class ExportDialog {
     const extension = spec.gzip ? 'gz' : (label?.extension ?? 'txt');
     let path: string | null;
     try {
-      path = await this.files.saveFile('Exportieren', fileName(source.name, format, spec.gzip), [
+      path = await this.files.saveFile(this.t.title, fileName(source.name, format, spec.gzip), [
         { name: label?.label ?? format, extensions: [extension] },
       ]);
     } catch {
-      this.problem.set('Der Speichern-Dialog ließ sich nicht öffnen.');
+      this.problem.set(this.t.saveDialogFailed);
       return;
     }
     if (!path) return;

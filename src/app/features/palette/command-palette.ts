@@ -10,9 +10,11 @@ import {
 } from '@angular/core';
 import { ACTIONS, ActionId } from '../../core/actions/action-catalog';
 import { ActionService } from '../../core/actions/action.service';
+import { actionLabel, groupLabel } from '../../core/actions/action-texts';
 import { MAX_RECENT_ACTIONS } from '../../core/settings/settings.models';
 import { SettingsService } from '../../core/settings/settings.service';
 import { PaletteEntry, markedParts, paletteHits, pushRecent } from './palette-logic';
+import { PALETTE_TEXTS } from './palette-texts';
 
 /**
  * The command palette (prompt 002): one field, fuzzy search over all actions with their shortcuts, the
@@ -24,7 +26,7 @@ import { PaletteEntry, markedParts, paletteHits, pushRecent } from './palette-lo
   template: `
     <dialog
       #dialog
-      aria-label="Befehlspalette"
+      [attr.aria-label]="t.title"
       (cancel)="$event.preventDefault(); close()"
       (close)="onClosed()"
     >
@@ -32,19 +34,19 @@ import { PaletteEntry, markedParts, paletteHits, pushRecent } from './palette-lo
         #field
         type="text"
         role="combobox"
-        aria-label="Befehl suchen"
         aria-controls="palette-list"
         aria-autocomplete="list"
         autocomplete="off"
         spellcheck="false"
-        placeholder="Befehl suchen …"
+        [attr.aria-label]="t.search"
+        [placeholder]="t.placeholder"
         [attr.aria-expanded]="hits().length > 0"
         [attr.aria-activedescendant]="activeId()"
         [value]="query()"
         (input)="setQuery(field.value)"
         (keydown)="onKey($event)"
       />
-      <ul #list id="palette-list" role="listbox" aria-label="Befehle">
+      <ul #list id="palette-list" role="listbox" [attr.aria-label]="t.commands">
         @for (hit of hits(); track hit.entry.id; let i = $index) {
           <li
             role="option"
@@ -71,11 +73,7 @@ import { PaletteEntry, markedParts, paletteHits, pushRecent } from './palette-lo
         }
       </ul>
       <p class="status" role="status">
-        @if (hits().length === 0) {
-          Kein Befehl passt.
-        } @else {
-          {{ hits().length }} {{ hits().length === 1 ? 'Befehl' : 'Befehle' }}
-        }
+        {{ hits().length === 0 ? t.none : t.count(hits().length) }}
       </p>
     </dialog>
   `,
@@ -160,6 +158,7 @@ import { PaletteEntry, markedParts, paletteHits, pushRecent } from './palette-lo
   `,
 })
 export class CommandPalette implements OnInit {
+  protected readonly t = PALETTE_TEXTS;
   private readonly actions = inject(ActionService);
   private readonly settings = inject(SettingsService);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
@@ -180,8 +179,8 @@ export class CommandPalette implements OnInit {
       const first = this.actions.shortcuts(a.id)[0];
       return {
         id: a.id,
-        label: a.label,
-        group: a.group,
+        label: actionLabel(a.id),
+        group: groupLabel(a.group),
         keys: first && engine ? engine.formatShortcut(first, platform) : '',
         enabled: this.actions.isRegistered(a.id) && this.actions.canRun(a.id),
       };

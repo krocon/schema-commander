@@ -1,7 +1,25 @@
+import { COMMON_TEXTS } from '../i18n/common-texts';
 import { DEFAULT_SELECTION, ThemeSelection, sanitizeSelection } from '../theme/theme.models';
 
 /** What the app remembers over a restart (`settings.json` in the app's config folder). */
 export interface Settings {
+  /** The language of the window (prompt 017): the system's, English or German. */
+  readonly language: LanguageSetting;
+  /** The editor: font (`''` = the editor's own), size in px, width of a tab, wrapping, line numbers. */
+  readonly editorFontFamily: string;
+  readonly editorFontSize: number;
+  readonly editorTabWidth: number;
+  readonly editorWordWrap: boolean;
+  readonly editorLineNumbers: LineNumbers;
+  /** Suggest words while typing. */
+  readonly editorSuggest: boolean;
+  /** The result grid: font size and row height in px. */
+  readonly resultFontSize: number;
+  readonly resultRowHeight: number;
+  /** How the grid shows NULL. */
+  readonly nullText: string;
+  /** New tabs commit every statement at once (prompt 013); off = they start with manual commit. */
+  readonly autoCommit: boolean;
   readonly themeSelection: ThemeSelection;
   readonly sidebarVisible: boolean;
   /** px */
@@ -55,6 +73,11 @@ export interface Settings {
   readonly recentActions: readonly string[];
 }
 
+export type LanguageSetting = 'system' | 'en' | 'de';
+export type LineNumbers = 'absolute' | 'relative' | 'off';
+export const NULL_TEXTS = ['NULL', '∅', '(null)', ''] as const;
+/** Fonts are names for CSS: letters, digits, blanks, commas, quotes, hyphens. */
+const FONT = /^[\p{L}\p{N} ,'"_-]{0,120}$/u;
 export type ResultPlacement = 'bottom' | 'right';
 export type SidebarView = 'database' | 'history';
 
@@ -67,6 +90,17 @@ export interface KeymapSetting {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  language: 'system',
+  editorFontFamily: '',
+  editorFontSize: 14,
+  editorTabWidth: 4,
+  editorWordWrap: false,
+  editorLineNumbers: 'absolute',
+  editorSuggest: false,
+  resultFontSize: 12,
+  resultRowHeight: 22,
+  nullText: 'NULL',
+  autoCommit: true,
   themeSelection: DEFAULT_SELECTION,
   sidebarVisible: true,
   sidebarWidth: 240,
@@ -111,7 +145,35 @@ function numberOr(value: unknown, fallback: number): number {
 /** Stored settings, forgiving: every broken or missing value falls back to its default. */
 export function mergeSettings(saved: unknown): Settings {
   const s = saved && typeof saved === 'object' ? (saved as Record<string, unknown>) : {};
+  const d = DEFAULT_SETTINGS;
+  const bool = (key: keyof Settings) =>
+    typeof s[key] === 'boolean' ? (s[key] as boolean) : (d[key] as boolean);
+  const within = (key: keyof Settings, min: number, max: number) => {
+    const v = s[key];
+    return typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max
+      ? Math.round(v)
+      : (d[key] as number);
+  };
   return {
+    language: s['language'] === 'en' || s['language'] === 'de' ? s['language'] : 'system',
+    editorFontFamily:
+      typeof s['editorFontFamily'] === 'string' && FONT.test(s['editorFontFamily'])
+        ? s['editorFontFamily'].trim()
+        : d.editorFontFamily,
+    editorFontSize: within('editorFontSize', 8, 40),
+    editorTabWidth: within('editorTabWidth', 1, 16),
+    editorWordWrap: bool('editorWordWrap'),
+    editorLineNumbers:
+      s['editorLineNumbers'] === 'relative' || s['editorLineNumbers'] === 'off'
+        ? s['editorLineNumbers']
+        : 'absolute',
+    editorSuggest: bool('editorSuggest'),
+    resultFontSize: within('resultFontSize', 9, 24),
+    resultRowHeight: within('resultRowHeight', 16, 60),
+    nullText: (NULL_TEXTS as readonly unknown[]).includes(s['nullText'])
+      ? (s['nullText'] as string)
+      : d.nullText,
+    autoCommit: bool('autoCommit'),
     themeSelection: sanitizeSelection(s['themeSelection']),
     sidebarVisible:
       typeof s['sidebarVisible'] === 'boolean'
@@ -182,7 +244,7 @@ export function mergeSettings(saved: unknown): Settings {
       36_500,
       numberOr(s['historyMaxDays'], DEFAULT_SETTINGS.historyMaxDays),
     ),
-    statementTimeoutSec: Math.min(86_400, size(s['statementTimeoutSec'], 0)),
+    statementTimeoutSec: Math.min(86_400, numberOr(s['statementTimeoutSec'], 0)),
     activeConnection:
       typeof s['activeConnection'] === 'string' && /^[a-z0-9-]{1,64}$/.test(s['activeConnection'])
         ? s['activeConnection']
@@ -206,7 +268,7 @@ export function mergeKeymap(raw: unknown): { keymap: KeymapSetting; notice: stri
   if (raw === undefined || raw === null) return { keymap: empty(), notice: null };
   const broken = {
     keymap: empty(),
-    notice: 'Die eigenen Tastenkürzel waren nicht lesbar; es gelten die Vorgaben.',
+    notice: COMMON_TEXTS.keymapUnreadable,
   };
   if (typeof raw !== 'object' || Array.isArray(raw)) return broken;
   const o = raw as Record<string, unknown>;

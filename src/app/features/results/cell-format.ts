@@ -1,10 +1,13 @@
 /* eslint-disable no-control-regex -- control characters are what this file is about */
+import { locale } from '../../core/i18n/i18n';
 import { Cell, ColKind } from '../../core/sql/query.models';
 
 /** How cells are shown; nothing of it reaches the clipboard or an export. */
 export interface CellFormat {
   /** Group the digits of numbers in threes. */
   readonly groupDigits: boolean;
+  /** What stands for NULL (a setting, prompt 017); missing = `NULL`. */
+  readonly nullText?: string;
 }
 
 export const PLAIN_FORMAT: CellFormat = { groupDigits: false };
@@ -74,7 +77,11 @@ export function byteSize(bytes: number): string {
     value /= 1024;
     unit++;
   }
-  return `${value < 10 ? value.toFixed(1).replace('.', ',') : Math.round(value)} ${units[unit]}`;
+  const shown =
+    value < 10
+      ? value.toLocaleString(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+      : Math.round(value);
+  return `${shown} ${units[unit]}`;
 }
 
 const isNumberKind = (kind: ColKind) => kind === 'int' || kind === 'float' || kind === 'decimal';
@@ -84,7 +91,10 @@ const isNumberKind = (kind: ColKind) => kind === 'int' || kind === 'float' || ki
  * have signs of their own, numbers keep every digit, text is one line without invisible characters.
  */
 export function showCell(cell: Cell, kind: ColKind, format: CellFormat = PLAIN_FORMAT): ShownCell {
-  if (cell === null) return NULL;
+  if (cell === null) {
+    const text = format.nullText;
+    return text === undefined || text === NULL.text ? NULL : { text, cls: 'sc-null' };
+  }
   if (typeof cell === 'boolean') return { text: cell ? 'true' : 'false', cls: 'sc-bool' };
   if (typeof cell === 'number') {
     const text = String(cell);

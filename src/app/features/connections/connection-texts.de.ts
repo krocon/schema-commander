@@ -1,0 +1,31 @@
+import type { Translation } from '../../core/i18n/i18n';
+import type { CONNECTION_EN } from './connection-texts';
+
+export const CONNECTION_DE: Translation<typeof CONNECTION_EN> = {
+  title: 'Verbindungen',
+  newConnection: 'Neue Verbindung',
+  filterLabel: 'Verbindungen filtern',
+  filter: 'Filter',
+  stateOpen: 'verbunden',
+  stateConnecting: 'verbindet …',
+  stateFailed: 'Fehler',
+  disconnect: 'Trennen',
+  disconnectName: (name) => `${name} trennen`,
+  connect: 'Verbinden',
+  connectName: (name) => `${name} verbinden`,
+  edit: 'Bearbeiten',
+  editName: (name) => `${name} bearbeiten`,
+  noMatch: 'Keine Verbindung passt zum Filter.',
+  kinds: {
+    postgres: 'PostgreSQL',
+    mysql: 'MySQL / MariaDB',
+    sqlserver: 'SQL Server',
+    sqlite: 'SQLite (Datei)',
+  },
+  password: 'Passwort',
+  sshSecretTitle: 'SSH-Tunnel: Passwort oder Passphrase',
+  loginRejected: 'Die Anmeldung wurde abgelehnt. Bitte noch einmal.',
+  passwordIsStored:
+    'Nach einer gelungenen Anmeldung wird es im Schlüsselbund des Systems gespeichert.',
+  passwordNotStored: 'Es wird nicht gespeichert.',
+};

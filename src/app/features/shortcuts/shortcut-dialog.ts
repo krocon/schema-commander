@@ -12,14 +12,17 @@ import {
   viewChild,
 } from '@angular/core';
 import { ActionService } from '../../core/actions/action.service';
-import { ActionId, actionDef } from '../../core/actions/action-catalog';
+import { ActionGroup, ActionId } from '../../core/actions/action-catalog';
+import { actionLabel, groupLabel } from '../../core/actions/action-texts';
 import { assignShortcut, checkCandidate, pruneOverride } from '../../core/actions/keymap';
 import { formatShortcut, strokeFromEvent, strokeToString } from '../../core/actions/shortcut';
+import { COMMON_TEXTS } from '../../core/i18n/common-texts';
+import { SHORTCUT_DIALOG_TEXTS } from './shortcut-dialog-texts';
 import { Pending, shortcutGroups } from './shortcut-logic';
 
 /**
  * Prompt 002 (after log-commander): every shortcut of the app; search, record, remove, reset. `?` opens it as an overview (read mode),
- * „Bearbeiten“ switches to editing. Changes go to the settings at once (only the differences from the default).
+ * "Edit" switches to editing. Changes go to the settings at once (only the differences from the default).
  */
 @Component({
   selector: 'app-shortcut-dialog',
@@ -36,48 +39,48 @@ import { Pending, shortcutGroups } from './shortcut-logic';
       (keydown)="onKey($event)"
     >
       <header>
-        <h2 id="sc-title">Tastenkürzel</h2>
-        <button type="button" aria-label="Schließen" (click)="dialog.close()">×</button>
+        <h2 id="sc-title">{{ t.title }}</h2>
+        <button type="button" [attr.aria-label]="c.close" (click)="dialog.close()">×</button>
       </header>
       <div class="bar">
         <input
           #search
           type="search"
-          aria-label="Aktionen suchen"
-          placeholder="Suchen: Name, Id oder Kürzel"
+          [attr.aria-label]="t.searchActions"
+          [placeholder]="t.searchPlaceholder"
           [value]="query()"
           (input)="query.set(search.value)"
         />
         @if (editing()) {
           <button type="button" [disabled]="!changedCount()" (click)="confirmAll.set(true)">
-            Alle zurücksetzen
+            {{ t.resetAll }}
           </button>
         } @else {
-          <button type="button" class="primary" (click)="editing.set(true)">Bearbeiten</button>
+          <button type="button" class="primary" (click)="editing.set(true)">{{ t.edit }}</button>
         }
       </div>
       @if (confirmAll()) {
         <div class="ask" role="alert">
-          <span>{{ changedCount() }} eigene Belegung(en) verwerfen und die Vorgaben nehmen?</span>
-          <button type="button" class="primary" (click)="resetAll()">Alle zurücksetzen</button>
-          <button type="button" (click)="confirmAll.set(false)">Abbrechen</button>
+          <span>{{ t.confirmResetAll(changedCount()) }}</span>
+          <button type="button" class="primary" (click)="resetAll()">{{ t.resetAll }}</button>
+          <button type="button" (click)="confirmAll.set(false)">{{ c.cancel }}</button>
         </div>
       }
       @if (pending(); as p) {
         <div class="ask" role="alert">
           @if (p.kind === 'conflict') {
-            <span> {{ show(p.shortcut) }} ist belegt durch „{{ label(p.owner) }}“. </span>
-            <button type="button" class="primary" (click)="replace(p)">Ersetzen</button>
-            <button type="button" (click)="pending.set(null)">Abbrechen</button>
+            <span>{{ t.takenBy(show(p.shortcut), label(p.owner)) }}</span>
+            <button type="button" class="primary" (click)="replace(p)">{{ t.replace }}</button>
+            <button type="button" (click)="pending.set(null)">{{ c.cancel }}</button>
           } @else {
-            <span>{{ show(p.shortcut) }} ist reserviert: {{ p.reason }}.</span>
-            <button type="button" (click)="pending.set(null)">OK</button>
+            <span>{{ t.reserved(show(p.shortcut), p.reason) }}</span>
+            <button type="button" (click)="pending.set(null)">{{ c.ok }}</button>
           }
         </div>
       }
       <div class="list">
         @for (group of groups(); track group.name) {
-          <h3>{{ group.name }}</h3>
+          <h3>{{ groupName(group.name) }}</h3>
           <ul>
             @for (row of group.rows; track row.id) {
               <li [class.unavailable]="!actions.isRegistered(row.id)" [attr.data-action]="row.id">
@@ -87,7 +90,7 @@ import { Pending, shortcutGroups } from './shortcut-logic';
                 </span>
                 <span class="keys">
                   @if (recording()?.id === row.id) {
-                    <em aria-live="assertive">Tasten drücken … (Esc bricht ab)</em>
+                    <em aria-live="assertive">{{ t.pressKeys }}</em>
                   } @else {
                     @for (key of row.keys; track key.value) {
                       <span class="chip">
@@ -95,7 +98,7 @@ import { Pending, shortcutGroups } from './shortcut-logic';
                         @if (editing()) {
                           <button
                             type="button"
-                            [attr.aria-label]="key.text + ' entfernen'"
+                            [attr.aria-label]="t.removeKey(key.text)"
                             (click)="remove(row.id, key.value)"
                           >
                             ×
@@ -110,19 +113,19 @@ import { Pending, shortcutGroups } from './shortcut-logic';
                 @if (editing()) {
                   <span class="edit">
                     @if (recording()?.id === row.id) {
-                      <button type="button" (click)="stopRecording()">Abbrechen</button>
+                      <button type="button" (click)="stopRecording()">{{ c.cancel }}</button>
                     } @else {
                       <button
                         type="button"
-                        [attr.aria-label]="'Neu belegen: ' + row.label"
+                        [attr.aria-label]="t.rebind(row.label)"
                         (click)="record(row.id, 'replace')"
                       >
-                        Aufnehmen
+                        {{ t.record }}
                       </button>
                       <button
                         type="button"
-                        title="Weiteres Kürzel"
-                        [attr.aria-label]="'Weiteres Kürzel: ' + row.label"
+                        [title]="t.another"
+                        [attr.aria-label]="t.anotherFor(row.label)"
                         (click)="record(row.id, 'add')"
                       >
                         +
@@ -131,10 +134,10 @@ import { Pending, shortcutGroups } from './shortcut-logic';
                     @if (row.changed) {
                       <button
                         type="button"
-                        [attr.aria-label]="'Zurücksetzen: ' + row.label"
+                        [attr.aria-label]="t.resetFor(row.label)"
                         (click)="reset(row.id)"
                       >
-                        Zurücksetzen
+                        {{ c.reset }}
                       </button>
                     }
                   </span>
@@ -143,7 +146,7 @@ import { Pending, shortcutGroups } from './shortcut-logic';
             }
           </ul>
         } @empty {
-          <p class="none">Keine Aktion passt.</p>
+          <p class="none">{{ t.noAction }}</p>
         }
       </div>
       @if (actions.keymap().problems.length) {
@@ -153,10 +156,7 @@ import { Pending, shortcutGroups } from './shortcut-logic';
           }
         </ul>
       }
-      <p class="note">
-        Gedimmt: hier gerade ohne Wirkung. Während der Aufnahme sind auch die Kürzel der Menüleiste
-        aus. Tasten in Dialogen, Menüs und im Editor (Suchen, Kopieren …) sind fest.
-      </p>
+      <p class="note">{{ t.note }}</p>
     </dialog>
   `,
   styles: `
@@ -281,6 +281,8 @@ import { Pending, shortcutGroups } from './shortcut-logic';
 })
 export class ShortcutDialogComponent implements OnInit, OnDestroy {
   protected readonly actions = inject(ActionService);
+  protected readonly t = SHORTCUT_DIALOG_TEXTS;
+  protected readonly c = COMMON_TEXTS;
   readonly startMode = input<'edit' | 'read'>('edit');
   readonly closed = output<void>();
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
@@ -316,7 +318,11 @@ export class ShortcutDialogComponent implements OnInit, OnDestroy {
   }
 
   protected label(id: ActionId): string {
-    return actionDef(id).label;
+    return actionLabel(id);
+  }
+
+  protected groupName(group: ActionGroup): string {
+    return groupLabel(group);
   }
 
   protected show(shortcut: string): string {

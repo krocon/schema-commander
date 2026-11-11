@@ -1,6 +1,8 @@
 import { Component, ElementRef, OnInit, computed, inject, input, viewChild } from '@angular/core';
 import { whereLabel } from '../../core/connections/connection.models';
 import { ConnectionsStore, PasswordRequest } from '../../core/connections/connections.store';
+import { COMMON_TEXTS } from '../../core/i18n/common-texts';
+import { CONNECTION_TEXTS } from './connection-texts';
 
 /**
  * Asks for the password of a connection (prompt 003). The text only goes to the store, which hands it to the
@@ -16,16 +18,16 @@ import { ConnectionsStore, PasswordRequest } from '../../core/connections/connec
     >
       <form (submit)="$event.preventDefault(); answer(field.value)">
         <h2 id="password-title">
-          {{ request().kind === 'ssh' ? 'SSH-Tunnel: Passwort oder Passphrase' : 'Passwort' }}
+          {{ request().kind === 'ssh' ? t.sshSecretTitle : t.password }}
         </h2>
         <p>
           {{ profile()?.name }}
           <span class="where">{{ request().kind === 'ssh' ? sshWhere() : where() }}</span>
         </p>
         @if (request().wrong) {
-          <p class="problem" role="alert">Die Anmeldung wurde abgelehnt. Bitte noch einmal.</p>
+          <p class="problem" role="alert">{{ t.loginRejected }}</p>
         }
-        <label for="password-field">Passwort</label>
+        <label for="password-field">{{ t.password }}</label>
         <input
           #field
           id="password-field"
@@ -36,14 +38,14 @@ import { ConnectionsStore, PasswordRequest } from '../../core/connections/connec
         />
         <p class="hint">
           @if (profile()?.savePassword) {
-            Nach einer gelungenen Anmeldung wird es im Schlüsselbund des Systems gespeichert.
+            {{ t.passwordIsStored }}
           } @else {
-            Es wird nicht gespeichert.
+            {{ t.passwordNotStored }}
           }
         </p>
         <footer>
-          <button type="button" (click)="answer(null)">Abbrechen</button>
-          <button type="submit" class="primary">Verbinden</button>
+          <button type="button" (click)="answer(null)">{{ common.cancel }}</button>
+          <button type="submit" class="primary">{{ t.connect }}</button>
         </footer>
       </form>
     </dialog>
@@ -102,6 +104,9 @@ export class PasswordDialog implements OnInit {
   private readonly field = viewChild.required<ElementRef<HTMLInputElement>>('field');
 
   readonly request = input.required<PasswordRequest>();
+
+  protected readonly t = CONNECTION_TEXTS;
+  protected readonly common = COMMON_TEXTS;
 
   protected readonly profile = computed(
     () => this.store.profiles().find((p) => p.id === this.request().id) ?? null,

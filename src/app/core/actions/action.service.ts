@@ -3,6 +3,7 @@ import { SettingsService } from '../settings/settings.service';
 import type { ActionId } from './action-catalog';
 import type { DispatchEvent, KeyboardDispatcher } from './keyboard-dispatcher';
 import type { ResolvedKeymap } from './keymap';
+import { KEYMAP_TEXTS } from './keymap-texts';
 import { Platform, detectPlatform } from './platform';
 
 type Engine = typeof import('./engine');
@@ -173,7 +174,7 @@ export class ActionService {
   startNotice(): string | null {
     const own = this.settings.keymapNotice();
     const mine = Object.keys(this.override()).length ? this.keymap().problems.length : 0;
-    const more = mine ? `Tastenkürzel: ${mine} Hinweis(e), siehe „Tastenkürzel bearbeiten“.` : null;
+    const more = mine ? KEYMAP_TEXTS.startNotice(mine) : null;
     return [own, more].filter((p) => p).join(' ') || null;
   }
 }

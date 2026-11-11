@@ -7,6 +7,7 @@ import {
   sanitizeTokens,
 } from '../../core/theme/theme-logic';
 import { Theme, USER_PREFIX } from '../../core/theme/theme.models';
+import { THEME_EDITOR_TEXTS } from './theme-editor-texts';
 
 /**
  * Pure logic of the scheme editor (design 001): ids, the draft with all tokens, what a scheme stores,
@@ -42,20 +43,25 @@ export function newUserId(name: string, taken: ReadonlySet<string>): string {
   }
 }
 
-/** A name not used yet: `Dunkel (Kopie)`, `Dunkel (Kopie 2)` … */
+/** The mark of a copy at the end of a name, in every language of the app. */
+const COPY_MARK = / \((?:copy|Kopie)(?: \d+)?\)$/;
+
+/** A name not used yet, in the current language: `Dark (copy)`, `Dark (copy 2)` … */
 export function copyName(name: string, taken: ReadonlySet<string>): string {
-  const stem = name.replace(/ \(Kopie(?: \d+)?\)$/, '').slice(0, MAX_NAME_LEN - 12);
-  let candidate = `${stem} (Kopie)`;
-  for (let n = 2; taken.has(candidate); n++) candidate = `${stem} (Kopie ${n})`;
+  const t = THEME_EDITOR_TEXTS;
+  const stem = name.replace(COPY_MARK, '').slice(0, MAX_NAME_LEN - 12);
+  let candidate = t.copyOf(stem, 1);
+  for (let n = 2; taken.has(candidate); n++) candidate = t.copyOf(stem, n);
   return candidate;
 }
 
 export function nameProblem(name: string): string | null {
   const trimmed = name.trim();
-  if (!trimmed) return 'Bitte einen Namen eingeben.';
-  if ([...trimmed].length > MAX_NAME_LEN) return `Höchstens ${MAX_NAME_LEN} Zeichen.`;
+  const t = THEME_EDITOR_TEXTS;
+  if (!trimmed) return t.nameMissing;
+  if ([...trimmed].length > MAX_NAME_LEN) return t.nameTooLong(MAX_NAME_LEN);
   // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\u007f-\u009f]/.test(trimmed)) return 'Der Name enthält Steuerzeichen.';
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(trimmed)) return t.nameControl;
   return null;
 }
 
@@ -111,7 +117,7 @@ export function importDraft(
   const { tokens, dropped } = sanitizeTokens(o['tokens']);
   const isDark = typeof o['dark'] === 'boolean' ? o['dark'] : guessDark(tokens);
   const given = typeof o['name'] === 'string' && !nameProblem(o['name']) ? o['name'].trim() : '';
-  let name = given || 'Importiertes Schema';
+  let name = given || THEME_EDITOR_TEXTS.imported;
   if (takenNames.has(name)) name = copyName(name, takenNames);
   return {
     draft: {

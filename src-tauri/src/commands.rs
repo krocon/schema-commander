@@ -782,6 +782,24 @@ pub fn set_window_chrome(app: AppHandle, color: String, dark: Option<bool>) -> A
     Ok(())
 }
 
+/// The language of the native parts follows the window (prompt 017): on macOS the menu bar is built again
+/// with the words of that language; elsewhere there is no native menu yet (prompt 018).
+#[tauri::command(async)]
+pub fn set_language(app: AppHandle, language: String) -> AppResult<()> {
+    #[cfg(target_os = "macos")]
+    {
+        let menu = crate::menu::macos_menu(&app, &language)
+            .map_err(|e| AppError::new(ErrorCode::Io, e.to_string()))?;
+        app.set_menu(menu)
+            .map_err(|e| AppError::new(ErrorCode::Io, e.to_string()))?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (&app, crate::menu::known_language(&language));
+    }
+    Ok(())
+}
+
 pub fn show_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main")
         && !window.is_visible().unwrap_or(true)

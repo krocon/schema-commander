@@ -12,12 +12,13 @@ import { ConfirmService } from '../../shared/confirm';
 import { TabsStore } from '../tabs/tabs.store';
 import {
   ASK_FROM_CELLS,
-  TABLE_PLACEHOLDER,
   bigCopyQuestion,
   copiedMessage,
   selectionSize,
   tableOf,
+  tablePlaceholder,
 } from './copy-logic';
+import { RESULTS_TEXTS } from './results-texts';
 
 /** How long the status line says what was copied. */
 export const COPY_MESSAGE_MS = 4000;
@@ -100,9 +101,9 @@ export class CopyService {
     if (size.rows === 0) return;
     if (size.cells >= ASK_FROM_CELLS) {
       const yes = await this.confirm.ask({
-        title: 'Viel zu kopieren',
+        title: RESULTS_TEXTS.bigCopyTitle,
         message: bigCopyQuestion(size.rows, size.cells),
-        confirm: 'Kopieren',
+        confirm: RESULTS_TEXTS.copy,
       });
       if (!yes) return;
     }
@@ -111,12 +112,12 @@ export class CopyService {
       header: s.copyHeader,
       nullAs: s.copyNullAs,
       delimiter: s.csvDelimiter,
-      table: tableOf(sql) ?? TABLE_PLACEHOLDER,
+      table: tableOf(sql) ?? tablePlaceholder(),
       dialect: this.connections.profiles().find((p) => p.id === connectionId)?.kind ?? 'sqlite',
     };
     this.busy.set(true);
     if (this.timer !== null) clearTimeout(this.timer);
-    this.message.set('Kopiere …');
+    this.message.set(RESULTS_TEXTS.copying);
     try {
       const copied = await this.api.copyResult(result.resultId, selection, format, options);
       if (format !== 'tsv') this.settings.update({ lastCopyFormat: format });
@@ -125,10 +126,10 @@ export class CopyService {
       const error = toAppError(e);
       this.say(
         error.code === 'cancelled'
-          ? 'Kopieren abgebrochen.'
+          ? RESULTS_TEXTS.copyCancelled
           : error.code === 'too_large'
-            ? 'Zu viel für die Zwischenablage (über 256 MB Text). Weniger auswählen.'
-            : `Nicht kopiert: ${describeError(error)}`,
+            ? RESULTS_TEXTS.tooLarge
+            : RESULTS_TEXTS.notCopied(describeError(error)),
       );
     } finally {
       this.busy.set(false);
@@ -144,9 +145,9 @@ export class CopyService {
   async copyText(text: string): Promise<void> {
     try {
       await this.api.copyText(text);
-      this.say('Kopiert.');
+      this.say(RESULTS_TEXTS.copiedText);
     } catch (e) {
-      this.say(`Nicht kopiert: ${describeError(toAppError(e))}`);
+      this.say(RESULTS_TEXTS.notCopied(describeError(toAppError(e))));
     }
   }
 }

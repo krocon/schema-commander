@@ -99,4 +99,18 @@ describe('typeLabel', () => {
     expect(typeLabel('')).toBe('');
     expect(typeLabel('X'.repeat(40))).toHaveLength(25);
   });
+
+  it('shows NULL as the settings say, still marked as NULL', () => {
+    expect(showCell(null, 'text')).toEqual({ text: 'NULL', cls: 'sc-null' });
+    expect(showCell(null, 'text', { groupDigits: false, nullText: '∅' })).toEqual({
+      text: '∅',
+      cls: 'sc-null',
+    });
+    expect(showCell(null, 'text', { groupDigits: false, nullText: '' })).toEqual({
+      text: '',
+      cls: 'sc-null',
+    });
+    // the empty text keeps its own sign
+    expect(showCell('', 'text', { groupDigits: false, nullText: '' }).cls).toBe('sc-empty');
+  });
 });

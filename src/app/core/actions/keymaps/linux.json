@@ -120,6 +120,9 @@
   "FOCUS_PREV_AREA": [
     "Shift+F6"
   ],
+  "OPEN_SETTINGS": [
+    "Mod+,"
+  ],
   "OPEN_SHORTCUTS": [
     "Mod+K Mod+S"
   ],

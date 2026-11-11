@@ -1,0 +1,176 @@
+dialog {
+  width: min(760px, calc(100vw - 24px));
+  height: min(560px, calc(100vh - 24px));
+  padding: 0;
+  background: var(--bg-panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 35%);
+}
+
+header,
+footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+header {
+  border-bottom: 1px solid var(--border);
+}
+
+footer {
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.search {
+  flex: 1 1 0;
+  min-width: 80px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.body {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+}
+
+.groups {
+  flex: none;
+  width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+}
+
+.groups button {
+  text-align: left;
+  border-left: 2px solid transparent;
+  color: var(--text-dim);
+}
+
+.groups button[aria-selected='true'] {
+  background: var(--bg-raised);
+  color: var(--text);
+  border-left-color: var(--accent);
+}
+
+.panel {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 8px 14px;
+  overflow: auto;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 2px 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.row.changed .label {
+  font-weight: 600;
+}
+
+.where {
+  display: block;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.control {
+  grid-column: 2;
+  max-width: 220px;
+}
+
+input[type='number'].control {
+  width: 96px;
+}
+
+.control.wide {
+  width: 220px;
+}
+
+.reset {
+  grid-column: 3;
+  padding: 0 6px;
+}
+
+.reset:disabled {
+  visibility: hidden;
+}
+
+.help {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.help:empty {
+  display: none;
+}
+
+.found,
+.message {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.message {
+  flex: none;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.message.problem {
+  color: var(--error-fg);
+  background: var(--error-bg);
+}
+
+.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+/* a small window: the groups go on top */
+@media (max-width: 520px) {
+  .body {
+    flex-direction: column;
+  }
+
+  .groups {
+    width: auto;
+    flex-direction: row;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
