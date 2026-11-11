@@ -39,7 +39,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 | 015 | [Verbindung aus URL und Import aus anderen Werkzeugen](done/015-verbindungs-import.md) ([Design](done/015-verbindungs-import.design.md)) | A5 | 003 (014 für SSH-Angaben) | S–M | ✅ 11.11.2026 |
 | 016 | [Arbeitsbereich – geteilte Ansicht und Sitzung](done/016-arbeitsbereich.md) ([Design](done/016-arbeitsbereich.design.md)) | G2 | 004 | M | ✅ 11.11.2026 |
 | 017 | [Einstellungen und Sprache](done/017-einstellungen-sprache.md) ([Design](done/017-einstellungen-sprache.design.md)) | G3 | 002 | M | ✅ 11.11.2026 |
-| 018 | [Menüleiste und Kontextmenüs](018-menues.md) | G4 | 002 (017 für Übersetzung) | S–M | offen |
+| 018 | [Menüleiste und Kontextmenüs](done/018-menues.md) ([Design](done/018-menues.design.md)) | G4 | 002 (017 für Übersetzung) | S–M | ✅ 11.11.2026 |
 | 019 | [Objekt-Details und DDL](019-objekt-details.md) | B3 | 008 | M | offen |
 | 020 | [Springen zu allem](020-springen-zu-allem.md) | B2 | 002, 008 | M | offen |
 | 021 | [Vervollständigung, die das Schema kennt](021-vervollstaendigung.md) | C3 | 008, E3 (editlicious: Vorschläge von außen), besser auch E5 | L | offen |

@@ -123,7 +123,7 @@ Prompts) · **Stufe** = meine Empfehlung: **1** Grundlage (ohne das ist es kein 
 | G1 | **Aktionssystem**: jede Funktion ist eine Aktion; Keymap je Betriebssystem, Kürzel-Editor, **Befehlspalette** (`Strg/Cmd+Shift+P`) – Übernahme aus files-and-folders/log-commander. Grundlage für alle Tastaturbedienung | fnf, VS Code | M | 1 | ☑ [002](../prompts/done/002-aktionen-tastatur.md) |
 | G2 | **Arbeitsbereich**: Tab-Leiste, geteilte Ansicht (zwei Abfragen nebeneinander), Sitzung nach Neustart wiederherstellen | DataGrip, TablePlus | M | 2 | ☑ [016](../prompts/done/016-arbeitsbereich.md) |
 | G3 | **Einstellungen und Sprache**: Dialog, Deutsch/Englisch zur Laufzeit (Text-Kataloge wie in fnf) | fnf | M | 2 | ☑ [017](../prompts/done/017-einstellungen-sprache.md) |
-| G4 | **Menüleiste** (nativ) und **Kontextmenüs** aus einem Menümodell | fnf | S–M | 2 | ☑ [018](../prompts/018-menues.md) |
+| G4 | **Menüleiste** (nativ) und **Kontextmenüs** aus einem Menümodell | fnf | S–M | 2 | ☑ [018](../prompts/done/018-menues.md) |
 | G5 | **Farbschemata fertig machen**: Editor folgt allen 17 Schemata (seine Farben aus unseren Tokens), Live-Editor für eigene Schemata, Import/Export – wie in fnf | fnf | S–M | 2 | ☑ [001](../prompts/done/001-theme.md) |
 | G6 | **Release**: Pakete je System, Signierung, Auto-Update, Lizenzhinweise, About | fnf | M | 2 | ☑ [034](../prompts/034-release.md) |
 

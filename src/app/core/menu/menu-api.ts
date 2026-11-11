@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Channel } from '@tauri-apps/api/core';
+import { Channel, isTauri } from '@tauri-apps/api/core';
 import { call } from '../backend/call';
 import { MenuItemState, NativeMenuEvent, NativeMenuSpec } from './menu.models';
 
@@ -29,7 +29,9 @@ export class TauriMenuApi extends MenuApi {
   setMenuState(items: readonly MenuItemState[]): Promise<void> {
     return call('set_menu_state', { items });
   }
-  subscribe(onEvent: (event: NativeMenuEvent) => void): Promise<void> {
+  async subscribe(onEvent: (event: NativeMenuEvent) => void): Promise<void> {
+    // without Tauri not even a channel can be made: `call` says so as a rejection
+    if (!isTauri()) return call('subscribe_menu');
     const channel = new Channel<NativeMenuEvent>();
     channel.onmessage = onEvent;
     return call('subscribe_menu', { onEvent: channel });
