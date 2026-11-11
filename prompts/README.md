@@ -37,7 +37,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 | 013 | [Transaktionen sichtbar machen](done/013-transaktionen.md) ([Design](done/013-transaktionen.design.md)) | C10 | 005 | M | ✅ 11.11.2026 |
 | 014 | [SSH-Tunnel und TLS](done/014-ssh-tls.md) ([Design](done/014-ssh-tls.design.md)) | A3 | 003 | M | ✅ 11.11.2026 |
 | 015 | [Verbindung aus URL und Import aus anderen Werkzeugen](done/015-verbindungs-import.md) ([Design](done/015-verbindungs-import.design.md)) | A5 | 003 (014 für SSH-Angaben) | S–M | ✅ 11.11.2026 |
-| 016 | [Arbeitsbereich – geteilte Ansicht und Sitzung](016-arbeitsbereich.md) | G2 | 004 | M | offen |
+| 016 | [Arbeitsbereich – geteilte Ansicht und Sitzung](done/016-arbeitsbereich.md) ([Design](done/016-arbeitsbereich.design.md)) | G2 | 004 | M | ✅ 11.11.2026 |
 | 017 | [Einstellungen und Sprache](017-einstellungen-sprache.md) | G3 | 002 | M | offen |
 | 018 | [Menüleiste und Kontextmenüs](018-menues.md) | G4 | 002 (017 für Übersetzung) | S–M | offen |
 | 019 | [Objekt-Details und DDL](019-objekt-details.md) | B3 | 008 | M | offen |
