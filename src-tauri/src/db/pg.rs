@@ -285,7 +285,46 @@ impl Pg {
     }
 }
 
+impl Pg {
+    async fn ask(
+        conn: &mut PgConnection,
+        sql: &str,
+        params: &[&str],
+        profile: &Profile,
+    ) -> AppResult<super::TextRows> {
+        let fail = |e: sqlx_core::error::Error| sqlx_error(profile, &e);
+        let mut query = sqlx_core::query::query::<Postgres>(AssertSqlSafe(sql.to_string()));
+        for p in params {
+            query = query.bind((*p).to_string());
+        }
+        let rows = query.fetch_all(&mut *conn).await.map_err(fail)?;
+        rows.iter()
+            .map(|row| {
+                (0..row.len())
+                    .map(|i| row.try_get::<Option<String>, _>(i).map_err(fail))
+                    .collect()
+            })
+            .collect()
+    }
+}
+
 impl Session for Pg {
+    fn ask(
+        &mut self,
+        sql: &str,
+        params: &[&str],
+        timeout: Option<std::time::Duration>,
+        stop: Stop,
+    ) -> AppResult<super::TextRows> {
+        let profile = self.profile.clone();
+        let conn = self.conn.as_mut().ok_or_else(closed)?;
+        let r = block(timeout, stop, Self::ask(conn, sql, params, &profile));
+        if r.as_ref().is_err_and(|e| !super::keeps_after_ask(e.code)) {
+            self.conn = None;
+        }
+        r
+    }
+
     fn execute(
         &mut self,
         sql: &str,

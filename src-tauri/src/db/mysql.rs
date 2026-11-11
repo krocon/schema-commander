@@ -255,7 +255,52 @@ impl My {
     }
 }
 
+impl My {
+    async fn ask(
+        conn: &mut MySqlConnection,
+        sql: &str,
+        params: &[&str],
+        profile: &Profile,
+    ) -> AppResult<super::TextRows> {
+        let fail = |e: sqlx_core::error::Error| sqlx_error(profile, &e);
+        let mut query = sqlx_core::query::query::<MySql>(AssertSqlSafe(sql.to_string()));
+        for p in params {
+            query = query.bind((*p).to_string());
+        }
+        let rows = query.fetch_all(&mut *conn).await.map_err(fail)?;
+        rows.iter()
+            .map(|row| {
+                (0..row.len())
+                    .map(|i| {
+                        // the catalog reports text as VARCHAR, as BLOB or with a binary collation,
+                        // depending on server and version: the bytes are text in every case
+                        row.try_get_unchecked::<Option<Vec<u8>>, _>(i)
+                            .map(|v| v.map(|b| String::from_utf8_lossy(&b).into_owned()))
+                            .map_err(fail)
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+}
+
 impl Session for My {
+    fn ask(
+        &mut self,
+        sql: &str,
+        params: &[&str],
+        timeout: Option<std::time::Duration>,
+        stop: Stop,
+    ) -> AppResult<super::TextRows> {
+        let profile = self.profile.clone();
+        let conn = self.conn.as_mut().ok_or_else(closed)?;
+        let r = block(timeout, stop, Self::ask(conn, sql, params, &profile));
+        if r.as_ref().is_err_and(|e| !super::keeps_after_ask(e.code)) {
+            self.conn = None;
+        }
+        r
+    }
+
     fn execute(
         &mut self,
         sql: &str,

@@ -70,6 +70,19 @@ pub enum Cell {
 }
 
 impl Cell {
+    /// The cell as plain text, for the app's own questions (metadata): `None` for NULL and for what is
+    /// not text or a number.
+    pub fn plain(&self) -> Option<String> {
+        match self {
+            Cell::Text(s) | Cell::Decimal(s) | Cell::Json(s) | Cell::Uuid(s) => Some(s.clone()),
+            Cell::Bool(b) => Some(b.to_string()),
+            Cell::I64(n) => Some(n.to_string()),
+            Cell::U64(n) => Some(n.to_string()),
+            Cell::F64(n) => Some(n.to_string()),
+            _ => None,
+        }
+    }
+
     pub fn bytes(b: &[u8]) -> Cell {
         Cell::Bytes(b.len(), b[..b.len().min(BYTES_PREVIEW)].to_vec())
     }

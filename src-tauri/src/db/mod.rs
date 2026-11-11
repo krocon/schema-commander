@@ -5,6 +5,7 @@
 //! Rust, TLS over rustls with the roots of the OS.
 
 pub mod manager;
+pub mod meta;
 pub mod mssql;
 pub mod mysql;
 pub mod pg;
@@ -158,6 +159,9 @@ pub const CANCEL_GRACE: Duration = Duration::from_secs(3);
 /// `true` when the work is stopped (cancelled, tab closed): requests end with [`cancelled`].
 pub type Stop<'a> = &'a (dyn Fn() -> bool + Sync);
 
+/// The rows of [`Session::ask`]: text or NULL.
+pub type TextRows = Vec<Vec<Option<String>>>;
+
 /// An open connection.
 pub trait Session: Send {
     /// Runs one statement within its [`Limits`]; its rows go into `sink` as they arrive. A statement that is stopped or runs out of time is
@@ -184,6 +188,16 @@ pub trait Session: Send {
             elapsed_ms: outcome.elapsed_ms,
         })
     }
+    /// A question of the app itself (metadata, prompt 008) with **bound** text parameters, never a
+    /// statement of the user: every value comes back as text or NULL. The placeholders are the dialect's
+    /// (`$1`, `?`, `@P1`, `?1`). Stopped or out of time, the session may be closed: [`Session::is_open`].
+    fn ask(
+        &mut self,
+        sql: &str,
+        params: &[&str],
+        timeout: Option<Duration>,
+        stop: Stop,
+    ) -> AppResult<TextRows>;
     /// Product and version as the server names itself.
     fn server_version(&mut self, stop: Stop) -> AppResult<String>;
     fn is_open(&self) -> bool;
@@ -344,6 +358,11 @@ fn is_tls(text: &str) -> bool {
 
 /// Whether an error leaves the connection usable: what the server answered to the statement, including
 /// „cancelled“ – when the statement really ended ([`Ended::Done`]).
+/// After [`Session::ask`]: stopped or out of time the answer is still on the wire, the connection goes.
+pub fn keeps_after_ask(code: ErrorCode) -> bool {
+    keeps_connection(code) && !matches!(code, ErrorCode::Cancelled | ErrorCode::Timeout)
+}
+
 pub fn keeps_connection(code: ErrorCode) -> bool {
     matches!(
         code,

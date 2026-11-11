@@ -540,8 +540,10 @@ fn a_result_cut_at_a_limit_frees_the_connection_at_once() {
         (pg(), "SELECT g FROM generate_series(1, 50000000) g", true),
         (
             my(),
-            "SELECT a.ordinal_position FROM information_schema.columns a, information_schema.columns b, \
-             information_schema.columns c",
+            // small derived tables: the join sends its first rows at once, whatever the catalog holds
+            "SELECT a.n FROM (SELECT ordinal_position n FROM information_schema.columns LIMIT 400) a, \
+             (SELECT 1 FROM information_schema.columns LIMIT 400) b, \
+             (SELECT 1 FROM information_schema.columns LIMIT 400) c",
             true,
         ),
         // SQL Server cannot be told to stop: the connection goes instead of reading 50 million rows
@@ -568,4 +570,238 @@ fn a_result_cut_at_a_limit_frees_the_connection_at_once() {
             started.elapsed()
         );
     }
+}
+
+// --- metadata (prompt 008) -------------------------------------------------------------------------
+
+use schema_commander_lib::db::meta::{self, ObjectKind, TableInfo};
+
+fn names(list: &[meta::ObjectInfo], kind: ObjectKind) -> Vec<&str> {
+    list.iter()
+        .filter(|o| o.kind == kind)
+        .map(|o| o.name.as_str())
+        .collect()
+}
+
+fn column_line(t: &TableInfo) -> Vec<String> {
+    t.columns
+        .iter()
+        .map(|c| {
+            format!(
+                "{} {} {} {}",
+                c.name,
+                c.type_name,
+                if c.nullable { "null" } else { "not null" },
+                c.key
+            )
+        })
+        .collect()
+}
+
+/// What every server is asked: the schema `sc_meta` with two tables, a view, an index, keys, a trigger
+/// where it is cheap, and names that need quotes.
+fn check_meta(s: &mut Box<dyn Session>, kind: DbKind, schema: &str) {
+    let stop = &|| false;
+    let schemas = meta::schemas(s.as_mut(), kind, stop).unwrap();
+    let mine = schemas.iter().find(|x| x.name == schema).expect("schema");
+    assert!(!mine.system);
+    assert!(
+        schemas.iter().any(|x| x.system),
+        "system schemas are marked"
+    );
+
+    let objects = meta::objects(s.as_mut(), kind, schema, stop).unwrap();
+    assert_eq!(
+        names(&objects, ObjectKind::Table),
+        vec!["author", "book", "Odd Name"]
+    );
+    assert_eq!(names(&objects, ObjectKind::View), vec!["book_titles"]);
+    assert!(names(&objects, ObjectKind::Routine).contains(&"sc_twice"));
+    let odd = objects.iter().find(|o| o.name == "Odd Name").unwrap();
+    assert_eq!(odd.quoted, meta::quote_always("Odd Name", kind));
+
+    let book = meta::table(s.as_mut(), kind, schema, "book", stop).unwrap();
+    let lines = column_line(&book);
+    assert_eq!(lines.len(), 4, "{lines:?}");
+    assert!(
+        lines[0].starts_with("id ") && lines[0].ends_with("not null pk"),
+        "{lines:?}"
+    );
+    assert!(
+        lines[1].starts_with("author_id ") && lines[1].ends_with("not null fk"),
+        "{lines:?}"
+    );
+    assert!(
+        lines[2].starts_with("title ") && lines[2].ends_with(" null "),
+        "{lines:?}"
+    );
+    assert!(
+        book.columns[3]
+            .default
+            .as_deref()
+            .is_some_and(|d| d.contains('0')),
+        "{:?}",
+        book.columns[3]
+    );
+    assert!(
+        book.indexes
+            .iter()
+            .any(|i| i.name == "book_by_title" && i.detail.contains("title")),
+        "{:?}",
+        book.indexes
+    );
+    assert!(
+        book.keys
+            .iter()
+            .any(|k| k.detail.to_uppercase().contains("PRIMARY KEY")),
+        "{:?}",
+        book.keys
+    );
+    assert!(
+        book.keys.iter().any(|k| {
+            let d = k.detail.to_uppercase();
+            d.contains("FOREIGN KEY") && d.contains("AUTHOR")
+        }),
+        "{:?}",
+        book.keys
+    );
+    assert_eq!(book.triggers.len(), 1, "{:?}", book.triggers);
+    assert_eq!(book.triggers[0].name, "book_touch");
+
+    let odd = meta::table(s.as_mut(), kind, schema, "Odd Name", stop).unwrap();
+    assert_eq!(odd.columns[0].name, "select");
+    assert_eq!(odd.columns[0].quoted, meta::quote_always("select", kind));
+    assert_eq!(odd.columns[1].name, "Größe 1");
+
+    // a name is a value: nothing is found, nothing breaks
+    let none = meta::table(s.as_mut(), kind, schema, "book'; DROP TABLE book; --", stop).unwrap();
+    assert_eq!(none, TableInfo::default());
+    assert!(
+        meta::objects(s.as_mut(), kind, "no such schema", stop)
+            .unwrap()
+            .is_empty()
+    );
+
+    let hits = meta::search(s.as_mut(), kind, "OOK", stop).unwrap();
+    let found: Vec<(&str, &str)> = hits
+        .iter()
+        .filter(|h| h.schema == schema && h.kind != ObjectKind::Matview)
+        .map(|h| (h.name.as_str(), h.schema.as_str()))
+        .collect();
+    assert_eq!(found, vec![("book", schema), ("book_titles", schema)]);
+    assert!(
+        meta::search(s.as_mut(), kind, "b_ok", stop)
+            .unwrap()
+            .is_empty(),
+        "_ is text"
+    );
+
+    // the session is as usable as before
+    assert_eq!(rows(&run(s, "SELECT 1")), json!([[1]]));
+}
+
+#[test]
+#[ignore]
+fn postgres_metadata() {
+    let mut s = open(&pg());
+    for sql in [
+        "DROP SCHEMA IF EXISTS sc_meta CASCADE",
+        "CREATE SCHEMA sc_meta",
+        "CREATE TABLE sc_meta.author (id int PRIMARY KEY, name text NOT NULL)",
+        "CREATE TABLE sc_meta.book (id int PRIMARY KEY, author_id int NOT NULL REFERENCES sc_meta.author (id), \
+         title varchar(200), copies int NOT NULL DEFAULT 0)",
+        "CREATE INDEX book_by_title ON sc_meta.book (title)",
+        "CREATE TABLE sc_meta.\"Odd Name\" (\"select\" text, \"Größe 1\" numeric(10,2))",
+        "CREATE VIEW sc_meta.book_titles AS SELECT title FROM sc_meta.book",
+        "CREATE FUNCTION sc_meta.sc_twice(n int) RETURNS int LANGUAGE sql AS 'SELECT n * 2'",
+        "CREATE FUNCTION sc_meta.touch() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RETURN NEW; END'",
+        "CREATE TRIGGER book_touch BEFORE UPDATE ON sc_meta.book FOR EACH ROW EXECUTE FUNCTION sc_meta.touch()",
+        "CREATE SEQUENCE sc_meta.ticket",
+        "CREATE TYPE sc_meta.mood AS ENUM ('ok', 'bad')",
+        "CREATE MATERIALIZED VIEW sc_meta.book_count AS SELECT count(*) AS n FROM sc_meta.book",
+    ] {
+        run(&mut s, sql);
+    }
+    check_meta(&mut s, DbKind::Postgres, "sc_meta");
+    let stop = &|| false;
+    let objects = meta::objects(s.as_mut(), DbKind::Postgres, "sc_meta", stop).unwrap();
+    assert_eq!(names(&objects, ObjectKind::Sequence), vec!["ticket"]);
+    assert_eq!(names(&objects, ObjectKind::Type), vec!["mood"]);
+    assert_eq!(names(&objects, ObjectKind::Matview), vec!["book_count"]);
+    let twice = objects.iter().find(|o| o.name == "sc_twice").unwrap();
+    assert_eq!(twice.detail, "n integer");
+    let book = meta::table(s.as_mut(), DbKind::Postgres, "sc_meta", "book", stop).unwrap();
+    assert_eq!(book.columns[2].type_name, "character varying(200)");
+    let schemas = meta::schemas(s.as_mut(), DbKind::Postgres, stop).unwrap();
+    assert!(schemas.iter().any(|x| x.name == "public" && x.current));
+    run(&mut s, "DROP SCHEMA sc_meta CASCADE");
+}
+
+fn mysql_meta(p: &Profile) {
+    let mut s = open(p);
+    for sql in [
+        "DROP DATABASE IF EXISTS sc_meta",
+        "CREATE DATABASE sc_meta",
+        "CREATE TABLE sc_meta.author (id int PRIMARY KEY, name varchar(100) NOT NULL)",
+        "CREATE TABLE sc_meta.book (id int PRIMARY KEY, author_id int NOT NULL, title varchar(200), \
+         copies int NOT NULL DEFAULT 0, CONSTRAINT book_author FOREIGN KEY (author_id) \
+         REFERENCES sc_meta.author (id))",
+        "CREATE INDEX book_by_title ON sc_meta.book (title)",
+        "CREATE TABLE sc_meta.`Odd Name` (`select` text, `Größe 1` decimal(10,2))",
+        "CREATE VIEW sc_meta.book_titles AS SELECT title FROM sc_meta.book",
+        "CREATE FUNCTION sc_meta.sc_twice(n int) RETURNS int DETERMINISTIC RETURN n * 2",
+        "CREATE TRIGGER sc_meta.book_touch BEFORE UPDATE ON sc_meta.book FOR EACH ROW SET NEW.copies = NEW.copies",
+    ] {
+        run(&mut s, sql);
+    }
+    check_meta(&mut s, DbKind::Mysql, "sc_meta");
+    let stop = &|| false;
+    let book = meta::table(s.as_mut(), DbKind::Mysql, "sc_meta", "book", stop).unwrap();
+    assert_eq!(book.columns[2].type_name, "varchar(200)");
+    let schemas = meta::schemas(s.as_mut(), DbKind::Mysql, stop).unwrap();
+    assert!(schemas.iter().any(|x| x.name == "shop" && x.current));
+    run(&mut s, "DROP DATABASE sc_meta");
+}
+
+#[test]
+#[ignore]
+fn mysql_metadata() {
+    mysql_meta(&my());
+}
+
+#[test]
+#[ignore]
+fn mariadb_metadata() {
+    mysql_meta(&maria());
+}
+
+#[test]
+#[ignore]
+fn sqlserver_metadata() {
+    let mut s = open(&ms());
+    for sql in [
+        "IF OBJECT_ID('sc_meta.book_titles') IS NOT NULL DROP VIEW sc_meta.book_titles",
+        "IF OBJECT_ID('sc_meta.sc_twice') IS NOT NULL DROP FUNCTION sc_meta.sc_twice",
+        "IF OBJECT_ID('sc_meta.book') IS NOT NULL DROP TABLE sc_meta.book",
+        "IF OBJECT_ID('sc_meta.author') IS NOT NULL DROP TABLE sc_meta.author",
+        "IF OBJECT_ID('sc_meta.[Odd Name]') IS NOT NULL DROP TABLE sc_meta.[Odd Name]",
+        "IF SCHEMA_ID('sc_meta') IS NULL EXEC('CREATE SCHEMA sc_meta')",
+        "CREATE TABLE sc_meta.author (id int PRIMARY KEY, name nvarchar(100) NOT NULL)",
+        "CREATE TABLE sc_meta.book (id int PRIMARY KEY, author_id int NOT NULL REFERENCES sc_meta.author (id), \
+         title nvarchar(200), copies int NOT NULL DEFAULT 0)",
+        "CREATE INDEX book_by_title ON sc_meta.book (title)",
+        "CREATE TABLE sc_meta.[Odd Name] ([select] nvarchar(max), [Größe 1] decimal(10,2))",
+        "CREATE VIEW sc_meta.book_titles AS SELECT title FROM sc_meta.book",
+        "CREATE FUNCTION sc_meta.sc_twice(@n int) RETURNS int AS BEGIN RETURN @n * 2 END",
+        "CREATE TRIGGER sc_meta.book_touch ON sc_meta.book AFTER UPDATE AS BEGIN SET NOCOUNT ON END",
+    ] {
+        run(&mut s, sql);
+    }
+    check_meta(&mut s, DbKind::Sqlserver, "sc_meta");
+    let stop = &|| false;
+    let book = meta::table(s.as_mut(), DbKind::Sqlserver, "sc_meta", "book", stop).unwrap();
+    assert_eq!(book.columns[2].type_name, "nvarchar(200)");
+    let odd = meta::table(s.as_mut(), DbKind::Sqlserver, "sc_meta", "Odd Name", stop).unwrap();
+    assert_eq!(odd.columns[0].type_name, "nvarchar(max)");
+    assert_eq!(odd.columns[1].type_name, "decimal(10, 2)");
 }

@@ -2,6 +2,7 @@
 
 use crate::db::Profile;
 use crate::db::manager::{ConnectionInfo, ConnectionManager};
+use crate::db::meta;
 use crate::db::profiles::LoadedProfiles;
 use crate::db::secrets::Secret;
 use crate::db::value::Column;
@@ -158,6 +159,51 @@ pub fn free_results(store: State<'_, ResultStore>, result_ids: Vec<u64>) {
     for id in result_ids {
         store.free(id);
     }
+}
+
+/// The schemas of an open connection (prompt 008).
+#[tauri::command(async)]
+pub fn meta_schemas(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+) -> AppResult<Vec<meta::SchemaInfo>> {
+    manager.ask(&id, meta::schemas)
+}
+
+/// What is in a schema: tables, views, routines, sequences, types.
+#[tauri::command(async)]
+pub fn meta_objects(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    schema: String,
+) -> AppResult<Vec<meta::ObjectInfo>> {
+    manager.ask(&id, |s, kind, stop| meta::objects(s, kind, &schema, stop))
+}
+
+/// Columns, indexes, keys and triggers of a table or view.
+#[tauri::command(async)]
+pub fn meta_table(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    schema: String,
+    table: String,
+) -> AppResult<meta::TableInfo> {
+    manager.ask(&id, |s, kind, stop| {
+        meta::table(s, kind, &schema, &table, stop)
+    })
+}
+
+/// Tables and views by a part of their name, in all schemas.
+#[tauri::command(async)]
+pub fn meta_search(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    text: String,
+) -> AppResult<Vec<meta::Found>> {
+    if text.chars().count() > 200 {
+        return Ok(Vec::new());
+    }
+    manager.ask(&id, |s, kind, stop| meta::search(s, kind, &text, stop))
 }
 
 /// Stops the statement that runs on a connection.

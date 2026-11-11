@@ -265,7 +265,53 @@ impl Ms {
     }
 }
 
+impl Ms {
+    async fn ask(
+        conn: &mut Conn,
+        sql: &str,
+        params: &[&str],
+        profile: &Profile,
+    ) -> AppResult<super::TextRows> {
+        let mut query = tiberius::Query::new(sql.to_string());
+        for p in params {
+            query.bind((*p).to_string());
+        }
+        let fail = |e: tiberius::error::Error| ms_error(profile, &e);
+        let rows = query
+            .query(conn)
+            .await
+            .map_err(fail)?
+            .into_first_result()
+            .await
+            .map_err(fail)?;
+        Ok(rows
+            .iter()
+            .map(|row| {
+                row.cells()
+                    .map(|(_, data)| cell(data, "").plain())
+                    .collect()
+            })
+            .collect())
+    }
+}
+
 impl Session for Ms {
+    fn ask(
+        &mut self,
+        sql: &str,
+        params: &[&str],
+        timeout: Option<std::time::Duration>,
+        stop: Stop,
+    ) -> AppResult<super::TextRows> {
+        let profile = self.profile.clone();
+        let conn = self.conn.as_mut().ok_or_else(closed)?;
+        let r = block(timeout, stop, Self::ask(conn, sql, params, &profile));
+        if r.as_ref().is_err_and(|e| !super::keeps_after_ask(e.code)) {
+            self.conn = None;
+        }
+        r
+    }
+
     fn execute(
         &mut self,
         sql: &str,

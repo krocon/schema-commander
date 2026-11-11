@@ -4,7 +4,7 @@
 use super::profiles::{self, LoadedProfiles};
 use super::secrets::{self, Secret, SecretKind, SecretStore};
 use super::value::{MAX_ROWS, Outcome, QueryResult, RowSink, VecSink};
-use super::{Limits, Profile, Session, connect, sqlite};
+use super::{DbKind, Limits, Profile, Session, connect, sqlite};
 use crate::error::{AppError, AppResult, ErrorCode};
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -278,6 +278,31 @@ impl ConnectionManager {
         result
     }
 
+    /// Asks an open connection something of the app's own (metadata, prompt 008). It waits for the
+    /// statement that runs on the session; `cancel` stops it like a statement.
+    pub fn ask<T>(
+        &self,
+        id: &str,
+        f: impl FnOnce(&mut dyn Session, DbKind, super::Stop) -> AppResult<T>,
+    ) -> AppResult<T> {
+        let kind = self.find(id)?.kind;
+        let open = self.opened(id)?;
+        let mut session = open.session.lock();
+        open.stop.store(false, Ordering::Relaxed);
+        let result = f(session.as_mut(), kind, &|| {
+            open.stop.load(Ordering::Relaxed)
+        });
+        let lost = !session.is_open();
+        drop(session);
+        if lost {
+            let mut all = self.open.lock();
+            if all.get(id).is_some_and(|o| Arc::ptr_eq(o, &open)) {
+                all.remove(id);
+            }
+        }
+        result
+    }
+
     /// Stops the statement that runs on a connection (nothing happens when none does).
     pub fn cancel(&self, id: &str) {
         if let Some(open) = self.open.lock().get(id) {
@@ -289,6 +314,30 @@ impl ConnectionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::meta;
+
+    #[test]
+    fn asks_the_demo_database_what_is_in_it() {
+        let dir = tempdir().unwrap();
+        let (m, _) = manager(dir.path());
+        // not connected yet
+        assert_eq!(
+            m.ask("demo", meta::schemas).unwrap_err().code,
+            ErrorCode::NotConnected
+        );
+        m.open("demo", None).unwrap();
+        let schemas = m.ask("demo", meta::schemas).unwrap();
+        assert_eq!(schemas[0].name, "main");
+        let objects = m
+            .ask("demo", |s, kind, stop| meta::objects(s, kind, "main", stop))
+            .unwrap();
+        assert_eq!(objects.len(), 3);
+        assert_eq!(
+            m.ask("nope", meta::schemas).unwrap_err().code,
+            ErrorCode::UnknownConnection
+        );
+    }
+
     use crate::db::secrets::MemoryStore;
     use crate::db::{DbKind, TlsMode};
     use tempfile::tempdir;
