@@ -334,6 +334,35 @@ impl Session for My {
         r
     }
 
+    fn transaction_state(&mut self, stop: Stop) -> super::TxState {
+        use super::TxState;
+        let limit = Some(std::time::Duration::from_secs(5));
+        let first = |rows: super::TextRows| rows.first().and_then(|r| r.first()).cloned().flatten();
+        // MariaDB says it in a variable; MySQL in the performance schema (the probe itself is a
+        // transaction of its own there, with AUTOCOMMIT = YES)
+        if let Ok(rows) = self.ask("SELECT CAST(@@in_transaction AS CHAR)", &[], limit, stop) {
+            return match first(rows).as_deref() {
+                Some("1") => TxState::Active,
+                Some("0") => TxState::Idle,
+                _ => TxState::Unknown,
+            };
+        }
+        match self.ask(
+            "SELECT CAST(COUNT(*) AS CHAR) FROM performance_schema.events_transactions_current \
+             WHERE THREAD_ID = PS_CURRENT_THREAD_ID() AND STATE = 'ACTIVE' AND AUTOCOMMIT = 'NO'",
+            &[],
+            limit,
+            stop,
+        ) {
+            Ok(rows) => match first(rows).as_deref() {
+                Some("0") => TxState::Idle,
+                Some(_) => TxState::Active,
+                None => TxState::Unknown,
+            },
+            Err(_) => TxState::Unknown,
+        }
+    }
+
     fn server_version(&mut self, stop: Stop) -> AppResult<String> {
         let r = self.query("SELECT VERSION()", Limits::rows(1), stop)?;
         Ok(match r.rows.first().and_then(|row| row.first()) {

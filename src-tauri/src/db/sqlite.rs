@@ -232,6 +232,14 @@ impl Session for Lite {
         result
     }
 
+    fn transaction_state(&mut self, _stop: Stop) -> super::TxState {
+        if self.conn.is_autocommit() {
+            super::TxState::Idle
+        } else {
+            super::TxState::Active
+        }
+    }
+
     fn server_version(&mut self, _stop: Stop) -> AppResult<String> {
         Ok(format!("SQLite {}", rusqlite::version()))
     }

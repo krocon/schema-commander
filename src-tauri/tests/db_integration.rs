@@ -807,3 +807,161 @@ fn sqlserver_metadata() {
     assert_eq!(odd.columns[0].type_name, "nvarchar(max)");
     assert_eq!(odd.columns[1].type_name, "decimal(10, 2)");
 }
+
+// --- transactions (prompt 013) ---------------------------------------------------------------------
+
+use schema_commander_lib::db::TxState;
+
+fn try_run(s: &mut Box<dyn Session>, sql: &str) -> bool {
+    s.query(sql, Limits::rows(MAX_ROWS), &|| false).is_ok()
+}
+
+/// What every server is asked: the state the server reports after each step.
+fn check_tx(p: &Profile, begin: &str, failed_after_error: TxState) {
+    let stop = &|| false;
+    let mut s = open(p);
+    assert_eq!(
+        s.transaction_state(stop),
+        TxState::Idle,
+        "{:?} fresh",
+        p.kind
+    );
+    run(&mut s, "SELECT 1");
+    assert_eq!(
+        s.transaction_state(stop),
+        TxState::Idle,
+        "{:?} after a statement",
+        p.kind
+    );
+    run(&mut s, begin);
+    assert_eq!(
+        s.transaction_state(stop),
+        TxState::Active,
+        "{:?} after begin",
+        p.kind
+    );
+    run(&mut s, "SELECT 1");
+    assert_eq!(
+        s.transaction_state(stop),
+        TxState::Active,
+        "{:?} inside",
+        p.kind
+    );
+    assert!(!try_run(&mut s, "SELECT * FROM sc_no_such_table_013"));
+    assert_eq!(
+        s.transaction_state(stop),
+        failed_after_error,
+        "{:?} after an error",
+        p.kind
+    );
+    run(&mut s, "ROLLBACK");
+    assert_eq!(
+        s.transaction_state(stop),
+        TxState::Idle,
+        "{:?} after rollback",
+        p.kind
+    );
+    // asking does not disturb the session
+    assert_eq!(rows(&run(&mut s, "SELECT 1")), json!([[1]]));
+    run(&mut s, begin);
+    run(&mut s, "COMMIT");
+    assert_eq!(
+        s.transaction_state(stop),
+        TxState::Idle,
+        "{:?} after commit",
+        p.kind
+    );
+}
+
+#[test]
+#[ignore]
+fn postgres_reports_its_transaction_state() {
+    // an error poisons the transaction: only a rollback gets out
+    check_tx(&pg(), "BEGIN", TxState::Failed);
+    let stop = &|| false;
+    let mut s = open(&pg());
+    run(&mut s, "BEGIN");
+    run(&mut s, "SAVEPOINT a");
+    assert!(!try_run(&mut s, "SELECT * FROM sc_no_such_table_013"));
+    assert_eq!(s.transaction_state(stop), TxState::Failed);
+    run(&mut s, "ROLLBACK TO SAVEPOINT a");
+    assert_eq!(s.transaction_state(stop), TxState::Active);
+    run(&mut s, "ROLLBACK");
+}
+
+fn mysql_tx(p: &Profile) {
+    check_tx(p, "START TRANSACTION", TxState::Active);
+    let stop = &|| false;
+    let mut s = open(p);
+    run(&mut s, "DROP TABLE IF EXISTS sc_tx_013");
+    run(&mut s, "START TRANSACTION");
+    assert_eq!(s.transaction_state(stop), TxState::Active);
+    // DDL commits without being asked
+    run(&mut s, "CREATE TABLE sc_tx_013 (a int)");
+    assert_eq!(
+        s.transaction_state(stop),
+        TxState::Idle,
+        "{:?} after DDL",
+        p.kind
+    );
+    run(&mut s, "SET autocommit = 0");
+    run(&mut s, "INSERT INTO sc_tx_013 VALUES (1)");
+    assert_eq!(s.transaction_state(stop), TxState::Active, "autocommit off");
+    run(&mut s, "ROLLBACK");
+    run(&mut s, "SET autocommit = 1");
+    run(&mut s, "DROP TABLE sc_tx_013");
+}
+
+#[test]
+#[ignore]
+fn mysql_reports_its_transaction_state() {
+    mysql_tx(&my());
+}
+
+#[test]
+#[ignore]
+fn mariadb_reports_its_transaction_state() {
+    mysql_tx(&maria());
+}
+
+#[test]
+#[ignore]
+fn sqlserver_reports_its_transaction_state() {
+    check_tx(&ms(), "BEGIN TRANSACTION", TxState::Active);
+}
+
+// --- read only on the server (prompt 012) ------------------------------------------------------------
+
+#[test]
+#[ignore]
+fn a_read_only_session_refuses_writes_on_the_server() {
+    use schema_commander_lib::db::guard::read_only_statement;
+    for p in [pg(), my(), maria()] {
+        let mut s = open(&p);
+        run(&mut s, "DROP TABLE IF EXISTS sc_ro_012");
+        run(&mut s, "CREATE TABLE sc_ro_012 (a int)");
+        run(&mut s, read_only_statement(p.kind).unwrap());
+        assert!(
+            !try_run(&mut s, "INSERT INTO sc_ro_012 VALUES (1)"),
+            "{:?} insert",
+            p.kind
+        );
+        assert!(
+            !try_run(&mut s, "CREATE TABLE sc_ro_012b (a int)"),
+            "{:?} ddl",
+            p.kind
+        );
+        assert!(
+            !try_run(&mut s, "DELETE FROM sc_ro_012"),
+            "{:?} delete",
+            p.kind
+        );
+        // reading goes on
+        assert_eq!(
+            rows(&run(&mut s, "SELECT count(*) FROM sc_ro_012")),
+            json!([[0]])
+        );
+        let mut other = open(&p);
+        run(&mut other, "DROP TABLE sc_ro_012");
+    }
+}

@@ -1,12 +1,12 @@
 //! The command layer: thin, the logic lives in pure modules (`db`, `themes`).
 
 use crate::copy::{self, Copied, Selection};
-use crate::db::Profile;
 use crate::db::manager::{ConnectionInfo, ConnectionManager, Verdict};
 use crate::db::meta;
 use crate::db::profiles::LoadedProfiles;
 use crate::db::secrets::Secret;
 use crate::db::value::Column;
+use crate::db::{Profile, TxState};
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::export;
 use crate::extract::{Format, Options};
@@ -92,6 +92,8 @@ pub struct RunOutcome {
     pub truncated: bool,
     pub rows_affected: Option<u64>,
     pub elapsed_ms: u64,
+    /// What the server says about the transaction of the session afterwards (prompt 013).
+    tx: TxState,
 }
 
 /// Runs one statement on an open connection, for at most `timeout_ms` (none or 0 = as long as it takes).
@@ -108,6 +110,8 @@ pub fn run_query(
     timeout_ms: Option<u64>,
     confirmation: Option<String>,
     allow_dangerous: Option<bool>,
+    session: Option<String>,
+    manual: Option<bool>,
     on_event: Channel<RunEvent>,
 ) -> AppResult<RunOutcome> {
     // the guard of the connection (prompt 012): here, not in the window
@@ -131,7 +135,14 @@ pub fn run_query(
         });
     };
     let mut sink = StoreSink::new(&store, &report);
-    let result = manager.run_into(&id, &sql, timeout, &mut sink);
+    let (result, tx) = manager.run_in(
+        &id,
+        session.as_deref(),
+        &sql,
+        timeout,
+        &mut sink,
+        manual.unwrap_or(false),
+    );
     sink.finish();
     let result_id = sink.result_id();
     let failed = sink.error.take().map(Err).unwrap_or(result);
@@ -143,6 +154,7 @@ pub fn run_query(
             truncated: outcome.truncated || sink.full,
             rows_affected: outcome.rows_affected,
             elapsed_ms: outcome.elapsed_ms,
+            tx,
         }),
         Err(e) => {
             if let Some(id) = result_id {
@@ -547,10 +559,38 @@ pub fn meta_search(
     manager.ask(&id, |s, kind, stop| meta::search(s, kind, &text, stop))
 }
 
-/// Stops the statement that runs on a connection.
+/// Stops the statement that runs on a connection, or on the session of one of its tabs.
 #[tauri::command(async)]
-pub fn cancel_query(manager: State<'_, ConnectionManager>, id: String) {
-    manager.cancel(&id);
+pub fn cancel_query(manager: State<'_, ConnectionManager>, id: String, session: Option<String>) {
+    manager.cancel_in(&id, session.as_deref());
+}
+
+/// Ends the transaction of a tab with `COMMIT` or `ROLLBACK` (prompt 013); returns what the server says
+/// about the session afterwards.
+#[tauri::command(async)]
+pub fn end_transaction(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    session: Option<String>,
+    commit: bool,
+) -> AppResult<TxState> {
+    manager.end_transaction(&id, session.as_deref(), commit)
+}
+
+/// What the server said last about the transaction of a tab (after a statement that failed).
+#[tauri::command(async)]
+pub fn tx_state(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    session: Option<String>,
+) -> TxState {
+    manager.tx_state(&id, session.as_deref())
+}
+
+/// Closes the session of a tab; the server rolls back what was open on it.
+#[tauri::command(async)]
+pub fn close_session(manager: State<'_, ConnectionManager>, id: String, session: String) {
+    manager.close_session(&id, &session);
 }
 
 /// The open tabs of the last run (prompt 004). Text files no tab owns any more are removed.

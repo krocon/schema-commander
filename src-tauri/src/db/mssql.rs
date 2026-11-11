@@ -333,6 +333,33 @@ impl Session for Ms {
         r
     }
 
+    fn transaction_state(&mut self, stop: Stop) -> super::TxState {
+        use super::TxState;
+        match self.ask(
+            "SELECT CAST(@@TRANCOUNT AS varchar(10)), CAST(XACT_STATE() AS varchar(10))",
+            &[],
+            Some(std::time::Duration::from_secs(5)),
+            stop,
+        ) {
+            Ok(rows) => {
+                let cell = |i: usize| {
+                    rows.first()
+                        .and_then(|r| r.get(i))
+                        .cloned()
+                        .flatten()
+                        .and_then(|t| t.trim().parse::<i32>().ok())
+                };
+                match (cell(0), cell(1)) {
+                    (_, Some(-1)) => TxState::Failed,
+                    (Some(n), _) if n > 0 => TxState::Active,
+                    (Some(_), _) => TxState::Idle,
+                    _ => TxState::Unknown,
+                }
+            }
+            Err(_) => TxState::Unknown,
+        }
+    }
+
     fn server_version(&mut self, stop: Stop) -> AppResult<String> {
         let r = self.query("SELECT @@VERSION", Limits::rows(1), stop)?;
         Ok(match r.rows.first().and_then(|row| row.first()) {

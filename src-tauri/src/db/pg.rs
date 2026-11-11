@@ -359,6 +359,32 @@ impl Session for Pg {
         r
     }
 
+    fn transaction_state(&mut self, stop: Stop) -> super::TxState {
+        use super::TxState;
+        // Inside a transaction block `now()` is the start of the transaction, outside it the start of
+        // this very statement. Over the simple protocol: with parse and bind as messages of their own
+        // the two differ always. A failed block refuses every statement (25P02).
+        let limits = Limits {
+            max_rows: 1,
+            timeout: Some(std::time::Duration::from_secs(5)),
+        };
+        match self.query(
+            "SELECT (now() <> statement_timestamp())::text",
+            limits,
+            stop,
+        ) {
+            Ok(r) => match r.rows.first().and_then(|row| row.first()) {
+                Some(Cell::Text(t)) if t == "true" => TxState::Active,
+                Some(Cell::Text(t)) if t == "false" => TxState::Idle,
+                _ => TxState::Unknown,
+            },
+            Err(e) if e.message.contains("25P02") || e.message.contains("aborted") => {
+                TxState::Failed
+            }
+            Err(_) => TxState::Unknown,
+        }
+    }
+
     fn server_version(&mut self, stop: Stop) -> AppResult<String> {
         let r = self.query("SELECT version()", Limits::rows(1), stop)?;
         Ok(match r.rows.first().and_then(|row| row.first()) {

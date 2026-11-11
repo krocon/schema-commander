@@ -5,7 +5,7 @@ use super::guard::{self, Class, Need, Protection};
 use super::profiles::{self, LoadedProfiles};
 use super::secrets::{self, Secret, SecretKind, SecretStore};
 use super::value::{MAX_ROWS, Outcome, QueryResult, RowSink, VecSink};
-use super::{DbKind, Limits, Profile, Session, connect, sqlite};
+use super::{DbKind, Limits, Profile, Session, TxState, connect, sqlite};
 use crate::error::{AppError, AppResult, ErrorCode};
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -26,6 +26,18 @@ struct Open {
     session: Mutex<Box<dyn Session>>,
     /// Set to stop the statement that runs; cleared before the next one.
     stop: AtomicBool,
+    /// What the server said last about its transaction.
+    tx: Mutex<TxState>,
+}
+
+impl Open {
+    fn new(session: Box<dyn Session>) -> Arc<Self> {
+        Arc::new(Open {
+            session: Mutex::new(session),
+            stop: AtomicBool::new(false),
+            tx: Mutex::new(TxState::Idle),
+        })
+    }
 }
 
 /// What a statement is and what it needs on its connection (prompt 012).
@@ -49,6 +61,9 @@ pub struct ConnectionManager {
     /// Confirmations given for statements, by their token. Each admits one run of exactly that statement
     /// on exactly that connection.
     confirmations: Mutex<HashMap<String, Confirmation>>,
+    /// The passwords of the open connections, for the sessions of their tabs (prompt 013): in memory
+    /// only, wiped when the connection closes.
+    kept: Mutex<HashMap<String, Option<Secret>>>,
     file: PathBuf,
     store: Arc<dyn SecretStore>,
     profiles: Mutex<Option<Vec<Profile>>>,
@@ -77,6 +92,7 @@ impl ConnectionManager {
             notice: Mutex::new(None),
             open: Mutex::new(HashMap::new()),
             confirmations: Mutex::new(HashMap::new()),
+            kept: Mutex::new(HashMap::new()),
         }
     }
 
@@ -213,15 +229,8 @@ impl ConnectionManager {
         let profile = self.find(id)?;
         let given = password.is_some();
         let secret = self.secret_for(&profile, password)?;
-        let mut session = connect(&profile, secret.as_ref(), &|| false)?;
+        let mut session = Self::connect_guarded(&profile, secret.as_ref())?;
         let server_version = session.server_version(&|| false)?;
-        if profile.protection == Protection::Readonly
-            && let Some(sql) = guard::read_only_statement(profile.kind)
-        {
-            // the server refuses writes too, whatever reaches it; a connection that cannot be made read
-            // only is not opened as one
-            session.query(sql, Limits::rows(1), &|| false)?;
-        }
         if given
             && profile.save_password
             && let Some(secret) = secret.as_ref().filter(|s| !s.is_empty())
@@ -229,24 +238,179 @@ impl ConnectionManager {
             // a keychain that fails must not undo a login that worked
             let _ = self.store.set(&Self::account(&profile), secret);
         }
-        self.open.lock().insert(
-            id.to_string(),
-            Arc::new(Open {
-                session: Mutex::new(session),
-                stop: AtomicBool::new(false),
-            }),
-        );
+        // sessions of tabs from an earlier login go with it
+        self.close(id);
+        self.kept.lock().insert(id.to_string(), secret);
+        self.open.lock().insert(id.to_string(), Open::new(session));
         Ok(ConnectionInfo {
             id: id.to_string(),
             server_version,
         })
     }
 
+    /// Opens a session and makes it read only on the server when the profile says so.
+    fn connect_guarded(profile: &Profile, secret: Option<&Secret>) -> AppResult<Box<dyn Session>> {
+        let mut session = connect(profile, secret, &|| false)?;
+        if profile.protection == Protection::Readonly
+            && let Some(sql) = guard::read_only_statement(profile.kind)
+        {
+            // the server refuses writes too, whatever reaches it; a connection that cannot be made read
+            // only is not opened as one
+            session.query(sql, Limits::rows(1), &|| false)?;
+        }
+        Ok(session)
+    }
+
+    /// Closes a connection with the sessions of all its tabs; open transactions are rolled back by the
+    /// server.
     pub fn close(&self, id: &str) {
-        if let Some(open) = self.open.lock().remove(id) {
-            // a statement that still runs ends, then the session is dropped with its last owner
+        let prefix = format!("{id}#");
+        let mut all = self.open.lock();
+        let keys: Vec<String> = all
+            .keys()
+            .filter(|k| *k == id || k.starts_with(&prefix))
+            .cloned()
+            .collect();
+        for key in keys {
+            if let Some(open) = all.remove(&key) {
+                // a statement that still runs ends, then the session is dropped with its last owner
+                open.stop.store(true, Ordering::Relaxed);
+            }
+        }
+        drop(all);
+        self.kept.lock().remove(id);
+    }
+
+    /// The key of the session a tab runs on. Each tab has a session of its own, so its transaction is
+    /// its own; the connection itself keeps one for the app's questions (tree, export). The demo database
+    /// lives in memory: it has one session for everyone.
+    fn key(profile: &Profile, id: &str, tab: Option<&str>) -> AppResult<String> {
+        match tab {
+            Some(tab) if profile.database != sqlite::DEMO => {
+                let plain = !tab.is_empty()
+                    && tab.len() <= 64
+                    && tab
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+                if !plain {
+                    return Err(AppError::new(
+                        ErrorCode::InvalidQuery,
+                        "not the id of a tab",
+                    ));
+                }
+                Ok(format!("{id}#{tab}"))
+            }
+            _ => Ok(id.to_string()),
+        }
+    }
+
+    /// The session of a tab, opened when it is first needed – with the password the connection was
+    /// opened with. The connection itself must be open.
+    fn session_of(&self, id: &str, tab: Option<&str>) -> AppResult<(String, Arc<Open>, Profile)> {
+        let profile = self.find(id)?;
+        let key = Self::key(&profile, id, tab)?;
+        if let Some(open) = self.open.lock().get(&key).cloned() {
+            return Ok((key, open, profile));
+        }
+        if key == id || !self.open.lock().contains_key(id) {
+            return Err(AppError::new(
+                ErrorCode::NotConnected,
+                format!("„{id}“ is not connected"),
+            ));
+        }
+        let secret = self.kept.lock().get(id).cloned().flatten();
+        let session = Self::connect_guarded(&profile, secret.as_ref())?;
+        let open = Open::new(session);
+        self.open.lock().insert(key.clone(), open.clone());
+        Ok((key, open, profile))
+    }
+
+    /// Closes the session of a tab (its transaction is rolled back by the server).
+    pub fn close_session(&self, id: &str, tab: &str) {
+        let Ok(profile) = self.find(id) else {
+            return;
+        };
+        let Ok(key) = Self::key(&profile, id, Some(tab)) else {
+            return;
+        };
+        if key != id
+            && let Some(open) = self.open.lock().remove(&key)
+        {
             open.stop.store(true, Ordering::Relaxed);
         }
+    }
+
+    /// What the server said last about the transaction of a tab; `Idle` without a session.
+    pub fn tx_state(&self, id: &str, tab: Option<&str>) -> TxState {
+        let Ok(profile) = self.find(id) else {
+            return TxState::Idle;
+        };
+        let Ok(key) = Self::key(&profile, id, tab) else {
+            return TxState::Idle;
+        };
+        self.open
+            .lock()
+            .get(&key)
+            .map_or(TxState::Idle, |open| *open.tx.lock())
+    }
+
+    /// Runs one statement on the session of a tab; its rows go into `sink` as they arrive. In manual
+    /// mode a transaction is opened first when none is open – unless the statement is itself transaction
+    /// control. Returns how the statement ended and what the server says about the transaction afterwards.
+    pub fn run_in(
+        &self,
+        id: &str,
+        tab: Option<&str>,
+        sql: &str,
+        timeout: Option<std::time::Duration>,
+        sink: &mut dyn RowSink,
+        manual: bool,
+    ) -> (AppResult<Outcome>, TxState) {
+        let (key, open, profile) = match self.session_of(id, tab) {
+            Ok(found) => found,
+            Err(e) => return (Err(e), TxState::Idle),
+        };
+        let mut session = open.session.lock();
+        open.stop.store(false, Ordering::Relaxed);
+        let stop = || open.stop.load(Ordering::Relaxed);
+        let limits = Limits {
+            max_rows: MAX_ROWS,
+            timeout,
+        };
+        if manual
+            && *open.tx.lock() == TxState::Idle
+            && !guard::is_transaction_control(sql, profile.kind)
+            && let Err(e) =
+                session.query(super::begin_statement(profile.kind), Limits::rows(1), &stop)
+        {
+            return (Err(e), *open.tx.lock());
+        }
+        let result = session.execute(sql, limits, sink, &stop);
+        let lost = !session.is_open();
+        let tx = if lost {
+            TxState::Idle
+        } else {
+            session.transaction_state(&|| false)
+        };
+        *open.tx.lock() = tx;
+        let lost = lost || !session.is_open();
+        drop(session);
+        if lost {
+            // cancelled or broken: the session is gone, the next statement needs a new connection
+            let mut all = self.open.lock();
+            if all.get(&key).is_some_and(|o| Arc::ptr_eq(o, &open)) {
+                all.remove(&key);
+            }
+        }
+        (result, tx)
+    }
+
+    /// Ends the transaction of a tab; returns what the server says afterwards.
+    pub fn end_transaction(&self, id: &str, tab: Option<&str>, commit: bool) -> AppResult<TxState> {
+        let mut sink = VecSink::new(1);
+        let sql = if commit { "COMMIT" } else { "ROLLBACK" };
+        let (result, tx) = self.run_in(id, tab, sql, None, &mut sink, false);
+        result.map(|_| tx)
     }
 
     pub fn is_open(&self, id: &str) -> bool {
@@ -287,24 +451,7 @@ impl ConnectionManager {
         timeout: Option<std::time::Duration>,
         sink: &mut dyn RowSink,
     ) -> AppResult<Outcome> {
-        let open = self.opened(id)?;
-        let mut session = open.session.lock();
-        open.stop.store(false, Ordering::Relaxed);
-        let limits = Limits {
-            max_rows: MAX_ROWS,
-            timeout,
-        };
-        let result = session.execute(sql, limits, sink, &|| open.stop.load(Ordering::Relaxed));
-        let lost = !session.is_open();
-        drop(session);
-        if lost {
-            // cancelled or broken: the session is gone, the next statement needs a new connection
-            let mut all = self.open.lock();
-            if all.get(id).is_some_and(|o| Arc::ptr_eq(o, &open)) {
-                all.remove(id);
-            }
-        }
-        result
+        self.run_in(id, None, sql, timeout, sink, false).0
     }
 
     /// What a statement is and what it needs on a connection.
@@ -435,7 +582,18 @@ impl ConnectionManager {
 
     /// Stops the statement that runs on a connection (nothing happens when none does).
     pub fn cancel(&self, id: &str) {
-        if let Some(open) = self.open.lock().get(id) {
+        self.cancel_in(id, None);
+    }
+
+    /// Stops the statement that runs on the session of a tab.
+    pub fn cancel_in(&self, id: &str, tab: Option<&str>) {
+        let Ok(profile) = self.find(id) else {
+            return;
+        };
+        let Ok(key) = Self::key(&profile, id, tab) else {
+            return;
+        };
+        if let Some(open) = self.open.lock().get(&key) {
             open.stop.store(true, Ordering::Relaxed);
         }
     }
@@ -461,6 +619,129 @@ mod tests {
         let saved = m.save(p, None).unwrap();
         m.open(&saved.id, None).unwrap();
         saved.id
+    }
+
+    fn count(m: &ConnectionManager, id: &str, tab: &str) -> serde_json::Value {
+        let mut sink = VecSink::new(10);
+        let (r, _) = m.run_in(
+            id,
+            Some(tab),
+            "SELECT a FROM t ORDER BY a",
+            None,
+            &mut sink,
+            false,
+        );
+        r.unwrap();
+        serde_json::to_value(&sink.rows).unwrap()
+    }
+
+    fn run_tab(m: &ConnectionManager, id: &str, tab: &str, sql: &str, manual: bool) -> TxState {
+        let mut sink = VecSink::new(10);
+        let (r, tx) = m.run_in(id, Some(tab), sql, None, &mut sink, manual);
+        r.unwrap_or_else(|e| panic!("{sql}: {e}"));
+        tx
+    }
+
+    #[test]
+    fn a_change_in_manual_mode_is_the_tabs_own_until_it_commits() {
+        use serde_json::json;
+        let dir = tempdir().unwrap();
+        let (m, _) = manager(dir.path());
+        let id = protected(&m, dir.path(), Protection::Free);
+        assert_eq!(m.tx_state(&id, Some("a")), TxState::Idle);
+        // manual: the first statement opens a transaction
+        assert_eq!(
+            run_tab(&m, &id, "a", "UPDATE t SET a = 10 WHERE a = 1", true),
+            TxState::Active
+        );
+        assert_eq!(m.tx_state(&id, Some("a")), TxState::Active);
+        assert_eq!(count(&m, &id, "a"), json!([[2], [10]]));
+        // another tab does not see it
+        assert_eq!(count(&m, &id, "b"), json!([[1], [2]]));
+        assert_eq!(m.tx_state(&id, Some("b")), TxState::Idle);
+        // rolled back: never
+        assert_eq!(
+            m.end_transaction(&id, Some("a"), false).unwrap(),
+            TxState::Idle
+        );
+        assert_eq!(count(&m, &id, "b"), json!([[1], [2]]));
+        // again, and committed: there
+        run_tab(&m, &id, "a", "UPDATE t SET a = 10 WHERE a = 1", true);
+        assert_eq!(
+            m.end_transaction(&id, Some("a"), true).unwrap(),
+            TxState::Idle
+        );
+        assert_eq!(count(&m, &id, "b"), json!([[2], [10]]));
+    }
+
+    #[test]
+    fn the_state_follows_what_the_user_types() {
+        let dir = tempdir().unwrap();
+        let (m, _) = manager(dir.path());
+        let id = protected(&m, dir.path(), Protection::Free);
+        // auto-commit: nothing stays open
+        assert_eq!(
+            run_tab(&m, &id, "a", "UPDATE t SET a = 5 WHERE a = 1", false),
+            TxState::Idle
+        );
+        assert_eq!(run_tab(&m, &id, "a", "BEGIN", false), TxState::Active);
+        assert_eq!(
+            run_tab(&m, &id, "a", "SAVEPOINT s1", false),
+            TxState::Active
+        );
+        assert_eq!(
+            run_tab(&m, &id, "a", "ROLLBACK TO SAVEPOINT s1", false),
+            TxState::Active
+        );
+        assert_eq!(run_tab(&m, &id, "a", "COMMIT", false), TxState::Idle);
+        // manual mode sends a typed BEGIN as it is, not a second one before it
+        assert_eq!(run_tab(&m, &id, "a", "BEGIN", true), TxState::Active);
+        assert_eq!(run_tab(&m, &id, "a", "SELECT 1", true), TxState::Active);
+        assert_eq!(run_tab(&m, &id, "a", "ROLLBACK", true), TxState::Idle);
+        // a statement that fails in manual mode leaves the transaction it opened
+        let mut sink = VecSink::new(1);
+        let (r, tx) = m.run_in(&id, Some("a"), "SELECT * FROM nope", None, &mut sink, true);
+        assert!(r.is_err());
+        assert_eq!(tx, TxState::Active);
+        assert_eq!(m.tx_state(&id, Some("a")), TxState::Active);
+    }
+
+    #[test]
+    fn closing_a_session_or_the_connection_drops_what_was_open() {
+        use serde_json::json;
+        let dir = tempdir().unwrap();
+        let (m, _) = manager(dir.path());
+        let id = protected(&m, dir.path(), Protection::Free);
+        run_tab(&m, &id, "a", "DELETE FROM t WHERE a = 1", true);
+        m.close_session(&id, "a");
+        assert_eq!(m.tx_state(&id, Some("a")), TxState::Idle);
+        assert_eq!(count(&m, &id, "b"), json!([[1], [2]]));
+        // the connection itself is not a tab's to close
+        m.close_session(&id, "");
+        assert!(m.is_open(&id));
+        run_tab(&m, &id, "b", "DELETE FROM t WHERE a = 1", true);
+        m.close(&id);
+        let mut sink = VecSink::new(1);
+        let (r, _) = m.run_in(&id, Some("b"), "SELECT 1", None, &mut sink, false);
+        assert_eq!(r.unwrap_err().code, ErrorCode::NotConnected);
+        m.open(&id, None).unwrap();
+        assert_eq!(count(&m, &id, "c"), json!([[1], [2]]));
+        // a tab id is an id, nothing else
+        let (r, _) = m.run_in(&id, Some("../x"), "SELECT 1", None, &mut sink, false);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn the_demo_database_has_one_session_for_all_tabs() {
+        let dir = tempdir().unwrap();
+        let (m, _) = manager(dir.path());
+        m.open("demo", None).unwrap();
+        assert_eq!(
+            run_tab(&m, "demo", "a", "CREATE TABLE zz (a)", false),
+            TxState::Idle
+        );
+        // another tab sees the table: it is the same database in memory
+        run_tab(&m, "demo", "b", "INSERT INTO zz VALUES (1)", false);
     }
 
     #[test]
