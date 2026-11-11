@@ -2444,3 +2444,65 @@ fn every_server_inserts_and_deletes_rows() {
         run(&mut s, "DROP TABLE sc_rows");
     }
 }
+
+/// Review 032: after a statement for several new rows failed, its rows are tried one by one from a
+/// savepoint inside the same transaction. The statements the app uses for that must work where it uses
+/// them: PostgreSQL (whose transaction is aborted by the failure until it goes back) and SQL Server.
+#[test]
+#[ignore]
+fn a_failed_insert_can_be_tried_again_from_a_savepoint() {
+    let cases = [
+        (
+            pg(),
+            "BEGIN",
+            "SAVEPOINT sc_rows",
+            "ROLLBACK TO SAVEPOINT sc_rows",
+        ),
+        (
+            ms(),
+            "BEGIN TRANSACTION",
+            "SAVE TRANSACTION sc_rows",
+            "ROLLBACK TRANSACTION sc_rows",
+        ),
+    ];
+    for (p, begin, mark, back) in cases {
+        let kind = p.kind;
+        let mut s = open(&p);
+        run(&mut s, "DROP TABLE IF EXISTS sc_save");
+        run(
+            &mut s,
+            "CREATE TABLE sc_save (id int NOT NULL PRIMARY KEY, name varchar(20) NOT NULL)",
+        );
+        run(&mut s, begin);
+        run(&mut s, "INSERT INTO sc_save VALUES (1, 'before')");
+        run(&mut s, mark);
+        let failed = s.query(
+            "INSERT INTO sc_save VALUES (2, 'ok'), (3, NULL)",
+            Limits::rows(1),
+            &|| false,
+        );
+        assert!(failed.is_err(), "{kind:?}");
+        run(&mut s, back);
+        // the transaction goes on from the savepoint: what the plan did before is still there
+        run(&mut s, "INSERT INTO sc_save VALUES (2, 'ok')");
+        assert!(
+            s.query(
+                "INSERT INTO sc_save VALUES (3, NULL)",
+                Limits::rows(1),
+                &|| false
+            )
+            .is_err(),
+            "{kind:?}"
+        );
+        // and in the end nothing of it stays
+        if s.is_open() {
+            let _ = s.query("ROLLBACK", Limits::rows(1), &|| false);
+        }
+        assert_eq!(
+            rows(&run(&mut s, "SELECT COUNT(*) FROM sc_save")),
+            json!([[0]]),
+            "{kind:?}"
+        );
+        run(&mut s, "DROP TABLE sc_save");
+    }
+}

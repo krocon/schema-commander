@@ -529,6 +529,7 @@ export class FakeQueryApi extends QueryApi {
       done: plan.rows.length + (plan.deletes?.length ?? 0) + (plan.inserts?.length ?? 0),
       failed: null,
       failedKind: null,
+      failedSpan: 1,
       inserted: [],
       conflict: false,
       error: null,

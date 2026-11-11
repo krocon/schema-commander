@@ -183,6 +183,12 @@ export class EditService {
 
   /** Changes a cell of the buffer; the first change notes where the rows are from. */
   private change(tab: QueryTab, origin: string, f: (b: EditBuffer) => EditBuffer): void {
+    // while the buffer is being written nothing gets into it – whatever was started before (rows that
+    // were still being read): it would be dropped with the buffer, and reported as written
+    if (this.busy()) {
+      this.say(this.t.busy);
+      return;
+    }
     tab.edits.update((b) => {
       const next = f(b.origin === null ? { ...b, origin } : b);
       // a buffer that is empty again belongs nowhere
@@ -316,6 +322,10 @@ export class EditService {
     if (e.origin !== this.originNow(e.tab) || !this.belongs(e.tab)) return this.t.staleCell;
     const problem = validate(value, e.meta, e.info);
     if (problem) return this.problemText(problem, e.meta.typeName);
+    // the new row the field was opened for is gone (undone, removed): its value has no place
+    if (e.newId !== null && !e.tab.edits().inserts.some((r) => r.id === e.newId)) {
+      return this.t.staleCell;
+    }
     this.put(e.tab, e, value);
     this.cancel();
     return null;
@@ -470,6 +480,14 @@ export class EditService {
             if (typeof cell === 'string' && cell.length >= 1000) return;
             cells[c] = cell === null ? { kind: 'null' } : { kind: 'value', text: String(cell) };
           });
+          // the row as it is shown: with its changes that are not written yet
+          const key = rowKey(original, p.pk);
+          const changed = key !== null ? tab.edits().rows[key]?.cells : undefined;
+          for (const [c, value] of Object.entries(changed ?? {})) {
+            if (p.pk.includes(Number(c))) continue;
+            if (value.kind === 'default') delete cells[Number(c)];
+            else cells[Number(c)] = value;
+          }
           return cells;
         }),
         ...chosen.fresh.map((n) => ({ ...(inserts[n]?.cells ?? {}) })),
@@ -754,6 +772,16 @@ export class EditService {
     const connection = tab.connectionId();
     this.busy.set(true);
     try {
+      // rows that go do not come back: said once more before they are written
+      const deleting = planned.plan.deletes?.length ?? 0;
+      if (deleting > 0) {
+        const yes = await this.confirm.ask({
+          title: this.t.deleteTitle,
+          message: this.t.deleteQuestion(deleting, planned.view.table),
+          confirm: this.t.deleteYes,
+        });
+        if (!yes) return false;
+      }
       const statements = await this.api.editPreview(connection, planned.plan);
       const sqls = statements.map((s) => s.sql);
       // the guard of the connection: the backend decides; here the user is asked where it wants that
@@ -791,13 +819,13 @@ export class EditService {
         return false;
       }
       if (applied.failed === null && !applied.error && applied.done === sqls.length) {
-        const counts = editCount(tab.edits());
         this.discard(tab);
+        // what was sent, not what the buffer holds: a row changed and deleted counts as deleted
         this.say(
           this.t.writtenAll(
-            counts.deletes,
-            counts.rows,
-            counts.inserts,
+            planned.plan.deletes?.length ?? 0,
+            planned.plan.rows.length,
+            planned.plan.inserts?.length ?? 0,
             applied.inserted.slice(0, 20),
           ),
         );
@@ -817,7 +845,11 @@ export class EditService {
         if (n >= 0) {
           mark = `new:${id}`;
           row = current.rows + n;
-          what = this.t.newRowN(n + 1);
+          // a statement for several new rows failed and the row could not be told: all of them
+          what =
+            applied.failedSpan > 1
+              ? this.t.newRowsSpan(n + 1, n + applied.failedSpan)
+              : this.t.newRowN(n + 1);
         }
       } else if (at !== null) {
         const key = (applied.failedKind === 'delete' ? planned.deleteKeys : planned.keys)[at];
@@ -829,8 +861,17 @@ export class EditService {
         }
       }
       tab.edits.update((b) => ({ ...b, failed: mark }));
-      if (applied.conflict) this.say(mark !== null ? this.t.conflict(what) : this.t.conflictSome);
-      else if (applied.error && mark !== null) {
+      if (applied.conflict) {
+        // only a changed row can have been „changed by someone else“; a delete or an insert that did
+        // not do its one row may as well have been turned away by a trigger or a rule
+        this.say(
+          mark === null
+            ? this.t.conflictSome
+            : applied.failedKind === 'update' || applied.failedKind === null
+              ? this.t.conflict(what)
+              : this.t.notOneRow(what),
+        );
+      } else if (applied.error && mark !== null) {
         this.say(this.t.failed(what, describeError(toAppError(applied.error))));
       } else this.say(this.t.notWritten(describeError(toAppError(applied.error ?? {}))));
       if (row >= 0) tab.grid?.goTo(row, null);

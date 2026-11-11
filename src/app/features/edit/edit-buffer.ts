@@ -308,13 +308,19 @@ export function pasteBlock(
   let skipped = 0;
   const after = asOneStep(buffer, (start) => {
     let b = start;
+    // the new rows are written into a copy of their list, once – not cell by cell (a block has
+    // thousands of rows)
+    const inserts = [...start.inserts];
+    let nextId = start.nextId;
+    let touched = false;
     block.forEach((line, n) => {
       const values = target.columns
         .slice(0, line.length)
         .map((c, i) => [c, textToValue(line[i], columns[c])] as const);
       const row = target.existing[n];
       if (row) {
-        if (row.key === null) {
+        // a row without a usable key, or one that is to be deleted, is left alone
+        if (row.key === null || b.deletes[row.key]) {
           skipped++;
           return;
         }
@@ -325,17 +331,18 @@ export function pasteBlock(
         return;
       }
       const at = target.firstNew + (n - target.existing.length);
-      let id = b.inserts[at]?.id;
-      if (id === undefined) {
-        const made = addRows(b, [{}]);
-        b = made.buffer;
-        id = made.ids[0];
+      const have = inserts[at];
+      const next = { ...(have?.cells ?? {}) };
+      for (const [c, value] of values) next[c] = value;
+      if (have) inserts[at] = { id: have.id, cells: next };
+      else {
+        inserts[at] = { id: nextId++, cells: next };
         added++;
       }
-      for (const [c, value] of values) b = setNewCell(b, id, c, value);
+      touched = true;
       cells += values.length;
     });
-    return b;
+    return touched ? { ...b, inserts, nextId } : b;
   });
   return { buffer: after, cells, added, skipped };
 }
@@ -354,7 +361,10 @@ export function invalidCells(
       if (problem) out.set(`${id}|${c}`, problem);
     }
   };
-  for (const [key, edit] of Object.entries(buffer.rows)) check(key, edit.cells);
+  for (const [key, edit] of Object.entries(buffer.rows)) {
+    // a row that is to be deleted is not changed: what its cells hold in the buffer is never written
+    if (!buffer.deletes[key]) check(key, edit.cells);
+  }
   for (const row of buffer.inserts) check(`new:${row.id}`, row.cells);
   return out;
 }

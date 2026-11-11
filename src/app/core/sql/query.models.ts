@@ -322,6 +322,11 @@ export interface Applied {
   readonly failed: number | null;
   /** Whether that row was to be deleted, changed or inserted. */
   readonly failedKind: EditKind | null;
+  /**
+   * How many rows from `failed` on it could have been: 1 when the row is known, more when a statement
+   * for several new rows failed and the row could not be told.
+   */
+  readonly failedSpan: number;
   /** The keys the database gave new rows, where it reports them (PostgreSQL, SQLite). */
   readonly inserted: readonly string[];
   /** It changed no row or several: the row is not what it was when it was read. */

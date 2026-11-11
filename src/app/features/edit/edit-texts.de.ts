@@ -85,6 +85,13 @@ export const EDIT_DE: Translation<typeof EDIT_EN> = {
       : `${cells} geänderte Zellen sind nicht geschrieben. Sie gehen verloren, wenn du weitermachst.`,
   discardYes: 'Verwerfen',
   rowN: (n) => `Zeile ${n}`,
+  newRowsSpan: (from, to) => `Neue Zeilen ${from}–${to} (eine davon)`,
+  notOneRow: (what) =>
+    `${what} hat nicht genau eine Zeile ergeben: Sie wurde geändert oder ist weg, oder ein Trigger oder eine Regel hat die Anweisung abgewiesen. Nichts wurde geschrieben.`,
+  deleteTitle: 'Zeilen löschen?',
+  deleteQuestion: (n, table) =>
+    n === 1 ? `1 Zeile von ${table} wird gelöscht.` : `${n} Zeilen von ${table} werden gelöscht.`,
+  deleteYes: 'Löschen und schreiben',
   newRowN: (n) => `Neue Zeile ${n}`,
   rowDeleted:
     'Diese Zeile ist zum Löschen vorgemerkt: erst die Marke wegnehmen, um sie zu bearbeiten.',

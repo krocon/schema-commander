@@ -11,11 +11,11 @@
 | E2 | Neue Zeile | `EDIT_ADD_ROW` (`Mod+Umschalt+I`): unter den Zeilen der Tabelle, grün, jede Zelle zeigt `DEFAULT`, bis sie einen Wert hat; `+` statt Zeilennummer. Bearbeitet wie jede Zelle (`F2`). Pflichtspalten werden **nicht** eigens markiert: Was fehlt, sagt die Datenbank beim Schreiben, die Zeile ist dann markiert | siehe „Nicht umgesetzt“ |
 | E3 | Duplizieren | `EDIT_DUPLICATE_ROW` (`Mod+Umschalt+D`): die markierten Zeilen (oder die des Cursors) als neue Zeilen, **ohne die Schlüsselspalten**. Binärdaten und Texte ab 1000 Zeichen (in der Zeile gekürzt) bleiben der Datenbank überlassen | Aufgabe 2 |
 | E4 | Löschen | `EDIT_DELETE_ROW` (`Mod+⌫`): Zeilen werden rot und durchgestrichen **vorgemerkt** (noch einmal: Marke weg); neue Zeilen des Puffers verschwinden einfach. Geschrieben als `DELETE` über den Schlüssel – mit Sperre zusätzlich über **alle vergleichbaren Zellen** der Zeile, wie sie gelesen wurde – und „genau eine Zeile“. Der Fehler eines Fremdschlüssels erscheint mit dem Text der Datenbank (sie nennt die verweisende Tabelle), die Zeile ist markiert | Aufgabe 3 |
-| E5 | Block einfügen | `Mod+V` im Gitter (das `paste`-Ereignis; im Menü liest das Backend die Zwischenablage): ab der Zelle des Cursors nach rechts über die **gezeigten** Spalten und nach unten über die Zeilen der Tabelle, danach in neue Zeilen (vorhandene neue zuerst, dann weitere). Parser rein: Tabs (Tabellenkalkulation, mit `"…"` für Zellen mit Umbruch), sonst CSV mit `,` oder `;`. Leere Zelle = `NULL`, in Textspalten leerer Text. Über 200 Zellen fragt ein Dialog mit Zeilen × Spalten, überschriebenen und neuen Zeilen. **Ungültige Werte** werden übernommen und markiert; geschrieben wird erst, wenn keiner mehr markiert ist | Aufgabe 4 |
+| E5 | Block einfügen | `Mod+V` im Gitter (das `paste`-Ereignis; im Menü liest das Backend die Zwischenablage): ab der Zelle des Cursors nach rechts über die **gezeigten** Spalten und nach unten über die Zeilen der Tabelle, danach in neue Zeilen (vorhandene neue zuerst, dann weitere). Parser rein: Tabs (Tabellenkalkulation, mit `"…"` für Zellen mit Umbruch); ohne Tab ist jede Zeile eine Zelle – ein Trenner wird nie geraten. Leere Zelle = `NULL`, in Textspalten leerer Text. Über 200 Zellen fragt ein Dialog mit Zeilen × Spalten, überschriebenen und neuen Zeilen. **Ungültige Werte** werden übernommen und markiert; geschrieben wird erst, wenn keiner mehr markiert ist | Aufgabe 4 |
 | E6 | Füllen | `EDIT_FILL_DOWN` (`Mod+D`): je markierter Spalte der Wert der obersten Zelle in die Zellen darunter. „Auf NULL“/„Default“ wirken auf alle markierten Zellen. Kein Ziehen mit der Maus | Aufgabe 5 |
 | E7 | **Reihenfolge** | Im Backend fest: **Löschen, Ändern, Einfügen**, in einer Transaktion. So kann eine neue Zeile den eindeutigen Wert einer gelöschten übernehmen. Eine Zeile, die geändert **und** gelöscht ist, wird gelöscht. Die Vorschau nennt die drei Anzahlen und zeigt die Anweisungen in dieser Reihenfolge | Aufgabe 6 |
 | E8 | **Bündeln** | Aufeinanderfolgende neue Zeilen mit **denselben Spalten** teilen sich ein `INSERT … VALUES (…), (…)` – bis 200 Zeilen und 2000 Werte. Zellen im Default werden gar nicht genannt (SQLite kennt kein `DEFAULT` in `VALUES`); eine Zeile ganz ohne Werte ist `DEFAULT VALUES` bzw. `() VALUES ()`. Jede Anweisung muss so viele Zeilen ändern, wie sie abdeckt | Aufgabe 7; 5000 Zeilen = 25 Anweisungen |
-| E9 | Fehler in einem Bündel | Die Transaktion ist dann zurückgerollt. Um die Zeile zu nennen, laufen die Zeilen dieses Bündels **einzeln in einer zweiten Transaktion, die immer zurückgerollt wird** – geschrieben wird dabei nichts | Akzeptanzkriterium 1 „die Zelle ist markiert“ (markiert ist die Zeile) |
+| E9 | Fehler in einem Bündel | Vor einem geteilten `INSERT` steht ein Savepoint; nach einem Fehler laufen seine Zeilen von dort **einzeln in derselben Transaktion**, die danach zurückgerollt wird – geschrieben wird dabei nichts (nicht bei MySQL, siehe Review) | Akzeptanzkriterium 1 „die Zelle ist markiert“ (markiert ist die Zeile) |
 | E10 | Vergebene Schlüssel | PostgreSQL und SQLite: `RETURNING` der ersten Schlüsselspalte, die Statuszeile nennt die Schlüssel („Neue Schlüssel: 6, 7“). Danach wird die Tabelle ohnehin neu gelesen und zeigt die Zeilen mit ihrer Id, soweit Filter und Grenze sie zeigen | Akzeptanzkriterium 2 |
 | E11 | Grenzen | 20 000 Zeilen je Schreiben (gelöscht + geändert + neu), 20 000 Zeilen je eingefügtem Block | |
 
@@ -33,6 +33,8 @@
   eindeutigen Namen der gelöschten übernimmt; vergebene Schlüssel zurück; 450 neue Zeilen, Zeile 318 verletzt
   `NOT NULL` → **nichts** geschrieben, Zeile 318 benannt; Löschen einer Zeile, die es nicht mehr gibt → Konflikt,
   auch das Einfügen daneben nicht; **5000 neue Zeilen in unter 5 s** (Debug-Build).
+- **Gegen echte Server**, nach dem Review: Savepoint, Zurück zum Savepoint und Weiterarbeiten nach einem
+  gescheiterten `INSERT` in PostgreSQL und SQL Server. Ganze Treiber-Suite: 34 Tests grün.
 - **Gegen echte Server** (PostgreSQL, MySQL, MariaDB, SQL Server; `every_server_inserts_and_deletes_rows`):
   geteiltes `INSERT` meldet alle Zeilen, Zeile aus lauter Defaults, `RETURNING` in PostgreSQL, Identity-Spalten;
   Löschen genau einer Zeile, einer fehlenden (0), mit nicht passender Sperre (0), und einer Zeile, auf die ein
@@ -48,6 +50,40 @@
   gemeldet, Tabelle neu gelesen.
 - **Review durch einen zweiten Agenten**: siehe unten.
 - `pnpm check` grün.
+
+## Review (zweiter Agent, nur lesend: Datenverlust, Reihenfolge, Transaktion)
+
+Kein schwerer Befund: kein Weg, auf dem eine Anweisung mit falscher Zeilenzahl geschrieben bleibt oder der Puffer
+in eine andere Tabelle geht; die Korrekturen aus dem Review zu 031 halten. Fünf mittlere Befunde, alle behoben
+(roter Test zuerst):
+
+| Befund | Behoben |
+|---|---|
+| **M1** Ohne Tab im Text wurde ein Trenner geraten: eine Spalte `1,5` oder `Smith, John` lief in die Nachbarspalte | Es wird nicht mehr geraten: ohne Tab ist jede Zeile eine Zelle. CSV wird hier nicht gelesen (das ist der Import, 033) |
+| **M2** Eine Zelle, die nur mit `"` beginnt, verschluckte die Zellen dahinter | Ein Anführungszeichen umschließt nur, wenn das schließende am Ende der Zelle steht; sonst ist es ein Zeichen |
+| **M3/M4** Die Suche nach der fehlerhaften Zeile eines Bündels lief in einer zweiten Transaktion: im falschen Zustand (ohne die Löschungen und Änderungen des Plans → falsche Zeile, falscher Fehler) und auf MySQL-Tabellen ohne Transaktionen mit doppelt geschriebenen Zeilen | Vor einem geteilten `INSERT` ein **Savepoint**; nach einem Fehler werden seine Zeilen von dort einzeln versucht – in derselben Transaktion, die danach wie nach jedem Fehler zurückgerollt wird. Nicht bei MySQL und nicht nach Abbruch oder Zeitlimit: dann nennt die Meldung „Neue Zeilen a–b (eine davon)“. Geprüft gegen PostgreSQL und SQL Server |
+| **M5** Ungültige Werte in Zeilen, die zum Löschen vorgemerkt sind, sperrten das Schreiben, ohne markiert zu sein | Solche Zeilen zählen bei der Prüfung nicht, und ein eingefügter Block lässt sie aus |
+| L1 Zeilen-Aktionen, die noch Zeilen lasen, schrieben während des Schreibens in den Puffer; die Erfolgsmeldung zählte aus dem Puffer | Der Puffer nimmt während des Schreibens an der einen zentralen Stelle nichts an; gezählt wird, was gesendet wurde |
+| L2 Duplizieren nahm die Zeile, wie sie gelesen wurde, nicht wie sie gezeigt ist | mit den ungeschriebenen Änderungen |
+| L3 Kein Nachfragen vor dem Schreiben von Löschungen | Vor jedem Schreiben mit Löschungen eine Rückfrage mit der Anzahl |
+| L5 „von jemand anderem geändert“ auch, wenn ein `DELETE` oder `INSERT` nicht genau seine Zeile ergab | eigene Meldung (geändert, weg, oder von Trigger/Regel abgewiesen) |
+| L8 Wert für eine neue Zeile, die inzwischen weg ist, ging still verloren | wird am Feld gemeldet |
+| Tempo: Einfügen kopierte je Zelle die Liste der neuen Zeilen (20 000 Zeilen: 6 s) | neue Zeilen werden in einem Zug geschrieben; 20 000 × 3 Zellen unter 2 s (Test) |
+
+**Bleibt, wie es ist – für Marc zu wissen:**
+
+- Die **Reihenfolge innerhalb einer Art** ist die der Zeilen: Zwei Zeilen, die eindeutige Werte tauschen, oder
+  Eltern- und Kindzeile derselben Tabelle in „falscher“ Reihenfolge werden abgelehnt (alles zurückgerollt), obwohl
+  eine andere Reihenfolge ginge.
+- Die **Sperre beim Löschen** über alle vergleichbaren Zellen kann fälschlich einen Konflikt melden, wo Text und
+  Wert nie gleich sind (SQLite-Spalten ohne Typ, MySQL `bit`). Abhilfe: die Sperre ausschalten.
+- Die **Prüfung vor dem Schreiben** lehnt einige Werte ab, die eine Datenbank nähme (`NaN` in PostgreSQL-`numeric`,
+  `on`/`off` als Bool, Datum mit Zeit in einer SQLite-`DATE`-Spalte) – aus dem Gitter lassen sie sich nicht schreiben.
+- Eine markierte **ganze Zeile** meint bei „NULL“/„Füllen“ alle gezeigten Spalten, wenn Spalten versteckt oder
+  umsortiert sind, sonst nur die Spalte des Cursors.
+- NULL aus dem Gitter kopiert und wieder eingefügt wird in Textspalten zum leeren Text.
+- Duplizieren kopiert auch generierte Spalten, die nicht zum Schlüssel gehören; das `INSERT` wird dann abgelehnt,
+  bis die Zelle auf „Default“ steht.
 
 ## Nicht umgesetzt, nicht geprüft
 

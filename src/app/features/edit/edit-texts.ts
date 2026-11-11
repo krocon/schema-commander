@@ -82,6 +82,13 @@ export const EDIT_EN = {
       : `${cells} changed cells are not written. They are lost if you go on.`,
   discardYes: 'Discard',
   rowN: (n: number) => `Row ${n}`,
+  newRowsSpan: (from: number, to: number) => `New rows ${from}–${to} (one of them)`,
+  notOneRow: (what: string) =>
+    `${what} did not come out as exactly one row: it was changed or is gone, or a trigger or rule turned the statement away. Nothing was written.`,
+  deleteTitle: 'Delete rows?',
+  deleteQuestion: (n: number, table: string) =>
+    n === 1 ? `1 row of ${table} is deleted.` : `${n} rows of ${table} are deleted.`,
+  deleteYes: 'Delete and write',
   newRowN: (n: number) => `New row ${n}`,
   rowDeleted: 'This row is marked to be deleted: take the mark away to edit it.',
   tooManyRows: (max: number) => `More than ${max} rows marked.`,

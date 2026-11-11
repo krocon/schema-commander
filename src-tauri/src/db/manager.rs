@@ -124,6 +124,9 @@ pub struct Applied {
     pub failed: Option<usize>,
     /// Whether that row was to be deleted, changed or inserted.
     pub failed_kind: Option<super::edit::StepKind>,
+    /// How many rows from `failed` on it may have been: 1 when the row is known; more when a statement
+    /// for several new rows failed and the row could not be told.
+    pub failed_span: usize,
     /// The keys the database gave new rows, where it reports them (PostgreSQL, SQLite), in their order.
     pub inserted: Vec<String>,
     /// It changed no row or several: the row is not what it was when it was read.
@@ -673,7 +676,8 @@ impl ConnectionManager {
     /// As [`ConnectionManager::apply_updates`], for the statements of a whole plan (prompt 032): rows
     /// deleted, changed and inserted. A statement must change exactly the rows it covers. When an
     /// `INSERT` for several rows fails, `singles(first, rows)` gives one statement per row: they are
-    /// tried in a transaction that is rolled back, only to say which row it was.
+    /// tried from a savepoint inside the same transaction – which is then rolled back like after any
+    /// failure – only to say which row it was.
     pub fn apply_steps(
         &self,
         id: &str,
@@ -699,6 +703,7 @@ impl ConnectionManager {
             done: 0,
             failed: None,
             failed_kind: None,
+            failed_span: 1,
             inserted: Vec::new(),
             conflict: false,
             error: None,
@@ -718,10 +723,21 @@ impl ConnectionManager {
         let mut problem = session
             .query(super::begin_statement(profile.kind), Limits::rows(1), &stop)
             .err();
-        // the shared INSERT that failed: its rows are tried one by one afterwards, to name the row
-        let mut probe: Option<&super::edit::Step> = None;
+        // A shared INSERT that fails does not say for which of its rows. Where the database can go back
+        // to a point inside a transaction, such a statement gets one before it; after a failure its rows
+        // are tried one by one from there – in the same transaction, so with everything the plan did
+        // before – and then everything is rolled back as after any failure. MySQL is left out: on a
+        // table without transactions the rows tried would stay.
+        let (mark, back) = match profile.kind {
+            DbKind::Sqlserver => ("SAVE TRANSACTION sc_rows", "ROLLBACK TRANSACTION sc_rows"),
+            _ => ("SAVEPOINT sc_rows", "ROLLBACK TO SAVEPOINT sc_rows"),
+        };
+        let can_probe = profile.kind != DbKind::Mysql;
         if problem.is_none() {
             for step in steps {
+                let marked = can_probe
+                    && step.rows > 1
+                    && session.query(mark, Limits::rows(1), &stop).is_ok();
                 let mut sink = VecSink::new(super::edit::MAX_BATCH_ROWS + 1);
                 let ran = session.execute_bound(
                     &step.built.sql,
@@ -742,6 +758,7 @@ impl ConnectionManager {
                             // not the rows it covers: the row is not what it was when it was read
                             applied.failed = Some(step.first);
                             applied.failed_kind = Some(step.kind);
+                            applied.failed_span = step.rows;
                             applied.conflict = true;
                             break;
                         }
@@ -759,9 +776,32 @@ impl ConnectionManager {
                     Err(e) => {
                         applied.failed = Some(step.first);
                         applied.failed_kind = Some(step.kind);
+                        // until a row is found, it may be any row of the statement
+                        applied.failed_span = step.rows;
+                        let stopped = matches!(e.code, ErrorCode::Cancelled | ErrorCode::Timeout);
                         problem = Some(e);
-                        if step.rows > 1 {
-                            probe = Some(step);
+                        if marked
+                            && !stopped
+                            && session.is_open()
+                            && session.query(back, Limits::rows(1), &stop).is_ok()
+                            && let Ok(rows) = singles(step.first, step.rows)
+                        {
+                            for (i, single) in rows.iter().enumerate() {
+                                let mut sink = VecSink::new(1);
+                                if let Err(e) = session.execute_bound(
+                                    &single.sql,
+                                    &single.params,
+                                    limits,
+                                    &mut sink,
+                                    &stop,
+                                ) {
+                                    // this row, with what the database says about it
+                                    applied.failed = Some(step.first + i);
+                                    applied.failed_span = 1;
+                                    problem = Some(e);
+                                    break;
+                                }
+                            }
                         }
                         break;
                     }
@@ -805,31 +845,6 @@ impl ConnectionManager {
         if end == "ROLLBACK" || problem.is_some() {
             applied.done = 0;
             applied.inserted.clear();
-        }
-        // which row of the shared INSERT was it? Its rows one by one, in a transaction that is rolled
-        // back whatever happens – nothing of this is written
-        if let Some(step) = probe
-            && session.is_open()
-            && applied.tx == TxState::Idle
-            && let Ok(rows) = singles(step.first, step.rows)
-            && session
-                .query(super::begin_statement(profile.kind), Limits::rows(1), &stop)
-                .is_ok()
-        {
-            for (i, single) in rows.iter().enumerate() {
-                let mut sink = VecSink::new(1);
-                if let Err(e) =
-                    session.execute_bound(&single.sql, &single.params, limits, &mut sink, &stop)
-                {
-                    applied.failed = Some(step.first + i);
-                    problem = Some(e);
-                    break;
-                }
-            }
-            if session.is_open() {
-                let _ = session.query("ROLLBACK", Limits::rows(1), &|| false);
-                applied.tx = session.transaction_state(&|| false);
-            }
         }
         applied.error = problem;
         *open.tx.lock() = applied.tx;
@@ -1358,8 +1373,52 @@ mod tests {
             (Some(317), Some(StepKind::Insert))
         );
         assert!(broken.error.is_some() && !broken.conflict);
+        assert_eq!(broken.failed_span, 1);
         assert_eq!(broken.tx, TxState::Idle);
         assert_eq!(names(), json!([[2, "zwei"], [3, "one"], [4, "three"]]));
+
+        // review 032: the rows of a failed statement are tried in the state the plan had made – a new
+        // row may take the name a deleted row gave up, and is not blamed for it
+        run_tab(&m, &id, "b", "INSERT INTO p VALUES (50, 'held')", false);
+        let mut reuse: Vec<RowInsert> = (0..5).map(|i| new_row(Some(&format!("r{i}")))).collect();
+        reuse[0] = new_row(Some("held"));
+        reuse[3] = new_row(None);
+        let plan = UpdatePlan {
+            table: "p".into(),
+            deletes: vec![RowDelete {
+                key: vec![cell("id", "50")],
+                expect: vec![],
+            }],
+            inserts: reuse,
+            ..UpdatePlan::default()
+        };
+        let state = apply(&plan);
+        assert_eq!(
+            (state.done, state.failed, state.failed_span),
+            (0, Some(3), 1)
+        );
+        assert!(
+            state
+                .error
+                .as_ref()
+                .is_some_and(|e| e.message.contains("NOT NULL")),
+            "{:?}",
+            state.error
+        );
+        assert_eq!(state.tx, TxState::Idle);
+        // nothing of it stayed: the row to delete is still there, no tried row is
+        let mut sink = VecSink::new(10);
+        let (r, _) = m.run_in(
+            &id,
+            Some("b"),
+            "SELECT name FROM p WHERE id = 50 OR name LIKE 'r%'",
+            None,
+            &mut sink,
+            false,
+        );
+        r.unwrap();
+        assert_eq!(serde_json::to_value(&sink.rows).unwrap(), json!([["held"]]));
+        run_tab(&m, &id, "b", "DELETE FROM p WHERE id = 50", false);
 
         // a row to delete that is gone already: a conflict, nothing else is written either
         let plan = UpdatePlan {

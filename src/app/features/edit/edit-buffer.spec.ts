@@ -299,6 +299,38 @@ describe('edit-buffer', () => {
     expect(noKey.buffer).toBe(EMPTY_BUFFER);
   });
 
+  it('leaves rows that are to be deleted out of a paste and out of the check (review 032)', () => {
+    const gone = toggleDeleted(EMPTY_BUFFER, [{ key: key(0), row: 0, original: ROWS[0] }]);
+    const target = {
+      existing: [0, 1].map((r) => ({ key: key(r), row: r, original: ROWS[r] })),
+      firstNew: 0,
+      columns: [2],
+    };
+    const pasted = pasteBlock(gone, [['abc'], ['def']], target, COLUMNS);
+    expect(pasted).toMatchObject({ cells: 1, skipped: 1 });
+    expect(marksOf(pasted.buffer)!.at(0, 2)).toBeNull();
+    // a bad value in a row that is deleted afterwards blocks nothing: it is never written
+    const info = COLUMNS.map(() => undefined);
+    expect(invalidCells(pasted.buffer, COLUMNS, info).size).toBe(1);
+    const both = toggleDeleted(pasted.buffer, [{ key: key(1), row: 1, original: ROWS[1] }]);
+    expect(invalidCells(both, COLUMNS, info).size).toBe(0);
+  });
+
+  it('pastes many rows in a time one can wait (review 032)', () => {
+    const block = Array.from({ length: 20_000 }, (_, i) => [`n${i}`, String(i), 'x']);
+    const start = performance.now();
+    const pasted = pasteBlock(
+      EMPTY_BUFFER,
+      block,
+      { existing: [], firstNew: 0, columns: [1, 2, 3] },
+      COLUMNS,
+    );
+    expect(performance.now() - start).toBeLessThan(2000);
+    expect(pasted).toMatchObject({ cells: 60_000, added: 20_000 });
+    expect(pasted.buffer.undo).toHaveLength(1);
+    expect(marksOf(pasted.buffer)!.newAt(19_999, 1)).toEqual(v('n19999'));
+  });
+
   it('remembers which row failed until it is changed again', () => {
     let b = edit(EMPTY_BUFFER, 0, 1, v('Eve'));
     b = { ...b, failed: key(0) };

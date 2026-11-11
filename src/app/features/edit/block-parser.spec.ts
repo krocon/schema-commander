@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_BLOCK_ROWS, parseBlock, separatorOf } from './block-parser';
+import { MAX_BLOCK_ROWS, parseBlock } from './block-parser';
 
 describe('block-parser', () => {
   it('reads what a spreadsheet copies: tabs, and a last line break that is no row', () => {
@@ -24,15 +24,23 @@ describe('block-parser', () => {
     expect(parseBlock('""\tx').rows).toEqual([['', 'x']]);
   });
 
-  it('reads CSV with commas or semicolons when there is no tab', () => {
-    expect(separatorOf('a,b;c,d')).toBe(',');
-    expect(separatorOf('a;b;c,d')).toBe(';');
-    expect(separatorOf('a,b\tc')).toBe('\t');
-    expect(parseBlock('id,name\n1,"Smith, J."').rows).toEqual([
-      ['id', 'name'],
-      ['1', 'Smith, J.'],
+  it('never guesses a separator: without a tab every line is one cell (review 032)', () => {
+    // one column of a spreadsheet: decimal commas and names with commas stay one cell
+    expect(parseBlock('1,5\n2,7').rows).toEqual([['1,5'], ['2,7']]);
+    expect(parseBlock('Smith, John\nDoe; Jane').rows).toEqual([['Smith, John'], ['Doe; Jane']]);
+  });
+
+  it('takes a quote for a quote unless it wraps the whole cell (review 032)', () => {
+    // a cell that only starts with a quote does not swallow the cells behind it
+    expect(parseBlock('"Hello\tb\nnext\tc').rows).toEqual([
+      ['"Hello', 'b'],
+      ['next', 'c'],
     ]);
-    expect(parseBlock('1;2,5;x').rows).toEqual([['1', '2,5', 'x']]);
+    expect(parseBlock('"abc" def\tx').rows).toEqual([['"abc" def', 'x']]);
+    // quoted to the end of the cell: the quotes go
+    expect(parseBlock('"a\tb"\t"c"').rows).toEqual([['a\tb', 'c']]);
+    expect(parseBlock('"say ""hi"""').rows).toEqual([['say "hi"']]);
+    expect(parseBlock('"open to the end').rows).toEqual([['"open to the end']]);
   });
 
   it('takes no more rows than its limit and says so', () => {
