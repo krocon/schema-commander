@@ -325,6 +325,9 @@ const EDITOR_MIN_W = 160;
       overflow-wrap: anywhere;
     }
     .log .values {
+      /* a line of its own under the statement: values can be long */
+      grid-column: 2 / -1;
+      grid-row: 2;
       color: var(--text-dim);
       font-family: var(--font-mono);
       font-size: 12px;

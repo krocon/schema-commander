@@ -31,6 +31,9 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   OS and an editor for your own shortcuts (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>S</kbd>)
 - Split view: two tab groups side by side or stacked, each tab on its own connection; the result below or beside
   the editor, hidden or maximised; the sidebar shows connections and schema or the history; a zen mode
+- Parameters: `WHERE customer_id = :kunde AND id IN (:ids)` asks for the values when it runs, remembers them per
+  tab and sends them bound – a value never becomes part of the SQL text. `:name`, `${name}`, `?`, `$1` …, set per
+  connection; run again with the same values with <kbd>Ctrl/⌘</kbd>+<kbd>Alt</kbd>+<kbd>Enter</kbd>
 - Saved queries: plain `.sql` files in a folder of your choice (share them with Git, edit them anywhere), with
   name, description and tags in a comment header; a sidebar view with folders, search over names and texts and a
   preview; `q:` in “go to anything”. Snippets: `sel` + <kbd>Tab</kbd> becomes a statement with placeholders to

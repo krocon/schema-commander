@@ -71,6 +71,8 @@ export interface ParamUse {
   /** Offsets in the statement (UTF-16); `end` is behind its last character. */
   readonly start: number;
   readonly end: number;
+  /** It stands alone in the brackets of an `IN (…)`: a value of type `auto` is a list there. */
+  readonly list: boolean;
 }
 
 const glued = (a: Token | undefined, b: Token | undefined) => !!a && !!b && a.end === b.start;
@@ -105,7 +107,8 @@ export function findParams(sql: string, dialect: Dialect, forms: readonly ParamF
   const tokens = lex(sql, dialect);
   const on = new Set(forms);
   const own = on.has('at') ? variables(tokens) : new Set<string>();
-  const uses: ParamUse[] = [];
+  const found: Omit<ParamUse, 'list'>[] = [];
+  const uses = { push: (use: Omit<ParamUse, 'list'>) => found.push(use) };
   let anonymous = 0;
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
@@ -166,7 +169,36 @@ export function findParams(sql: string, dialect: Dialect, forms: readonly ParamF
       }
     }
   }
-  return uses;
+  return found.map((use) => {
+    const first = tokens.findIndex((t) => t.start === use.start);
+    const last = tokens.findIndex((t) => t.end === use.end);
+    const open = tokens[first - 1];
+    const before = tokens[first - 2];
+    const list =
+      isSign(open, '(') &&
+      before?.kind === 'word' &&
+      before.value === 'IN' &&
+      isSign(tokens[last + 1], ')');
+    return { ...use, list };
+  });
+}
+
+/** The keys of the parameters that stand in an `IN (…)` somewhere in the statements. */
+export function listKeys(
+  sqls: readonly string[],
+  dialect: Dialect,
+  forms: readonly ParamForm[],
+): Set<string> {
+  const keys = new Set<string>();
+  for (const sql of sqls) {
+    for (const use of findParams(sql, dialect, forms)) if (use.list) keys.add(use.key);
+  }
+  return keys;
+}
+
+/** A value where it is used: `auto` in the brackets of an `IN` is a list. */
+export function inPlace(value: ParamValue, list: boolean): ParamValue {
+  return value.type === 'auto' && list ? { ...value, type: 'list' } : value;
 }
 
 /** The keys of the parameters of statements, each once, in the order they first stand. */
@@ -387,7 +419,7 @@ export function bind(
   for (const use of uses) {
     const value = values[use.key];
     if (!value) return { ok: false, key: use.key, problem: 'missing' };
-    const resolved = resolve(value);
+    const resolved = resolve(inPlace(value, use.list));
     if (!resolved.ok) return { ok: false, key: use.key, problem: resolved.problem };
     out += sql.slice(at, use.start);
     const sentFrom = out.length;

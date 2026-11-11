@@ -6,6 +6,7 @@ import {
   describeValue,
   findParams,
   formsOf,
+  inPlace,
   paramKeys,
   writtenPosition,
 } from '../params/param-logic';
@@ -363,12 +364,18 @@ export class QueryTab {
           return;
         }
         sent = bound;
-        const keysNow = (sql: string) => [
-          ...new Set(findParams(sql, dialect, formsNow()).map((u) => u.key)),
-        ];
+        const usesNow = (sql: string) => {
+          const first = new Map<string, boolean>();
+          for (const u of findParams(sql, dialect, formsNow())) {
+            if (!first.has(u.key)) first.set(u.key, u.list);
+          }
+          return [...first];
+        };
         this.runs.update((all) =>
           all.map((r, i) => {
-            const described = keysNow(sqls[i]).map((k) => describeValue(k, values[k]));
+            const described = usesNow(sqls[i]).map(([k, list]) =>
+              describeValue(k, inPlace(values[k], list)),
+            );
             return described.length > 0 ? { ...r, values: described.join(' · ') } : r;
           }),
         );

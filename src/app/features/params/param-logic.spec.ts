@@ -99,6 +99,30 @@ describe('finding parameters (catalog)', () => {
     }
   });
 
+  it('knows a parameter that stands alone in the brackets of an IN', () => {
+    const uses = findParams(
+      'select * from t where a in (:ids) and b in (:x, :y) and c = (:z)',
+      'postgres',
+      ['colon'],
+    );
+    expect(uses.map((u) => [u.key, u.list])).toEqual([
+      ['ids', true],
+      ['x', false],
+      ['y', false],
+      ['z', false],
+    ]);
+    const bound = bind('select * from t where a IN (:ids) or b = :ids', 'postgres', ['colon'], {
+      ids: { type: 'auto', text: '1, 2' },
+    });
+    // a list in the IN, the text as it is elsewhere
+    expect(bound.ok && bound.statement.sql).toBe('select * from t where a IN ($1, $2) or b = $3');
+    expect(bound.ok && bound.statement.params).toEqual([
+      { kind: 'int', value: '1' },
+      { kind: 'int', value: '2' },
+      { kind: 'text', value: '1, 2' },
+    ]);
+  });
+
   it('lists the parameters of a script once, in their order', () => {
     expect(
       paramKeys(['select :b, :a', 'select :a, :c'], 'postgres', DEFAULT_FORMS.postgres),

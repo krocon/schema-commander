@@ -10,6 +10,8 @@ import {
   ParamValue,
   bind,
   formsOf,
+  inPlace,
+  listKeys,
   paramKeys,
   resolve,
 } from './param-logic';
@@ -73,7 +75,7 @@ import { PARAM_TEXTS } from './param-texts';
                 <option [value]="type" [selected]="type === value.type">{{ t.types[type] }}</option>
               }
             </select>
-            <span class="reads" [id]="'param-reads-' + $index">{{ reads(value) }}</span>
+            <span class="reads" [id]="'param-reads-' + $index">{{ reads(key) }}</span>
           }
         </div>
         @if (message(); as m) {
@@ -221,8 +223,13 @@ export class ParamDialog implements OnInit {
     return this.values()[key] ?? EMPTY_VALUE;
   }
 
+  private readonly lists = computed(() =>
+    listKeys(this.request.sqls, this.request.dialect, this.forms()),
+  );
+
   /** What the value is read as – so `Automatic` is no guess the user cannot see. */
-  protected reads(value: ParamValue): string {
+  protected reads(key: string): string {
+    const value = inPlace(this.valueOf(key), this.lists().has(key));
     const resolved = resolve(value);
     if (!resolved.ok) return '';
     if (resolved.values === null) return this.t.reads.null;

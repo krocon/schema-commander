@@ -82,6 +82,12 @@ describe('ParamDialog', () => {
     expect(el.querySelector('[role=alert]')).toBeNull();
   });
 
+  it('reads a value in an IN (…) as a list without being told', () => {
+    const { el, type } = open(['select * from t where id in (:ids)']);
+    type(0, '1, 2, 3');
+    expect(el.querySelector('#param-reads-0')?.textContent).toBe('3 Einträge');
+  });
+
   it('answers no on cancel', async () => {
     const { el, answered } = open(['select :a']);
     el.querySelector<HTMLButtonElement>('footer button')!.click();
