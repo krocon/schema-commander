@@ -94,7 +94,7 @@ Prompts) · **Stufe** = meine Empfehlung: **1** Grundlage (ohne das ist es kein 
 | D5 | **Sortieren und Filtern**: im geladenen Ergebnis sofort; bei Tabellen als `WHERE`/`ORDER BY` an den Server; **Schnellfilter aus der Zelle** („nur dieser Wert“, „ohne diesen Wert“) | TablePlus, HeidiSQL | M | 2 | ☑ [027](../prompts/done/027-sortieren-filtern.md) |
 | D6 | **Kopieren als …**: TSV (für Excel), CSV, JSON, Markdown-Tabelle, `INSERT`-Anweisungen, `IN (…)`-Liste; mit oder ohne Kopfzeile | DataGrip (Extraktoren) | S–M | 1 | ☑ [009](../prompts/done/009-kopieren-als.md) |
 | D7 | **Auswahl auswerten**: Anzahl, Summe, Mittel, Min, Max der markierten Zellen in der Statuszeile | DataGrip, Excel | S | 2 | ☑ [028](../prompts/done/028-auswahl-auswerten.md) |
-| D8 | **Spalten**: fixieren, ausblenden, verschieben, Breite merken; **Suchen im Ergebnis** mit Treffer-Sprung | DBeaver | S–M | 2 | ☑ [029](../prompts/029-spalten-suche.md) |
+| D8 | **Spalten**: fixieren, ausblenden, verschieben, Breite merken; **Suchen im Ergebnis** mit Treffer-Sprung | DBeaver | S–M | 2 | ☑ [029](../prompts/done/029-spalten-suche.md) |
 | D9 | **Mehrere Ergebnisse** als Unter-Tabs; Ergebnis **anpinnen**, damit die nächste Ausführung es nicht ersetzt; **zwei Ergebnisse vergleichen** (Unterschiede farbig) | DataGrip | M | 3 | ☑ [041](../prompts/041-ergebnisse-vergleichen.md) |
 | D10 | **Fremdschlüssel folgen**: von einer Zelle zur referenzierten Zeile springen; Zeilen anzeigen, die auf diese Zeile zeigen | DataGrip, DbGate | M | 2 | ☑ [030](../prompts/030-fremdschluessel-folgen.md) |
 | D11 | **Diagramm aus dem Ergebnis** (Linie, Balken, Zeitreihe); Tokens `--chart-1…8` gibt es schon | Azure Data Studio, DBeaver | M | 3 | ☑ [042](../prompts/042-diagramme.md) |

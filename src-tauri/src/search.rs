@@ -401,6 +401,46 @@ mod tests {
         );
     }
 
+    /// How long a big result takes (`cargo test --lib search::tests::big -- --ignored --nocapture`).
+    #[test]
+    #[ignore = "a measurement, not a check"]
+    fn big_result_is_searched_in_a_time_one_can_wait() {
+        let rows = (0..1_000_000)
+            .map(|i| {
+                vec![
+                    Cell::I64(i),
+                    text(if i % 1000 == 7 {
+                        "a needle"
+                    } else {
+                        "some hay in a row"
+                    }),
+                    text("more text that is not it"),
+                ]
+            })
+            .collect();
+        let (_d, store, id) = store_with(3, rows);
+        let start = std::time::Instant::now();
+        let first = search(&store, id, &spec("needle"), 0, 5_000, 5_000, &|| false).unwrap();
+        let first_ms = start.elapsed();
+        let rest = search(
+            &store,
+            id,
+            &spec("needle"),
+            first.next,
+            u64::MAX,
+            usize::MAX,
+            &|| false,
+        )
+        .unwrap();
+        eprintln!(
+            "first 5000 rows: {first_ms:?} ({} hits); 1 million rows: {:?} ({} hits)",
+            first.hits.len(),
+            start.elapsed(),
+            first.hits.len() + rest.hits.len()
+        );
+        assert_eq!(first.hits.len() + rest.hits.len(), 1000);
+    }
+
     #[test]
     fn seeks_the_next_other_value_and_the_next_null() {
         let rows = vec![

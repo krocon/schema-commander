@@ -1,5 +1,6 @@
 import {
   Component,
+  computed,
   effect,
   ElementRef,
   inject,
@@ -122,6 +123,11 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
   private readonly stats = inject(StatsService);
   private readonly menus = inject(MenuService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  /**
+   * The height of a row. Read on its own: the table is built anew for another height, and must not be for
+   * any other setting (cursor and scroll position would be gone).
+   */
+  private readonly rowHeight = computed(() => this.settings.settings().resultRowHeight);
   /** Ends telling the copy service what is selected here. */
   private unregister: (() => void) | null = null;
   /** The options of the table on screen; a new result (or row height) gets new ones. */
@@ -139,7 +145,7 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
     effect(() => {
       const result = this.result();
       // the row height is part of the table: another one builds it again
-      void this.settings.settings().resultRowHeight;
+      void this.rowHeight();
       untracked(() => void this.show(result));
     });
     effect(() => {
@@ -254,8 +260,13 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
 
   /** The cursor of the table moved (the table says so outside of Angular's turn: only an output here). */
   protected onFocus(): void {
+    const cell = this.api()?.getActiveCell();
+    if (cell && cell[1] >= 1) this.lastColumn = cell[1];
     this.active.emit(this.cursor());
   }
+
+  /** The grid column the cursor was in last: where it goes back to when only a row is asked for. */
+  private lastColumn = 1;
 
   /** The cell the cursor is on: its row and its column of the result. */
   cursor(): readonly [number, number] | null {
@@ -274,7 +285,7 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
     const body = this.body;
     if (!api || !body || body.getRowCount() === 0) return;
     const at = column === null ? -1 : this.resolved.shown.indexOf(column);
-    const col = at >= 0 ? at + 1 : Math.max(1, api.getActiveCell()?.[1] ?? 1);
+    const col = at >= 0 ? at + 1 : Math.max(1, api.getActiveCell()?.[1] ?? this.lastColumn);
     const r = Math.max(0, Math.min(row, body.getRowCount() - 1));
     this.options.getFocusModel?.()?.setFocus(r, col);
     const selection = this.options.getSelectionModel?.();
@@ -399,7 +410,7 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
     this.shownId = result.resultId;
     this.active.emit(null);
     this.unregister?.();
-    const rowHeight = untracked(() => this.settings.settings().resultRowHeight);
+    const rowHeight = untracked(() => this.rowHeight());
     this.body?.dispose();
     this.body = null;
     this.model.set(null);

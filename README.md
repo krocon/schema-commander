@@ -35,6 +35,12 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   written into the SQL), sort by a click on a column head, add a condition from the cell under the cursor
   (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>E</kbd>); the filter of a table is remembered. Any other
   result is filtered and sorted in the backend's store without running the query again
+- Wide results: keep columns at the left, hide them, move them (drag, or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>←/→</kbd>),
+  fit widths; the column list (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>C</kbd>) finds one of 500
+  columns by name. The layout is remembered per table
+- Search in the result (<kbd>Ctrl/⌘</kbd>+<kbd>F</kbd> in the grid): text, whole word, regular expression, one
+  column – searched in the backend, first hits at once, <kbd>F3</kbd> from hit to hit; go to row
+  (<kbd>Ctrl/⌘</kbd>+<kbd>G</kbd>), next other value (<kbd>Alt</kbd>+<kbd>↓</kbd>), next NULL
 - Figures of the selection: mark cells and the status line shows count, sum, mean, smallest and largest –
   added up exactly in the backend (a `NUMERIC(38,10)` sum is right to the last digit), for dates the span, for
   text the lengths; a click copies a figure. "Summarize the column"

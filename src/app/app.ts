@@ -1335,7 +1335,7 @@ export class App implements OnInit, OnDestroy {
     };
     const find = (field: 'text' | 'row') => () => {
       if (!has()) return this.ownNotice.set(FIND_TEXTS.noResult);
-      this.settings.update({ resultVisible: true });
+      if (!this.settings.settings().resultVisible) this.settings.update({ resultVisible: true });
       tab()?.find.show(field);
     };
     const register = this.actions.register.bind(this.actions);
