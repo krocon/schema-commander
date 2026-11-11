@@ -1,3 +1,5 @@
+import { GuardedStatement } from '../guard/guard-logic';
+import { GuardService } from '../guard/guard.service';
 import { HistoryService, RanStatement } from '../history/history.service';
 import { SchemaStore } from '../schema/schema.store';
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
@@ -47,15 +49,25 @@ export class TabsStore {
   private readonly settings = inject(SettingsService);
   private readonly schema = inject(SchemaStore);
   private readonly history = inject(HistoryService);
+  private readonly guard = inject(GuardService);
   private readonly services = {
     api: inject(QueryApi),
     connections: this.connections,
     record: (ran: RanStatement) => this.history.record(ran),
+    confirmRun: (connection: string, statements: readonly GuardedStatement[], total: number) => {
+      const profile = this.connections.profiles().find((p) => p.id === connection);
+      if (!profile) return Promise.resolve(null);
+      return this.guard.ask({ connection: profile, statements, total });
+    },
     ran: (connection: string, statements: readonly string[]) =>
       this.schema.ran(connection, statements),
     options: () => {
       const s = this.settings.settings();
-      return { stopOnError: s.stopOnError, timeoutMs: s.statementTimeoutSec * 1000 };
+      return {
+        stopOnError: s.stopOnError,
+        timeoutMs: s.statementTimeoutSec * 1000,
+        allowDangerous: !s.confirmDangerous,
+      };
     },
   };
 

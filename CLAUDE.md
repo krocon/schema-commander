@@ -23,11 +23,12 @@
   Knoten und Quoting je Dialekt (Prompt 008); **Kopieren als** TSV, CSV, JSON, Markdown, HTML, INSERT, IN, WHERE
   aus dem Gitter, geschrieben von Rust (Prompt 009); **Verlauf** aller Anweisungen mit Suche, abschaltbar und
   endgültig löschbar (Prompt 010); **Export** in Dateien (CSV, TSV, JSON, NDJSON, INSERT, Markdown, HTML,
-  Excel, gzip) als Job mit Fortschritt und Abbruch (Prompt 011);
+  Excel, gzip) als Job mit Fortschritt und Abbruch (Prompt 011); **Schutz für Produktion**: Schutzstufen je
+  Verbindung, Einstufung der Anweisungen und Bestätigung im Backend (Prompt 012);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–011),
+  erledigt: 001–012),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -83,6 +84,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                editor-colors.ts (Farben des Editors aus unseren Tokens),
                                sql-split.ts (rein: Skripte je Dialekt zerlegen, Katalog sql-split.cases.json)
   app/features/export/         ExportDialog, ExportService (Root: ein Job, Statuszeile), export-logic.ts (rein)
+  app/features/guard/          GuardDialog (Rückfrage), GuardService, guard-logic.ts (rein)
   app/features/history/        HistoryDialog (Listbox, Vorschau), HistoryService (Root: aufzeichnen, blättern),
                                history-logic.ts (rein)
   app/features/palette/        Befehlspalette (CommandPalette, palette-logic.ts rein: unscharfe Suche)
@@ -114,6 +116,7 @@ src-tauri/                     Rust
   src/export.rs                Dateien schreiben: FileWriter (Text, gzip, xlsx), from_store, FileSink (rein, getestet)
   src/extract.rs               Formate (TSV, CSV, JSON, Markdown, HTML, INSERT, IN, WHERE), Literale je Dialekt (rein)
   src/copy.rs                  Auswahl eines Ergebnisses als Text: Zeilenbereiche, Spalten, Abbruch, Grenze (rein)
+  src/db/guard.rs              Anweisungen einstufen (lesend/schreibend/DDL/gefährlich), Schutzstufen (rein, Katalog)
   src/db/meta.rs               Metadaten aus dem Systemkatalog (gebundene Parameter), quote() je Dialekt
   src/db/value.rs              Cell, ColKind, QueryResult (verlustfrei über die Brücke)
   src/db/manager.rs            ConnectionManager: Sitzungen, Schlüsselbund-Regeln, Abbruch
@@ -148,6 +151,7 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   plant die Sicherung, die den Text einmal holt. Nichts fragt „Speichern?“.
 - **Bezeichner** quotet nur `meta::quote` in Rust; Knoten und DTOs bringen `quoted` mit. Katalogabfragen nur über
   `Session::ask` mit gebundenen Parametern.
+- **Schutz**: Was SQL ausführt, ruft im Backend `ConnectionManager::admit`; das Fenster fragt nur, entscheidet nie.
 - **Zustand in Signals**, Stores je Instanz ohne `providedIn`, Globales in Root-Services; veraltete Antworten verwerfen.
 - **Farben nur als Tokens**; jeder Token in dark und light, im Katalog und in den Kontrastpaaren.
 - **Sicherheit**: schmale Commands statt breiter Plugins, strikte CSP, Geheimnisse nur im Schlüsselbund, SQL und

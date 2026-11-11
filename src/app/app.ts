@@ -9,6 +9,9 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { GuardDialog } from './features/guard/guard-dialog';
+import { badgeText } from './features/guard/guard-logic';
+import { GuardService } from './features/guard/guard.service';
 import { HistoryDialog } from './features/history/history-dialog';
 import { HistoryService } from './features/history/history.service';
 import { ActionId } from './core/actions/action-catalog';
@@ -65,6 +68,7 @@ const SIDEBAR_MIN = 140;
     ConnectionList,
     ContextMenu,
     ExportDialog,
+    GuardDialog,
     HistoryDialog,
     PasswordDialog,
     SchemaTree,
@@ -122,6 +126,9 @@ const SIDEBAR_MIN = 140;
           [title]="cs.kind === 'open' ? cs.serverVersion : 'nicht verbunden'"
           ><i [class.open]="cs.kind === 'open'"></i>{{ conn.name }}</span
         >
+        @if (badge(); as b) {
+          <span class="guard-badge" [attr.data-protection]="conn.protection">{{ b }}</span>
+        }
       }
       <button
         type="button"
@@ -181,6 +188,11 @@ const SIDEBAR_MIN = 140;
       </div>
     </div>
     <footer class="status" role="status">
+      @if (badge(); as b) {
+        <span class="guard-badge" [attr.data-protection]="connections.active()?.protection">{{
+          b
+        }}</span>
+      }
       <span>{{ status() }}</span>
       @if (exporter.job(); as job) {
         @if (job.state === 'running') {
@@ -223,6 +235,11 @@ const SIDEBAR_MIN = 140;
         (picked)="copyAs($event)"
         (closed)="copier.menu.set(null)"
       />
+    }
+    @if (guard.request(); as question) {
+      @defer (on immediate) {
+        <app-guard-dialog [request]="question" (answered)="guard.answer($event)" />
+      }
     }
     @if (confirm.request(); as question) {
       <app-confirm-dialog [request]="question" (answered)="confirm.answer($event)" />
@@ -318,6 +335,9 @@ export class App implements OnInit, OnDestroy {
   });
   protected readonly copier = inject(CopyService);
   protected readonly history = inject(HistoryService);
+  protected readonly guard = inject(GuardService);
+  /** The mark of the active connection: its label and how it is protected. */
+  protected readonly badge = computed(() => badgeText(this.connections.active()));
   protected readonly exporter = inject(ExportService);
   protected readonly confirm = inject(ConfirmService);
   /** The formats of "copy as", the one used last on top. */
@@ -522,6 +542,15 @@ export class App implements OnInit, OnDestroy {
         () => this.copier.cancel(),
         () => this.copier.busy(),
       ),
+      this.actions.register('TOGGLE_CONFIRM_DANGEROUS', () => {
+        const on = !this.settings.settings().confirmDangerous;
+        this.settings.update({ confirmDangerous: on });
+        this.ownNotice.set(
+          on
+            ? 'Zerstörende Anweisungen fragen wieder überall nach.'
+            : 'Zerstörende Anweisungen fragen auf ungeschützten Verbindungen nicht mehr nach. Geschützte Verbindungen fragen weiter.',
+        );
+      }),
       this.actions.register('TOGGLE_DIGIT_GROUPING', () =>
         this.settings.update({ groupDigits: !this.settings.settings().groupDigits }),
       ),

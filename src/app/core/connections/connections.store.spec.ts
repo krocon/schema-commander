@@ -18,6 +18,8 @@ const PG: Profile = {
   folder: '',
   color: 1,
   savePassword: true,
+  protection: 'free',
+  label: '',
 };
 
 /** Lets the microtasks of a pending connect run up to the password request. */

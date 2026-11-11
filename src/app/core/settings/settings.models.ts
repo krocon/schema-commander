@@ -40,6 +40,8 @@ export interface Settings {
   readonly lastExportFormat: string | null;
   /** The choices of the export dialog per format, as stored (read forgivingly by `mergeChoices`). */
   readonly exportChoices: Readonly<Record<string, unknown>>;
+  /** Ask before `UPDATE`/`DELETE` without `WHERE`, `DROP`, `TRUNCATE` … on unprotected connections too. */
+  readonly confirmDangerous: boolean;
   /** Ids of the actions run from the command palette, the latest first. */
   readonly recentActions: readonly string[];
 }
@@ -68,6 +70,7 @@ export const DEFAULT_SETTINGS: Settings = {
   copyNullAs: '',
   csvDelimiter: ',',
   lastCopyFormat: null,
+  confirmDangerous: true,
   lastExportFormat: null,
   exportChoices: {},
   historyEnabled: true,
@@ -135,6 +138,10 @@ export function mergeSettings(saved: unknown): Settings {
               .slice(0, 16),
           )
         : {},
+    confirmDangerous:
+      typeof s['confirmDangerous'] === 'boolean'
+        ? s['confirmDangerous']
+        : DEFAULT_SETTINGS.confirmDangerous,
     historyEnabled:
       typeof s['historyEnabled'] === 'boolean'
         ? s['historyEnabled']

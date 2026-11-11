@@ -191,6 +191,32 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
             (input)="patch({ folder: folder.value })"
           />
 
+          <label for="conn-protection">Schutz</label>
+          <select id="conn-protection" #protection (change)="setProtection(protection.value)">
+            <option value="free" [selected]="draft().protection === 'free'">
+              frei – nur Zerstörendes fragt nach
+            </option>
+            <option value="ask" [selected]="draft().protection === 'ask'">
+              nachfragen – alles, was nicht liest, braucht eine Bestätigung
+            </option>
+            <option value="readonly" [selected]="draft().protection === 'readonly'">
+              nur lesen – nichts anderes läuft
+            </option>
+          </select>
+
+          <label for="conn-label">Kennzeichen</label>
+          <input
+            #mark
+            id="conn-label"
+            type="text"
+            maxlength="12"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="z. B. PROD"
+            [value]="draft().label"
+            (input)="patch({ label: mark.value })"
+          />
+
           <span id="conn-color-label">Farbe</span>
           <span class="colors" role="radiogroup" aria-labelledby="conn-color-label">
             @for (c of colors; track c) {
@@ -300,6 +326,12 @@ export class ConnectionDialog implements OnInit {
   protected setPort(text: string): void {
     const t = text.trim();
     this.patch({ port: t === '' ? 0 : /^\d{1,5}$/.test(t) ? Number(t) : -1 });
+  }
+
+  protected setProtection(value: string): void {
+    if (value === 'free' || value === 'ask' || value === 'readonly') {
+      this.patch({ protection: value });
+    }
   }
 
   protected setTls(mode: string): void {

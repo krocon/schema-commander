@@ -82,55 +82,90 @@ pub fn refusal(n: Need, class: Class) -> AppError {
 
 // --- scanning ----------------------------------------------------------------------------------------
 
-/// A word (upper case), or a sign that matters.
+/// A piece of a statement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Tok {
+    /// A bare word, upper case.
     Word(String),
+    /// A quoted name, upper case (`"set_config"`, `` `x` ``, `[x]`).
+    Quoted(String),
+    /// A string, upper case.
+    Str(String),
     Open,
     Close,
     Semi,
-    /// Anything else that is neither space nor comment: operators, numbers, strings, quoted names.
+    Dot,
+    /// Any other sign or a number.
     Other,
 }
 
-/// The tokens of a text: comments are dropped, strings and quoted names are one [`Tok::Other`] each. A
-/// string or comment that never ends runs to the end of the text.
-fn tokens(sql: &str, kind: DbKind) -> Vec<Tok> {
+/// What the scanner found.
+struct Scan {
+    toks: Vec<Tok>,
+    /// The text can be read in two ways, depending on a setting of the server we do not know (a backslash
+    /// before a quote, a `U&` escape): what stands behind may be code. Such a text never counts as reading.
+    ambiguous: bool,
+}
+
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_' || c == '$'
+}
+
+/// The tokens of a text: comments are dropped as the dialect drops them, strings and quoted names are one
+/// token each. A string or comment that never ends runs to the end of the text.
+fn scan(sql: &str, kind: DbKind) -> Scan {
     let chars: Vec<char> = sql.chars().collect();
     let n = chars.len();
-    let mut out = Vec::new();
+    let mut toks = Vec::new();
+    let mut ambiguous = false;
     let mut i = 0;
-    let backslash = kind == DbKind::Mysql;
     while i < n {
         let c = chars[i];
         let next = chars.get(i + 1).copied();
-        if c.is_whitespace() {
+        if c.is_whitespace() || c.is_control() {
             i += 1;
-        } else if (c == '-' && next == Some('-')) || (c == '#' && kind == DbKind::Mysql) {
-            while i < n && chars[i] != '\n' {
+        } else if c == '-' && next == Some('-') {
+            // MySQL takes `--` for a comment only before a space; else it is twice a minus
+            let after = chars.get(i + 2).copied();
+            let comment =
+                kind != DbKind::Mysql || after.is_none_or(|a| a.is_whitespace() || a.is_control());
+            if comment {
+                while i < n && chars[i] != '\n' && chars[i] != '\r' {
+                    i += 1;
+                }
+            } else {
+                toks.push(Tok::Other);
+                i += 1;
+            }
+        } else if c == '#' && kind == DbKind::Mysql {
+            while i < n && chars[i] != '\n' && chars[i] != '\r' {
                 i += 1;
             }
         } else if c == '/' && next == Some('*') {
-            // MySQL runs the text of /*! … */ and /*+ … */ is only a hint: both are scanned as code or
-            // dropped. A versioned comment is code: it is not skipped.
-            if kind == DbKind::Mysql && chars.get(i + 2) == Some(&'!') {
-                i += 3;
-                while i < n && chars[i].is_ascii_digit() {
-                    i += 1;
+            // MySQL and MariaDB run the text of /*! … */ and /*M! … */: it is code, not a comment
+            if kind == DbKind::Mysql {
+                let bang = match (chars.get(i + 2), chars.get(i + 3)) {
+                    (Some('!'), _) => Some(3),
+                    (Some('M' | 'm'), Some('!')) => Some(4),
+                    _ => None,
+                };
+                if let Some(skip) = bang {
+                    i += skip;
+                    while i < n && chars[i].is_ascii_digit() {
+                        i += 1;
+                    }
+                    continue;
                 }
-                continue;
             }
+            // PostgreSQL and SQL Server nest block comments
+            let nests = matches!(kind, DbKind::Postgres | DbKind::Sqlserver);
             let mut depth = 1;
             i += 2;
             while i < n && depth > 0 {
                 if chars[i] == '*' && chars.get(i + 1) == Some(&'/') {
                     depth -= 1;
                     i += 2;
-                } else if chars[i] == '/'
-                    && chars.get(i + 1) == Some(&'*')
-                    && kind == DbKind::Postgres
-                {
-                    // PostgreSQL nests block comments
+                } else if nests && chars[i] == '/' && chars.get(i + 1) == Some(&'*') {
                     depth += 1;
                     i += 2;
                 } else {
@@ -138,94 +173,100 @@ fn tokens(sql: &str, kind: DbKind) -> Vec<Tok> {
                 }
             }
         } else if c == '*' && next == Some('/') && kind == DbKind::Mysql {
-            // the end of a versioned comment
+            // the end of an executable comment
             i += 2;
         } else if c == '\'' || c == '"' || c == '`' {
-            // a string or a quoted name: to its closing quote, a doubled quote stays inside
+            // A string or a quoted name: to its closing quote; a doubled quote stays inside. Whether a
+            // backslash escapes depends on dialect and settings: a backslash before a quote is taken
+            // as an escape here, and the text marked as not certainly reading.
             let quote = c;
+            // U&'…' and U&"…" can spell anything with their escapes
+            if i >= 2 && chars[i - 1] == '&' && matches!(chars[i - 2], 'u' | 'U') {
+                ambiguous = true;
+            }
+            let start = i + 1;
             i += 1;
             while i < n {
-                if chars[i] == '\\'
-                    && (backslash || is_escape_string(&chars, i, quote))
-                    && quote != '`'
-                {
+                if chars[i] == '\\' && quote != '`' && i + 1 < n {
+                    if chars[i + 1] == quote || chars[i + 1] == '\\' {
+                        ambiguous = true;
+                    }
                     i += 2;
                 } else if chars[i] == quote {
                     if chars.get(i + 1) == Some(&quote) {
                         i += 2;
                     } else {
-                        i += 1;
                         break;
                     }
                 } else {
                     i += 1;
                 }
             }
-            out.push(Tok::Other);
-        } else if c == '[' && kind == DbKind::Sqlserver {
+            let end = i.min(n);
+            let body: String = chars[start..end].iter().collect::<String>().to_uppercase();
+            i = (i + 1).min(n);
+            if quote == '"' && kind == DbKind::Mysql && body.contains(';') {
+                // a string, or a name under ANSI_QUOTES – with different ends when it holds a quote
+                ambiguous = true;
+            }
+            toks.push(if quote == '\'' {
+                Tok::Str(body)
+            } else {
+                Tok::Quoted(body)
+            });
+        } else if c == '[' && matches!(kind, DbKind::Sqlserver | DbKind::Sqlite) {
+            let start = i + 1;
             i += 1;
             while i < n {
                 if chars[i] == ']' {
-                    if chars.get(i + 1) == Some(&']') {
+                    if kind == DbKind::Sqlserver && chars.get(i + 1) == Some(&']') {
                         i += 2;
                     } else {
-                        i += 1;
                         break;
                     }
                 } else {
                     i += 1;
                 }
             }
-            out.push(Tok::Other);
+            let body: String = chars[start..i.min(n)]
+                .iter()
+                .collect::<String>()
+                .to_uppercase();
+            i = (i + 1).min(n);
+            toks.push(Tok::Quoted(body));
         } else if c == '$' && kind == DbKind::Postgres && dollar_tag(&chars, i).is_some() {
             // $tag$ … $tag$
             let tag = dollar_tag(&chars, i).unwrap_or_default();
-            let body = i + tag.len();
-            let end = find(&chars, body, &tag)
-                .map(|at| at + tag.len())
-                .unwrap_or(n);
-            i = end;
-            out.push(Tok::Other);
+            let body = (i + tag.len()).min(n);
+            let end = find(&chars, body, &tag).unwrap_or(n);
+            let text: String = chars[body..end].iter().collect::<String>().to_uppercase();
+            i = (end + tag.len()).min(n);
+            toks.push(Tok::Str(text));
         } else if c == '(' {
-            out.push(Tok::Open);
+            toks.push(Tok::Open);
             i += 1;
         } else if c == ')' {
-            out.push(Tok::Close);
+            toks.push(Tok::Close);
             i += 1;
         } else if c == ';' {
-            out.push(Tok::Semi);
+            toks.push(Tok::Semi);
+            i += 1;
+        } else if c == '.' {
+            toks.push(Tok::Dot);
             i += 1;
         } else if c.is_alphabetic() || c == '_' {
             let start = i;
-            while i < n && (chars[i].is_alphanumeric() || matches!(chars[i], '_' | '$' | '#' | '@'))
-            {
+            while i < n && is_word_char(chars[i]) {
                 i += 1;
             }
             let word: String = chars[start..i].iter().collect();
-            out.push(Tok::Word(word.to_uppercase()));
+            toks.push(Tok::Word(word.to_uppercase()));
         } else {
-            out.push(Tok::Other);
+            toks.push(Tok::Other);
             i += 1;
         }
     }
-    out
-}
-
-/// PostgreSQL: a backslash escapes only inside `E'…'`. Looking back from the backslash is not possible
-/// cheaply, so the scanner asks whether the string was opened behind an `E`.
-fn is_escape_string(chars: &[char], at: usize, quote: char) -> bool {
-    if quote != '\'' {
-        return false;
-    }
-    // back to the opening quote of this string
-    let mut i = at;
-    while i > 0 {
-        i -= 1;
-        if chars[i] == '\'' {
-            return i > 0 && matches!(chars[i - 1], 'e' | 'E');
-        }
-    }
-    false
+    Scan { toks, ambiguous }
 }
 
 /// `$$` or `$tag$` at `at`.
@@ -246,16 +287,14 @@ fn find(chars: &[char], from: usize, needle: &[char]) -> Option<usize> {
         .find(|&i| chars[i..i + needle.len()] == *needle)
 }
 
-/// Words that only read or steer the session when they start a statement.
+/// Words a statement that reads may start with.
 const READ_STARTS: &[&str] = &[
-    "SELECT",
-    "WITH",
-    "VALUES",
-    "TABLE",
-    "SHOW",
-    "DESCRIBE",
-    "DESC",
-    "EXPLAIN",
+    "SELECT", "WITH", "VALUES", "TABLE", "SHOW", "DESCRIBE", "DESC", "EXPLAIN", "USE", "PRAGMA",
+    "HELP",
+];
+
+/// Words that start a statement which only steers the transaction.
+const TRANSACTION_STARTS: &[&str] = &[
     "BEGIN",
     "START",
     "COMMIT",
@@ -263,12 +302,42 @@ const READ_STARTS: &[&str] = &[
     "SAVEPOINT",
     "RELEASE",
     "END",
-    "USE",
-    "PRAGMA",
-    "HELP",
 ];
 
-/// Words that make a statement a write wherever they stand in it (outside strings and names).
+/// The only words such a statement may hold besides the name of a savepoint. `WRITE`, `PREPARED`,
+/// `IMMEDIATE`, `EXCLUSIVE`, `REPLICA`, `DISTRIBUTED` … are not among them.
+const TRANSACTION_WORDS: &[&str] = &[
+    "BEGIN",
+    "START",
+    "COMMIT",
+    "ROLLBACK",
+    "SAVEPOINT",
+    "RELEASE",
+    "END",
+    "TRANSACTION",
+    "TRAN",
+    "WORK",
+    "ISOLATION",
+    "LEVEL",
+    "READ",
+    "ONLY",
+    "COMMITTED",
+    "UNCOMMITTED",
+    "REPEATABLE",
+    "SERIALIZABLE",
+    "SNAPSHOT",
+    "DEFERRABLE",
+    "DEFERRED",
+    "NOT",
+    "TO",
+    "AND",
+    "NO",
+    "CHAIN",
+    "CONSISTENT",
+    "WITH",
+];
+
+/// Words that make a statement a write wherever they stand in it (outside strings and quoted names).
 const WRITE_WORDS: &[&str] = &[
     "INSERT",
     "UPDATE",
@@ -285,8 +354,6 @@ const WRITE_WORDS: &[&str] = &[
     "LOAD",
     "LOCK",
     "SET",
-    "NEXTVAL",
-    "SETVAL",
     "HANDLER",
     "IMPORT",
     "UNLOAD",
@@ -294,6 +361,7 @@ const WRITE_WORDS: &[&str] = &[
     "DUMPFILE",
     "OPENROWSET",
     "OPENQUERY",
+    "OPENDATASOURCE",
     "PERFORM",
     "LISTEN",
     "NOTIFY",
@@ -302,6 +370,7 @@ const WRITE_WORDS: &[&str] = &[
     "RESET",
     "CHECKPOINT",
     "PREPARE",
+    "PREPARED",
     "DEALLOCATE",
     "KILL",
     "SHUTDOWN",
@@ -315,6 +384,40 @@ const WRITE_WORDS: &[&str] = &[
     "BULK",
     "WRITETEXT",
     "UPDATETEXT",
+    "WRITE",
+    "SHARE",
+    "WAITFOR",
+    "RECEIVE",
+    "SEND",
+    "CONVERSATION",
+    "DIALOG",
+    "DISABLE",
+    "ENABLE",
+    "REVERT",
+    "RECONFIGURE",
+    "SETUSER",
+    "RAISERROR",
+    "THROW",
+    "DISTRIBUTED",
+    "DECLARE",
+    "XA",
+    "STOP",
+    "CHANGE",
+    "BINLOG",
+    "CACHE",
+    "SIGNAL",
+    "RESIGNAL",
+    "IMMEDIATE",
+    "EXCLUSIVE",
+    "REPLICA",
+    "SLAVE",
+    "GROUP_REPLICATION",
+];
+
+/// More of them that only SQL Server knows as statements: there a batch needs no `;`, so a statement can
+/// hide behind another. Elsewhere these are ordinary names.
+const TSQL_WRITE_WORDS: &[&str] = &[
+    "ADD", "OPEN", "CLOSE", "SAVE", "GOTO", "PRINT", "RETURN", "GO",
 ];
 
 /// Functions that change something although they are called from a `SELECT`.
@@ -322,38 +425,12 @@ const WRITING_FUNCTIONS: &[&str] = &[
     "NEXTVAL",
     "SETVAL",
     "SET_CONFIG",
-    "PG_TERMINATE_BACKEND",
-    "PG_CANCEL_BACKEND",
-    "PG_RELOAD_CONF",
-    "PG_ROTATE_LOGFILE",
-    "PG_SWITCH_WAL",
-    "PG_CREATE_RESTORE_POINT",
-    "PG_ADVISORY_LOCK",
-    "PG_ADVISORY_XACT_LOCK",
-    "PG_TRY_ADVISORY_LOCK",
-    "PG_NOTIFY",
-    "LO_IMPORT",
-    "LO_EXPORT",
-    "LO_UNLINK",
-    "LO_CREATE",
-    "LO_CREAT",
-    "LOWRITE",
-    "LO_PUT",
-    "LO_FROM_BYTEA",
-    "DBLINK",
-    "DBLINK_EXEC",
-    "DBLINK_CONNECT",
-    "PG_READ_FILE",
-    "PG_READ_BINARY_FILE",
-    "PG_LS_DIR",
-    "PG_SLEEP",
     "QUERY_TO_XML",
+    "QUERY_TO_XML_AND_XMLSCHEMA",
+    "TABLE_TO_XML",
+    "CURSOR_TO_XML",
     "TXID_CURRENT",
-    "PG_LOGICAL_EMIT_MESSAGE",
-    "PG_REPLICATION_SLOT_ADVANCE",
-    "PG_CREATE_LOGICAL_REPLICATION_SLOT",
-    "PG_DROP_REPLICATION_SLOT",
-    "PG_STAT_RESET",
+    "CROSSTAB",
     "GET_LOCK",
     "RELEASE_LOCK",
     "RELEASE_ALL_LOCKS",
@@ -361,12 +438,56 @@ const WRITING_FUNCTIONS: &[&str] = &[
     "SLEEP",
     "BENCHMARK",
     "LAST_INSERT_ID",
+    "MASTER_POS_WAIT",
+    "SOURCE_POS_WAIT",
+    "WAIT_FOR_EXECUTED_GTID_SET",
     "LOAD_EXTENSION",
     "WRITEFILE",
     "READFILE",
     "EDIT",
+    "ZIPFILE",
     "FTS3_TOKENIZER",
-    "XP_CMDSHELL",
+    "LOWRITE",
+    "LOREAD",
+];
+
+/// Functions whose names start like this are taken for writing, but for [`READING_PG_FUNCTIONS`].
+const WRITING_PREFIXES: &[&str] = &[
+    "PG_", "LO_", "DBLINK", "SYS_", "XP_", "SP_", "BRIN_", "GIN_",
+];
+
+/// Functions of PostgreSQL that start with `pg_` and only tell something.
+const READING_PG_FUNCTIONS: &[&str] = &[
+    "PG_TYPEOF",
+    "PG_COLUMN_SIZE",
+    "PG_SIZE_PRETTY",
+    "PG_SIZE_BYTES",
+    "PG_TABLE_SIZE",
+    "PG_TOTAL_RELATION_SIZE",
+    "PG_RELATION_SIZE",
+    "PG_DATABASE_SIZE",
+    "PG_INDEXES_SIZE",
+    "PG_TABLESPACE_SIZE",
+    "PG_BACKEND_PID",
+    "PG_IS_IN_RECOVERY",
+    "PG_POSTMASTER_START_TIME",
+    "PG_CONF_LOAD_TIME",
+    "PG_ENCODING_TO_CHAR",
+    "PG_CHAR_TO_ENCODING",
+    "PG_TABLE_IS_VISIBLE",
+    "PG_TYPE_IS_VISIBLE",
+    "PG_FUNCTION_IS_VISIBLE",
+    "PG_HAS_ROLE",
+    "PG_RELATION_FILEPATH",
+    "PG_MY_TEMP_SCHEMA",
+    "PG_IS_OTHER_TEMP_SCHEMA",
+    "PG_COLLATION_FOR",
+    "PG_DESCRIBE_OBJECT",
+    "PG_IDENTIFY_OBJECT",
+    "PG_INPUT_IS_VALID",
+    "PG_BLOCKING_PIDS",
+    "PG_CURRENT_SNAPSHOT",
+    "PG_CLIENT_ENCODING",
 ];
 
 const DDL_WORDS: &[&str] = &[
@@ -402,6 +523,9 @@ const NOT_A_STATEMENT_AFTER: &[&str] = &[
     "FOR", "DO", "THEN", "ON", "KEY", "NO", "OF", "BEFORE", "AFTER", "OR", "INSTEAD",
 ];
 
+/// Statements that run text: what the text does counts for them.
+const RUNS_TEXT: &[&str] = &["DO", "EXEC", "EXECUTE", "PREPARE", "CALL"];
+
 fn word(t: &Tok) -> Option<&str> {
     match t {
         Tok::Word(w) => Some(w.as_str()),
@@ -409,18 +533,100 @@ fn word(t: &Tok) -> Option<&str> {
     }
 }
 
+/// Whether `text` holds `needle` as a word of its own.
+fn holds_word(text: &str, needle: &str) -> bool {
+    text.match_indices(needle).any(|(at, _)| {
+        let before = text[..at].chars().next_back();
+        let after = text[at + needle.len()..].chars().next();
+        !before.is_some_and(is_word_char) && !after.is_some_and(is_word_char)
+    })
+}
+
+/// A call of a function that is known or suspected to change something.
+fn calls_writing_function(toks: &[Tok]) -> bool {
+    toks.windows(2).any(|pair| {
+        let name = match &pair[0] {
+            Tok::Word(w) | Tok::Quoted(w) => w.as_str(),
+            _ => return false,
+        };
+        pair[1] == Tok::Open
+            && (WRITING_FUNCTIONS.contains(&name)
+                || (WRITING_PREFIXES.iter().any(|p| name.starts_with(p))
+                    && !READING_PG_FUNCTIONS.contains(&name)
+                    && !name.starts_with("PG_GET_")
+                    && !name.starts_with("PG_STAT_GET_")))
+    })
+}
+
+/// A statement that only steers the transaction and cannot open one that writes.
+fn plain_transaction_control(toks: &[Tok]) -> bool {
+    let mut name_may_follow = false;
+    for t in toks {
+        match t {
+            Tok::Word(w) => {
+                let known = TRANSACTION_WORDS.contains(&w.as_str());
+                // one name: of a savepoint, behind SAVEPOINT, TO or RELEASE
+                if !known && !name_may_follow {
+                    return false;
+                }
+                name_may_follow = known && matches!(w.as_str(), "SAVEPOINT" | "TO" | "RELEASE");
+            }
+            Tok::Quoted(_) if name_may_follow => name_may_follow = false,
+            // commas between the modes of a transaction
+            Tok::Other => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
+/// `PRAGMA [schema.]name` or `PRAGMA [schema.]name(argument)` of a pragma that only tells something.
+/// Anything else – another name, an assignment – changes the database or the session.
+fn read_pragma(toks: &[Tok]) -> bool {
+    let (name, rest) = match toks {
+        [_, Tok::Word(_), Tok::Dot, Tok::Word(name), rest @ ..] => (name, rest),
+        [_, Tok::Word(name), rest @ ..] => (name, rest),
+        _ => return false,
+    };
+    if !READ_PRAGMAS.contains(&name.as_str()) {
+        return false;
+    }
+    match rest {
+        [] => true,
+        [Tok::Open, inner, Tok::Close] => {
+            matches!(
+                inner,
+                Tok::Word(_) | Tok::Quoted(_) | Tok::Str(_) | Tok::Other
+            )
+        }
+        _ => false,
+    }
+}
+
 /// One statement (no `;` in it).
 fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
     // what it starts with, behind opening parentheses
-    let first = toks.iter().find_map(|t| match t {
-        Tok::Open => None,
-        other => Some(other),
-    })?;
+    let first = toks.iter().find(|t| **t != Tok::Open)?;
     let Some(start) = word(first) else {
         return Some(Class::Write);
     };
     let words: Vec<&str> = toks.iter().filter_map(word).collect();
     let has = |list: &[&str]| words.iter().any(|w| list.contains(w));
+
+    if start == "PRAGMA" {
+        // its value may be any word (`journal_mode = DELETE`): no statement hides in it
+        return Some(if kind == DbKind::Sqlite && read_pragma(toks) {
+            Class::Read
+        } else if has(DDL_WORDS) {
+            Class::Ddl
+        } else {
+            Class::Write
+        });
+    }
+    // only that: `BEGIN READ WRITE`, a T-SQL block or `END CONVERSATION` are judged by what they hold
+    if TRANSACTION_STARTS.contains(&start) && plain_transaction_control(toks) {
+        return Some(Class::Read);
+    }
 
     let mut class = if READ_STARTS.contains(&start) {
         Class::Read
@@ -434,12 +640,19 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
 
     if class == Class::Read {
         // a statement that looks like reading writes when a writing word stands anywhere in it
+        let pairs = |a: &str, b: &str| words.windows(2).any(|w| w[0] == a && w[1] == b);
         if has(DANGEROUS_WORDS) {
             class = Class::Dangerous;
-        } else if has(WRITE_WORDS) || has(WRITING_FUNCTIONS) {
+        } else if has(WRITE_WORDS)
+            || (kind == DbKind::Sqlserver && has(TSQL_WRITE_WORDS))
+            || calls_writing_function(toks)
+            || pairs("NEXT", "VALUE")
+            || pairs("PREVIOUS", "VALUE")
+        {
             class = Class::Write;
-        } else if has(DDL_WORDS) {
-            // `EXPLAIN ANALYZE` runs the statement; a plain one that only reads stays reading
+        } else if has(DDL_WORDS) && !matches!(start, "SHOW" | "DESCRIBE" | "DESC" | "HELP") {
+            // `SHOW CREATE TABLE` only tells. `EXPLAIN ANALYZE` runs the statement; one that only
+            // reads stays reading
             let only_analyze = start == "EXPLAIN"
                 && words
                     .iter()
@@ -448,51 +661,29 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
                 class = Class::Ddl;
             }
         }
-        if start == "PRAGMA" && class == Class::Read && !read_pragma(toks) {
-            class = Class::Write;
-        }
         if start == "USE" && kind != DbKind::Mysql && kind != DbKind::Sqlserver {
             class = Class::Write;
         }
     }
 
-    if start == "PRAGMA" {
-        // its value may be any word (`journal_mode = DELETE`): no statement hides in it
-        return Some(class);
-    }
-    if class == Class::Ddl && has(DANGEROUS_WORDS) {
-        // ALTER … DROP …
+    if class < Class::Dangerous && has(DANGEROUS_WORDS) {
+        // ALTER … DROP …, a batch that also drops
         class = Class::Dangerous;
     }
-    if class == Class::Write && has(DANGEROUS_WORDS) {
-        class = Class::Dangerous;
+    if class < Class::Dangerous && has(RUNS_TEXT) {
+        // the text a statement runs is a statement too
+        let destroys = toks.iter().any(|t| match t {
+            Tok::Str(body) => DANGEROUS_WORDS.iter().any(|w| holds_word(body, w)),
+            _ => false,
+        });
+        if destroys {
+            class = Class::Dangerous;
+        }
     }
     if class < Class::Dangerous && unbounded_change(toks) {
         class = Class::Dangerous;
     }
     Some(class)
-}
-
-/// `PRAGMA [schema.]name` or `PRAGMA [schema.]name(argument)` of a pragma that only tells something.
-/// Anything else – another name, an assignment – changes the database or the session.
-fn read_pragma(toks: &[Tok]) -> bool {
-    // PRAGMA name | PRAGMA schema . name
-    let (name, rest) = match toks {
-        [_, Tok::Word(_), Tok::Other, Tok::Word(name), rest @ ..] => (name, rest),
-        [_, Tok::Word(name), rest @ ..] => (name, rest),
-        _ => return false,
-    };
-    if !READ_PRAGMAS.contains(&name.as_str()) {
-        return false;
-    }
-    // nothing behind it, or one argument in parentheses
-    match rest {
-        [] => true,
-        [Tok::Open, inner @ .., Tok::Close] => {
-            inner.len() == 1 && matches!(inner[0], Tok::Word(_) | Tok::Other)
-        }
-        _ => false,
-    }
 }
 
 /// An `UPDATE` or `DELETE` statement (also inside parentheses, as in a CTE) without a `WHERE` of its own.
@@ -521,7 +712,7 @@ fn unbounded_change(toks: &[Tok]) -> bool {
                                 break;
                             }
                         }
-                        Tok::Word(x) if d == depth && (x == "WHERE" || x == "CURRENT") => {
+                        Tok::Word(x) if d == depth && x == "WHERE" => {
                             found = true;
                             break;
                         }
@@ -542,21 +733,15 @@ fn unbounded_change(toks: &[Tok]) -> bool {
 
 /// What a text does: the worst of its statements. An empty text reads.
 pub fn classify(sql: &str, kind: DbKind) -> Class {
-    let toks = tokens(sql, kind);
+    let scan = scan(sql, kind);
     let mut worst = Class::Read;
-    for statement in toks.split(|t| *t == Tok::Semi) {
+    for statement in scan.toks.split(|t| *t == Tok::Semi) {
         if let Some(class) = classify_one(statement, kind) {
             worst = worst.max(class);
         }
     }
-    // T-SQL batches need no semicolon between statements: a second statement hides behind the first
-    if kind == DbKind::Sqlserver && worst == Class::Read {
-        let words: Vec<&str> = toks.iter().filter_map(word).collect();
-        if words.iter().skip(1).any(|w| {
-            DANGEROUS_WORDS.contains(w) || DDL_WORDS.contains(w) || WRITE_WORDS.contains(w)
-        }) {
-            worst = Class::Write;
-        }
+    if scan.ambiguous && worst == Class::Read {
+        worst = Class::Write;
     }
     worst
 }
@@ -689,8 +874,8 @@ mod tests {
             ("SELECT $$ DROP TABLE t; $$", Read),
             ("SELECT $x$ ' ; DELETE FROM t $x$ AS a", Read),
             ("SELECT 'a''b; DROP TABLE t' AS s", Read),
-            ("SELECT E'it\\'s; DROP TABLE t' AS s", Read),
-            ("SELECT 'a\\'; DROP TABLE t; --'", Dangerous),
+            ("SELECT E'it\\'s; DROP TABLE t' AS s", Write),
+            ("SELECT 'a\\'; DROP TABLE t; --'", Write),
             ("/* outer /* inner */ still a comment */ SELECT 1", Read),
             ("/* a /* b */ c */ DROP TABLE t", Dangerous),
             ("DO $$ BEGIN DELETE FROM t; END $$", Write),
@@ -722,7 +907,7 @@ mod tests {
         for (sql, class) in [
             ("SELECT `delete`, `drop` FROM t", Read),
             ("SELECT 1 # DROP TABLE t", Read),
-            ("SELECT 'a\\'; DROP TABLE t; -- ' AS s", Read),
+            ("SELECT 'a\\'; DROP TABLE t; -- ' AS s", Write),
             ("SELECT 1 /*! ; DROP TABLE t */", Dangerous),
             ("/*!50000 DROP TABLE t */", Dangerous),
             ("SELECT * FROM t INTO OUTFILE '/tmp/x'", Write),
@@ -755,8 +940,8 @@ mod tests {
             ("SELECT 1 DROP TABLE t", Dangerous),
             ("SELECT 1 DELETE FROM t", Dangerous),
             ("SELECT 1 EXEC sp_who", Write),
-            ("EXEC sp_executesql N'DROP TABLE t'", Write),
-            ("EXEC('DROP TABLE t')", Write),
+            ("EXEC sp_executesql N'DROP TABLE t'", Dangerous),
+            ("EXEC('DROP TABLE t')", Dangerous),
             ("SELECT * INTO #tmp FROM t", Write),
             ("USE master", Read),
             ("USE master DROP DATABASE shop", Dangerous),
@@ -804,6 +989,209 @@ mod tests {
             assert_eq!(classify("DROP TABLE t; SELECT '", kind), Dangerous);
             // the string swallows the rest: what stands before it decides
             assert_eq!(classify("SELECT 'x; DROP TABLE t", kind), Read);
+        }
+    }
+
+    /// What a second reviewer got past the first version (design 012): each of these was `Read`.
+    #[test]
+    fn the_bypasses_of_the_review_are_closed() {
+        use DbKind::{Mysql, Postgres, Sqlite, Sqlserver};
+        let cases: &[(DbKind, &str)] = &[
+            (Sqlserver, r"SELECT 1 WHERE 'a' LIKE'\' DROP TABLE t --'"),
+            (
+                Sqlserver,
+                r"SELECT 1 WHERE 'a' LIKE'\'; EXEC xp_cmdshell 'x' --'",
+            ),
+            (
+                Postgres,
+                r"SELECT 'x' LIKE'\'; COMMIT; SET default_transaction_read_only = off; DELETE FROM t; --'",
+            ),
+            (Postgres, r"SELECT E'''\''; DROP TABLE t; --'"),
+            (Sqlserver, "SELECT 1 /* /* */ ' */ DROP TABLE t --'"),
+            (
+                Mysql,
+                "SELECT 1--1; SET SESSION TRANSACTION READ WRITE; DELETE FROM t",
+            ),
+            (
+                Mysql,
+                "SELECT 1 x#'\n; SET SESSION TRANSACTION READ WRITE; DELETE FROM t; -- '",
+            ),
+            (Mysql, "/*M!100100 DROP TABLE t */"),
+            (Mysql, "SELECT 1 /*M!; DROP TABLE t */"),
+            (
+                Postgres,
+                r#"SELECT "set_config"('default_transaction_read_only','off',false)"#,
+            ),
+            (
+                Postgres,
+                r#"SELECT U&"set\005fconfig"('default_transaction_read_only','off',false)"#,
+            ),
+            (Postgres, r#"SELECT pg_catalog."lo_unlink"(1)"#),
+            (Postgres, "BEGIN READ WRITE"),
+            (Postgres, "START TRANSACTION READ WRITE"),
+            (Mysql, "START TRANSACTION READ WRITE"),
+            (Postgres, "COMMIT PREPARED 'tx1'"),
+            (Postgres, "ROLLBACK PREPARED 'tx1'"),
+            (Mysql, "START REPLICA"),
+            (Mysql, "START SLAVE"),
+            (Mysql, "START GROUP_REPLICATION"),
+            (Sqlite, "PRAGMA query_only = integrity_check"),
+            (Sqlite, "PRAGMA query_only = quick_check"),
+            (Sqlite, "PRAGMA foreign_keys = table_info"),
+            (Sqlite, "PRAGMA user_version = table_list"),
+            (Sqlite, "PRAGMA query_only - table_info"),
+            (Postgres, "SELECT 1 -- x\rDROP TABLE t"),
+            (Sqlserver, "SELECT 1 -- x\rDROP TABLE t"),
+            (Sqlserver, "SELECT NEXT VALUE FOR dbo.seq"),
+            (Mysql, "SELECT NEXT VALUE FOR seq"),
+            (Sqlserver, "SELECT 1 WAITFOR DELAY '01:00:00'"),
+            (Sqlserver, "SELECT 1 RECEIVE TOP(1) * FROM q"),
+            (Sqlserver, "SELECT 1 SEND ON CONVERSATION @h MESSAGE TYPE x"),
+            (Sqlserver, "END CONVERSATION @h WITH CLEANUP"),
+            (
+                Sqlserver,
+                "BEGIN DIALOG CONVERSATION @h FROM SERVICE a TO SERVICE 'b'",
+            ),
+            (Sqlserver, "SELECT 1 DISABLE TRIGGER ALL ON DATABASE"),
+            (Sqlserver, "SELECT 1 ENABLE TRIGGER ALL ON DATABASE"),
+            (Sqlserver, "SELECT 1 REVERT"),
+            (Sqlserver, "SELECT 1 RECONFIGURE"),
+            (Sqlserver, "SELECT 1 SETUSER 'x'"),
+            (Sqlserver, "SELECT 1 ADD SIGNATURE TO p BY CERTIFICATE c"),
+            (
+                Sqlserver,
+                "SELECT 1 OPEN SYMMETRIC KEY k DECRYPTION BY PASSWORD = 'x'",
+            ),
+            (Sqlserver, "SELECT 1 RAISERROR('x',20,1) WITH LOG"),
+            (Sqlserver, "SELECT 1 SAVE TRANSACTION x"),
+            (Sqlserver, "BEGIN DISTRIBUTED TRANSACTION"),
+            (Sqlserver, "SELECT * FROM OPENDATASOURCE('x','y').a.b.c"),
+            (Sqlserver, "SELECT 1 EXEC@sql"),
+            (Sqlserver, "SELECT * INTO#t FROM x"),
+            (Postgres, "SELECT pg_promote()"),
+            (Postgres, "SELECT pg_backup_start('x')"),
+            (Postgres, "SELECT pg_stat_reset_shared('bgwriter')"),
+            (Postgres, "SELECT pg_stat_statements_reset()"),
+            (Postgres, "SELECT pg_advisory_lock_shared(1)"),
+            (Postgres, "SELECT pg_advisory_unlock_all()"),
+            (Postgres, "SELECT pg_sleep_for('1 hour')"),
+            (Postgres, "SELECT pg_create_physical_replication_slot('s')"),
+            (
+                Postgres,
+                "SELECT * FROM pg_logical_slot_get_changes('s', NULL, NULL)",
+            ),
+            (Postgres, "SELECT pg_file_write('x', 'y', false)"),
+            (Postgres, "SELECT dblink_send_query('c', 'DELETE FROM t')"),
+            (
+                Postgres,
+                "SELECT * FROM crosstab('DELETE FROM t RETURNING 1,2,3') AS x(a int)",
+            ),
+            (Postgres, "SELECT lo_truncate(1,0)"),
+            (Postgres, "SELECT pg_current_xact_id()"),
+            (Postgres, "SELECT * FROM t FOR SHARE"),
+            (Mysql, "SELECT * FROM t FOR SHARE"),
+            (Mysql, "SELECT sys_exec('rm x')"),
+            (Mysql, "SELECT MASTER_POS_WAIT('f', 4)"),
+            (Mysql, "SELECT * FROM t FOR UPDATE#\n"),
+            (Postgres, r"SELECT 'a\' || '; DROP TABLE t; --'"),
+            (Mysql, r#"SELECT 1 AS "a\"; DROP TABLE t; -- ""#),
+            (Mysql, "SELECT 1 FROM t INTO@a"),
+            (Sqlite, "SELECT [a'] FROM t; DROP TABLE t; --'"),
+            (
+                Sqlite,
+                r"SELECT 1 WHERE 'a' LIKE'\'; PRAGMA query_only = 0; DELETE FROM t; --'",
+            ),
+            (Sqlite, "BEGIN EXCLUSIVE"),
+            (Sqlite, "BEGIN IMMEDIATE"),
+            (Sqlite, "SELECT zipfile('a','b')"),
+        ];
+        for (kind, sql) in cases {
+            assert_ne!(classify(sql, *kind), Read, "{kind:?}: {sql}");
+        }
+    }
+
+    #[test]
+    fn text_that_is_run_counts_and_a_column_named_current_is_no_where() {
+        assert_eq!(
+            classify("DO $$BEGIN DROP TABLE t; END$$", DbKind::Postgres),
+            Dangerous
+        );
+        assert_eq!(
+            classify("EXEC('DROP TABLE t')", DbKind::Sqlserver),
+            Dangerous
+        );
+        assert_eq!(
+            classify("EXEC sp_executesql N'DROP TABLE t'", DbKind::Sqlserver),
+            Dangerous
+        );
+        assert_eq!(
+            classify("PREPARE s FROM 'DROP TABLE t'", DbKind::Mysql),
+            Dangerous
+        );
+        assert_eq!(
+            classify("DO $$BEGIN PERFORM 1; END$$", DbKind::Postgres),
+            Write
+        );
+        for kind in ALL {
+            assert_eq!(classify("UPDATE t SET current = 0", kind), Dangerous);
+            assert_eq!(classify("DELETE FROM t WHERE CURRENT OF c", kind), Write);
+        }
+    }
+
+    #[test]
+    fn everyday_reading_stays_reading() {
+        use DbKind::{Mysql, Postgres, Sqlite, Sqlserver};
+        let cases: &[(DbKind, &str)] = &[
+            (
+                Postgres,
+                "SELECT a, count(*) FROM t WHERE name LIKE 'x%' GROUP BY a ORDER BY 2 DESC LIMIT 10",
+            ),
+            (
+                Postgres,
+                "SELECT pg_size_pretty(pg_total_relation_size('t')), pg_typeof(a), pg_get_viewdef('v') FROM t",
+            ),
+            (
+                Postgres,
+                r#"SELECT "select", "Größe 1" FROM "My Table" t JOIN u USING (id)"#,
+            ),
+            (
+                Postgres,
+                "SELECT 'it''s', $$ dollar $$, now(), coalesce(a, 0) FROM t",
+            ),
+            (
+                Postgres,
+                "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY",
+            ),
+            (Postgres, "SAVEPOINT sp1"),
+            (Postgres, "ROLLBACK TO SAVEPOINT sp1"),
+            (Postgres, r#"RELEASE SAVEPOINT "sp 1""#),
+            (Postgres, "COMMIT AND NO CHAIN"),
+            (
+                Mysql,
+                "SELECT `select`, CONCAT(a, '-', b), IFNULL(c, 0) FROM `my table` WHERE a - -1 = 2",
+            ),
+            (Mysql, "SELECT 5--3 AS eight"),
+            (Mysql, "START TRANSACTION WITH CONSISTENT SNAPSHOT"),
+            (Mysql, "SHOW CREATE TABLE t"),
+            (
+                Sqlserver,
+                "SELECT TOP 10 [select], LEN(name) FROM [dbo].[my table] ORDER BY 1 OFFSET 10 ROWS FETCH NEXT 10 ROWS ONLY",
+            ),
+            (Sqlserver, "SELECT * FROM #tmp WHERE id = @id"),
+            (Sqlserver, "BEGIN TRAN"),
+            (
+                Sqlite,
+                "SELECT [select], length(name), substr(name, 1, 2) FROM [my table]",
+            ),
+            (
+                Sqlite,
+                "SELECT * FROM pragma_table_info('orders') WHERE schema = 'main'",
+            ),
+            (Sqlite, "BEGIN"),
+            (Sqlite, "END"),
+        ];
+        for (kind, sql) in cases {
+            assert_eq!(classify(sql, *kind), Read, "{kind:?}: {sql}");
         }
     }
 

@@ -141,3 +141,15 @@
   border: 0;
   border-top: 1px solid var(--border);
 }
+
+/* the mark of a protected or labelled connection (prompt 012) */
+.guard-mark {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--badge-danger-bg);
+  color: var(--badge-danger-fg);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+}

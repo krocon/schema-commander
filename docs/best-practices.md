@@ -110,6 +110,8 @@ Unsere Ergänzungen und Abweichungen:
   (`history.sqlite`, abschaltbar, endgültig löschbar) – nie Ergebnisse, nie Parameterwerte. Werte, die die App selbst in SQL
   einsetzt (Filter, Bearbeiten im Gitter), immer als gebundene Parameter, Bezeichner über die Quoting-Funktion des
   Dialekts, nie per String-Verkettung.
+- **Jeder Command, der SQL des Nutzers oder der App ausführt, geht durch `ConnectionManager::admit`** (Design 012);
+  ein neuer Weg zur Datenbank ohne ihn ist ein Fehler.
 - **Zerstörendes braucht eine Bestätigung im Backend-Vertrag** (z. B. `UPDATE`/`DELETE` ohne `WHERE`, alles auf einer
   als „Produktion“ markierten Verbindung), nicht nur einen Dialog im Frontend.
 - Daten aus der Datenbank sind fremd: nie unescaped in `innerHTML`.
