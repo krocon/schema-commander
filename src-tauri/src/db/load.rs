@@ -6,15 +6,17 @@
 
 use super::edit::{self, RowInsert, SetCell, UpdatePlan};
 use super::filter::{Built, MAX_PARAMS, ValueKind, invalid, name};
-use super::value::VecSink;
-use super::{DbKind, Limits, Session, Stop, begin_statement};
+use super::value::{Cell, VecSink};
+use super::{Bind, DbKind, Limits, Session, Stop, begin_statement};
 use crate::data_import::{Guess, GuessKind, Record, Source};
 use crate::error::{AppError, AppResult, ErrorCode};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 
 /// Columns of a target table at most.
-pub const MAX_TARGET_COLUMNS: usize = 1_000;
+pub const MAX_TARGET_COLUMNS: usize = edit::MAX_ROW_CELLS;
+/// Bytes of the values of one block at most: a block of long values is closed early.
+pub const MAX_BLOCK_BYTES: usize = 8 * 1024 * 1024;
 /// Problems of single rows kept for the report (all of them go to the error file).
 pub const REPORTED_ERRORS: usize = 20;
 
@@ -120,11 +122,13 @@ pub struct Loaded {
     pub rolled_back: bool,
     /// An error file was written.
     pub error_file: bool,
+    /// The rows that were in the table before are gone (it was emptied first, and that stays).
+    pub cleared: bool,
 }
 
 fn checked_plan(plan: &LoadPlan) -> AppResult<()> {
     if plan.mappings.is_empty() || plan.mappings.len() > MAX_TARGET_COLUMNS {
-        return Err(invalid("an import needs one to 1000 columns"));
+        return Err(invalid("an import needs one to 400 columns"));
     }
     for (i, m) in plan.mappings.iter().enumerate() {
         if plan.mappings[..i]
@@ -144,23 +148,73 @@ fn table_of(kind: DbKind, schema: Option<&str>, table: &str) -> AppResult<String
     })
 }
 
-/// `1.234,56` → `1234.56`; spaces between the digits go.
-fn decimal_point(text: &str) -> String {
+/// A number written with a decimal comma as one with a point: `1.234,56` → `1234.56`, `2.000` →
+/// `2000`. A point groups three digits, always; spaces and `'` between the digits go. `None`: not a
+/// number written that way (`1.5` – it would silently become another one).
+fn decimal_point(text: &str) -> Option<String> {
     let t: String = text
         .chars()
-        .filter(|c| !c.is_whitespace() && *c != '\u{2009}' && *c != '\u{202F}' && *c != '\'')
+        .filter(|c| !c.is_whitespace() && *c != '\'')
         .collect();
-    if t.contains(',') {
-        t.replace('.', "").replace(',', ".")
-    } else {
-        t
+    let (sign, body) = match t.strip_prefix(['-', '+']) {
+        Some(rest) => (&t[..1], rest),
+        None => ("", t.as_str()),
+    };
+    let (whole, fraction) = match body.split_once(',') {
+        Some((whole, fraction)) => (whole, Some(fraction)),
+        None => (body, None),
+    };
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    if fraction.is_some_and(|f| !digits(f)) {
+        return None;
     }
+    let mut groups = whole.split('.');
+    let first = groups.next()?;
+    let rest: Vec<&str> = groups.collect();
+    let grouped = !rest.is_empty();
+    if !digits(first)
+        || (grouped && first.len() > 3)
+        || rest.iter().any(|g| g.len() != 3 || !digits(g))
+    {
+        return None;
+    }
+    let mut out = format!("{sign}{first}{}", rest.concat());
+    if let Some(fraction) = fraction {
+        out.push('.');
+        out.push_str(fraction);
+    }
+    Some(out)
+}
+
+/// Whether a text is a number as every database reads it: digits, a point, an exponent.
+fn is_number(text: &str) -> bool {
+    let t = text.strip_prefix(['-', '+']).unwrap_or(text);
+    let (mantissa, exponent) = match t.split_once(['e', 'E']) {
+        Some((m, e)) => (m, Some(e)),
+        None => (t, None),
+    };
+    let digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
+    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    (!whole.is_empty() || !fraction.is_empty())
+        && digits(whole)
+        && digits(fraction)
+        && exponent.is_none_or(|e| {
+            let e = e.strip_prefix(['-', '+']).unwrap_or(e);
+            !e.is_empty() && digits(e)
+        })
 }
 
 /// A date written day first or month first as `yyyy-mm-dd`, a time behind it kept. What is a date
 /// already stays. `None`: not a date in that order.
 fn iso_date(text: &str, order: DateOrder) -> Option<String> {
     let t = text.trim();
+    // a time alone (a column that holds only that) has no order of day and month
+    if t.split([' ', 'T'])
+        .next()
+        .is_some_and(|first| first.contains(':'))
+    {
+        return Some(t.to_owned());
+    }
     let (date, time) = match t.find([' ', 'T']) {
         Some(at) => (&t[..at], &t[at..]),
         None => (t, ""),
@@ -194,38 +248,54 @@ fn iso_date(text: &str, order: DateOrder) -> Option<String> {
 pub fn convert(record: &Record, plan: &LoadPlan) -> Result<RowInsert, String> {
     let mut set = Vec::with_capacity(plan.mappings.len());
     for m in &plan.mappings {
+        let column = &m.target.name;
+        let text = m.target.kind == ValueKind::Text;
         let raw: Option<&str> = match m.source {
             // a record with fewer fields than the others: what is missing is empty
             Some(i) => record.cells.get(i).map_or(Some(""), |c| c.as_deref()),
             None => m.fixed.as_deref(),
         };
+        // a number, a truth value: white space around it is nothing, and nothing is no value
         let mut value: Option<String> = raw.map(|v| {
-            if m.trim {
+            if m.trim || !text {
                 v.trim().to_owned()
             } else {
                 v.to_owned()
             }
         });
-        // the fixed value is what the user typed: taken as it is
-        if m.source.is_some()
-            && let Some(v) = &value
-            && ((v.is_empty() && plan.empty_is_null) || plan.null_texts.iter().any(|n| n == v))
+        if let Some(v) = &value
+            && ((v.is_empty() && (!text || (m.source.is_some() && plan.empty_is_null)))
+                // the fixed value is what the user typed: no text of the file's stands for NULL in it
+                || (m.source.is_some() && plan.null_texts.iter().any(|n| n == v)))
         {
             value = None;
         }
         if let Some(v) = value.as_mut() {
             if v.len() > edit::MAX_VALUE_BYTES {
-                return Err(format!("{}: the value is too long", m.target.name));
+                return Err(format!("{column}: the value is too long"));
             }
-            if m.decimal_comma && m.target.kind == ValueKind::Number {
-                *v = decimal_point(v);
+            // bytes that were no text in the encoding the file was read with
+            if v.contains('\u{FFFD}') {
+                return Err(format!(
+                    "{column}: the value holds bytes that are no text in this encoding"
+                ));
+            }
+            if m.target.kind == ValueKind::Number {
+                if m.decimal_comma {
+                    *v = decimal_point(v)
+                        .ok_or_else(|| format!("{column}: not a number with a decimal comma"))?;
+                }
+                // not left to the database: SQLite would store the text, MySQL a zero
+                if !is_number(v) {
+                    return Err(format!("{column}: not a number"));
+                }
             }
             if let Some(order) = m.date_order {
-                *v = iso_date(v, order).ok_or_else(|| format!("{}: not a date", m.target.name))?;
+                *v = iso_date(v, order).ok_or_else(|| format!("{column}: not a date"))?;
             }
         }
         set.push(SetCell {
-            column: m.target.name.clone(),
+            column: column.clone(),
             kind: m.target.kind,
             type_name: m.target.type_name.clone(),
             value,
@@ -282,7 +352,7 @@ pub fn create_table(
     columns: &[(String, Guess)],
 ) -> AppResult<String> {
     if columns.is_empty() || columns.len() > MAX_TARGET_COLUMNS {
-        return Err(invalid("a table needs one to 1000 columns"));
+        return Err(invalid("a table needs one to 400 columns"));
     }
     let type_of = |g: &Guess| -> String {
         // room for values longer than the ones seen
@@ -375,124 +445,110 @@ fn insert(
     Ok(outcome.rows_affected == Some(rows as u64))
 }
 
-/// Loads the records of a file into the table of the plan.
-///
-/// - `whole_transaction` with [`OnError::Abort`]: one transaction – after an error or a stop the table is
-///   as it was (`rolled_back`).
-/// - otherwise block by block, each its own transaction: after an error or a stop the blocks written so
-///   far stay. With [`OnError::Skip`] the rows of a block that fails are written one by one, and those
-///   the database refuses are noted.
-///
-/// `progress` hears the records read so far; `stop` ends the import at the next block.
-#[allow(clippy::too_many_arguments)]
-pub fn load(
+/// Whether the table keeps to transactions. MySQL and MariaDB have engines that do not (MyISAM, Aria,
+/// MEMORY …): a `ROLLBACK` takes nothing back there, and a statement for several rows that fails has
+/// written the rows before the bad one.
+fn transactional(
     session: &mut dyn Session,
     kind: DbKind,
-    source: &mut Source,
     plan: &LoadPlan,
-    error_file: Option<&std::path::Path>,
-    timeout: Option<std::time::Duration>,
-    progress: &dyn Fn(u64),
     stop: Stop,
-) -> AppResult<Loaded> {
-    checked_plan(plan)?;
-    let width = plan.mappings.len();
-    let block = edit::MAX_BATCH_ROWS.min((MAX_PARAMS / width).max(1));
-    let limits = Limits {
-        max_rows: 1,
-        timeout,
-    };
-    let skip = plan.on_error == OnError::Skip;
-    let whole = plan.whole_transaction && !skip;
-    let mut out = Loaded::default();
-    let mut errors = ErrorFile {
-        path: error_file,
-        file: None,
-    };
-    let note = |out: &mut Loaded, errors: &mut ErrorFile, line: u64, reason: String, raw: &str| {
-        out.skipped += 1;
-        errors.note(line, &reason, raw)?;
-        if out.errors.len() < REPORTED_ERRORS {
-            out.errors.push(RowError { line, reason });
-        }
-        Ok::<(), AppError>(())
-    };
-    let begin = begin_statement(kind);
-    let mut in_tx = false;
-    if whole {
-        run(session, begin, &|| false)?;
-        in_tx = true;
+) -> AppResult<bool> {
+    if kind != DbKind::Mysql {
+        return Ok(true);
     }
-    if plan.clear_first {
-        let clear = clear_statement(kind, plan)?;
-        if let Err(e) = run(session, &clear, stop) {
-            if in_tx && session.is_open() {
-                let _ = run(session, "ROLLBACK", &|| false);
-            }
-            if e.code != ErrorCode::Cancelled {
-                return Err(e);
-            }
-            // stopped while the table was being emptied: a statement that is stopped has changed
-            // nothing
-            out.cancelled = true;
-            out.rolled_back = whole;
-            return Ok(out);
+    let mut params = Vec::new();
+    let schema = match plan.schema.as_deref().filter(|s| !s.is_empty()) {
+        Some(schema) => {
+            params.push(Bind::Text(schema.to_owned()));
+            "?"
         }
+        None => "DATABASE()",
+    };
+    params.push(Bind::Text(plan.table.clone()));
+    let sql = format!(
+        "SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = {schema} AND TABLE_NAME = ?"
+    );
+    let mut sink = VecSink::new(2);
+    session.execute_bound(&sql, &params, Limits::rows(2), &mut sink, stop)?;
+    let engine = match sink.rows.first().and_then(|r| r.first()) {
+        Some(Cell::Text(engine)) => engine.to_ascii_lowercase(),
+        _ => return Ok(true),
+    };
+    Ok(!matches!(
+        engine.as_str(),
+        "myisam" | "aria" | "memory" | "csv" | "archive" | "mrg_myisam" | "blackhole" | "federated"
+    ))
+}
+
+fn cancelled() -> AppError {
+    AppError::new(ErrorCode::Cancelled, "cancelled")
+}
+
+/// What ends an import whatever the mode: nobody answers any more, or not in time (rows tried one by
+/// one would each wait as long).
+fn fatal(session: &dyn Session, e: &AppError) -> bool {
+    !session.is_open() || e.code == ErrorCode::Timeout
+}
+
+/// A row that waits to be written: its line, the row, the record as it stands in the file.
+type Pending = (u64, RowInsert, String);
+
+struct Loader<'a> {
+    session: &'a mut dyn Session,
+    kind: DbKind,
+    plan: &'a LoadPlan,
+    limits: Limits,
+    stop: Stop<'a>,
+    skip: bool,
+    whole: bool,
+    /// A transaction of ours is open on the session.
+    in_tx: bool,
+    out: Loaded,
+    errors: ErrorFile<'a>,
+}
+
+impl Loader<'_> {
+    fn begin(&mut self) -> AppResult<()> {
+        run(self.session, begin_statement(self.kind), &|| false)?;
+        self.in_tx = true;
+        Ok(())
     }
-    // (line, row, the record as it stands in the file)
-    let mut pending: Vec<(u64, RowInsert, String)> = Vec::with_capacity(block);
-    let mut ended = false;
-    'records: loop {
-        // fill a block
-        while pending.len() < block && !ended {
-            match source.next_record() {
-                Ok(Some(Ok(record))) => {
-                    out.read += 1;
-                    match convert(&record, plan) {
-                        Ok(row) => pending.push((record.line, row, record.raw)),
-                        Err(reason) => {
-                            note(&mut out, &mut errors, record.line, reason, &record.raw)?;
-                            if !skip {
-                                out.failed = true;
-                                break 'records;
-                            }
-                        }
-                    }
-                }
-                Ok(Some(Err((line, reason, raw)))) => {
-                    out.read += 1;
-                    note(&mut out, &mut errors, line, reason, &raw)?;
-                    if !skip {
-                        out.failed = true;
-                        break 'records;
-                    }
-                }
-                Ok(None) => ended = true,
-                // the file itself cannot be read on: that ends the import whatever the mode
-                Err(e) => {
-                    note(&mut out, &mut errors, 0, e.message.clone(), "")?;
-                    out.skipped -= 1;
-                    out.failed = true;
-                    break 'records;
-                }
-            }
+
+    fn commit(&mut self) -> AppResult<()> {
+        run(self.session, "COMMIT", &|| false)?;
+        self.in_tx = false;
+        Ok(())
+    }
+
+    /// Takes back what our transaction did, if one is open and the session still there.
+    fn rollback(&mut self) {
+        if self.in_tx && self.session.is_open() {
+            let _ = run(self.session, "ROLLBACK", &|| false);
         }
-        if stop() {
-            out.cancelled = true;
-            break;
+        self.in_tx = false;
+    }
+
+    /// A record that is left out, or the one the import ends with.
+    fn note(&mut self, line: u64, reason: String, raw: &str) -> AppResult<()> {
+        self.out.skipped += 1;
+        self.errors.note(line, &reason, raw)?;
+        if self.out.errors.len() < REPORTED_ERRORS {
+            self.out.errors.push(RowError { line, reason });
         }
-        if pending.is_empty() {
-            break;
-        }
-        let rows: Vec<RowInsert> = pending.iter().map(|(_, row, _)| row.clone()).collect();
-        let steps = edit::steps(kind, &edit_plan(plan, rows))?;
-        if !whole {
-            run(session, begin, &|| false)?;
-            in_tx = true;
+        Ok(())
+    }
+
+    /// Writes a block. `Ok(false)`: the import ends here (a row failed, and that ends it).
+    fn write(&mut self, pending: &[Pending]) -> AppResult<bool> {
+        let rows: Vec<RowInsert> = pending.iter().map(|p| p.1.clone()).collect();
+        let steps = edit::steps(self.kind, &edit_plan(self.plan, rows))?;
+        if !self.whole {
+            self.begin()?;
         }
         let mut problem: Option<AppError> = None;
         for step in &steps {
-            match insert(session, &step.built, step.rows, limits, stop) {
+            match insert(self.session, &step.built, step.rows, self.limits, self.stop) {
                 Ok(true) => {}
                 Ok(false) => {
                     problem = Some(AppError::new(
@@ -507,101 +563,290 @@ pub fn load(
                 }
             }
         }
-        match problem {
-            None => {
-                if !whole {
-                    run(session, "COMMIT", &|| false)?;
-                    in_tx = false;
-                }
-                out.written += pending.len() as u64;
+        // what a database checks only at the end of a transaction fails here
+        if problem.is_none()
+            && !self.whole
+            && let Err(e) = run(self.session, "COMMIT", &|| false)
+        {
+            problem = Some(e);
+        }
+        let Some(e) = problem else {
+            if !self.whole {
+                self.in_tx = false;
             }
-            Some(e) if e.code == ErrorCode::Cancelled => {
-                out.cancelled = true;
-                break;
+            self.out.written += pending.len() as u64;
+            return Ok(true);
+        };
+        if e.code == ErrorCode::Cancelled || fatal(self.session, &e) {
+            return Err(e);
+        }
+        if !self.whole {
+            self.rollback();
+        }
+        if !self.skip {
+            // which row it was, as far as that is known: the lines of the block
+            let first = pending.first().map_or(0, |p| p.0);
+            let last = pending.last().map_or(0, |p| p.0);
+            let reason = if first == last {
+                e.message.clone()
+            } else {
+                format!("{} (one of the lines {first}–{last})", e.message)
+            };
+            self.errors.note(first, &reason, "")?;
+            self.out.errors.push(RowError {
+                line: first,
+                reason,
+            });
+            self.out.failed = true;
+            return Ok(false);
+        }
+        self.singly(pending, false)?;
+        Ok(true)
+    }
+
+    /// The rows of a block that failed, one by one: what the database takes stays, the rest is noted.
+    /// In one transaction with a savepoint before every row – a row that is refused, or that did not
+    /// become exactly one row, is taken back to it. `apart`: every row in a transaction of its own (for
+    /// what is checked only at `COMMIT`).
+    fn singly(&mut self, pending: &[Pending], apart: bool) -> AppResult<()> {
+        let (mark, back) = match self.kind {
+            DbKind::Sqlserver => ("SAVE TRANSACTION sc_load", "ROLLBACK TRANSACTION sc_load"),
+            _ => ("SAVEPOINT sc_load", "ROLLBACK TO SAVEPOINT sc_load"),
+        };
+        let rows: Vec<RowInsert> = pending.iter().map(|p| p.1.clone()).collect();
+        let singles =
+            edit::single_inserts(self.kind, &edit_plan(self.plan, rows), 0, pending.len())?;
+        let mut taken = 0u64;
+        let mut refused: Vec<(u64, String, &str)> = Vec::new();
+        if !apart {
+            self.begin()?;
+        }
+        for (single, (line, _, raw)) in singles.iter().zip(pending) {
+            if (self.stop)() {
+                return Err(cancelled());
             }
-            Some(e) => {
-                if !whole && session.is_open() {
-                    let _ = run(session, "ROLLBACK", &|| false);
-                    in_tx = false;
-                }
-                if !session.is_open() {
-                    return Err(e);
-                }
-                if !skip {
-                    // which rows it was, as far as that is known: the lines of the block
-                    let first = pending.first().map_or(0, |p| p.0);
-                    let last = pending.last().map_or(0, |p| p.0);
-                    let reason = if first == last {
-                        e.message.clone()
+            if apart {
+                self.begin()?;
+            } else {
+                run(self.session, mark, &|| false)?;
+            }
+            let mut ended =
+                insert(self.session, single, 1, self.limits, self.stop).and_then(|one| {
+                    if one {
+                        Ok(())
                     } else {
-                        format!("{} (one of the lines {first}–{last})", e.message)
-                    };
-                    out.errors.push(RowError {
-                        line: first,
-                        reason: reason.clone(),
-                    });
-                    errors.note(first, &reason, "")?;
-                    out.failed = true;
-                    break;
+                        Err(AppError::new(
+                            ErrorCode::InvalidQuery,
+                            "the table did not take the row as one row",
+                        ))
+                    }
+                });
+            if apart && ended.is_ok() {
+                ended = run(self.session, "COMMIT", &|| false);
+            }
+            match ended {
+                Ok(()) => {
+                    if apart {
+                        self.in_tx = false;
+                    }
+                    taken += 1;
                 }
-                // every row of the block on its own: what the database takes stays, the rest is noted
-                let singles = edit::single_inserts(
-                    kind,
-                    &edit_plan(plan, pending.iter().map(|p| p.1.clone()).collect()),
-                    0,
-                    pending.len(),
-                )?;
-                for (single, (line, _, raw)) in singles.iter().zip(&pending) {
-                    if stop() {
-                        out.cancelled = true;
-                        break 'records;
+                Err(e) => {
+                    if e.code == ErrorCode::Cancelled || fatal(self.session, &e) {
+                        return Err(e);
                     }
-                    match insert(session, single, 1, limits, stop) {
-                        Ok(true) => out.written += 1,
-                        Ok(false) => note(
-                            &mut out,
-                            &mut errors,
-                            *line,
-                            "the table did not take the row".into(),
-                            raw,
-                        )?,
-                        Err(e) if e.code == ErrorCode::Cancelled => {
-                            out.cancelled = true;
-                            break 'records;
+                    if apart {
+                        self.rollback();
+                    } else if let Err(gone) = run(self.session, back, &|| false) {
+                        // the failure took the whole transaction along (SQL Server does that for some
+                        // errors), and with it the rows taken so far: every row on its own, then
+                        if fatal(self.session, &gone) {
+                            return Err(gone);
                         }
-                        Err(e) => {
-                            if !session.is_open() {
-                                return Err(e);
-                            }
-                            note(&mut out, &mut errors, *line, e.message.clone(), raw)?;
-                        }
+                        self.rollback();
+                        return self.singly(pending, true);
                     }
+                    refused.push((*line, e.message, raw));
                 }
             }
         }
-        pending.clear();
-        progress(out.read);
-        if ended {
-            break;
+        if !apart && let Err(e) = run(self.session, "COMMIT", &|| false) {
+            if fatal(self.session, &e) {
+                return Err(e);
+            }
+            // something is checked only at the end: find the row with a transaction for each
+            self.rollback();
+            return self.singly(pending, true);
+        }
+        self.in_tx = false;
+        self.out.written += taken;
+        for (line, reason, raw) in refused {
+            self.note(line, reason, raw)?;
+        }
+        Ok(())
+    }
+
+    /// Reads the file and writes its rows, block by block.
+    fn go(&mut self, source: &mut Source, block: usize, progress: &dyn Fn(u64)) -> AppResult<()> {
+        if self.whole {
+            self.begin()?;
+        }
+        if self.plan.clear_first {
+            let clear = clear_statement(self.kind, self.plan)?;
+            run(self.session, &clear, self.stop)?;
+            self.out.cleared = true;
+        }
+        let mut pending: Vec<Pending> = Vec::with_capacity(block);
+        let mut ended = false;
+        while !ended {
+            let mut bytes = 0;
+            while pending.len() < block && bytes < MAX_BLOCK_BYTES && !ended {
+                let broken = match source.next_record()? {
+                    Some(Ok(record)) => {
+                        self.out.read += 1;
+                        match convert(&record, self.plan) {
+                            Ok(row) => {
+                                bytes += row
+                                    .set
+                                    .iter()
+                                    .map(|c| c.value.as_ref().map_or(0, String::len))
+                                    .sum::<usize>();
+                                pending.push((record.line, row, record.raw));
+                                None
+                            }
+                            Err(reason) => Some((record.line, reason, record.raw)),
+                        }
+                    }
+                    Some(Err(broken)) => {
+                        self.out.read += 1;
+                        Some(broken)
+                    }
+                    None => {
+                        ended = true;
+                        None
+                    }
+                };
+                if let Some((line, reason, raw)) = broken {
+                    self.note(line, reason, &raw)?;
+                    if !self.skip {
+                        self.out.failed = true;
+                        return Ok(());
+                    }
+                }
+            }
+            if (self.stop)() {
+                return Err(cancelled());
+            }
+            if !pending.is_empty() && !self.write(&pending)? {
+                return Ok(());
+            }
+            pending.clear();
+            progress(self.out.read);
+        }
+        if self.whole {
+            self.commit()?;
+        }
+        Ok(())
+    }
+}
+
+/// Loads the records of a file into the table of the plan.
+///
+/// - `whole_transaction` with [`OnError::Abort`]: one transaction – after an error or a stop the table is
+///   as it was (`rolled_back`).
+/// - otherwise block by block, each its own transaction: after an error or a stop the blocks written so
+///   far stay. With [`OnError::Skip`] the rows of a block that fails are written one by one, and those
+///   the database refuses are noted.
+///
+/// `progress` hears the records read so far; `stop` ends the import at the next block. Once the import
+/// has begun, whatever ends it is told in the report (`failed`, `cancelled`) – with the number of rows
+/// that are in the table –, not as an error.
+#[allow(clippy::too_many_arguments)]
+pub fn load(
+    session: &mut dyn Session,
+    kind: DbKind,
+    source: &mut Source,
+    plan: &LoadPlan,
+    error_file: Option<&std::path::Path>,
+    timeout: Option<std::time::Duration>,
+    progress: &dyn Fn(u64),
+    stop: Stop,
+) -> AppResult<Loaded> {
+    checked_plan(plan)?;
+    // the mapping was made for the columns the user saw: a file read otherwise now is another file
+    let columns = source.columns.len();
+    if plan
+        .mappings
+        .iter()
+        .any(|m| m.source.is_some_and(|i| i >= columns))
+    {
+        return Err(invalid("a column of the file that is mapped is not there"));
+    }
+    let skip = plan.on_error == OnError::Skip;
+    let whole = plan.whole_transaction && !skip;
+    let keeps = transactional(session, kind, plan, stop)?;
+    if whole && !keeps {
+        return Err(invalid(
+            "the engine of the table has no transactions: load it block by block",
+        ));
+    }
+    let width = plan.mappings.len();
+    // without transactions a statement for several rows that fails has written some of them
+    let block = if keeps {
+        edit::MAX_BATCH_ROWS.min((MAX_PARAMS / width).max(1))
+    } else {
+        1
+    };
+    let mut loader = Loader {
+        session,
+        kind,
+        plan,
+        limits: Limits {
+            max_rows: 1,
+            timeout,
+        },
+        stop,
+        skip,
+        whole,
+        in_tx: false,
+        out: Loaded::default(),
+        errors: ErrorFile {
+            path: error_file,
+            file: None,
+        },
+    };
+    match loader.go(source, block, progress) {
+        Ok(()) => {}
+        Err(e) if e.code == ErrorCode::Cancelled => loader.out.cancelled = true,
+        Err(e) => {
+            loader.out.failed = true;
+            let _ = loader.errors.note(0, &e.message, "");
+            loader.out.errors.push(RowError {
+                line: 0,
+                reason: e.message,
+            });
         }
     }
-    // the end: one transaction is committed only if nothing went wrong (a connection that is gone has
-    // taken its transaction with it)
-    if whole {
-        if out.failed || out.cancelled || !session.is_open() {
-            if session.is_open() {
-                let _ = run(session, "ROLLBACK", &|| false);
-            }
-            out.rolled_back = true;
-            out.written = 0;
-        } else {
-            run(session, "COMMIT", &|| false)?;
-        }
-    } else if in_tx && session.is_open() {
-        let _ = run(session, "ROLLBACK", &|| false);
+    // a transaction that is still open did not come to its end: nothing of it stays (a connection that
+    // is gone has taken it along)
+    loader.rollback();
+    let mut out = loader.out;
+    if whole && (out.failed || out.cancelled) {
+        out.rolled_back = true;
+        out.written = 0;
+        out.cleared = false;
     }
     progress(out.read);
-    out.error_file = errors.finish()?;
+    match loader.errors.finish() {
+        Ok(written) => out.error_file = written,
+        Err(e) => {
+            out.failed = true;
+            out.errors.push(RowError {
+                line: 0,
+                reason: e.message,
+            });
+        }
+    }
     Ok(out)
 }
 
@@ -735,7 +980,6 @@ mod tests {
                 .as_deref(),
             Some("2026-01-05")
         );
-        assert_eq!(decimal_point("1 234.5"), "1234.5");
         // a value no statement would take is a problem of its row, not of the import
         let long = "x".repeat(edit::MAX_VALUE_BYTES + 1);
         assert!(
@@ -1058,5 +1302,182 @@ mod tests {
         assert!(partly.cancelled && !partly.rolled_back);
         assert!(partly.written > 0 && partly.written < 20_000);
         assert_eq!(count(&mut s)[0][0], partly.written);
+    }
+    /// Review 033: a value is written as it is, or it is a problem of its row – never another value.
+    #[test]
+    fn a_value_never_becomes_another_value() {
+        for (written, read) in [
+            ("1.234,50", Some("1234.50")),
+            ("2.000", Some("2000")),
+            ("1.234.567", Some("1234567")),
+            ("-12,5", Some("-12.5")),
+            ("1 234,5", Some("1234.5")),
+            ("1234", Some("1234")),
+            ("0,5", Some("0.5")),
+            // a point that groups nothing, two commas, no number
+            ("1.5", None),
+            ("1.2.3,4", None),
+            ("1,2,3", None),
+            ("12.34,5", None),
+            ("abc", None),
+        ] {
+            assert_eq!(decimal_point(written).as_deref(), read, "{written}");
+        }
+        let number = |text: &str, empty_is_null: bool| {
+            let p = LoadPlan {
+                empty_is_null,
+                ..plan(vec![map(0, "n", ValueKind::Number)])
+            };
+            convert(&record(&[Some(text)]), &p).map(|row| row.set[0].value.clone())
+        };
+        assert_eq!(number(" 42 ", true), Ok(Some("42".into())));
+        assert_eq!(number("-1.5e3", true), Ok(Some("-1.5e3".into())));
+        // nothing, or only white space, is no number: NULL – whatever is set for texts
+        assert_eq!(number("", false), Ok(None));
+        assert_eq!(number("   ", false), Ok(None));
+        // what is no number is not left to a database that would store it anyway (SQLite) or make
+        // a zero of it (MySQL)
+        assert!(number("abc", true).is_err());
+        assert!(number("1.234,56", true).is_err());
+        assert!(number("0x10", true).is_err());
+        let comma = LoadPlan {
+            mappings: vec![Mapping {
+                decimal_comma: true,
+                ..map(0, "n", ValueKind::Number)
+            }],
+            ..plan(vec![])
+        };
+        assert!(convert(&record(&[Some("1.5")]), &comma).is_err());
+        // bytes that were no text in the encoding of the file
+        let text = plan(vec![map(0, "t", ValueKind::Text)]);
+        assert!(convert(&record(&[Some("M\u{FFFD}ller")]), &text).is_err());
+        // a time is no date: it stays what it is
+        assert_eq!(
+            iso_date("10:30:00", DateOrder::Dmy).as_deref(),
+            Some("10:30:00")
+        );
+    }
+
+    /// Review 033: what fails only at COMMIT, and what a trigger does with a row, ends in a report that
+    /// is true – and in a session without an open transaction.
+    #[test]
+    fn a_failed_commit_and_a_trigger_end_in_a_true_report() {
+        let dir = tempdir().unwrap();
+        let mut s = sqlite::open(&sqlite::demo_profile()).unwrap();
+        s.execute_batch_for_tests(
+            "PRAGMA foreign_keys = ON;
+             CREATE TABLE ages (age INTEGER PRIMARY KEY);
+             INSERT INTO ages VALUES (1);
+             CREATE TABLE people (id INTEGER PRIMARY KEY, name TEXT,
+               age INTEGER REFERENCES ages (age) DEFERRABLE INITIALLY DEFERRED);
+             CREATE TABLE store (id INTEGER PRIMARY KEY, name TEXT, age INTEGER);
+             CREATE VIEW people_v AS SELECT * FROM store;
+             CREATE TRIGGER people_v_in INSTEAD OF INSERT ON people_v BEGIN
+               INSERT INTO store VALUES (new.id, new.name, new.age);
+             END;",
+        );
+        let text = "id,name,age\n1,a,1\n2,b,7\n3,c,1\n";
+        let none = |_: u64| {};
+        // all or nothing: the key that points nowhere shows at COMMIT
+        let whole = load(
+            &mut s,
+            DbKind::Sqlite,
+            &mut csv(dir.path(), text),
+            &plan(maps()),
+            None,
+            None,
+            &none,
+            &|| false,
+        )
+        .unwrap();
+        assert!(whole.failed && whole.rolled_back, "{whole:?}");
+        assert_eq!((whole.written, whole.errors.len()), (0, 1));
+        assert_eq!(people(&mut s).as_array().unwrap().len(), 0);
+        // leaving out: the row is found, the others stay – and no transaction is left open before
+        let skipping = LoadPlan {
+            on_error: OnError::Skip,
+            ..plan(maps())
+        };
+        let done = load(
+            &mut s,
+            DbKind::Sqlite,
+            &mut csv(dir.path(), text),
+            &skipping,
+            None,
+            None,
+            &none,
+            &|| false,
+        )
+        .unwrap();
+        assert_eq!(
+            (done.written, done.skipped, done.failed),
+            (2, 1, false),
+            "{done:?}"
+        );
+        assert_eq!(done.errors[0].line, 3);
+        assert_eq!(people(&mut s).as_array().unwrap().len(), 2);
+        // a trigger that puts the rows elsewhere: what the report counts is what is there
+        let view = LoadPlan {
+            table: "people_v".into(),
+            ..skipping.clone()
+        };
+        let through = load(
+            &mut s,
+            DbKind::Sqlite,
+            &mut csv(dir.path(), text),
+            &view,
+            None,
+            None,
+            &none,
+            &|| false,
+        )
+        .unwrap();
+        let stored = s
+            .query("SELECT COUNT(*) FROM store", Limits::rows(1), &|| false)
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&stored.rows).unwrap()[0][0],
+            through.written,
+            "{through:?}"
+        );
+        assert_eq!(through.written + through.skipped, 3);
+        // emptying first, block by block: a failure afterwards says that the table was emptied
+        let clearing = LoadPlan {
+            clear_first: true,
+            whole_transaction: false,
+            ..plan(maps())
+        };
+        let bad = "id,name,age\n1,a,x\n";
+        let cleared = load(
+            &mut s,
+            DbKind::Sqlite,
+            &mut csv(dir.path(), bad),
+            &clearing,
+            None,
+            None,
+            &none,
+            &|| false,
+        )
+        .unwrap();
+        assert!(
+            cleared.failed && cleared.cleared && !cleared.rolled_back,
+            "{cleared:?}"
+        );
+        assert_eq!(people(&mut s).as_array().unwrap().len(), 0);
+        // a column of the file that is mapped and not there
+        let beyond = plan(vec![map(7, "id", ValueKind::Number)]);
+        assert!(
+            load(
+                &mut s,
+                DbKind::Sqlite,
+                &mut csv(dir.path(), text),
+                &beyond,
+                None,
+                None,
+                &none,
+                &|| false
+            )
+            .is_err()
+        );
     }
 }

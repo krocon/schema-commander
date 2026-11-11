@@ -2679,11 +2679,14 @@ fn a_file_is_loaded_into_a_table_and_comes_back_the_same() {
         );
         assert!(done.error_file && !done.failed, "{product}");
         let noted = std::fs::read_to_string(&errors).unwrap();
-        let lines: Vec<u64> = noted
+        // (a value that cannot be converted is noted when it is read, a row the table refuses when its
+        // block was written: the file is not in the order of the lines)
+        let mut lines: Vec<u64> = noted
             .lines()
             .skip(1)
             .map(|l| l.split('\t').next().unwrap().parse().unwrap())
             .collect();
+        lines.sort_unstable();
         assert_eq!(lines, [6004, 6005, 6006, 6007, 6008], "{product}: {noted}");
         assert!(noted.contains("900004;this name is longer"), "{product}");
         assert_eq!(
@@ -2850,6 +2853,151 @@ fn a_large_file_is_loaded_block_by_block() {
             "SELECT COUNT(*), CAST(SUM(id) AS text), CAST(SUM(amount) AS text) FROM sc_load"
         )),
         json!([[ROWS, (ROWS * (ROWS + 1) / 2).to_string(), "249997500.00"]])
+    );
+    run(&mut s, "DROP TABLE sc_load");
+}
+
+/// Review 033: a table without transactions (MyISAM, Aria) is not loaded "all or nothing", and a row
+/// that fails does not leave the rows before it in the table twice.
+#[test]
+#[ignore]
+fn a_table_without_transactions_is_loaded_row_by_row() {
+    for (p, product) in [(my(), "mysql"), (maria(), "mariadb")] {
+        let kind = p.kind;
+        let mut s = open(&p);
+        run(&mut s, "DROP TABLE IF EXISTS sc_load");
+        // no key: nothing but the import itself keeps a row from being there twice
+        run(
+            &mut s,
+            "CREATE TABLE sc_load (id int NOT NULL, name varchar(5) NOT NULL) ENGINE=MyISAM",
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("in.csv");
+        std::fs::write(&file, "id,name\n1,a\n2,b\n3,much too long\n4,d\n").unwrap();
+        let info = meta::table(s.as_mut(), kind, "shop", "sc_load", &|| false).unwrap();
+        let plan = LoadPlan {
+            schema: Some("shop".into()),
+            table: "sc_load".into(),
+            mappings: info
+                .columns
+                .iter()
+                .enumerate()
+                .map(|(i, c)| Mapping {
+                    source: Some(i),
+                    fixed: None,
+                    target: TargetColumn {
+                        name: c.name.clone(),
+                        kind: if i == 0 {
+                            ValueKind::Number
+                        } else {
+                            ValueKind::Text
+                        },
+                        type_name: c.type_name.clone(),
+                    },
+                    trim: false,
+                    decimal_comma: false,
+                    date_order: None,
+                })
+                .collect(),
+            null_texts: Vec::new(),
+            empty_is_null: true,
+            clear_first: false,
+            on_error: OnError::Abort,
+            whole_transaction: true,
+        };
+        let mut source = Source::open(&file, &SourceOptions::default()).unwrap();
+        let refused = load(
+            s.as_mut(),
+            kind,
+            &mut source,
+            &plan,
+            None,
+            None,
+            &|_| {},
+            &|| false,
+        );
+        assert!(
+            refused.is_err(),
+            "{product}: all or nothing cannot be promised"
+        );
+        let skipping = LoadPlan {
+            on_error: OnError::Skip,
+            ..plan
+        };
+        let done = load_file(&mut s, kind, &file, &skipping, None, &|| false);
+        assert_eq!(
+            (done.written, done.skipped),
+            (3, 1),
+            "{product}: {:?}",
+            done.errors
+        );
+        assert_eq!(
+            rows(&run(&mut s, "SELECT id FROM sc_load ORDER BY id")),
+            json!([[1], [2], [4]]),
+            "{product}"
+        );
+        run(&mut s, "DROP TABLE sc_load");
+    }
+}
+
+/// Review 033: SQL Server reads a day for a `datetime` the same, whatever the language of the login.
+#[test]
+#[ignore]
+fn sqlserver_reads_a_day_the_same_in_every_language() {
+    let p = ms();
+    let mut s = open(&p);
+    run(&mut s, "DROP TABLE IF EXISTS sc_load");
+    run(
+        &mut s,
+        "CREATE TABLE sc_load (id int NOT NULL PRIMARY KEY, at datetime, short smalldatetime)",
+    );
+    run(&mut s, "SET LANGUAGE German");
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("in.csv");
+    std::fs::write(
+        &file,
+        "id,at,short\n1,2026-03-05,2026-03-05 10:30\n2,2026-12-31 23:59:58,2026-03-05\n",
+    )
+    .unwrap();
+    let info = meta::table(s.as_mut(), p.kind, "dbo", "sc_load", &|| false).unwrap();
+    let plan = LoadPlan {
+        schema: Some("dbo".into()),
+        table: "sc_load".into(),
+        mappings: info
+            .columns
+            .iter()
+            .enumerate()
+            .map(|(i, c)| Mapping {
+                source: Some(i),
+                fixed: None,
+                target: TargetColumn {
+                    name: c.name.clone(),
+                    kind: if i == 0 {
+                        ValueKind::Number
+                    } else {
+                        ValueKind::Text
+                    },
+                    type_name: c.type_name.clone(),
+                },
+                trim: false,
+                decimal_comma: false,
+                date_order: None,
+            })
+            .collect(),
+        null_texts: Vec::new(),
+        empty_is_null: true,
+        clear_first: false,
+        on_error: OnError::Abort,
+        whole_transaction: true,
+    };
+    let done = load_file(&mut s, p.kind, &file, &plan, None, &|| false);
+    assert_eq!((done.written, done.failed), (2, false), "{:?}", done.errors);
+    assert_eq!(
+        rows(&run(
+            &mut s,
+            "SELECT MONTH(at), DAY(at), MONTH(short), DAY(short), DATEPART(minute, short) FROM sc_load ORDER BY id"
+        )),
+        json!([[3, 5, 3, 5, 30], [12, 31, 3, 5, 0]])
     );
     run(&mut s, "DROP TABLE sc_load");
 }

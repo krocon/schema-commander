@@ -82,6 +82,8 @@ export interface Loaded {
   readonly failed: boolean;
   readonly rolledBack: boolean;
   readonly errorFile: boolean;
+  /** The rows that were in the table before are gone. */
+  readonly cleared: boolean;
 }
 
 /**
@@ -102,12 +104,12 @@ export abstract class DataImportApi {
     table: string,
     columns: readonly (readonly [string, Guess])[],
   ): Promise<string>;
-  /** Runs the `CREATE TABLE` as the user left it; anything that is not a definition is refused. */
+  /** Runs the `CREATE TABLE` as the user left it; anything else, or anything more, is refused. */
   abstract createTable(
     connectionId: string,
     sql: string,
     confirmation: string | null,
-    allowDangerous: boolean,
+    timeoutMs: number,
   ): Promise<void>;
   /** The statements an import stands for: what the guard of the connection is asked about. */
   abstract statements(connectionId: string, plan: LoadPlan): Promise<string[]>;
@@ -147,9 +149,9 @@ export class TauriDataImportApi extends DataImportApi {
     connectionId: string,
     sql: string,
     confirmation: string | null,
-    allowDangerous: boolean,
+    timeoutMs: number,
   ): Promise<void> {
-    return call('load_create_table', { id: connectionId, sql, confirmation, allowDangerous });
+    return call('load_create_table', { id: connectionId, sql, confirmation, timeoutMs });
   }
 
   statements(connectionId: string, plan: LoadPlan): Promise<string[]> {

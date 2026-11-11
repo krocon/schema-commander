@@ -139,6 +139,7 @@ describe('DataImportDialog', () => {
       failed: false,
       rolledBack: false,
       errorFile: true,
+      cleared: false,
     };
     await click('Importieren');
     const guard = TestBed.inject(GuardService);
@@ -157,6 +158,15 @@ describe('DataImportDialog', () => {
       plan: { schema: 'public', table: 'orders', clearFirst: true, onError: 'skip' },
     });
     expect(api.runs[0].confirmations.length).toBe(2);
+    // read as the preview read it, not detected again
+    expect(api.runs[0].options).toEqual({
+      format: 'csv',
+      delimiter: ';',
+      quote: null,
+      encoding: 'utf-8',
+      header: true,
+      skipLines: 0,
+    });
     expect(api.runs[0].plan.mappings.map((m) => [m.target.name, m.source, m.fixed])).toEqual([
       ['id', 0, null],
       ['customer_id', null, '42'],
@@ -171,6 +181,31 @@ describe('DataImportDialog', () => {
     expect(el.querySelector('.errors')?.textContent).toContain('Zeile 4');
     await click('Fehlerdatei zeigen');
     expect(api.revealed).toEqual(['/data/orders.errors.tsv']);
+  });
+
+  it('does not start while the file is being read again', async () => {
+    // review 033: the mapping on the screen belongs to the columns of the last answer
+    const { fixture, el, click, choose } = await open();
+    files.path = '/data/orders.csv';
+    await click('Datei wählen');
+    const start = () => el.querySelector<HTMLButtonElement>('button[type=submit]')!;
+    expect(start().disabled).toBe(false);
+    api.holdPreview = true;
+    await choose('#di-delimiter', ',');
+    expect(start().disabled).toBe(true);
+    api.releasePreview();
+    await settled(fixture);
+    expect(start().disabled).toBe(false);
+  });
+
+  it('says that the table was emptied when the import failed after that', async () => {
+    const { fixture, el, click } = await open();
+    files.path = '/data/orders.csv';
+    await click('Datei wählen');
+    api.done = { ...api.done, written: 0, failed: true, cleared: true };
+    await click('Importieren');
+    await settled(fixture);
+    expect(el.querySelector('.report')?.textContent).toContain('vorher geleert');
   });
 
   it('runs nothing when the guard hears a no', async () => {

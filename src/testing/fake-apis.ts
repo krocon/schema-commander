@@ -1450,16 +1450,31 @@ export class FakeDataImportApi extends DataImportApi {
     failed: false,
     rolledBack: false,
     errorFile: false,
+    cleared: false,
   };
+  /** Makes the next previews wait for `releasePreview()`. */
+  holdPreview = false;
   private settle: (() => void) | null = null;
+  private waiting: (() => void)[] = [];
 
   finish(): void {
     this.settle?.();
   }
 
-  preview(path: string, options: SourceOptions, nulls: readonly string[]): Promise<FilePreview> {
+  releasePreview(): void {
+    this.holdPreview = false;
+    this.waiting.splice(0).forEach((go) => go());
+  }
+
+  async preview(
+    path: string,
+    options: SourceOptions,
+    nulls: readonly string[],
+  ): Promise<FilePreview> {
     this.previews.push({ path, options, nulls });
-    return this.fail ? Promise.reject(this.fail) : Promise.resolve(this.start);
+    if (this.holdPreview) await new Promise<void>((resolve) => this.waiting.push(resolve));
+    if (this.fail) throw this.fail;
+    return this.start;
   }
 
   tableDdl(
@@ -1474,6 +1489,7 @@ export class FakeDataImportApi extends DataImportApi {
   }
 
   createTable(_connectionId: string, sql: string, confirmation: string | null): Promise<void> {
+    // (the time limit is not looked at here)
     this.created.push({ sql, confirmation });
     return this.fail ? Promise.reject(this.fail) : Promise.resolve();
   }

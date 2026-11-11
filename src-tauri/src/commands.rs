@@ -845,29 +845,50 @@ pub fn load_table_ddl(
     crate::db::load::create_table(manager.kind_of(&id)?, schema.as_deref(), &table, &columns)
 }
 
-/// Runs the `CREATE TABLE` of an import, as the user left it: one statement that defines something –
-/// anything else is refused – through the guard of the connection (`confirmation` from
-/// `confirm_statements`).
+/// Runs the `CREATE TABLE` of an import, as the user left it: exactly one statement that creates a
+/// table – anything else, or anything more, is refused – through the guard of the connection
+/// (`confirmation` from `confirm_statements`).
 #[tauri::command(async)]
 pub fn load_create_table(
     manager: State<'_, ConnectionManager>,
     id: String,
     sql: String,
     confirmation: Option<String>,
-    allow_dangerous: bool,
+    timeout_ms: Option<u64>,
 ) -> AppResult<()> {
-    if manager.verdict(&id, &sql, allow_dangerous)?.class != crate::db::guard::Class::Ddl {
+    if !crate::db::guard::is_create_table(&sql, manager.kind_of(&id)?) {
         return Err(AppError::new(
             ErrorCode::PermissionDenied,
-            "only a statement that creates the table runs here",
+            "only one statement that creates a table runs here",
         ));
     }
-    manager.admit(&id, &sql, confirmation.as_deref(), allow_dangerous)?;
+    manager.admit(&id, &sql, confirmation.as_deref(), false)?;
+    let limits = crate::db::Limits {
+        max_rows: 1,
+        timeout: timeout_ms
+            .filter(|ms| *ms > 0)
+            .map(std::time::Duration::from_millis),
+    };
     manager.ask(&id, |session, _, stop| {
-        session
-            .query(&sql, crate::db::Limits::rows(1), stop)
-            .map(|_| ())
+        session.query(&sql, limits, stop).map(|_| ())
     })
+}
+
+/// Whether two paths name the same file, whatever way they are written (`.`, links, the case of a
+/// file system that ignores it). `target` need not exist yet.
+fn same_file(source: &std::path::Path, target: &std::path::Path) -> bool {
+    let real = |p: &std::path::Path| {
+        p.canonicalize().ok().or_else(|| {
+            let parent = p.parent()?.canonicalize().ok()?;
+            Some(parent.join(p.file_name()?))
+        })
+    };
+    match (real(source), real(target)) {
+        (Some(a), Some(b)) => {
+            a == b || a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+        }
+        _ => source == target,
+    }
 }
 
 /// The statements an import stands for, to ask the guard about: the `INSERT` (of one row), and before
@@ -916,7 +937,7 @@ pub fn load_run(
     use std::sync::atomic::Ordering;
     let path = import_source(&path)?;
     let error_path = error_path.as_deref().map(export_target).transpose()?;
-    if error_path.as_ref() == Some(&path) {
+    if error_path.as_ref().is_some_and(|e| same_file(&path, e)) {
         return Err(AppError::new(
             ErrorCode::Io,
             "the error file must not be the file that is loaded",
@@ -1539,5 +1560,22 @@ mod tests {
         assert_eq!(code(format::FormatError::TooDeep), "format_too_deep");
         assert_eq!(code(format::FormatError::Unsafe), "format_unsafe");
         assert_eq!(code(format::FormatError::TooLarge), "too_large");
+    }
+    /// Review 033: the error file of an import must not be the file that is read, however its path
+    /// is written.
+    #[test]
+    fn knows_the_same_file_under_another_spelling() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("in.csv");
+        std::fs::write(&source, "a\n").unwrap();
+        assert!(same_file(&source, &dir.path().join(".").join("in.csv")));
+        assert!(same_file(&source, &dir.path().join("IN.csv")));
+        assert!(!same_file(&source, &dir.path().join("in.errors.tsv")));
+        #[cfg(unix)]
+        {
+            let link = dir.path().join("link.csv");
+            std::os::unix::fs::symlink(&source, &link).unwrap();
+            assert!(same_file(&source, &link));
+        }
     }
 }

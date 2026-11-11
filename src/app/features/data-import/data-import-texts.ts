@@ -91,6 +91,7 @@ export const DATA_IMPORT_EN = {
   failed: (why: string) => `The import failed: ${why}`,
   counts: (read: number, written: number, skipped: number) =>
     `Read ${read.toLocaleString('en')} · written ${written.toLocaleString('en')} · left out ${skipped.toLocaleString('en')}`,
+  emptied: 'The table was emptied before: the rows it held are gone.',
   problems: 'First problems',
   line: (n: number) => (n > 0 ? `Line ${n.toLocaleString('en')}` : 'File'),
   showErrorFile: 'Show the error file',

@@ -23,6 +23,10 @@ pub const PREVIEW_ROWS: usize = 200;
 pub const SAMPLE_ROWS: usize = 2_000;
 /// Of the text of a record this much is kept for the error file.
 pub const RAW_KEPT: usize = 4_096;
+/// Characters of a value the preview shows.
+pub const PREVIEW_CELL_CHARS: usize = 300;
+/// Bytes of records read at most to guess types and show the start.
+pub const SAMPLE_BYTES: usize = 16 * 1024 * 1024;
 
 fn bad(message: impl Into<String>) -> AppError {
     AppError::new(ErrorCode::InvalidQuery, message)
@@ -306,6 +310,19 @@ fn sniff_delimiter(sample: &str, quote: char) -> char {
     best.0
 }
 
+/// A text without its first `n` lines.
+fn after_lines(text: &str, n: u32) -> &str {
+    let mut rest = text;
+    for _ in 0..n {
+        let Some(at) = rest.find(['\n', '\r']) else {
+            return "";
+        };
+        let ends = if rest[at..].starts_with("\r\n") { 2 } else { 1 };
+        rest = &rest[at + ends..];
+    }
+    rest
+}
+
 fn looks_like_number(text: &str) -> bool {
     let t = text.trim();
     !t.is_empty()
@@ -354,8 +371,23 @@ impl<R: BufRead> CsvReader<R> {
         Ok(self.input.fill_buf().map_err(io)?.first().copied())
     }
 
+    /// Reads over one line, whatever ends it. `false`: there was none.
+    fn skip_line(&mut self) -> AppResult<bool> {
+        let mut any = false;
+        while let Some(b) = self.next_byte()? {
+            any = true;
+            if b == b'\n' || b == b'\r' {
+                if b == b'\r' && self.peek()? == Some(b'\n') {
+                    self.next_byte()?;
+                }
+                break;
+            }
+        }
+        Ok(any)
+    }
+
     /// The next record; `None` at the end. A line without anything is no record.
-    fn record(&mut self) -> AppResult<Option<Record>> {
+    fn record(&mut self) -> AppResult<Option<NextRecord>> {
         loop {
             if self.done {
                 return Ok(None);
@@ -381,7 +413,8 @@ impl<R: BufRead> CsvReader<R> {
                     break;
                 };
                 any = true;
-                if raw.len() < RAW_KEPT {
+                let kept = raw.len() < RAW_KEPT;
+                if kept {
                     raw.push(b);
                 }
                 if quoted {
@@ -409,7 +442,9 @@ impl<R: BufRead> CsvReader<R> {
                         self.next_byte()?;
                     }
                     self.line += 1;
-                    raw.pop();
+                    if kept {
+                        raw.pop();
+                    }
                     break;
                 } else {
                     field.push(b);
@@ -423,17 +458,26 @@ impl<R: BufRead> CsvReader<R> {
                     return Ok(None);
                 }
                 self.line += 1;
+                // the file ended inside a quoted field: what was read is not a value – everything
+                // from that quote on would be one
+                if quoted {
+                    return Ok(Some(Err((
+                        start,
+                        "a quote is not closed".to_owned(),
+                        String::from_utf8_lossy(&raw).into_owned(),
+                    ))));
+                }
             }
             // an empty line is no record
             if cells.is_empty() && field.is_empty() && !was_quoted {
                 continue;
             }
             take(&mut field, &mut cells)?;
-            return Ok(Some(Record {
+            return Ok(Some(Ok(Record {
                 line: start,
                 cells,
                 raw: String::from_utf8_lossy(&raw).into_owned(),
-            }));
+            })));
         }
     }
 }
@@ -590,7 +634,12 @@ impl<R: Read> JsonArray<R> {
                         self.held = Some(b);
                         break;
                     }
-                    Some(b) => text.push(b),
+                    Some(b) => {
+                        text.push(b);
+                        if text.len() > MAX_FIELD_BYTES {
+                            return Err(bad("a value of the file is too long"));
+                        }
+                    }
                     None => break,
                 }
             }
@@ -703,7 +752,8 @@ impl Source {
             if name.ends_with(".tsv") || name.ends_with(".tab") {
                 '\t'
             } else {
-                sniff_delimiter(&sample, quote)
+                // lines that are skipped say nothing about the records
+                sniff_delimiter(after_lines(&sample, options.skip_lines), quote)
             }
         });
         if !delimiter.is_ascii() || !quote.is_ascii() || delimiter == quote {
@@ -739,8 +789,7 @@ impl Source {
                         done: false,
                     };
                     for _ in 0..options.skip_lines {
-                        let mut line = Vec::new();
-                        if reader.input.read_until(b'\n', &mut line).map_err(io)? == 0 {
+                        if !reader.skip_line()? {
                             break;
                         }
                         reader.line += 1;
@@ -753,7 +802,14 @@ impl Source {
             keys: Vec::new(),
         };
         if format == Format::Csv {
-            let first = source.raw_record()?;
+            let first = match source.raw_record()? {
+                Some(Ok(record)) => Some(record),
+                Some(broken) => {
+                    source.broken_ahead.push_back(broken);
+                    None
+                }
+                None => None,
+            };
             let header = options
                 .header
                 .unwrap_or_else(|| first.as_ref().is_some_and(|r| sniff_header(&r.cells)));
@@ -789,10 +845,12 @@ impl Source {
         } else {
             // the columns of JSON are the keys of the first objects, in the order they come
             let mut objects: Vec<(u64, Option<Object>, String)> = Vec::new();
-            while objects.len() < SAMPLE_ROWS {
+            let mut bytes = 0;
+            while objects.len() < SAMPLE_ROWS && bytes < SAMPLE_BYTES {
                 let Some((line, text)) = source.raw_object()? else {
                     break;
                 };
+                bytes += text.len();
                 let object = parse_object(&text);
                 for (key, _) in object.iter().flatten() {
                     if !source.keys.contains(key) {
@@ -820,7 +878,7 @@ impl Source {
         Ok(source)
     }
 
-    fn raw_record(&mut self) -> AppResult<Option<Record>> {
+    fn raw_record(&mut self) -> AppResult<Option<NextRecord>> {
         match &mut self.records {
             Records::Csv(reader) => reader.record(),
             _ => Ok(None),
@@ -894,18 +952,30 @@ impl Source {
             return Ok(Some(self.fitting(record)));
         }
         if matches!(self.records, Records::Csv(_)) {
-            return Ok(self.raw_record()?.map(|r| self.fitting(r)));
+            return Ok(self.raw_record()?.map(|r| r.and_then(|r| self.fitting(r))));
         }
         let Some((line, text)) = self.raw_object()? else {
             return Ok(None);
         };
         let raw = raw_of(&text);
         Ok(Some(match parse_object(&text) {
-            Some(object) => Ok(Record {
-                line,
-                cells: object_cells(&object, &self.keys),
-                raw,
-            }),
+            // a key the columns do not have (it came after the objects that were looked at): its
+            // value would be dropped without a word
+            Some(object) => match object.iter().find(|(key, _)| !self.keys.contains(key)) {
+                Some((key, _)) => Err((
+                    line,
+                    format!(
+                        "a key the columns do not have: {}",
+                        key.chars().take(100).collect::<String>()
+                    ),
+                    raw,
+                )),
+                None => Ok(Record {
+                    line,
+                    cells: object_cells(&object, &self.keys),
+                    raw,
+                }),
+            },
             None => Err((line, "not a JSON object".to_owned(), raw)),
         }))
     }
@@ -1038,9 +1108,18 @@ pub fn preview(path: &Path, options: &SourceOptions, nulls: &[String]) -> AppRes
     let mut source = Source::open(path, options)?;
     let mut rows: Vec<Vec<Option<String>>> = Vec::new();
     let mut broken = 0;
-    while rows.len() < SAMPLE_ROWS {
+    let mut bytes = 0;
+    while rows.len() < SAMPLE_ROWS && bytes < SAMPLE_BYTES {
         match source.next_record()? {
-            Some(Ok(record)) => rows.push(record.cells),
+            Some(Ok(record)) => {
+                bytes += record
+                    .cells
+                    .iter()
+                    .flatten()
+                    .map(String::len)
+                    .sum::<usize>();
+                rows.push(record.cells);
+            }
             Some(Err(_)) => broken += 1,
             None => break,
         }
@@ -1057,6 +1136,13 @@ pub fn preview(path: &Path, options: &SourceOptions, nulls: &[String]) -> AppRes
     }
     let types = guess_types(&rows, width, nulls);
     rows.truncate(PREVIEW_ROWS);
+    // what is shown is cut: the window gets the start of a value, the types were guessed from all of it
+    for cell in rows.iter_mut().flatten().flatten() {
+        if let Some((at, _)) = cell.char_indices().nth(PREVIEW_CELL_CHARS) {
+            cell.truncate(at);
+            cell.push('…');
+        }
+    }
     Ok(Preview {
         detected: source.detected,
         columns,
@@ -1422,5 +1508,94 @@ mod tests {
                 "5: 1"
             ]
         );
+    }
+    fn told(path: &Path, options: &SourceOptions) -> Vec<String> {
+        let mut source = Source::open(path, options).unwrap();
+        let mut seen = Vec::new();
+        while let Some(record) = source.next_record().unwrap() {
+            seen.push(match record {
+                Ok(r) => format!(
+                    "{}: {}",
+                    r.line,
+                    r.cells
+                        .iter()
+                        .map(|c| c.as_deref().unwrap_or("NULL"))
+                        .collect::<Vec<_>>()
+                        .join("|")
+                ),
+                Err((line, reason, _)) => format!("{line}: ! {reason}"),
+            });
+        }
+        seen
+    }
+
+    /// Review 033: a quote that is opened and never closed must not turn the rest of the file into one
+    /// value without a word.
+    #[test]
+    fn a_quote_that_is_never_closed_is_a_broken_record() {
+        let dir = tempdir().unwrap();
+        let path = file(dir.path(), "q.csv", b"id,note\n1,ok\n2,\"open\n3,x\n4,y\n");
+        assert_eq!(
+            told(&path, &SourceOptions::default()),
+            ["2: 1|ok", "3: ! a quote is not closed"]
+        );
+    }
+
+    /// Review 033: a key that only later objects have is not dropped in silence.
+    #[test]
+    fn an_object_with_a_key_the_columns_do_not_have_is_a_broken_record() {
+        let dir = tempdir().unwrap();
+        let mut text: String = (1..=SAMPLE_ROWS + 1)
+            .map(|i| format!("{{\"id\":{i}}}\n"))
+            .collect();
+        text.push_str("{\"id\":9,\"discount\":5}\n{\"id\":10}\n");
+        let path = file(dir.path(), "k.ndjson", text.as_bytes());
+        let seen = told(&path, &SourceOptions::default());
+        assert_eq!(seen.len(), SAMPLE_ROWS + 3);
+        assert_eq!(
+            seen[SAMPLE_ROWS + 1..],
+            [
+                format!(
+                    "{}: ! a key the columns do not have: discount",
+                    SAMPLE_ROWS + 2
+                ),
+                format!("{}: 10", SAMPLE_ROWS + 3)
+            ]
+        );
+    }
+
+    /// Review 033: lines to skip end like lines of the file end, and they do not say what the
+    /// delimiter is.
+    #[test]
+    fn skipped_lines_end_at_any_line_ending_and_are_not_sniffed() {
+        let dir = tempdir().unwrap();
+        let options = SourceOptions {
+            skip_lines: 1,
+            ..SourceOptions::default()
+        };
+        let cr = file(dir.path(), "cr.csv", b"made; on; a; monday\rid,name\r1,a\r");
+        assert_eq!(told(&cr, &options), ["3: 1|a"]);
+        let lf = file(dir.path(), "lf.csv", b"made; on; a; monday\nid,name\n1,a\n");
+        let source = Source::open(&lf, &options).unwrap();
+        assert_eq!(source.detected.delimiter, ',');
+        assert_eq!(source.columns, ["id", "name"]);
+    }
+
+    /// Review 033: the start of a file that is shown is cut – a value of megabytes does not go to the
+    /// window.
+    #[test]
+    fn a_preview_cuts_long_values() {
+        let dir = tempdir().unwrap();
+        let long = "x".repeat(5_000);
+        let path = file(
+            dir.path(),
+            "l.csv",
+            format!("id,note\n1,{long}\n").as_bytes(),
+        );
+        let p = preview(&path, &SourceOptions::default(), &[]).unwrap();
+        let shown = p.rows[0][1].as_deref().unwrap();
+        assert_eq!(shown.chars().count(), PREVIEW_CELL_CHARS + 1);
+        assert!(shown.ends_with('…'));
+        assert_eq!(p.types[1].max_len, 5_000);
     }
 }

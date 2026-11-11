@@ -746,6 +746,75 @@ pub fn classify(sql: &str, kind: DbKind) -> Class {
     worst
 }
 
+/// Whether a text is one statement that creates a table, and nothing else: `CREATE [TEMP …] TABLE …`,
+/// with no second statement behind a semicolon – or, where a batch needs none (T-SQL), behind the
+/// column list.
+pub fn is_create_table(sql: &str, kind: DbKind) -> bool {
+    let scan = scan(sql, kind);
+    if scan.ambiguous || classify(sql, kind) != Class::Ddl {
+        return false;
+    }
+    let mut statements = scan
+        .toks
+        .split(|t| *t == Tok::Semi)
+        .filter(|s| !s.is_empty());
+    let (Some(statement), None) = (statements.next(), statements.next()) else {
+        return false;
+    };
+    let mut words = statement.iter().map(word);
+    if words.next() != Some(Some("CREATE")) {
+        return false;
+    }
+    let named = loop {
+        match words.next() {
+            Some(Some("GLOBAL" | "LOCAL" | "TEMP" | "TEMPORARY" | "UNLOGGED")) => {}
+            other => break other,
+        }
+    };
+    if named != Some(Some("TABLE")) {
+        return false;
+    }
+    // behind the column list only what belongs to the table follows
+    let mut depth = 0usize;
+    let mut closed = false;
+    for tok in statement {
+        match tok {
+            Tok::Open => depth += 1,
+            Tok::Close => {
+                depth = depth.saturating_sub(1);
+                closed |= depth == 0;
+            }
+            Tok::Word(w)
+                if closed
+                    && depth == 0
+                    && matches!(
+                        w.as_str(),
+                        "INSERT"
+                            | "UPDATE"
+                            | "DELETE"
+                            | "MERGE"
+                            | "SELECT"
+                            | "EXEC"
+                            | "EXECUTE"
+                            | "CREATE"
+                            | "ALTER"
+                            | "DROP"
+                            | "TRUNCATE"
+                            | "GRANT"
+                            | "REVOKE"
+                            | "DENY"
+                            | "CALL"
+                            | "SET"
+                    ) =>
+            {
+                return false;
+            }
+            _ => {}
+        }
+    }
+    true
+}
+
 /// Whether a text is nothing but transaction control (`BEGIN`, `COMMIT`, `ROLLBACK`, savepoints): such a
 /// statement is sent as it is, also in manual mode.
 pub fn is_transaction_control(sql: &str, kind: DbKind) -> bool {
@@ -1277,5 +1346,41 @@ mod tests {
             serde_json::to_string(&Need::TypeName).unwrap(),
             "\"type_name\""
         );
+    }
+    /// Review 033: where only a table is to be created, only that runs.
+    #[test]
+    fn tells_a_single_create_table_from_everything_else() {
+        use DbKind::*;
+        for (kind, sql) in [
+            (
+                Postgres,
+                "CREATE TABLE shop.t (\n  id bigint,\n  \"a; b\" text\n)",
+            ),
+            (Postgres, "create unlogged table t (a int);"),
+            (Sqlite, "CREATE TEMP TABLE IF NOT EXISTS t (a text) -- note"),
+            (Mysql, "CREATE TABLE `t` (a varchar(20)) ENGINE=InnoDB;\n"),
+            (Sqlserver, "CREATE TABLE [dbo].[t] (a nvarchar(max))"),
+        ] {
+            assert!(is_create_table(sql, kind), "{sql}");
+        }
+        for (kind, sql) in [
+            (
+                Postgres,
+                "CREATE TABLE t (a int); INSERT INTO other VALUES (1)",
+            ),
+            (Postgres, "CREATE TABLE t (a int); CREATE TABLE u (a int)"),
+            (Postgres, "ALTER TABLE t ADD b int"),
+            (Postgres, "CREATE INDEX i ON t (a)"),
+            (
+                Postgres,
+                "CREATE OR REPLACE FUNCTION f() RETURNS int AS 'select 1' LANGUAGE sql",
+            ),
+            (Postgres, "DROP TABLE t"),
+            (Postgres, "SELECT 1"),
+            (Postgres, ""),
+            (Sqlserver, "CREATE TABLE t (a int) DROP TABLE u"),
+        ] {
+            assert!(!is_create_table(sql, kind), "{sql}");
+        }
     }
 }

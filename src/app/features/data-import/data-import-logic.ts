@@ -1,4 +1,5 @@
 import {
+  Detected,
   Guess,
   ImportEncoding,
   ImportFormat,
@@ -62,6 +63,20 @@ export function sourceOptions(c: ImportChoices): SourceOptions {
   };
 }
 
+/**
+ * How the backend reads the file for the import: as the preview read it. Nothing is detected a second
+ * time – the mapping on the screen belongs to the columns that were shown.
+ */
+export function runOptions(c: ImportChoices, detected: Detected): SourceOptions {
+  return {
+    ...sourceOptions(c),
+    format: detected.format,
+    delimiter: detected.delimiter,
+    encoding: detected.encoding,
+    header: detected.header,
+  };
+}
+
 /** The texts that mean NULL, from what was typed. */
 export const nullTexts = (typed: string): string[] => [
   ...new Set(
@@ -86,8 +101,8 @@ export function targetKind(typeName: string): TargetKind {
   return 'text';
 }
 
-/** Whether a type holds a day or a moment. */
-export const isDateType = (typeName: string): boolean => /date|time/i.test(typeName);
+/** Whether a type holds a day or a moment – a time alone has no order of day and month. */
+export const isDateType = (typeName: string): boolean => /date|timestamp/i.test(typeName);
 
 /** One row of the mapping: a column of the table and where its value comes from. */
 export interface MapRow {

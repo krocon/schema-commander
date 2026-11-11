@@ -91,6 +91,7 @@ export const DATA_IMPORT_DE: Translation<typeof DATA_IMPORT_EN> = {
   failed: (why: string) => `Der Import ist gescheitert: ${why}`,
   counts: (read: number, written: number, skipped: number) =>
     `Gelesen ${read.toLocaleString('de')} · geschrieben ${written.toLocaleString('de')} · ausgelassen ${skipped.toLocaleString('de')}`,
+  emptied: 'Die Tabelle wurde vorher geleert: Ihre bisherigen Zeilen sind weg.',
   problems: 'Erste Probleme',
   line: (n: number) => (n > 0 ? `Zeile ${n.toLocaleString('de')}` : 'Datei'),
   showErrorFile: 'Fehlerdatei zeigen',

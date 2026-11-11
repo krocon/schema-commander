@@ -35,6 +35,7 @@ import {
   nullTexts,
   planOf,
   remap,
+  runOptions,
   reportLine,
   sourceOptions,
   tableNameOf,
@@ -62,6 +63,9 @@ import { DATA_IMPORT_TEXTS } from './data-import-texts';
           } @else if (j.report; as r) {
             <p class="headline" [class.bad]="r.failed">{{ reportOf(r) }}</p>
             <p class="dim">{{ t.counts(r.read, r.written, r.skipped) }}</p>
+            @if (r.cleared && (r.failed || r.cancelled)) {
+              <p class="bad">{{ t.emptied }}</p>
+            }
             @if (r.errors.length > 0) {
               <h3>{{ t.problems }}</h3>
               <ul class="errors">
@@ -610,6 +614,7 @@ export class DataImportDialog {
   protected readonly targetNote = signal<{ text: string; bad: boolean } | null>(null);
   protected readonly problem = signal<string | null>(null);
   protected readonly busy = signal(false);
+  protected readonly previewing = signal(false);
   /** Counts what was asked of the backend, so an older answer is dropped. */
   private previews = 0;
   private tableReads = 0;
@@ -626,6 +631,8 @@ export class DataImportDialog {
   protected readonly canGo = computed(
     () =>
       this.path() !== null &&
+      // what is on the screen belongs to the last answer: not while the file is read again
+      !this.previewing() &&
       (this.preview()?.rows.length ?? 0) > 0 &&
       !this.creating() &&
       this.table() !== '' &&
@@ -653,7 +660,8 @@ export class DataImportDialog {
   private async loadSchemas(target: ImportTarget): Promise<void> {
     try {
       const all = await this.meta.schemas(target.connectionId);
-      const usable = all.filter((s) => !s.system);
+      // the schema that was asked for is offered, whatever it is
+      const usable = all.filter((s) => !s.system || s.name === target.schema);
       this.schemas.set(usable.length > 0 ? usable : all);
       const wanted =
         this.schemas().find((s) => s.name === target.schema) ??
@@ -681,10 +689,12 @@ export class DataImportDialog {
   private async readPreview(path: string | null, options: string): Promise<void> {
     if (!path) return;
     const mine = ++this.previews;
+    this.previewing.set(true);
     const [source, nulls] = JSON.parse(options) as [ReturnType<typeof sourceOptions>, string[]];
     try {
       const preview = await this.api.preview(path, source, nulls);
       if (mine !== this.previews) return;
+      this.previewing.set(false);
       const before = this.preview();
       this.preview.set(preview);
       this.previewError.set(null);
@@ -704,6 +714,7 @@ export class DataImportDialog {
       if (this.creating() && this.ddl().trim() === '') void this.propose();
     } catch (e) {
       if (mine !== this.previews) return;
+      this.previewing.set(false);
       this.preview.set(null);
       this.previewError.set(this.t.previewFailed(describeError(toAppError(e))));
     }
@@ -858,13 +869,14 @@ export class DataImportDialog {
 
   protected async go(): Promise<void> {
     const path = this.path();
-    if (!this.canGo() || !path) return;
+    const preview = this.preview();
+    if (!this.canGo() || !path || !preview) return;
     const c = this.choices();
     const plan = planOf(this.schema() || null, this.table(), this.maps(), c);
     await this.importer.start(
       this.target().connectionId,
       path,
-      sourceOptions(c),
+      runOptions(c, preview.detected),
       plan,
       c.onError === 'skip' ? this.errorPath() : null,
     );

@@ -89,7 +89,12 @@ export class DataImportService {
     try {
       const tokens = await this.admit(connectionId, [sql]);
       if (!tokens) return 'declined';
-      await this.api.createTable(connectionId, sql, tokens[0] ?? null, this.allowDangerous());
+      await this.api.createTable(
+        connectionId,
+        sql,
+        tokens[0] ?? null,
+        this.settings.settings().statementTimeoutSec * 1000,
+      );
       this.schema.ran(connectionId, [sql]);
       return null;
     } catch (e) {

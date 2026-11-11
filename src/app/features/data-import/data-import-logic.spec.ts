@@ -6,7 +6,9 @@ import {
   ddlColumns,
   detectedLine,
   nullTexts,
+  isDateType,
   planOf,
+  runOptions,
   remap,
   reportLine,
   sourceOptions,
@@ -166,6 +168,33 @@ describe('data import logic', () => {
     });
   });
 
+  it('reads the file for the import as the preview read it', () => {
+    // review 033: nothing is detected a second time – the mapping was made for what was shown
+    expect(
+      runOptions(
+        { ...DEFAULT_CHOICES, skipLines: 2 },
+        { format: 'csv', delimiter: ';', encoding: 'windows-1252', header: true, gzip: false },
+      ),
+    ).toEqual({
+      format: 'csv',
+      delimiter: ';',
+      quote: null,
+      encoding: 'windows-1252',
+      header: true,
+      skipLines: 2,
+    });
+  });
+
+  it('knows a day from a time', () => {
+    for (const t of ['date', 'timestamp without time zone', 'datetime2', 'smalldatetime', 'DATE']) {
+      expect(isDateType(t), t).toBe(true);
+    }
+    // review 033: a time has no order of day and month
+    for (const t of ['time', 'time(0) with time zone', 'text', 'timetz']) {
+      expect(isDateType(t), t).toBe(false);
+    }
+  });
+
   it('names the columns that must have a value and get none', () => {
     const rows: MapRow[] = [
       { target: col('id', 'integer', false), source: 'none', fixed: '' },
@@ -215,6 +244,7 @@ describe('data import logic', () => {
       failed: false,
       rolledBack: false,
       errorFile: false,
+      cleared: false,
     };
     expect(reportLine(done)).toBe('1.200 Zeilen importiert.');
     expect(reportLine({ ...done, written: 1197, skipped: 3 })).toBe(
