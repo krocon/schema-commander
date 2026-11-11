@@ -19,11 +19,12 @@
   **Ausführen** von Auswahl, Anweisung oder ganzem Skript je Dialekt, mit Ergebnis-Reitern, Meldungen,
   Abbruch auf dem Server und Zeitlimit (Prompt 005); **große Ergebnisse** bleiben in Rust (Speicher, darüber
   Datei), das Gitter holt nur den sichtbaren Ausschnitt (Prompt 006); **Zellen** je Art dargestellt (NULL, leer,
-  Zahl, Bool, Binär), entschärft, mit Typ im Spaltenkopf und Bereichsauswahl (Prompt 007);
+  Zahl, Bool, Binär), entschärft, mit Typ im Spaltenkopf und Bereichsauswahl (Prompt 007); **Schema-Baum** der aktiven Verbindung mit Filter, Aktionen am
+  Knoten und Quoting je Dialekt (Prompt 008);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
-- **Noch nichts davon**: Schema-Baum, Bearbeiten, Export. Alle Features aus
+- **Noch nichts davon**: Bearbeiten, Export. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–007),
+  erledigt: 001–008),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -63,6 +64,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/connections/        Profile (Modell), ConnectionsApi, ConnectionsStore (Root: Profile, Zustände, aktive
                                Verbindung, Passwortabfrage)
   app/core/errors/             AppError + toAppError (spiegelt src-tauri/src/error.rs)
+  app/core/schema/             SchemaApi (meta_*) + DTOs (SchemaInfo, ObjectInfo, TableInfo) – spiegelt db/meta.rs
   app/core/session/            SessionApi: session.json, Texte der Tabs, .sql lesen/schreiben
   app/core/settings/           Settings (Modell, mergeSettings), SettingsService (tauri-plugin-store)
   app/core/sql/                QueryApi (run mit Ereignissen, window, free, cancel) + DTOs (ResultRef, RunEvent, Cell, ColKind) – spiegelt db/value.rs
@@ -75,6 +77,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                editor-colors.ts (Farben des Editors aus unseren Tokens),
                                sql-split.ts (rein: Skripte je Dialekt zerlegen, Katalog sql-split.cases.json)
   app/features/palette/        Befehlspalette (CommandPalette, palette-logic.ts rein: unscharfe Suche)
+  app/features/schema/         SchemaTree (virtuelle Liste, APG-Baum), SchemaStore (Root: Zustand je Verbindung),
+                               SchemaActions, schema-logic.ts (rein: Zeilen, Filter, Tasten, Vorlagen)
   app/features/shortcuts/      Kürzel-Editor und -Übersicht (ShortcutDialog, shortcut-logic.ts)
   app/features/results/        ResultGrid (GuiExpert Table), result-model.ts (rein: Spalten, Breiten,
                                WindowAreaModel mit Seiten-Cache), cell-format.ts (rein: Zelle → Text + Klasse,
@@ -85,7 +89,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                Statuszeile)
   app/features/themes/         Farbschema-Galerie (ThemePicker, ThemeThumb, theme-picker-logic.ts),
                                Schema-Editor (ThemeEditor, theme-editor-logic.ts rein: Ids, Import, Kontrast)
-  app/shared/                  Splitter (+ splitter-logic.ts)
+  app/shared/                  Splitter (+ splitter-logic.ts), ContextMenu (APG-Menü)
   testing/fake-apis.ts         Fake-Fassaden für Tests
 src-tauri/                     Rust
   src/lib.rs                   Builder: Plugins (store, window-state), State, Commands
@@ -96,6 +100,7 @@ src-tauri/                     Rust
   src/db/mod.rs                Profile, DbKind, TlsMode, Session-Trait, Laufzeit, Fehler in Worten
   src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
   src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink (rein, getestet)
+  src/db/meta.rs               Metadaten aus dem Systemkatalog (gebundene Parameter), quote() je Dialekt
   src/db/value.rs              Cell, ColKind, QueryResult (verlustfrei über die Brücke)
   src/db/manager.rs            ConnectionManager: Sitzungen, Schlüsselbund-Regeln, Abbruch
   src/db/profiles.rs           connections.json (nie ein Geheimnis); db/secrets.rs: Secret, Schlüsselbund
@@ -127,6 +132,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
 - **Tabs**: Ein Tab ist ein `QueryTab` (per Id adressiert), sein Editor bleibt in der Seite, auch wenn er nicht
   vorn ist. Der Text eines Tabs wird nie bei jedem Tastendruck über die Brücke geschickt: `TabsStore.textChanged`
   plant die Sicherung, die den Text einmal holt. Nichts fragt „Speichern?“.
+- **Bezeichner** quotet nur `meta::quote` in Rust; Knoten und DTOs bringen `quoted` mit. Katalogabfragen nur über
+  `Session::ask` mit gebundenen Parametern.
 - **Zustand in Signals**, Stores je Instanz ohne `providedIn`, Globales in Root-Services; veraltete Antworten verwerfen.
 - **Farben nur als Tokens**; jeder Token in dark und light, im Katalog und in den Kontrastpaaren.
 - **Sicherheit**: schmale Commands statt breiter Plugins, strikte CSP, Geheimnisse nur im Schlüsselbund, SQL und

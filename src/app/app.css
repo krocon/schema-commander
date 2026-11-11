@@ -66,9 +66,19 @@
 
 .sidebar {
   flex: none;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
   background: var(--bg-panel);
   padding: 8px;
+}
+
+/* the connections take what they need, up to a part of the height; the schema tree gets the rest */
+.sidebar .connections {
+  flex: none;
+  max-height: 40%;
+  overflow: auto;
 }
 
 .sidebar h2 {

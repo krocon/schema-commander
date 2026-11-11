@@ -1,3 +1,4 @@
+import { SchemaApi } from '../../core/schema/schema-api';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -5,6 +6,7 @@ import {
   FakeConnectionsApi,
   FakeFileDialogApi,
   FakeQueryApi,
+  FakeSchemaApi,
   FakeSessionApi,
 } from '../../../testing/fake-apis';
 import { FileDialogApi } from '../../core/backend/file-dialog-api';
@@ -35,6 +37,10 @@ function attachEditor(tab: QueryTab, text: string) {
       return Promise.resolve();
     },
     focus: vi.fn(),
+    insert: (t) => {
+      editor.text += t;
+      return Promise.resolve();
+    },
     runCurrent: () => Promise.resolve(),
     runScript: () => Promise.resolve(),
   };
@@ -63,6 +69,7 @@ describe('TabsStore', () => {
         { provide: FileDialogApi, useValue: files },
         { provide: ConnectionsApi, useValue: connections },
         { provide: QueryApi, useValue: query },
+        { provide: SchemaApi, useValue: new FakeSchemaApi() },
       ],
     });
   });

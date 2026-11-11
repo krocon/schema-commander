@@ -121,6 +121,14 @@ export class SqlEditor implements OnInit {
     await this.editor()?.nativeElement.setValue(text);
   }
 
+  /** Text at the caret, over the selection; as a snippet its placeholders can be tabbed through. */
+  async insert(text: string, snippet: boolean): Promise<void> {
+    const editor = this.editor()?.nativeElement;
+    if (!editor) return;
+    if (snippet) await editor.insertSnippet(text);
+    else await editor.replaceSelection(text);
+  }
+
   /**
    * Asks to run the selection, when there is one, else the statement under the caret. A selection is taken
    * as it is marked and split into its statements.

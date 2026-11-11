@@ -18,6 +18,8 @@ export interface Settings {
   readonly statementTimeoutSec: number;
   /** Show numbers in the result with their digits in groups of three (prompt 007); never when copying. */
   readonly groupDigits: boolean;
+  /** Show the schemas of the database itself in the tree (prompt 008). */
+  readonly showSystemSchemas: boolean;
   /** Ids of the actions run from the command palette, the latest first. */
   readonly recentActions: readonly string[];
 }
@@ -41,6 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
   stopOnError: true,
   statementTimeoutSec: 0,
   groupDigits: false,
+  showSystemSchemas: false,
 };
 
 function size(value: unknown, fallback: number): number {
@@ -66,6 +69,10 @@ export function mergeSettings(saved: unknown): Settings {
       typeof s['stopOnError'] === 'boolean' ? s['stopOnError'] : DEFAULT_SETTINGS.stopOnError,
     groupDigits:
       typeof s['groupDigits'] === 'boolean' ? s['groupDigits'] : DEFAULT_SETTINGS.groupDigits,
+    showSystemSchemas:
+      typeof s['showSystemSchemas'] === 'boolean'
+        ? s['showSystemSchemas']
+        : DEFAULT_SETTINGS.showSystemSchemas,
     statementTimeoutSec: Math.min(86_400, size(s['statementTimeoutSec'], 0)),
     activeConnection:
       typeof s['activeConnection'] === 'string' && /^[a-z0-9-]{1,64}$/.test(s['activeConnection'])

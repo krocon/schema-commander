@@ -9,6 +9,9 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { NODE_ACTIONS, SchemaActions } from './features/schema/schema-actions';
+import { SchemaStore } from './features/schema/schema.store';
+import { SchemaTree } from './features/schema/schema-tree';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { ActionService } from './core/actions/action.service';
@@ -45,6 +48,7 @@ const SIDEBAR_MIN = 140;
     ConnectionDialog,
     ConnectionList,
     PasswordDialog,
+    SchemaTree,
     QueryPane,
     ShortcutDialogComponent,
     SplitterComponent,
@@ -126,7 +130,8 @@ const SIDEBAR_MIN = 140;
           aria-label="Datenbank"
           [style.width.px]="sidebarW()"
         >
-          <app-connection-list (edit)="connectionDialog.set($event)" />
+          <app-connection-list class="connections" (edit)="connectionDialog.set($event)" />
+          <app-schema-tree />
         </nav>
         <app-splitter
           orientation="vertical"
@@ -229,6 +234,9 @@ export class App implements OnInit, OnDestroy {
   /** A file is dragged over the window. */
   protected readonly dropActive = signal(false);
   private readonly sidebar = viewChild<ElementRef<HTMLElement>>('sidebar');
+  private readonly schemaTree = viewChild(SchemaTree);
+  private readonly schema = inject(SchemaStore);
+  private readonly schemaActions = inject(SchemaActions);
   private readonly column = viewChild<ElementRef<HTMLElement>>('column');
   private readonly cleanups: (() => void)[] = [];
 
@@ -309,13 +317,16 @@ export class App implements OnInit, OnDestroy {
   private async listenForDrops(): Promise<() => void> {
     return getCurrentWebview().onDragDropEvent((event) => {
       const payload = event.payload;
-      if (payload.type === 'enter' || payload.type === 'over') {
-        this.dropActive.set(true);
+      if (payload.type === 'enter') {
+        // a name dragged out of the schema tree is no file
+        this.dropActive.set(payload.paths.length > 0);
+      } else if (payload.type === 'over') {
+        // nothing changes while it moves
       } else if (payload.type === 'leave') {
         this.dropActive.set(false);
       } else {
         this.dropActive.set(false);
-        void this.tabs.openFiles(payload.paths);
+        if (payload.paths.length > 0) void this.tabs.openFiles(payload.paths);
       }
     });
   }
@@ -342,6 +353,22 @@ export class App implements OnInit, OnDestroy {
         'SHOW_MESSAGES',
         () => tab()?.shown.set('messages'),
         () => !!tab(),
+      ),
+      this.actions.register(
+        'SCHEMA_REFRESH',
+        () => this.schema.refresh(),
+        () => this.schema.connected(),
+      ),
+      this.actions.register('SCHEMA_FILTER', () => this.focusSchemaFilter()),
+      this.actions.register('TOGGLE_SYSTEM_SCHEMAS', () =>
+        this.settings.update({ showSystemSchemas: !this.settings.settings().showSystemSchemas }),
+      ),
+      ...NODE_ACTIONS.map((id) =>
+        this.actions.register(
+          id,
+          () => this.schemaActions.run(id),
+          () => this.schemaActions.can(id),
+        ),
       ),
       this.actions.register('TOGGLE_DIGIT_GROUPING', () =>
         this.settings.update({ groupDigits: !this.settings.settings().groupDigits }),
@@ -400,6 +427,13 @@ export class App implements OnInit, OnDestroy {
       }),
     ];
     return () => offs.forEach((off) => off());
+  }
+
+  /** Shows the sidebar if need be and puts the focus into the filter of the schema tree. */
+  private focusSchemaFilter(): void {
+    if (!this.settings.settings().sidebarVisible) this.settings.update({ sidebarVisible: true });
+    // the sidebar is drawn with the next change detection
+    setTimeout(() => this.schemaTree()?.focusFilter());
   }
 
   /** A copy of the scheme on screen, opened in the scheme editor. */
