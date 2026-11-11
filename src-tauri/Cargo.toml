@@ -43,6 +43,12 @@ parking_lot = "0.12"
 # Export (prompt 011): Excel files written row by row (pure Rust, MIT/Apache-2.0), and gzip for text files.
 rust_xlsxwriter = { version = "0", default-features = false, features = ["constant_memory"] }
 flate2 = "1"
+# SSH tunnels (prompt 014, the set log-commander proved in its prompt 017): pure Rust, no OpenSSL (ring).
+russh = { version = "0.64", default-features = false, features = ["ring", "flate2", "rsa"] }
+# The known_hosts parser (hashed hosts are HMAC-SHA1 with Base64 salts); all in the tree through russh.
+data-encoding = "2"
+hmac = "0.13"
+sha1 = "0.11"
 # The clipboard (prompt 009): text and HTML, written by Rust so that a million rows never pass the WebView.
 # Without the image feature; `wayland-data-control` for Wayland without XWayland.
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }

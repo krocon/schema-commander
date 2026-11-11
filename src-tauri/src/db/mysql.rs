@@ -24,6 +24,8 @@ use sqlx_mysql::{
 use std::time::Instant;
 
 pub struct My {
+    /// The SSH tunnel this session runs through, if any: held so its listener outlives the session.
+    tunnel: Option<std::sync::Arc<crate::ssh::Tunnel>>,
     conn: Option<MySqlConnection>,
     /// To ask the server to cancel a statement: a second connection and the id of this one.
     options: MySqlConnectOptions,
@@ -43,9 +45,20 @@ pub fn connect(
         .username(profile.user.trim())
         .charset("utf8mb4")
         .ssl_mode(match profile.tls {
-            TlsMode::Verify => MySqlSslMode::VerifyIdentity,
             TlsMode::Off => MySqlSslMode::Disabled,
+            TlsMode::Prefer => MySqlSslMode::Preferred,
+            TlsMode::Require => MySqlSslMode::Required,
+            TlsMode::VerifyCa => MySqlSslMode::VerifyCa,
+            TlsMode::Verify => MySqlSslMode::VerifyIdentity,
         });
+    if !profile.ca_file.trim().is_empty() {
+        options = options.ssl_ca(profile.ca_file.trim());
+    }
+    if !profile.client_cert.trim().is_empty() {
+        options = options
+            .ssl_client_cert(profile.client_cert.trim())
+            .ssl_client_key(profile.client_key.trim());
+    }
     if !profile.database.trim().is_empty() {
         options = options.database(profile.database.trim());
     }
@@ -58,6 +71,7 @@ pub fn connect(
             .map_err(|e| sqlx_error(profile, &e))
     })?;
     let mut my = My {
+        tunnel: None,
         conn: Some(conn),
         options,
         connection_id: None,
@@ -160,8 +174,16 @@ fn blob_or_text(b: &[u8], type_name: &str) -> Cell {
 impl My {
     /// Asks the server to cancel what this connection runs, over a second connection (`KILL QUERY` ends the
     /// statement, not the session).
-    async fn cancel(options: MySqlConnectOptions, connection_id: Option<u64>) {
+    async fn cancel(
+        options: MySqlConnectOptions,
+        connection_id: Option<u64>,
+        tunnel: Option<std::sync::Arc<crate::ssh::Tunnel>>,
+    ) {
         let Some(id) = connection_id else { return };
+        // the side connection goes through the tunnel like the session itself
+        if let Some(tunnel) = &tunnel {
+            tunnel.permit();
+        }
         if let Ok(mut side) = MySqlConnection::connect_with(&options).await {
             let _ = side
                 .execute(AssertSqlSafe(format!("KILL QUERY {id}")))
@@ -285,6 +307,10 @@ impl My {
 }
 
 impl Session for My {
+    fn via_tunnel(&mut self, tunnel: std::sync::Arc<crate::ssh::Tunnel>) {
+        self.tunnel = Some(tunnel);
+    }
+
     fn ask(
         &mut self,
         sql: &str,
@@ -310,13 +336,21 @@ impl Session for My {
     ) -> AppResult<Outcome> {
         let profile = self.profile.clone();
         let conn = self.conn.as_mut().ok_or_else(closed)?;
-        let cancel = Self::cancel(self.options.clone(), self.connection_id);
+        let cancel = Self::cancel(
+            self.options.clone(),
+            self.connection_id,
+            self.tunnel.clone(),
+        );
         let run = Self::run(conn, sql, sink, &profile);
         let (r, ended) = block_cancelling(limits.timeout, stop, run, cancel);
         if r.as_ref().is_ok_and(|o| o.truncated) {
             // Rows were left unread: end the statement on the server, so the connection is free at once.
             // Its „cancelled“ answer is still on the wire: it is read here, not by the next statement.
-            let cancel = Self::cancel(self.options.clone(), self.connection_id);
+            let cancel = Self::cancel(
+                self.options.clone(),
+                self.connection_id,
+                self.tunnel.clone(),
+            );
             let settled = match self.conn.as_mut() {
                 Some(conn) => block(Some(super::CANCEL_GRACE * 2), &|| false, async {
                     cancel.await;

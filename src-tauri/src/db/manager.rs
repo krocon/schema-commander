@@ -7,6 +7,8 @@ use super::secrets::{self, Secret, SecretKind, SecretStore};
 use super::value::{MAX_ROWS, Outcome, QueryResult, RowSink, VecSink};
 use super::{DbKind, Limits, Profile, Session, TxState, connect, sqlite};
 use crate::error::{AppError, AppResult, ErrorCode};
+use crate::ssh::trust::KnownHosts;
+use crate::ssh::{SshAuth, SshCredentials, SshTarget, Tunnel};
 use parking_lot::Mutex;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -64,6 +66,10 @@ pub struct ConnectionManager {
     /// The passwords of the open connections, for the sessions of their tabs (prompt 013): in memory
     /// only, wiped when the connection closes.
     kept: Mutex<HashMap<String, Option<Secret>>>,
+    /// The SSH tunnels of the open connections (prompt 014), and what unlocked them – to build a tunnel
+    /// again when it broke. In memory only.
+    tunnels: Mutex<HashMap<String, Arc<Tunnel>>>,
+    kept_ssh: Mutex<HashMap<String, Option<Secret>>>,
     file: PathBuf,
     store: Arc<dyn SecretStore>,
     profiles: Mutex<Option<Vec<Profile>>>,
@@ -93,6 +99,8 @@ impl ConnectionManager {
             open: Mutex::new(HashMap::new()),
             confirmations: Mutex::new(HashMap::new()),
             kept: Mutex::new(HashMap::new()),
+            tunnels: Mutex::new(HashMap::new()),
+            kept_ssh: Mutex::new(HashMap::new()),
         }
     }
 
@@ -192,6 +200,20 @@ impl ConnectionManager {
         if gone.uses_password() && self.store.available() {
             let _ = self.store.delete(&Self::account(&gone));
         }
+        // what unlocked its tunnel goes too, unless another profile uses the same jump host
+        if let Some(target) = &gone.ssh
+            && self.store.available()
+        {
+            let account = Self::ssh_account(target);
+            let shared = self.stored().iter().any(|p| {
+                p.ssh
+                    .as_ref()
+                    .is_some_and(|t| Self::ssh_account(t) == account)
+            });
+            if !shared {
+                let _ = self.store.delete(&account);
+            }
+        }
         Ok(())
     }
 
@@ -218,18 +240,153 @@ impl ConnectionManager {
 
     /// Tries a profile (stored or not) without keeping the connection.
     pub fn test(&self, profile: &Profile, password: Option<Secret>) -> AppResult<String> {
+        self.test_with(profile, password, SshCredentials::default())
+    }
+
+    /// As [`ConnectionManager::test`], with what the user gave for the SSH tunnel. The error says which
+    /// stage failed: the SSH server, its host key, the SSH login, the database behind it, TLS, the login.
+    pub fn test_with(
+        &self,
+        profile: &Profile,
+        password: Option<Secret>,
+        ssh: SshCredentials,
+    ) -> AppResult<String> {
+        profiles::check(profile)?;
+        // a test stores nothing: the profile may never be saved
+        let (tunnel, _) = self.open_tunnel(profile, ssh, false)?;
         let secret = self.secret_for(profile, password)?;
-        let mut session = connect(profile, secret.as_ref(), &|| false)?;
+        let mut session = Self::connect_through(profile, tunnel.as_ref(), secret.as_ref())?;
         session.server_version(&|| false)
+    }
+
+    /// Where the host keys of SSH servers are looked up: the user's `known_hosts` (read only) and the
+    /// app's own next to the profiles.
+    fn known_hosts(&self) -> KnownHosts {
+        KnownHosts {
+            user: crate::ssh::ssh_config::home_dir().map(|h| h.join(".ssh").join("known_hosts")),
+            app: self.file.with_file_name("known_hosts"),
+        }
+    }
+
+    fn ssh_account(target: &SshTarget) -> String {
+        match target.auth {
+            SshAuth::Key => secrets::scoped_account(
+                "ssh",
+                SecretKind::Passphrase,
+                &target
+                    .key_files()
+                    .first()
+                    .map(|f| f.display().to_string())
+                    .unwrap_or_default(),
+            ),
+            _ => secrets::scoped_account("ssh", SecretKind::Password, &target.label()),
+        }
+    }
+
+    /// Opens the tunnel of a profile, if it has one. A secret that was not given is looked up in the
+    /// keychain; one that was given and worked is returned to be kept.
+    fn open_tunnel(
+        &self,
+        profile: &Profile,
+        mut creds: SshCredentials,
+        remember: bool,
+    ) -> AppResult<(Option<Arc<Tunnel>>, Option<Secret>)> {
+        let Some(target) = &profile.ssh else {
+            return Ok((None, None));
+        };
+        let given = creds.secret.is_some();
+        if !given
+            && target.auth != SshAuth::Agent
+            && profile.save_password
+            && self.store.available()
+        {
+            creds.secret = self.store.get(&Self::ssh_account(target)).ok().flatten();
+        }
+        let tunnel = crate::ssh::open(
+            target,
+            &profile.host,
+            profile.port_or_default(),
+            &self.known_hosts(),
+            &creds,
+        )?;
+        if given
+            && remember
+            && profile.save_password
+            && let Some(secret) = creds.secret.as_ref().filter(|s| !s.is_empty())
+        {
+            let _ = self.store.set(&Self::ssh_account(target), secret);
+        }
+        Ok((Some(Arc::new(tunnel)), creds.secret))
+    }
+
+    /// Connects to the database of a profile – through its tunnel when it has one: the driver then talks
+    /// to the local end, which takes exactly this one connection.
+    fn connect_through(
+        profile: &Profile,
+        tunnel: Option<&Arc<Tunnel>>,
+        secret: Option<&Secret>,
+    ) -> AppResult<Box<dyn Session>> {
+        match tunnel {
+            Some(tunnel) => {
+                let mut local = profile.clone();
+                local.host = "127.0.0.1".to_string();
+                local.port = tunnel.port();
+                local.ssh = None;
+                tunnel.permit();
+                let mut session = Self::connect_guarded(&local, secret)?;
+                // the session keeps the tunnel: its port is not free for anybody else while it lives
+                session.via_tunnel(Arc::clone(tunnel));
+                Ok(session)
+            }
+            None => Self::connect_guarded(profile, secret),
+        }
+    }
+
+    /// The tunnel of an open connection; one that broke is built again with what unlocked it.
+    fn tunnel_of(&self, id: &str, profile: &Profile) -> AppResult<Option<Arc<Tunnel>>> {
+        if profile.ssh.is_none() {
+            return Ok(None);
+        }
+        if let Some(tunnel) = self.tunnels.lock().get(id).filter(|t| t.is_open()).cloned() {
+            return Ok(Some(tunnel));
+        }
+        let secret = self.kept_ssh.lock().get(id).cloned().flatten();
+        let (tunnel, _) = self.open_tunnel(
+            profile,
+            SshCredentials {
+                secret,
+                trust_fingerprint: None,
+            },
+            false,
+        )?;
+        if let Some(tunnel) = &tunnel {
+            self.tunnels
+                .lock()
+                .insert(id.to_string(), Arc::clone(tunnel));
+        }
+        Ok(tunnel)
     }
 
     /// Opens the connection of a profile (an open one is replaced). After a login that worked the password
     /// goes into the keychain if the profile says so.
     pub fn open(&self, id: &str, password: Option<Secret>) -> AppResult<ConnectionInfo> {
+        self.open_with(id, password, SshCredentials::default())
+    }
+
+    /// As [`ConnectionManager::open`], with what the user gave for the SSH tunnel (its password or
+    /// passphrase, the fingerprint of a host key they confirmed).
+    pub fn open_with(
+        &self,
+        id: &str,
+        password: Option<Secret>,
+        ssh: SshCredentials,
+    ) -> AppResult<ConnectionInfo> {
         let profile = self.find(id)?;
         let given = password.is_some();
+        // the tunnel first: nobody is asked for a database password for a jump host that is not trusted
+        let (tunnel, ssh_secret) = self.open_tunnel(&profile, ssh, true)?;
         let secret = self.secret_for(&profile, password)?;
-        let mut session = Self::connect_guarded(&profile, secret.as_ref())?;
+        let mut session = Self::connect_through(&profile, tunnel.as_ref(), secret.as_ref())?;
         let server_version = session.server_version(&|| false)?;
         if given
             && profile.save_password
@@ -241,6 +398,10 @@ impl ConnectionManager {
         // sessions of tabs from an earlier login go with it
         self.close(id);
         self.kept.lock().insert(id.to_string(), secret);
+        if let Some(tunnel) = tunnel {
+            self.tunnels.lock().insert(id.to_string(), tunnel);
+            self.kept_ssh.lock().insert(id.to_string(), ssh_secret);
+        }
         self.open.lock().insert(id.to_string(), Open::new(session));
         Ok(ConnectionInfo {
             id: id.to_string(),
@@ -279,6 +440,9 @@ impl ConnectionManager {
         }
         drop(all);
         self.kept.lock().remove(id);
+        self.kept_ssh.lock().remove(id);
+        // the tunnel goes with its last session
+        self.tunnels.lock().remove(id);
     }
 
     /// The key of the session a tab runs on. Each tab has a session of its own, so its transaction is
@@ -319,7 +483,8 @@ impl ConnectionManager {
             ));
         }
         let secret = self.kept.lock().get(id).cloned().flatten();
-        let session = Self::connect_guarded(&profile, secret.as_ref())?;
+        let tunnel = self.tunnel_of(id, &profile)?;
+        let session = Self::connect_through(&profile, tunnel.as_ref(), secret.as_ref())?;
         let open = Open::new(session);
         self.open.lock().insert(key.clone(), open.clone());
         Ok((key, open, profile))
@@ -744,6 +909,119 @@ mod tests {
         run_tab(&m, "demo", "b", "INSERT INTO zz VALUES (1)", false);
     }
 
+    /// PostgreSQL and MySQL behind the SSH test server: needs the containers (`pnpm rust:test:db`).
+    #[test]
+    #[ignore]
+    fn databases_behind_an_ssh_tunnel() {
+        use crate::ssh::testserver;
+        let dir = tempdir().unwrap();
+        let (m, store) = manager(dir.path());
+        let server = testserver::start(9, None).unwrap();
+        for (kind, port, user, database) in [
+            (DbKind::Postgres, 25432, "postgres", "postgres"),
+            (DbKind::Mysql, 23306, "root", "shop"),
+        ] {
+            let mut p = crate::db::tests::profile(kind);
+            p.id = String::new();
+            p.name = format!("Hinter SSH {kind:?}");
+            p.host = "127.0.0.1".into();
+            p.port = port;
+            p.user = user.into();
+            p.database = database.into();
+            p.save_password = true;
+            p.ssh = Some(SshTarget {
+                host: "127.0.0.1".into(),
+                port: server.port,
+                user: testserver::USER.into(),
+                auth: SshAuth::Password,
+                key_file: String::new(),
+            });
+            let saved = m.save(p, None).unwrap();
+            let db = Some(Secret::new("Sc-test-003!"));
+            let creds = |secret: Option<&str>, trust: Option<String>| SshCredentials {
+                secret: secret.map(Secret::new),
+                trust_fingerprint: trust,
+            };
+            // stage by stage: the host key, the SSH password, then the database
+            let first = m.open_with(&saved.id, db.clone(), creds(None, None));
+            let trust = match first {
+                Err(e) if e.code == ErrorCode::HostKeyUnknown => {
+                    let trust = Some(e.message.rsplit(' ').next().unwrap().to_string());
+                    let e = m
+                        .open_with(&saved.id, db.clone(), creds(None, trust.clone()))
+                        .unwrap_err();
+                    assert_eq!(e.code, ErrorCode::SshSecretRequired, "{e}");
+                    let e = m
+                        .open_with(&saved.id, db.clone(), creds(Some("wrong"), trust.clone()))
+                        .unwrap_err();
+                    assert_eq!(e.code, ErrorCode::SshSecretRequired);
+                    trust
+                }
+                // the second profile: the host key is on record and the SSH password in the keychain
+                Ok(_) => {
+                    m.close(&saved.id);
+                    None
+                }
+                Err(e) => panic!("{e}"),
+            };
+            let e = m
+                .open_with(
+                    &saved.id,
+                    Some(Secret::new("not the db password")),
+                    creds(Some(testserver::PASSWORD), trust.clone()),
+                )
+                .unwrap_err();
+            assert_eq!(e.code, ErrorCode::AuthFailed, "{e}");
+            let before = server.counters.tunnels.load(Ordering::SeqCst);
+            let info = m
+                .open_with(
+                    &saved.id,
+                    db.clone(),
+                    creds(Some(testserver::PASSWORD), trust),
+                )
+                .unwrap();
+            assert!(!info.server_version.is_empty());
+            // the statement really went through the tunnel
+            assert!(server.counters.tunnels.load(Ordering::SeqCst) > before);
+            let r = m.run(&saved.id, "SELECT 40 + 2", None).unwrap();
+            assert_eq!(
+                serde_json::to_value(&r.rows).unwrap(),
+                serde_json::json!([[42]])
+            );
+            // a statement is stopped on the server through the tunnel too (review 014 M2): the side
+            // connection that asks for it is announced like the session itself
+            if kind == DbKind::Postgres {
+                let started = std::time::Instant::now();
+                std::thread::scope(|scope| {
+                    scope.spawn(|| {
+                        std::thread::sleep(std::time::Duration::from_millis(400));
+                        m.cancel(&saved.id);
+                    });
+                    let e = m.run(&saved.id, "SELECT pg_sleep(30)", None).unwrap_err();
+                    assert_eq!(e.code, ErrorCode::Cancelled, "{e}");
+                });
+                assert!(
+                    started.elapsed() < std::time::Duration::from_secs(6),
+                    "{:?}",
+                    started.elapsed()
+                );
+                // the session survived: it was cancelled on the server, not dropped
+                assert!(m.run(&saved.id, "SELECT 1", None).is_ok());
+            }
+            // a tab gets its own session through the same tunnel, without being asked again
+            let mut sink = VecSink::new(5);
+            let (r, _) = m.run_in(&saved.id, Some("tab-1"), "SELECT 1", None, &mut sink, false);
+            r.unwrap();
+            // both passwords are in the keychain now – and nowhere in the profiles file
+            m.close(&saved.id);
+            m.open(&saved.id, None).unwrap();
+            let file = std::fs::read_to_string(dir.path().join(profiles::FILE_NAME)).unwrap();
+            assert!(!file.contains(testserver::PASSWORD) && !file.contains("Sc-test-003!"));
+            assert!(store.len() >= 2);
+            m.close(&saved.id);
+        }
+    }
+
     #[test]
     fn a_free_connection_asks_only_for_what_destroys() {
         let dir = tempdir().unwrap();
@@ -909,6 +1187,10 @@ mod tests {
             save_password: true,
             protection: crate::db::guard::Protection::Free,
             label: String::new(),
+            ca_file: String::new(),
+            client_cert: String::new(),
+            client_key: String::new(),
+            ssh: None,
         }
     }
 

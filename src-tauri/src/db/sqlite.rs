@@ -71,6 +71,10 @@ pub fn demo_profile() -> Profile {
         save_password: false,
         protection: crate::db::guard::Protection::Free,
         label: String::new(),
+        ca_file: String::new(),
+        client_cert: String::new(),
+        client_key: String::new(),
+        ssh: None,
     }
 }
 

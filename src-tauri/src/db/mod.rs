@@ -50,13 +50,27 @@ impl DbKind {
 /// How the connection is protected. More modes (own CA, client certificate, no verification as a visible
 /// choice) come with prompt 014.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum TlsMode {
     /// No TLS. Meant for servers on this machine.
     #[default]
     Off,
-    /// TLS, certificate and host name checked against the roots of the OS.
+    /// TLS when the server offers it, **nothing checked**: whoever sits on the line can read along.
+    Prefer,
+    /// TLS or no connection, but **nothing checked**: encrypted against listeners, not against a server
+    /// that only claims to be the right one.
+    Require,
+    /// TLS, the certificate checked (roots of the OS or the CA file of the profile), the host name not.
+    VerifyCa,
+    /// TLS, certificate and host name checked.
     Verify,
+}
+
+impl TlsMode {
+    /// TLS without a check of the certificate: shown as such wherever the connection is shown.
+    pub fn unchecked(self) -> bool {
+        matches!(self, TlsMode::Prefer | TlsMode::Require)
+    }
 }
 
 /// A stored connection – never a secret.
@@ -95,6 +109,18 @@ pub struct Profile {
     /// A short mark shown with the connection (`PROD`); empty = none.
     #[serde(default)]
     pub label: String,
+    /// A file with the certificate authority to check the server against (PEM); empty = the roots of the
+    /// OS (prompt 014).
+    #[serde(default)]
+    pub ca_file: String,
+    /// Client certificate and its key (PEM files); both or none.
+    #[serde(default)]
+    pub client_cert: String,
+    #[serde(default)]
+    pub client_key: String,
+    /// The jump host the database is reached through; `None` = directly.
+    #[serde(default)]
+    pub ssh: Option<crate::ssh::SshTarget>,
 }
 
 fn default_color() -> u8 {
@@ -228,6 +254,9 @@ pub trait Session: Send {
         timeout: Option<Duration>,
         stop: Stop,
     ) -> AppResult<TextRows>;
+    /// The session runs through this SSH tunnel: it keeps the tunnel alive as long as it lives, and
+    /// announces every further connection it opens itself (to cancel a statement). Review 014 M1/M2.
+    fn via_tunnel(&mut self, _tunnel: std::sync::Arc<crate::ssh::Tunnel>) {}
     /// Asks the server whether a transaction is open on this session.
     fn transaction_state(&mut self, stop: Stop) -> TxState;
     /// Product and version as the server names itself.
@@ -476,6 +505,10 @@ mod tests {
             save_password: false,
             protection: crate::db::guard::Protection::Free,
             label: String::new(),
+            ca_file: String::new(),
+            client_cert: String::new(),
+            client_key: String::new(),
+            ssh: None,
         }
     }
 

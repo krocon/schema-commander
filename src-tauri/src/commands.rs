@@ -13,6 +13,7 @@ use crate::extract::{Format, Options};
 use crate::history::{self, History};
 use crate::results::{Progress, ResultStore, StoreSink};
 use crate::session::{LoadedSession, SessionDir, SessionFile};
+use crate::ssh::SshCredentials;
 use crate::textfile::{self, TextFile};
 use crate::themes::{self, LoadedThemes, ThemesFile, UserTheme};
 use serde::Serialize;
@@ -47,8 +48,33 @@ pub fn test_connection(
     manager: State<'_, ConnectionManager>,
     profile: Profile,
     password: Option<Secret>,
+    ssh_secret: Option<Secret>,
+    trust_fingerprint: Option<String>,
 ) -> AppResult<String> {
-    manager.test(&profile, password)
+    manager.test_with(
+        &profile,
+        password,
+        SshCredentials {
+            secret: ssh_secret,
+            trust_fingerprint,
+        },
+    )
+}
+
+/// The hosts of `~/.ssh/config`, to fill in a jump host (prompt 014). Nothing in the file is ever run.
+#[tauri::command(async)]
+pub fn ssh_config_hosts() -> Vec<crate::ssh::ssh_config::HostConfig> {
+    use crate::ssh::ssh_config::{Environment, SshConfig};
+    let Some(env) = Environment::current() else {
+        return Vec::new();
+    };
+    let config = SshConfig::load(&env);
+    config
+        .aliases()
+        .into_iter()
+        .take(500)
+        .map(|alias| config.resolve(&alias, &env))
+        .collect()
 }
 
 /// Connects. `secret_required` asks the frontend for a password.
@@ -57,8 +83,17 @@ pub fn open_connection(
     manager: State<'_, ConnectionManager>,
     id: String,
     password: Option<Secret>,
+    ssh_secret: Option<Secret>,
+    trust_fingerprint: Option<String>,
 ) -> AppResult<ConnectionInfo> {
-    manager.open(&id, password)
+    manager.open_with(
+        &id,
+        password,
+        SshCredentials {
+            secret: ssh_secret,
+            trust_fingerprint,
+        },
+    )
 }
 
 #[tauri::command(async)]

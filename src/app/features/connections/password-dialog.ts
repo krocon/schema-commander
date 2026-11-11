@@ -15,10 +15,12 @@ import { ConnectionsStore, PasswordRequest } from '../../core/connections/connec
       (cancel)="$event.preventDefault(); answer(null)"
     >
       <form (submit)="$event.preventDefault(); answer(field.value)">
-        <h2 id="password-title">Passwort</h2>
+        <h2 id="password-title">
+          {{ request().kind === 'ssh' ? 'SSH-Tunnel: Passwort oder Passphrase' : 'Passwort' }}
+        </h2>
         <p>
           {{ profile()?.name }}
-          <span class="where">{{ where() }}</span>
+          <span class="where">{{ request().kind === 'ssh' ? sshWhere() : where() }}</span>
         </p>
         @if (request().wrong) {
           <p class="problem" role="alert">Die Anmeldung wurde abgelehnt. Bitte noch einmal.</p>
@@ -104,6 +106,10 @@ export class PasswordDialog implements OnInit {
   protected readonly profile = computed(
     () => this.store.profiles().find((p) => p.id === this.request().id) ?? null,
   );
+  protected readonly sshWhere = computed(() => {
+    const ssh = this.profile()?.ssh;
+    return ssh ? `${ssh.user}@${ssh.host}${ssh.port ? `:${ssh.port}` : ''}` : '';
+  });
   protected readonly where = computed(() => {
     const p = this.profile();
     return p ? whereLabel(p) : '';

@@ -11,6 +11,7 @@ pub mod history;
 pub mod menu;
 pub mod results;
 pub mod session;
+pub mod ssh;
 pub mod textfile;
 pub mod themes;
 
@@ -18,6 +19,28 @@ pub mod themes;
 const SHOW_FALLBACK: std::time::Duration = std::time::Duration::from_secs(1);
 
 pub fn run() {
+    // The PostgreSQL driver reads libpq's environment variables (password, options, certificates). A
+    // connection is what its profile says, nothing else (review 014 L1). Before any thread exists.
+    for name in [
+        "PGHOST",
+        "PGHOSTADDR",
+        "PGPORT",
+        "PGUSER",
+        "PGPASSWORD",
+        "PGPASSFILE",
+        "PGDATABASE",
+        "PGOPTIONS",
+        "PGAPPNAME",
+        "PGSSLMODE",
+        "PGSSLROOTCERT",
+        "PGSSLCERT",
+        "PGSSLKEY",
+        "PGSERVICE",
+        "PGSERVICEFILE",
+    ] {
+        // SAFETY: the first statement of the program; no other thread reads the environment yet.
+        unsafe { std::env::remove_var(name) };
+    }
     let builder = tauri::Builder::default();
     // Windows and Linux have no menu bar yet (prompt 018).
     #[cfg(target_os = "macos")]
@@ -64,6 +87,7 @@ pub fn run() {
             commands::close_connection,
             commands::run_query,
             commands::cancel_query,
+            commands::ssh_config_hosts,
             commands::end_transaction,
             commands::tx_state,
             commands::close_session,

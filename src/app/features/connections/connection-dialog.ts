@@ -1,3 +1,7 @@
+import { SshHost, SshTarget, tlsUnchecked } from '../../core/connections/connection.models';
+import { shownHostKey } from '../../core/connections/connections.store';
+import { toAppError } from '../../core/errors/app-error';
+import { stageOf } from './connection-logic';
 import {
   Component,
   ElementRef,
@@ -173,10 +177,160 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
               <option value="verify" [selected]="draft().tls === 'verify'">
                 TLS, Zertifikat und Hostname werden geprüft
               </option>
+              <option value="verify-ca" [selected]="draft().tls === 'verify-ca'">
+                TLS, nur das Zertifikat wird geprüft
+              </option>
+              <option value="require" [selected]="draft().tls === 'require'">
+                TLS erforderlich – nichts wird geprüft
+              </option>
+              <option value="prefer" [selected]="draft().tls === 'prefer'">
+                TLS bevorzugt – nichts wird geprüft
+              </option>
               <option value="off" [selected]="draft().tls === 'off'">
                 keine (nur für Server auf diesem Rechner)
               </option>
             </select>
+            @if (draft().tls === 'verify-ca' || draft().tls === 'verify') {
+              <label for="conn-ca">CA-Datei</label>
+              <span class="row">
+                <input
+                  #ca
+                  id="conn-ca"
+                  type="text"
+                  spellcheck="false"
+                  placeholder="(nur die Zertifikate des Systems)"
+                  title="Gilt zusätzlich zu den Zertifikaten des Systems, nicht an ihrer Stelle"
+                  [value]="draft().caFile"
+                  (input)="patch({ caFile: ca.value })"
+                />
+                <button type="button" (click)="choosePem('caFile')">Wählen …</button>
+              </span>
+            }
+            @if (draft().tls !== 'off' && draft().kind !== 'sqlserver') {
+              <label for="conn-cert">Client-Zertifikat</label>
+              <span class="row">
+                <input
+                  #cert
+                  id="conn-cert"
+                  type="text"
+                  spellcheck="false"
+                  placeholder="(keines)"
+                  [value]="draft().clientCert"
+                  (input)="patch({ clientCert: cert.value })"
+                />
+                <button type="button" (click)="choosePem('clientCert')">Wählen …</button>
+              </span>
+              <label for="conn-key">Client-Schlüssel</label>
+              <span class="row">
+                <input
+                  #key
+                  id="conn-key"
+                  type="text"
+                  spellcheck="false"
+                  placeholder="(keiner)"
+                  [value]="draft().clientKey"
+                  [class.invalid]="shown('clientKey')"
+                  (input)="patch({ clientKey: key.value })"
+                />
+                <button type="button" (click)="choosePem('clientKey')">Wählen …</button>
+              </span>
+            }
+
+            <span id="conn-ssh-label">SSH-Tunnel</span>
+            <label class="check"
+              ><input
+                #viaSsh
+                type="checkbox"
+                aria-labelledby="conn-ssh-label"
+                [checked]="!!draft().ssh"
+                (change)="setSsh(viaSsh.checked)"
+              />
+              über einen Sprungserver verbinden</label
+            >
+            @if (draft().ssh; as ssh) {
+              @if (sshHosts().length > 0) {
+                <label for="conn-ssh-alias">aus ~/.ssh/config</label>
+                <select id="conn-ssh-alias" #alias (change)="useSshHost(alias.value)">
+                  <option value="">(nichts übernehmen)</option>
+                  @for (h of sshHosts(); track h.alias) {
+                    <option [value]="h.alias" [disabled]="h.proxy">
+                      {{ h.alias }}{{ h.proxy ? ' (ProxyJump: nicht unterstützt)' : '' }}
+                    </option>
+                  }
+                </select>
+              }
+              <label for="conn-ssh-host">SSH-Host</label>
+              <span class="row">
+                <input
+                  #sshHost
+                  id="conn-ssh-host"
+                  type="text"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  [value]="ssh.host"
+                  [class.invalid]="shown('sshHost')"
+                  (input)="patchSsh({ host: sshHost.value })"
+                />
+                <label for="conn-ssh-port" class="inline">Port</label>
+                <input
+                  #sshPort
+                  id="conn-ssh-port"
+                  class="port"
+                  type="text"
+                  inputmode="numeric"
+                  placeholder="22"
+                  [value]="ssh.port || ''"
+                  [class.invalid]="shown('sshPort')"
+                  (input)="setSshPort(sshPort.value)"
+                />
+              </span>
+              <label for="conn-ssh-user">SSH-Benutzer</label>
+              <input
+                #sshUser
+                id="conn-ssh-user"
+                type="text"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
+                [value]="ssh.user"
+                [class.invalid]="shown('sshUser')"
+                (input)="patchSsh({ user: sshUser.value })"
+              />
+              <label for="conn-ssh-auth">SSH-Anmeldung</label>
+              <select id="conn-ssh-auth" #sshAuth (change)="setSshAuth(sshAuth.value)">
+                <option value="agent" [selected]="ssh.auth === 'agent'">SSH-Agent</option>
+                <option value="key" [selected]="ssh.auth === 'key'">Schlüsseldatei</option>
+                <option value="password" [selected]="ssh.auth === 'password'">Passwort</option>
+              </select>
+              @if (ssh.auth === 'key') {
+                <label for="conn-ssh-key">Schlüsseldatei</label>
+                <span class="row">
+                  <input
+                    #sshKey
+                    id="conn-ssh-key"
+                    type="text"
+                    spellcheck="false"
+                    placeholder="(die üblichen in ~/.ssh)"
+                    [value]="ssh.keyFile"
+                    (input)="patchSsh({ keyFile: sshKey.value })"
+                  />
+                  <button type="button" (click)="chooseSshKey()">Wählen …</button>
+                </span>
+              }
+              @if (ssh.auth !== 'agent') {
+                <label for="conn-ssh-secret">{{
+                  ssh.auth === 'key' ? 'Passphrase' : 'SSH-Passwort'
+                }}</label>
+                <input
+                  #sshSecret
+                  id="conn-ssh-secret"
+                  type="password"
+                  autocomplete="off"
+                  placeholder="(nur zum Testen; beim Verbinden wird gefragt)"
+                />
+              }
+            }
           }
 
           <label for="conn-folder">Ordner</label>
@@ -240,6 +394,19 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
             Ohne Verschlüsselung gehen Passwort und Daten lesbar über das Netz.
           </p>
         }
+        @if (uncheckedTls()) {
+          <p class="message warn" role="note">
+            Diese Einstellung prüft das Zertifikat nicht: Wer sich als der Server ausgibt, wird
+            nicht erkannt.
+          </p>
+        }
+        @if (unknownKey(); as k) {
+          <p class="message warn" role="alert">
+            Der SSH-Server zeigt einen unbekannten Schlüssel:
+            <code>{{ k.keyType }} {{ k.fingerprint }}</code>
+            <button type="button" (click)="test(k.fingerprint)">Vertrauen und erneut testen</button>
+          </p>
+        }
         @if (result(); as r) {
           <p class="message" [class.problem]="!r.ok" [class.ok]="r.ok" role="status">
             {{ r.text }}
@@ -286,6 +453,14 @@ export class ConnectionDialog implements OnInit {
   protected readonly confirmDelete = signal(false);
   /** The user chose the TLS mode: it no longer follows the host. */
   private tlsChosen = false;
+  private readonly sshSecretField = viewChild<ElementRef<HTMLInputElement>>('sshSecret');
+  /** The hosts of `~/.ssh/config`, read when the tunnel is switched on. */
+  protected readonly sshHosts = signal<readonly SshHost[]>([]);
+  /** The key an SSH server showed in a test and nobody confirmed yet. */
+  protected readonly unknownKey = signal<{ keyType: string; fingerprint: string } | null>(null);
+  protected readonly uncheckedTls = computed(
+    () => this.draft().kind !== 'sqlite' && tlsUnchecked(this.draft().tls),
+  );
 
   protected readonly problems = computed(() => profileProblems(this.withName()));
   protected readonly firstProblem = computed(() =>
@@ -302,6 +477,7 @@ export class ConnectionDialog implements OnInit {
   ngOnInit(): void {
     this.draft.set(this.profile());
     this.tlsChosen = this.profile().id !== '';
+    if (this.profile().ssh) this.loadSshHosts();
     this.dialog().nativeElement.showModal();
   }
 
@@ -339,6 +515,68 @@ export class ConnectionDialog implements OnInit {
     this.patch({ tls: mode as TlsMode });
   }
 
+  protected setSsh(on: boolean): void {
+    this.patch({
+      ssh: on ? { host: '', port: 0, user: '', auth: 'agent', keyFile: '' } : null,
+      // through a tunnel the host name of the certificate cannot be checked
+      ...(on && this.draft().tls === 'verify' ? { tls: 'verify-ca' as const } : {}),
+    });
+    if (on) this.loadSshHosts();
+  }
+
+  private loadSshHosts(): void {
+    if (this.sshHosts().length > 0) return;
+    void this.store.sshHosts().then(
+      (hosts) => this.sshHosts.set(hosts),
+      () => undefined,
+    );
+  }
+
+  protected patchSsh(change: Partial<SshTarget>): void {
+    const ssh = this.draft().ssh;
+    if (ssh) this.patch({ ssh: { ...ssh, ...change } });
+  }
+
+  protected setSshPort(text: string): void {
+    const t = text.trim();
+    this.patchSsh({ port: t === '' ? 0 : /^\d{1,5}$/.test(t) ? Number(t) : -1 });
+  }
+
+  protected setSshAuth(value: string): void {
+    if (value === 'agent' || value === 'key' || value === 'password') {
+      this.patchSsh({ auth: value });
+    }
+  }
+
+  /** Fills the jump host from an entry of `~/.ssh/config`. */
+  protected useSshHost(alias: string): void {
+    const host = this.sshHosts().find((h) => h.alias === alias);
+    if (!host || host.proxy) return;
+    this.patchSsh({
+      host: host.hostName,
+      port: host.port ?? 0,
+      user: host.user ?? this.draft().ssh?.user ?? '',
+      ...(host.identityFiles.length > 0
+        ? { auth: 'key' as const, keyFile: host.identityFiles[0] }
+        : {}),
+    });
+  }
+
+  protected async choosePem(field: 'caFile' | 'clientCert' | 'clientKey'): Promise<void> {
+    const path = await this.files.openFile('Datei wählen', [
+      { name: 'PEM', extensions: ['pem', 'crt', 'cer', 'key'] },
+      { name: 'Alle Dateien', extensions: ['*'] },
+    ]);
+    if (path !== null) this.patch({ [field]: path });
+  }
+
+  protected async chooseSshKey(): Promise<void> {
+    const path = await this.files.openFile('Schlüsseldatei wählen', [
+      { name: 'Alle Dateien', extensions: ['*'] },
+    ]);
+    if (path !== null) this.patchSsh({ keyFile: path });
+  }
+
   protected async chooseFile(): Promise<void> {
     const path = await this.files.openFile('SQLite-Datei wählen', [
       { name: 'SQLite', extensions: ['db', 'sqlite', 'sqlite3', 'db3'] },
@@ -347,16 +585,24 @@ export class ConnectionDialog implements OnInit {
     if (path !== null) this.patch({ database: path });
   }
 
-  protected async test(): Promise<void> {
+  /** Tries the connection; the error says which stage failed. `trust`: a host key the user confirmed. */
+  protected async test(trust: string | null = null): Promise<void> {
     this.tried.set(true);
     if (Object.keys(this.problems()).length > 0 || this.busy()) return;
     this.busy.set('test');
     this.result.set(null);
+    this.unknownKey.set(null);
+    const secret = this.sshSecretField()?.nativeElement.value || null;
     try {
-      const version = await this.store.test(this.withName(), this.typedPassword());
+      const version = await this.store.test(this.withName(), this.typedPassword(), {
+        secret,
+        trustFingerprint: trust,
+      });
       this.result.set({ ok: true, text: `Verbindung steht: ${version}` });
     } catch (e) {
-      this.result.set({ ok: false, text: describeError(e) });
+      const error = toAppError(e);
+      if (error.code === 'host_key_unknown') this.unknownKey.set(shownHostKey(error.message));
+      else this.result.set({ ok: false, text: `${stageOf(error.code)}${describeError(error)}` });
     } finally {
       this.busy.set(null);
     }

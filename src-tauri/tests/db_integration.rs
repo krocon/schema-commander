@@ -28,6 +28,10 @@ fn profile(kind: DbKind, port: u16, user: &str, database: &str) -> Profile {
         save_password: false,
         protection: schema_commander_lib::db::guard::Protection::Free,
         label: String::new(),
+        ca_file: String::new(),
+        client_cert: String::new(),
+        client_key: String::new(),
+        ssh: None,
     }
 }
 
@@ -963,5 +967,29 @@ fn a_read_only_session_refuses_writes_on_the_server() {
         );
         let mut other = open(&p);
         run(&mut other, "DROP TABLE sc_ro_012");
+    }
+}
+
+// --- TLS modes (prompt 014) --------------------------------------------------------------------------
+
+#[test]
+#[ignore]
+fn tls_modes_against_servers_without_tls() {
+    // the test servers offer no TLS: "prefer" falls back, everything stricter refuses to connect
+    let mut prefer = pg();
+    prefer.tls = TlsMode::Prefer;
+    let mut s = connect(&prefer, Some(&Secret::new(PW)), &|| false).unwrap();
+    assert_eq!(rows(&run(&mut s, "SELECT 1")), json!([[1]]));
+    for mode in [TlsMode::Require, TlsMode::VerifyCa, TlsMode::Verify] {
+        let mut p = pg();
+        p.tls = mode;
+        let e = connect(&p, Some(&Secret::new(PW)), &|| false)
+            .err()
+            .expect("no TLS, no connection");
+        assert!(
+            matches!(e.code, ErrorCode::TlsFailed | ErrorCode::ConnectionFailed),
+            "{mode:?}: {e}"
+        );
+        assert!(!e.message.contains(PW));
     }
 }

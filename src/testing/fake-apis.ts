@@ -3,6 +3,8 @@ import {
   ConnectionInfo,
   LoadedProfiles as LoadedConnections,
   Profile,
+  SshCredentials,
+  SshHost,
 } from '../app/core/connections/connection.models';
 import {
   ClipboardApi,
@@ -211,6 +213,10 @@ export const DEMO_PROFILE: Profile = {
   savePassword: false,
   protection: 'free',
   label: '',
+  caFile: '',
+  clientCert: '',
+  clientKey: '',
+  ssh: null,
 };
 
 /**
@@ -247,11 +253,61 @@ export class FakeConnectionsApi extends ConnectionsApi {
     return Promise.resolve();
   }
 
-  test(profile: Profile, password: string | null): Promise<string> {
-    return this.check(profile.id, password).then(() => 'Fake 1.0');
+  /**
+   * The SSH server in front of the profiles that have a jump host: its host key is unknown until its
+   * fingerprint is named (`changedHostKey`: it differs from the record, no way past); `sshSecret` is the
+   * password or passphrase it wants (`null` = none).
+   */
+  hostKey = 'ssh-ed25519 SHA256:FakeFingerprintOfTheJumpHost';
+  trustedHostKeys = new Set<string>();
+  changedHostKey = false;
+  sshSecret: string | null = null;
+  readonly sshTried: SshCredentials[] = [];
+  hosts: SshHost[] = [];
+
+  private tunnel(profile: Profile | undefined, ssh?: SshCredentials): Promise<void> {
+    if (!profile?.ssh) return Promise.resolve();
+    this.sshTried.push(ssh ?? { secret: null, trustFingerprint: null });
+    const fingerprint = this.hostKey.split(' ')[1];
+    if (this.changedHostKey) {
+      return Promise.reject({
+        code: 'host_key_changed',
+        message: `the host key of ${profile.ssh.host} differs from the one in known_hosts:3 (server shows ${this.hostKey})`,
+      });
+    }
+    if (!this.trustedHostKeys.has(fingerprint)) {
+      if (ssh?.trustFingerprint !== fingerprint) {
+        return Promise.reject({
+          code: 'host_key_unknown',
+          message: `unknown host key of ${profile.ssh.host}: ${this.hostKey}`,
+        });
+      }
+      this.trustedHostKeys.add(fingerprint);
+    }
+    if (this.sshSecret !== null && ssh?.secret !== this.sshSecret) {
+      return Promise.reject({
+        code: 'ssh_secret_required',
+        message: ssh?.secret ? 'password not accepted for jump' : 'password needed for jump',
+      });
+    }
+    return Promise.resolve();
   }
 
-  open(id: string, password: string | null): Promise<ConnectionInfo> {
+  sshHosts(): Promise<SshHost[]> {
+    return Promise.resolve(this.hosts);
+  }
+
+  test(profile: Profile, password: string | null, ssh?: SshCredentials): Promise<string> {
+    return this.tunnel(profile, ssh)
+      .then(() => this.check(profile.id, password))
+      .then(() => 'Fake 1.0');
+  }
+
+  async open(id: string, password: string | null, ssh?: SshCredentials): Promise<ConnectionInfo> {
+    await this.tunnel(
+      this.profiles.find((p) => p.id === id),
+      ssh,
+    );
     this.opened.push({ id, password });
     if (this.failOpen) {
       const e = this.failOpen;

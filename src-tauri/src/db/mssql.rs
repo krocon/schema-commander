@@ -69,7 +69,21 @@ pub fn connect(
             .unwrap_or_default(),
     ));
     match profile.tls {
-        TlsMode::Verify => c.encryption(EncryptionLevel::Required),
+        // the driver always checks the host name with the certificate: there is no "CA only" here
+        TlsMode::Verify | TlsMode::VerifyCa => {
+            c.encryption(EncryptionLevel::Required);
+            if !profile.ca_file.trim().is_empty() {
+                c.trust_cert_ca(profile.ca_file.trim());
+            }
+        }
+        TlsMode::Require => {
+            c.encryption(EncryptionLevel::Required);
+            c.trust_cert();
+        }
+        TlsMode::Prefer => {
+            c.encryption(EncryptionLevel::On);
+            c.trust_cert();
+        }
         // Only the login is encrypted then (the server may still insist on more); its certificate is
         // not checked – this mode is for servers on this machine.
         TlsMode::Off => {

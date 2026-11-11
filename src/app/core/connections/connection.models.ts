@@ -2,7 +2,43 @@
 export type DbKind = 'postgres' | 'mysql' | 'sqlserver' | 'sqlite';
 
 /** Mirrors `TlsMode`: no TLS (servers on this machine), or TLS with certificate and host name checked. */
-export type TlsMode = 'off' | 'verify';
+export type TlsMode = 'off' | 'prefer' | 'require' | 'verify-ca' | 'verify';
+
+/** TLS that checks nothing (`prefer`, `require`): shown as such wherever the connection is shown. */
+export const tlsUnchecked = (mode: TlsMode) => mode === 'prefer' || mode === 'require';
+
+/** Mirrors `SshAuth` in src-tauri/src/ssh/mod.rs. */
+export type SshAuth = 'agent' | 'key' | 'password';
+
+/** Mirrors `SshTarget`: the jump host a database is reached through – never a secret. */
+export interface SshTarget {
+  readonly host: string;
+  /** 0 = 22. */
+  readonly port: number;
+  readonly user: string;
+  readonly auth: SshAuth;
+  /** The key file for `key`; `''` = the usual ones in `~/.ssh`. */
+  readonly keyFile: string;
+}
+
+/** What the user gave for the SSH tunnel of this connect. */
+export interface SshCredentials {
+  /** The password, or the passphrase of the key file. */
+  readonly secret: string | null;
+  /** The fingerprint the user confirmed for an unknown host key. */
+  readonly trustFingerprint: string | null;
+}
+
+/** Mirrors `HostConfig`: a host of `~/.ssh/config`. */
+export interface SshHost {
+  readonly alias: string;
+  readonly hostName: string;
+  readonly user: string | null;
+  readonly port: number | null;
+  readonly identityFiles: readonly string[];
+  /** It needs `ProxyJump`/`ProxyCommand`: not supported. */
+  readonly proxy: boolean;
+}
 
 /**
  * Mirrors `Protection` in src-tauri/src/db/guard.rs: `free` asks only for what destroys, `ask` for everything
@@ -33,6 +69,13 @@ export interface Profile {
   readonly protection: Protection;
   /** A short mark shown with the connection (`PROD`); `''` = none. */
   readonly label: string;
+  /** A PEM file with the certificate authority to check the server against; `''` = the roots of the OS. */
+  readonly caFile: string;
+  /** Client certificate and its key (PEM files); both or none. */
+  readonly clientCert: string;
+  readonly clientKey: string;
+  /** The jump host the database is reached through; `null` = directly. */
+  readonly ssh: SshTarget | null;
 }
 
 /** Mirrors `LoadedProfiles`. */
@@ -91,6 +134,10 @@ export function emptyProfile(kind: DbKind = 'postgres'): Profile {
     savePassword: true,
     protection: 'free',
     label: '',
+    caFile: '',
+    clientCert: '',
+    clientKey: '',
+    ssh: null,
   };
 }
 

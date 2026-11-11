@@ -25,7 +25,9 @@ import {
 import { ExportDialog } from './features/export/export-dialog';
 import { ExportService } from './features/export/export.service';
 import { CopyService } from './features/results/copy.service';
-import { ConfirmDialog, ConfirmService } from './shared/confirm';
+import { ConfirmDialog, ConfirmRequest, ConfirmService } from './shared/confirm';
+import { tlsUnchecked } from './core/connections/connection.models';
+import { HostKeyRequest } from './core/connections/connections.store';
 import { ContextMenu, MenuItem } from './shared/context-menu';
 import { NODE_ACTIONS, SchemaActions } from './features/schema/schema-actions';
 import { SchemaStore } from './features/schema/schema.store';
@@ -165,6 +167,11 @@ const SIDEBAR_MIN = 140;
         @if (badge(); as b) {
           <span class="guard-badge" [attr.data-protection]="conn.protection">{{ b }}</span>
         }
+        @if (conn.kind !== 'sqlite' && uncheckedTls(conn.tls)) {
+          <span class="guard-badge" title="Das Zertifikat des Servers wird nicht geprüft"
+            >TLS ungeprüft</span
+          >
+        }
       }
       <button
         type="button"
@@ -280,6 +287,12 @@ const SIDEBAR_MIN = 140;
         <app-guard-dialog [request]="question" (answered)="guard.answer($event)" />
       }
     }
+    @if (connections.hostKeyRequest(); as hk) {
+      <app-confirm-dialog
+        [request]="hostKeyQuestion(hk)"
+        (answered)="connections.answerHostKey($event === true)"
+      />
+    }
     @if (confirm.request(); as question) {
       <app-confirm-dialog [request]="question" (answered)="confirm.answer($event)" />
     }
@@ -389,6 +402,12 @@ export class App implements OnInit, OnDestroy {
     );
   });
   protected readonly guard = inject(GuardService);
+  protected readonly uncheckedTls = tlsUnchecked;
+  protected readonly hostKeyQuestion = (hk: HostKeyRequest): ConfirmRequest => ({
+    title: 'Unbekannter SSH-Server',
+    message: `${hk.host} zeigt den Schlüssel ${hk.keyType} ${hk.fingerprint}. Stimmt der Fingerabdruck mit dem des Servers überein? Nur dann vertrauen – er wird gemerkt und künftig geprüft.`,
+    confirm: 'Vertrauen',
+  });
   /** The mark of the active connection: its label and how it is protected. */
   protected readonly badge = computed(() => badgeText(this.connections.active()));
   protected readonly exporter = inject(ExportService);

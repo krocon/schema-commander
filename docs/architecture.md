@@ -50,6 +50,7 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | A28 | Export schreibt Rust zeilenweise (`export.rs`: Speicher oder `FileSink` am Treiber), neben das Ziel und benennt um; Jobs mit Id, Fortschritt über `Channel`, Abbruch | Design 011 E2, E6, E8 |
 | A29 | Schutz der Verbindungen im Backend: `guard::classify` (eigener Scanner, im Zweifel schreibend), `admit` an jedem Ausführ-Command, Bestätigung als einmaliges Token, `readonly` zusätzlich auf dem Server | Design 012 E1–E6 |
 | A30 | Jeder Tab hat eine eigene Sitzung (ersetzt „eine je Profil“ aus A15); die der Verbindung gehört der App (Baum, Export). Den Transaktionszustand sagt der Server nach jedem Lauf | Design 013 E1–E5 |
+| A31 | SSH-Tunnel in Rust (`ssh/`, `russh`): Listener auf `127.0.0.1` mit Zufallsport, der nur angekündigte Verbindungen annimmt; Host-Schlüssel gegen `known_hosts`, unbekannt = Fingerabdruck bestätigen, geändert = Ablehnung. `trust.rs` und `ssh_config.rs` sind aus log-commander übernommen | Design 014 E1–E5 |
 | A10 | Oberflächentexte vorerst deutsch in den Komponenten | übernommene Galerie ist deutsch; Kataloge de/en kommen mit dem Prompt „Einstellungen und Sprache“ |
 
 ## Offene Architekturfragen (entscheidet der jeweilige Prompt)
@@ -70,6 +71,7 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | `@guiexpert/table`, `@guiexpert/angular-table` | Ergebnisgitter (später Baum, Listen) | Vorgabe; virtuelles Scrollen in beide Richtungen |
 | `rust_xlsxwriter` (`constant_memory`) | Excel-Dateien zeilenweise schreiben | Design 011 E4; reines Rust, MIT/Apache-2.0 |
 | `flate2` | gzip für exportierte Textdateien | Design 011 E5; war schon im Abhängigkeitsbaum |
+| `russh` (+ `data-encoding`, `hmac`, `sha1` für `known_hosts`) | SSH-Tunnel ohne externes Programm | Design 014 E1; reines Rust, wie log-commander |
 | `arboard` (ohne Bild-Feature, `wayland-data-control`) | Zwischenablage aus Rust: Text und HTML | Design 009 E1; kein Plugin mit breiter Oberfläche |
 | `editlicious-editor` | SQL-Editor | Vorgabe; große Texte, SQL-Grammatik, 13 Schemata |
 | `tauri-plugin-dialog`, `@tauri-apps/plugin-dialog` | native Öffnen-/Speichern-Dialoge (Schema-Import/-Export, später SQL-Dateien, Export) | wie log-commander; nur `dialog:allow-open`, `dialog:allow-save` |
