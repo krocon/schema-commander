@@ -198,7 +198,105 @@ pub struct ResultStore {
     dir: PathBuf,
     next: AtomicU64,
     results: Mutex<HashMap<u64, Arc<Mutex<ResultData>>>>,
+    /// Views of results (prompt 027): the rows of a result in another order, or some of them. A view has
+    /// an id like a result and is read like one; it holds no rows of its own.
+    views: Mutex<HashMap<u64, Arc<View>>>,
     limits: StoreLimits,
+}
+
+/// Rows of a result, chosen and ordered: `order[i]` is the row of the result that is row `i` of the view.
+struct View {
+    base: u64,
+    data: Arc<Mutex<ResultData>>,
+    order: Vec<u64>,
+}
+
+/// Rows a result may have to be sorted here; beyond, sorting belongs on the server.
+pub const MAX_SORT_ROWS: u64 = 5_000_000;
+/// Rows a result may have to be filtered here.
+pub const MAX_FILTER_ROWS: u64 = 50_000_000;
+
+/// How to look at a result: only rows that hold a text, in the order of some columns.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewSpec {
+    /// Rows in which this text occurs (case does not matter); empty = all rows.
+    #[serde(default)]
+    pub text: String,
+    /// The column to look in; `None` = every column.
+    #[serde(default)]
+    pub column: Option<u32>,
+    #[serde(default)]
+    pub sort: Vec<SortKey>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SortKey {
+    pub column: u32,
+    #[serde(default)]
+    pub desc: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Viewed {
+    /// The id of the view: ask for its rows like for those of a result, free it like one.
+    pub result_id: u64,
+    pub rows: u64,
+}
+
+/// What a cell is for sorting: NULLs last, numbers by their value, the rest as text without regard to case.
+#[derive(Debug, PartialEq)]
+enum Key {
+    Num(f64),
+    Text(String),
+    Null,
+}
+
+impl Key {
+    fn of(cell: &serde_json::Value, numeric: bool) -> Key {
+        match cell {
+            serde_json::Value::Null => Key::Null,
+            serde_json::Value::Bool(b) => Key::Num(f64::from(u8::from(*b))),
+            serde_json::Value::Number(n) => Key::Num(n.as_f64().unwrap_or(0.0)),
+            // big integers and decimals are text in a row: of a numeric column they sort as numbers
+            serde_json::Value::String(s) if numeric => s
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|f| !f.is_nan())
+                .map_or_else(|| Key::Text(s.to_lowercase()), Key::Num),
+            serde_json::Value::String(s) => Key::Text(s.to_lowercase()),
+            other => Key::Text(other.to_string()),
+        }
+    }
+
+    fn cmp(&self, other: &Key) -> std::cmp::Ordering {
+        use std::cmp::Ordering::{Equal, Greater, Less};
+        match (self, other) {
+            (Key::Null, Key::Null) => Equal,
+            (Key::Null, _) => Greater,
+            (_, Key::Null) => Less,
+            (Key::Num(a), Key::Num(b)) => a.partial_cmp(b).unwrap_or(Equal),
+            (Key::Num(_), Key::Text(_)) => Less,
+            (Key::Text(_), Key::Num(_)) => Greater,
+            (Key::Text(a), Key::Text(b)) => a.cmp(b),
+        }
+    }
+}
+
+/// The text of a cell as a filter reads it; `None` for NULL (a text never occurs in nothing).
+fn cell_text(cell: &serde_json::Value) -> Option<std::borrow::Cow<'_, str>> {
+    match cell {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(s) => Some(std::borrow::Cow::Borrowed(s)),
+        serde_json::Value::Object(o) => o
+            .get("hex")
+            .and_then(|h| h.as_str())
+            .map(std::borrow::Cow::Borrowed),
+        other => Some(std::borrow::Cow::Owned(other.to_string())),
+    }
 }
 
 fn unknown(id: u64) -> AppError {
@@ -238,6 +336,7 @@ impl ResultStore {
             dir,
             next: AtomicU64::new(1),
             results: Mutex::new(HashMap::new()),
+            views: Mutex::new(HashMap::new()),
             limits,
         }
     }
@@ -271,10 +370,16 @@ impl ResultStore {
     }
 
     pub fn rows(&self, id: u64) -> AppResult<u64> {
+        if let Some(view) = self.view(id) {
+            return Ok(view.order.len() as u64);
+        }
         Ok(self.get(id)?.lock().rows())
     }
 
     pub fn columns(&self, id: u64) -> AppResult<Vec<Column>> {
+        if let Some(view) = self.view(id) {
+            return Ok(view.data.lock().columns.clone());
+        }
         Ok(self.get(id)?.lock().columns.clone())
     }
 
@@ -286,6 +391,24 @@ impl ResultStore {
     /// Rows `from..from + count` (as far as they exist) as a JSON array of rows, ready for the bridge. Long
     /// texts are cut to [`WINDOW_TEXT_CHARS`].
     pub fn window(&self, id: u64, from: u64, count: u64) -> AppResult<String> {
+        if let Some(view) = self.view(id) {
+            // the rows of a view lie anywhere in its result: one by one
+            let total = view.order.len() as u64;
+            let from = from.min(total);
+            let to = from.saturating_add(count.min(MAX_WINDOW_ROWS)).min(total);
+            let mut out = String::from("[");
+            for i in from..to {
+                if i > from {
+                    out.push(',');
+                }
+                push_row(
+                    &mut out,
+                    &Self::base_row(&view.data, view.order[i as usize])?,
+                );
+            }
+            out.push(']');
+            return Ok(out);
+        }
         let data = self.get(id)?;
         let mut data = data.lock();
         let total = data.rows();
@@ -317,7 +440,14 @@ impl ResultStore {
     /// `from` and `max` are bytes; a text part ends at a character, so `to` can lie a few bytes behind
     /// `from + max`. Ask on from `to` until it is `total`.
     pub fn value(&self, id: u64, row: u64, col: u32, from: u64, max: u64) -> AppResult<CellValue> {
-        let data = self.get(id)?;
+        // a row of a view is a row of its result
+        let (data, row) = match self.view(id) {
+            Some(view) => match view.order.get(row as usize) {
+                Some(base_row) => (view.data.clone(), *base_row),
+                None => return Err(AppError::new(ErrorCode::NotFound, "no such cell")),
+            },
+            None => (self.get(id)?, row),
+        };
         let mut data = data.lock();
         if row >= data.rows() || col as usize >= data.columns.len() {
             return Err(AppError::new(ErrorCode::NotFound, "no such cell"));
@@ -430,6 +560,15 @@ impl ResultStore {
         f: &mut dyn FnMut(&str) -> bool,
     ) -> AppResult<()> {
         const CHUNK: u64 = 1_000;
+        if let Some(view) = self.view(id) {
+            let to = to.min(view.order.len() as u64);
+            for i in from..to {
+                if !f(&Self::base_row(&view.data, view.order[i as usize])?) {
+                    break;
+                }
+            }
+            return Ok(());
+        }
         let data = self.get(id)?;
         let mut at = from;
         loop {
@@ -464,6 +603,197 @@ impl ResultStore {
 
     pub fn free(&self, id: u64) {
         self.results.lock().remove(&id);
+        // a view goes with its id, and with the result it looks at
+        self.views
+            .lock()
+            .retain(|view, v| *view != id && v.base != id);
+    }
+
+    fn view(&self, id: u64) -> Option<Arc<View>> {
+        self.views.lock().get(&id).cloned()
+    }
+
+    /// Looks at a result through a filter and in an order (prompt 027): answers with the id of a view,
+    /// which is read, copied and exported like a result. The rows stay where they are; the view is a list
+    /// of row numbers. `stop` is asked now and then. Comparing is done here, not by the database: text
+    /// without regard to case by its characters (no collation), NULLs last.
+    pub fn derive(&self, id: u64, spec: &ViewSpec, stop: &dyn Fn() -> bool) -> AppResult<Viewed> {
+        // a view of a view is a view of its result
+        let (base, data) = match self.view(id) {
+            Some(view) => (view.base, view.data.clone()),
+            None => (id, self.get(id)?),
+        };
+        let (total, columns) = {
+            let d = data.lock();
+            (d.rows(), d.columns.clone())
+        };
+        let sorting = !spec.sort.is_empty();
+        if sorting && total > MAX_SORT_ROWS {
+            return Err(AppError::new(
+                ErrorCode::TooLarge,
+                format!("{total} rows are too many to sort here"),
+            ));
+        }
+        if total > MAX_FILTER_ROWS {
+            return Err(AppError::new(
+                ErrorCode::TooLarge,
+                "too many rows to filter here",
+            ));
+        }
+        let wanted = |c: u32| (c as usize) < columns.len();
+        if spec.sort.iter().any(|k| !wanted(k.column)) || spec.column.is_some_and(|c| !wanted(c)) {
+            return Err(AppError::new(ErrorCode::NotFound, "no such column"));
+        }
+        let numeric: Vec<bool> = spec
+            .sort
+            .iter()
+            .map(|k| {
+                matches!(
+                    columns[k.column as usize].kind,
+                    crate::db::value::ColKind::Int
+                        | crate::db::value::ColKind::Float
+                        | crate::db::value::ColKind::Decimal
+                )
+            })
+            .collect();
+        let needle = spec.text.to_lowercase();
+        let mut order: Vec<u64> = Vec::new();
+        let mut keys: Vec<Vec<Key>> = Vec::new();
+        let mut row = 0u64;
+        let mut stopped = false;
+        let mut damaged = false;
+        self.each_base_row(&data, 0, total, &mut |text| {
+            if row.is_multiple_of(4096) && stop() {
+                stopped = true;
+                return false;
+            }
+            let this = row;
+            row += 1;
+            // a row without the text cannot match: no need to read its cells
+            let cells: Vec<serde_json::Value> = match serde_json::from_str(text) {
+                Ok(cells) => cells,
+                Err(_) => {
+                    damaged = true;
+                    return false;
+                }
+            };
+            if !needle.is_empty() {
+                let hit = |cell: &serde_json::Value| {
+                    cell_text(cell).is_some_and(|t| t.to_lowercase().contains(&needle))
+                };
+                let found = match spec.column {
+                    Some(c) => cells.get(c as usize).is_some_and(hit),
+                    None => cells.iter().any(hit),
+                };
+                if !found {
+                    return true;
+                }
+            }
+            order.push(this);
+            if sorting {
+                keys.push(
+                    spec.sort
+                        .iter()
+                        .zip(&numeric)
+                        .map(|(k, numeric)| {
+                            Key::of(
+                                cells
+                                    .get(k.column as usize)
+                                    .unwrap_or(&serde_json::Value::Null),
+                                *numeric,
+                            )
+                        })
+                        .collect(),
+                );
+            }
+            true
+        })?;
+        if stopped {
+            return Err(AppError::new(ErrorCode::Cancelled, "stopped"));
+        }
+        if damaged {
+            return Err(AppError::new(ErrorCode::Io, "a stored row is damaged"));
+        }
+        if sorting {
+            let mut index: Vec<usize> = (0..order.len()).collect();
+            index.sort_by(|a, b| {
+                for (i, k) in spec.sort.iter().enumerate() {
+                    let (x, y) = (&keys[*a][i], &keys[*b][i]);
+                    // NULLs stay last in both directions
+                    let ordering = match (x, y) {
+                        (Key::Null, _) | (_, Key::Null) => x.cmp(y),
+                        _ if k.desc => y.cmp(x),
+                        _ => x.cmp(y),
+                    };
+                    if ordering != std::cmp::Ordering::Equal {
+                        return ordering;
+                    }
+                }
+                // equal keys: as the result has them
+                order[*a].cmp(&order[*b])
+            });
+            order = index.into_iter().map(|i| order[i]).collect();
+        }
+        let rows = order.len() as u64;
+        let view_id = self.next.fetch_add(1, Ordering::Relaxed);
+        self.views
+            .lock()
+            .insert(view_id, Arc::new(View { base, data, order }));
+        Ok(Viewed {
+            result_id: view_id,
+            rows,
+        })
+    }
+
+    /// The stored JSON of rows `from..to` of a result, a chunk at a time.
+    fn each_base_row(
+        &self,
+        data: &Arc<Mutex<ResultData>>,
+        from: u64,
+        to: u64,
+        f: &mut dyn FnMut(&str) -> bool,
+    ) -> AppResult<()> {
+        const CHUNK: u64 = 1_000;
+        let mut at = from;
+        loop {
+            let mut d = data.lock();
+            let end = to.min(d.rows());
+            if at >= end {
+                return Ok(());
+            }
+            let upto = (at + CHUNK).min(end);
+            let bytes = d.read(at, upto).map_err(io)?;
+            let base = d.offsets[at as usize];
+            let bounds: Vec<(usize, usize)> = (at..upto)
+                .map(|row| {
+                    (
+                        (d.offsets[row as usize] - base) as usize,
+                        (d.offsets[row as usize + 1] - base) as usize,
+                    )
+                })
+                .collect();
+            drop(d);
+            for (start, end) in bounds {
+                let text = std::str::from_utf8(&bytes[start..end]).map_err(|e| {
+                    AppError::new(ErrorCode::Io, format!("a stored row is damaged: {e}"))
+                })?;
+                if !f(text) {
+                    return Ok(());
+                }
+            }
+            at = upto;
+        }
+    }
+
+    /// One row of a result as it is stored.
+    fn base_row(data: &Arc<Mutex<ResultData>>, row: u64) -> AppResult<String> {
+        let mut d = data.lock();
+        if row >= d.rows() {
+            return Err(AppError::new(ErrorCode::NotFound, "no such row"));
+        }
+        let bytes = d.read(row, row + 1).map_err(io)?;
+        String::from_utf8(bytes)
+            .map_err(|e| AppError::new(ErrorCode::Io, format!("a stored row is damaged: {e}")))
     }
 
     pub fn len(&self) -> usize {
@@ -1054,5 +1384,162 @@ mod tests {
         );
         // only the first part says it
         assert!(store.value(id, 1, 1, 1000, 1000).unwrap().image.is_none());
+    }
+
+    /// Prompt 027: a result seen through a filter and in an order – without a row being copied.
+    #[test]
+    fn views_filter_and_sort_a_result_where_it_lies() {
+        let dir = tempdir().unwrap();
+        let store = ResultStore::new(dir.path());
+        let report = |_: Progress| {};
+        let mut sink = StoreSink::new(&store, &report);
+        sink.start(&columns());
+        let names = ["Zoe", "anna", "Ärger", "Bob", "anna-lena", "10", "9"];
+        for (i, name) in names.iter().enumerate() {
+            let id = if i == 3 {
+                Cell::Null
+            } else {
+                Cell::I64(20 - i as i64 * 3)
+            };
+            assert!(sink.row(vec![id, Cell::Text((*name).into())]));
+        }
+        assert!(sink.row(vec![Cell::I64(7), Cell::Null]));
+        sink.finish();
+        let id = sink.result_id().unwrap();
+        let never = || false;
+        let col = |view: u64, c: usize| -> Value {
+            let rows: Vec<Vec<Value>> =
+                serde_json::from_str(&store.window(view, 0, 100).unwrap()).unwrap();
+            Value::Array(rows.into_iter().map(|r| r[c].clone()).collect())
+        };
+        let sort = |column: u32, desc: bool| ViewSpec {
+            sort: vec![SortKey { column, desc }],
+            ..ViewSpec::default()
+        };
+        // numbers by their value, NULL last – also downwards
+        let up = store.derive(id, &sort(0, false), &never).unwrap();
+        assert_eq!(up.rows, 8);
+        assert_eq!(col(up.result_id, 0), json!([2, 5, 7, 8, 14, 17, 20, null]));
+        let down = store.derive(id, &sort(0, true), &never).unwrap();
+        assert_eq!(
+            col(down.result_id, 0),
+            json!([20, 17, 14, 8, 7, 5, 2, null])
+        );
+        // text without regard to case, by its characters (no collation: Ä comes behind z)
+        let by_name = store.derive(id, &sort(1, false), &never).unwrap();
+        assert_eq!(
+            col(by_name.result_id, 1),
+            json!(["10", "9", "anna", "anna-lena", "Bob", "Zoe", "Ärger", null])
+        );
+        // a filter: rows that hold the text anywhere, or in one column
+        let anna = ViewSpec {
+            text: "ANNA".into(),
+            ..ViewSpec::default()
+        };
+        let found = store.derive(id, &anna, &never).unwrap();
+        assert_eq!(col(found.result_id, 1), json!(["anna", "anna-lena"]));
+        let in_id = ViewSpec {
+            text: "1".into(),
+            column: Some(0),
+            sort: vec![SortKey {
+                column: 0,
+                desc: true,
+            }],
+        };
+        let ones = store.derive(id, &in_id, &never).unwrap();
+        assert_eq!(col(ones.result_id, 0), json!([17, 14]));
+        // a view is read like a result: rows, columns, values, rows for copying
+        assert_eq!(store.rows(ones.result_id).unwrap(), 2);
+        assert_eq!(store.columns(ones.result_id).unwrap().len(), 2);
+        assert_eq!(
+            store
+                .value(ones.result_id, 1, 1, 0, 100)
+                .unwrap()
+                .text
+                .as_deref(),
+            Some("Ärger")
+        );
+        assert_eq!(
+            store.value(ones.result_id, 2, 1, 0, 100).unwrap_err().code,
+            ErrorCode::NotFound
+        );
+        let mut copied = Vec::new();
+        store
+            .each_row(ones.result_id, 0, 10, &mut |row| {
+                copied.push(row.to_owned());
+                true
+            })
+            .unwrap();
+        assert_eq!(copied, vec![r#"[17,"anna"]"#, r#"[14,"Ärger"]"#]);
+        // a view of a view looks at the result; nothing found is an empty view
+        let again = store
+            .derive(ones.result_id, &sort(0, false), &never)
+            .unwrap();
+        assert_eq!(again.rows, 8);
+        let none = ViewSpec {
+            text: "gibt es nicht".into(),
+            ..ViewSpec::default()
+        };
+        assert_eq!(store.derive(id, &none, &never).unwrap().rows, 0);
+        // stopping, a column that is not there
+        assert_eq!(
+            store
+                .derive(id, &sort(0, false), &|| true)
+                .unwrap_err()
+                .code,
+            ErrorCode::Cancelled
+        );
+        assert_eq!(
+            store.derive(id, &sort(9, false), &never).unwrap_err().code,
+            ErrorCode::NotFound
+        );
+        // a view goes alone, and all of them with their result
+        store.free(up.result_id);
+        assert_eq!(
+            store.rows(up.result_id).unwrap_err().code,
+            ErrorCode::UnknownResult
+        );
+        assert_eq!(store.rows(down.result_id).unwrap(), 8);
+        drop(sink);
+        store.free(id);
+        assert_eq!(
+            store.rows(down.result_id).unwrap_err().code,
+            ErrorCode::UnknownResult
+        );
+    }
+
+    #[test]
+    fn sorts_many_rows_stably_and_fast() {
+        let dir = tempdir().unwrap();
+        let store = ResultStore::new(dir.path());
+        let report = |_: Progress| {};
+        let mut sink = StoreSink::new(&store, &report);
+        sink.start(&columns());
+        for i in 0..200_000i64 {
+            sink.row(vec![Cell::I64(i % 1000), Cell::Text(format!("n{i}"))]);
+        }
+        sink.finish();
+        let id = sink.result_id().unwrap();
+        let started = Instant::now();
+        let spec = ViewSpec {
+            sort: vec![SortKey {
+                column: 0,
+                desc: true,
+            }],
+            ..ViewSpec::default()
+        };
+        let view = store.derive(id, &spec, &|| false).unwrap();
+        assert!(started.elapsed() < Duration::from_secs(20));
+        let rows: Vec<Vec<Value>> =
+            serde_json::from_str(&store.window(view.result_id, 0, 3).unwrap()).unwrap();
+        // equal keys keep the order of the result
+        assert_eq!(
+            rows,
+            vec![
+                vec![json!(999), json!("n999")],
+                vec![json!(999), json!("n1999")],
+                vec![json!(999), json!("n2999")]
+            ]
+        );
     }
 }
