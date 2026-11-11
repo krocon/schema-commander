@@ -184,7 +184,7 @@ describe('ThemePickerComponent', () => {
     button(el, 'Importieren').click();
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(el.querySelector('[role="alert"]')?.textContent).toContain('nicht gefunden');
+    expect(el.querySelector('[role="alert"]')?.textContent).toContain('Nicht gefunden');
     expect(theme.editing()).toBeNull();
   });
 });

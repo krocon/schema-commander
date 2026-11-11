@@ -1,33 +1,75 @@
-//! The command layer: thin, the logic lives in pure modules (`demo_db`).
+//! The command layer: thin, the logic lives in pure modules (`db`, `themes`).
 
-use crate::demo_db::{DemoDb, MAX_ROWS, QueryResult};
+use crate::db::Profile;
+use crate::db::manager::{ConnectionInfo, ConnectionManager};
+use crate::db::profiles::LoadedProfiles;
+use crate::db::secrets::Secret;
+use crate::db::value::QueryResult;
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::themes::{self, LoadedThemes, ThemesFile, UserTheme};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
 
-/// The demo database of the walking skeleton, created on first use.
-#[derive(Default)]
-pub struct DemoState(Mutex<Option<DemoDb>>);
-
-/// Runs one statement on the demo database. `async`: off the main thread, the window stays responsive.
+/// The stored connections, the demo database first (prompt 003). Never a secret.
 #[tauri::command(async)]
-pub fn run_demo_query(state: State<'_, DemoState>, sql: String) -> AppResult<QueryResult> {
-    let mut guard = state
-        .0
-        .lock()
-        .map_err(|_| AppError::new(ErrorCode::Io, "demo database is not available"))?;
-    if guard.is_none() {
-        *guard = Some(DemoDb::new()?);
-    }
-    match guard.as_ref() {
-        Some(db) => db.run(&sql, MAX_ROWS),
-        None => Err(AppError::new(
-            ErrorCode::Io,
-            "demo database is not available",
-        )),
-    }
+pub fn list_connections(manager: State<'_, ConnectionManager>) -> LoadedProfiles {
+    manager.list()
+}
+
+/// Stores a profile; `password` goes into the keychain when the profile says so, never into a file.
+#[tauri::command(async)]
+pub fn save_connection(
+    manager: State<'_, ConnectionManager>,
+    profile: Profile,
+    password: Option<Secret>,
+) -> AppResult<Profile> {
+    manager.save(profile, password)
+}
+
+#[tauri::command(async)]
+pub fn delete_connection(manager: State<'_, ConnectionManager>, id: String) -> AppResult<()> {
+    manager.delete(&id)
+}
+
+/// Tries a profile without keeping the connection; answers with the server's version.
+#[tauri::command(async)]
+pub fn test_connection(
+    manager: State<'_, ConnectionManager>,
+    profile: Profile,
+    password: Option<Secret>,
+) -> AppResult<String> {
+    manager.test(&profile, password)
+}
+
+/// Connects. `secret_required` asks the frontend for a password.
+#[tauri::command(async)]
+pub fn open_connection(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    password: Option<Secret>,
+) -> AppResult<ConnectionInfo> {
+    manager.open(&id, password)
+}
+
+#[tauri::command(async)]
+pub fn close_connection(manager: State<'_, ConnectionManager>, id: String) {
+    manager.close(&id);
+}
+
+/// Runs one statement on an open connection. `async`: off the main thread, the window stays responsive.
+#[tauri::command(async)]
+pub fn run_query(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    sql: String,
+) -> AppResult<QueryResult> {
+    manager.run(&id, &sql)
+}
+
+/// Stops the statement that runs on a connection.
+#[tauri::command(async)]
+pub fn cancel_query(manager: State<'_, ConnectionManager>, id: String) {
+    manager.cancel(&id);
 }
 
 /// `#rrggbb` → channels.

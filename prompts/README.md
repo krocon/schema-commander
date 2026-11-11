@@ -23,7 +23,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 | | **Stufe 1 – daraus wird ein benutzbares SQL-Tool** | | | | |
 | 001 | [Farbschemata fertig machen](done/001-theme.md) ([Design](done/001-theme.design.md)) | G5 | E1 (editlicious: Farben von außen) | S–M | ✅ 11.11.2026 |
 | 002 | [Aktionssystem, Tastatur, Befehlspalette](done/002-aktionen-tastatur.md) ([Design](done/002-aktionen-tastatur.design.md)) | G1 | – | M | ✅ 11.11.2026 |
-| 003 | [Verbindungen und Schlüsselbund](003-verbindungen.md) | A1, A2 | 002 | L | offen |
+| 003 | [Verbindungen und Schlüsselbund](done/003-verbindungen.md) ([Design](done/003-verbindungen.design.md)) | A1, A2 | 002 | L | ✅ 11.11.2026 |
 | 004 | [Abfrage-Tabs](004-abfrage-tabs.md) | C1 | 002, 003 | M | offen |
 | 005 | [Anweisungen ausführen](005-ausfuehren.md) | C2 | 003, 004, E2 (editlicious: Auswahl abfragen) | M | offen |
 | 006 | [Große Ergebnisse](006-grosse-ergebnisse.md) | D1 | 005 | L | offen |

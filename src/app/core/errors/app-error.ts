@@ -5,6 +5,17 @@ export type ErrorCode =
   | 'invalid_theme'
   | 'too_large'
   | 'not_found'
+  | 'connection_failed'
+  | 'auth_failed'
+  | 'tls_failed'
+  | 'timeout'
+  | 'cancelled'
+  | 'permission_denied'
+  | 'secret_required'
+  | 'keychain_unavailable'
+  | 'invalid_profile'
+  | 'unknown_connection'
+  | 'not_connected'
   | 'io'
   /** No desktop backend (browser, tests). */
   | 'backend_unavailable'
@@ -21,6 +32,17 @@ const CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'invalid_theme',
   'too_large',
   'not_found',
+  'connection_failed',
+  'auth_failed',
+  'tls_failed',
+  'timeout',
+  'cancelled',
+  'permission_denied',
+  'secret_required',
+  'keychain_unavailable',
+  'invalid_profile',
+  'unknown_connection',
+  'not_connected',
   'io',
   'backend_unavailable',
   'unknown',
@@ -46,7 +68,18 @@ const TEXTS: Readonly<Record<ErrorCode, string>> = {
   unsupported: 'Das wird nicht unterstützt.',
   invalid_theme: 'Das ist kein gültiges Farbschema.',
   too_large: 'Die Datei ist zu groß.',
-  not_found: 'Die Datei wurde nicht gefunden.',
+  not_found: 'Nicht gefunden.',
+  connection_failed: 'Die Verbindung ist fehlgeschlagen.',
+  auth_failed: 'Die Anmeldung wurde abgelehnt.',
+  tls_failed: 'Die verschlüsselte Verbindung (TLS) kam nicht zustande.',
+  timeout: 'Keine Antwort in der vorgesehenen Zeit.',
+  cancelled: 'Abgebrochen.',
+  permission_denied: 'Dafür fehlen die Rechte.',
+  secret_required: 'Ein Passwort ist nötig.',
+  keychain_unavailable: 'Der Schlüsselbund des Systems ist nicht verfügbar.',
+  invalid_profile: 'Die Angaben der Verbindung sind unvollständig oder ungültig.',
+  unknown_connection: 'Diese Verbindung gibt es nicht (mehr).',
+  not_connected: 'Die Verbindung ist nicht geöffnet.',
   io: 'Die Datei konnte nicht gelesen oder geschrieben werden.',
   backend_unavailable: 'Das geht nur in der Desktop-App.',
   unknown: 'Unerwarteter Fehler.',
@@ -55,4 +88,23 @@ const TEXTS: Readonly<Record<ErrorCode, string>> = {
 /** What the user reads for an error of the app itself (not the message of a database server). */
 export function errorText(e: unknown): string {
   return TEXTS[toAppError(e).code];
+}
+
+/** The text of the code and, where it says more, what the backend or the server reported. */
+export function describeError(e: unknown): string {
+  const error = toAppError(e);
+  const text = TEXTS[error.code];
+  const detail = error.message.trim();
+  const says = [
+    'invalid_query',
+    'connection_failed',
+    'auth_failed',
+    'tls_failed',
+    'permission_denied',
+    'not_found',
+    'invalid_profile',
+    'keychain_unavailable',
+    'unknown',
+  ].includes(error.code);
+  return says && detail ? `${text} ${detail}` : text;
 }

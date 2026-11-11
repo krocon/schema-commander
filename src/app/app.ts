@@ -11,9 +11,14 @@ import {
   viewChild,
 } from '@angular/core';
 import { ActionService } from './core/actions/action.service';
+import { emptyProfile, DEMO_ID, Profile } from './core/connections/connection.models';
+import { ConnectionsStore } from './core/connections/connections.store';
 import { DEFAULT_SETTINGS } from './core/settings/settings.models';
 import { SettingsService } from './core/settings/settings.service';
 import { ThemeService } from './core/theme/theme.service';
+import { ConnectionDialog } from './features/connections/connection-dialog';
+import { ConnectionList } from './features/connections/connection-list';
+import { PasswordDialog } from './features/connections/password-dialog';
 import { EdCaret } from './features/editor/editlicious';
 import { SqlEditor } from './features/editor/sql-editor';
 import { CommandPalette } from './features/palette/command-palette';
@@ -30,8 +35,8 @@ const RESULT_MIN = 80;
 /** What the editor keeps at least, px. */
 const EDITOR_MIN = 120;
 
-const START_SQL = `-- Schema Commander – Walking Skeleton
--- Demo-Datenbank im Speicher (SQLite): customer, product, orders.
+const START_SQL = `-- Schema Commander
+-- Die Demo-Datenbank im Speicher (SQLite) hat die Tabellen customer, product, orders.
 -- Strg/Cmd+Enter führt die Anweisung unter dem Cursor aus, Strg/Cmd+Shift+P zeigt alle Befehle.
 
 SELECT c.name, c.country, count(*) AS orders, round(sum(o.quantity * p.price), 2) AS revenue
@@ -53,6 +58,9 @@ SELECT * FROM orders;
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommandPalette,
+    ConnectionDialog,
+    ConnectionList,
+    PasswordDialog,
     ResultGrid,
     ShortcutDialogComponent,
     SplitterComponent,
@@ -80,8 +88,24 @@ SELECT * FROM orders;
       >
         ▶ Ausführen
       </button>
+      @if (state().kind === 'running') {
+        <button
+          type="button"
+          [title]="'Laufende Anweisung abbrechen' + actions.hint('CANCEL_QUERY')"
+          (click)="actions.run('CANCEL_QUERY')"
+        >
+          ■ Abbrechen
+        </button>
+      }
       <span class="spacer"></span>
-      <span class="conn conn-3" title="Verbindung"><i></i>Demo (SQLite im Speicher)</span>
+      @if (connections.active(); as conn) {
+        @let cs = connections.activeState();
+        <span
+          [class]="'conn conn-' + conn.color"
+          [title]="cs.kind === 'open' ? cs.serverVersion : 'nicht verbunden'"
+          ><i [class.open]="cs.kind === 'open'"></i>{{ conn.name }}</span
+        >
+      }
       <button
         type="button"
         aria-label="Befehlspalette"
@@ -108,16 +132,7 @@ SELECT * FROM orders;
           aria-label="Datenbank"
           [style.width.px]="sidebarW()"
         >
-          <h2>Demo</h2>
-          <ul>
-            @for (table of demoTables; track table) {
-              <li>
-                <button type="button" (click)="session.run('SELECT * FROM ' + table)">
-                  ▦ {{ table }}
-                </button>
-              </li>
-            }
-          </ul>
+          <app-connection-list (edit)="connectionDialog.set($event)" />
         </nav>
         <app-splitter
           orientation="vertical"
@@ -175,6 +190,9 @@ SELECT * FROM orders;
             @case ('running') {
               <p class="message">Läuft …</p>
             }
+            @case ('cancelled') {
+              <p class="message">Abgebrochen.</p>
+            }
             @default {
               <p class="message">Noch kein Ergebnis. Strg/Cmd+Enter führt die Anweisung aus.</p>
             }
@@ -194,6 +212,16 @@ SELECT * FROM orders;
         <span>{{ message }}</span>
         <button type="button" aria-label="Meldung schließen" (click)="notice.set(null)">×</button>
       </div>
+    }
+    @if (connectionDialog(); as profile) {
+      @defer (on immediate) {
+        <app-connection-dialog [profile]="profile" (closed)="connectionDialog.set(null)" />
+      }
+    }
+    @if (connections.passwordRequest(); as request) {
+      @defer (on immediate) {
+        <app-password-dialog [request]="request" />
+      }
     }
     @if (paletteOpen()) {
       @defer (on immediate) {
@@ -224,6 +252,10 @@ export class App implements OnInit, OnDestroy {
   protected readonly theme = inject(ThemeService);
   protected readonly session = inject(QuerySession);
   protected readonly actions = inject(ActionService);
+  protected readonly connections = inject(ConnectionsStore);
+
+  /** The connection dialog is open with this profile (`id === ''` = a new one). */
+  protected readonly connectionDialog = signal<Profile | null>(null);
 
   protected readonly paletteOpen = signal(false);
   /** The shortcut editor, `read` as an overview. */
@@ -235,7 +267,6 @@ export class App implements OnInit, OnDestroy {
   private readonly cleanups: (() => void)[] = [];
 
   protected readonly startSql = START_SQL;
-  protected readonly demoTables = ['customer', 'product', 'orders'];
   protected readonly defaults = DEFAULT_SETTINGS;
   protected readonly sidebarMin = SIDEBAR_MIN;
   protected readonly resultMin = RESULT_MIN;
@@ -302,6 +333,8 @@ export class App implements OnInit, OnDestroy {
     const engine = this.actions.load();
     await Promise.all([this.settings.load(), this.theme.loadUserThemes()]);
     await engine;
+    // after the settings: they name the active connection
+    await this.connections.load();
     const notice = this.actions.startNotice();
     if (notice) this.notice.set(notice);
   }
@@ -320,7 +353,24 @@ export class App implements OnInit, OnDestroy {
         () => this.editor()?.runCurrent(),
         () => !running() && !!this.editor(),
       ),
+      this.actions.register('CANCEL_QUERY', () => this.session.cancel(), running),
+      this.actions.register(
+        'EDIT_CONNECTION',
+        () => this.connectionDialog.set(this.connections.active()),
+        () => this.connections.activeId() !== DEMO_ID,
+      ),
+      this.actions.register(
+        'CONNECT',
+        () => this.connections.connect(this.connections.activeId()),
+        () => this.connections.activeState().kind !== 'open',
+      ),
+      this.actions.register(
+        'DISCONNECT',
+        () => this.connections.disconnect(this.connections.activeId()),
+        () => this.connections.activeState().kind === 'open',
+      ),
       this.actions.registerAll({
+        NEW_CONNECTION: () => this.connectionDialog.set(emptyProfile()),
         TOGGLE_SIDEBAR: () =>
           this.settings.update({ sidebarVisible: !this.settings.settings().sidebarVisible }),
         COLOR_SCHEME: () => this.theme.pickerOpen.set(true),

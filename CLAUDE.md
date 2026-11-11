@@ -13,10 +13,12 @@
   Demo-Datenbank (SQLite im Speicher) in Rust; `Strg/Cmd+Enter` führt die Anweisung unter dem Cursor aus; 17
   Farbschemata umschaltbar (auch „System folgen“), **eigene Schemata** mit Live-Editor, Import und Export (Prompt 001);
   der Editor folgt jedem Schema; **Aktionssystem** mit Keymap je OS, Befehlspalette (`Mod+Shift+P`) und
-  Kürzel-Editor (Prompt 002); Einstellungen und Fensterzustand bleiben über einen Neustart.
-- **Noch nichts davon**: echte Verbindungen, Schema-Baum, Tabs, Bearbeiten, Export. Alle Features aus
+  Kürzel-Editor (Prompt 002); **Verbindungen** zu PostgreSQL, MySQL/MariaDB, SQL Server und SQLite-Dateien mit
+  Profilen, Ordnern, Farbmarken und Passwörtern im Schlüsselbund (Prompt 003); Einstellungen und Fensterzustand
+  bleiben über einen Neustart.
+- **Noch nichts davon**: Schema-Baum, Tabs, Bearbeiten, Export. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001, 002),
+  erledigt: 001–003),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -33,6 +35,7 @@
 | Rust | `pnpm rust:fmt`, `pnpm rust:lint` (clippy `-D warnings`), `pnpm rust:test` |
 | Farbschemata | `pnpm contrast` (WCAG AA aller Schemata), `pnpm contrast --write-base` (dark/light.json aus `styles.css`) |
 | Version | `pnpm version:check`, `pnpm version:set X.Y.Z` (Quelle `package.json`) |
+| Treiber gegen echte Server | `sh scripts/db-test-servers.sh up` (Docker: PostgreSQL, MySQL, MariaDB, SQL Server auf 127.0.0.1), `pnpm rust:test:db`, danach `sh scripts/db-test-servers.sh down` |
 | Alles prüfen | `pnpm check` |
 | Produktions-Build unter CSP | `pnpm build && pnpm preview:csp` → http://localhost:1461 (ohne Backend; prüft Editor-Worker, WebAssembly, Styles) |
 | Debug-Build ohne Paket | `pnpm tauri build --debug --no-bundle` → `src-tauri/target/debug/schema-commander` |
@@ -52,32 +55,42 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                keyboard-dispatcher.ts (der eine keydown-Handler), ActionService (Root)
   app/core/backend/            call.ts (einzige Stelle mit invoke()), WindowApi (set_window_chrome),
                                FileDialogApi (native Öffnen-/Speichern-Dialoge: einzige Quelle für Pfade)
+  app/core/connections/        Profile (Modell), ConnectionsApi, ConnectionsStore (Root: Profile, Zustände, aktive
+                               Verbindung, Passwortabfrage)
   app/core/errors/             AppError + toAppError (spiegelt src-tauri/src/error.rs)
   app/core/settings/           Settings (Modell, mergeSettings), SettingsService (tauri-plugin-store)
-  app/core/sql/                QueryApi + DTOs (QueryResult, Cell) – spiegelt src-tauri/src/demo_db.rs
+  app/core/sql/                QueryApi (run, cancel) + DTOs (QueryResult, Cell, ColKind) – spiegelt db/value.rs
   app/core/theme/              Farbschemata: tokens.ts (Katalog), themes/*.json, theme-logic.ts (rein),
                                ThemeService (Root: Auswahl, Vorschau, eigene Schemata), ThemeApi (themes.json),
                                contrast-pairs.json
+  app/features/connections/    Verbindungsliste (Seitenleiste), Verbindungsdialog, Passwortabfrage,
+                               connection-logic.ts (rein: Gruppen, Prüfung, Vorschläge)
   app/features/editor/         SqlEditor (<editlicious-editor scheme="none">), editlicious.ts (Laden),
                                editor-colors.ts (Farben des Editors aus unseren Tokens),
                                sql-split.ts (rein: Anweisung unter dem Cursor)
   app/features/palette/        Befehlspalette (CommandPalette, palette-logic.ts rein: unscharfe Suche)
   app/features/shortcuts/      Kürzel-Editor und -Übersicht (ShortcutDialog, shortcut-logic.ts)
   app/features/results/        ResultGrid (GuiExpert Table), result-model.ts (rein: Spalten, Breiten, Modell)
-  app/features/shell/          QuerySession (Root: letzte Anweisung und ihr Ausgang), statusText
+  app/features/shell/          QuerySession (Root: letzte Anweisung und ihr Ausgang auf der aktiven Verbindung)
   app/features/themes/         Farbschema-Galerie (ThemePicker, ThemeThumb, theme-picker-logic.ts),
                                Schema-Editor (ThemeEditor, theme-editor-logic.ts rein: Ids, Import, Kontrast)
   app/shared/                  Splitter (+ splitter-logic.ts)
   testing/fake-apis.ts         Fake-Fassaden für Tests
 src-tauri/                     Rust
   src/lib.rs                   Builder: Plugins (store, window-state), State, Commands
-  src/commands.rs              dünne Command-Schicht (run_demo_query, set_window_chrome, *_themes, *_theme)
+  src/commands.rs              dünne Command-Schicht (Verbindungen, run_query, cancel_query, Fenster, Farbschemata)
+  src/db/mod.rs                Profile, DbKind, TlsMode, Session-Trait, Laufzeit, Fehler in Worten
+  src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
+  src/db/value.rs              Cell, ColKind, QueryResult (verlustfrei über die Brücke)
+  src/db/manager.rs            ConnectionManager: Sitzungen, Schlüsselbund-Regeln, Abbruch
+  src/db/profiles.rs           connections.json (nie ein Geheimnis); db/secrets.rs: Secret, Schlüsselbund
+  tests/db_integration.rs      Treiber gegen echte Server (ignoriert; pnpm rust:test:db)
   src/themes.rs                eigene Farbschemata: themes.json, Grenzen, Import/Export (rein, getestet)
-  src/demo_db.rs               Demo-Datenbank (rein, getestet) – wird durch echte Verbindungen ersetzt
   src/error.rs                 AppError { code, message }
   capabilities/default.json    minimale Rechte (core:default, store:default, dialog:allow-open/-save)
   tauri.conf.json              Fenster, CSP, Bundle (Version aus package.json)
-scripts/                       check-contrast.mjs + theme-lib.mjs, version.mjs, csp-preview.mjs (+ Tests)
+scripts/                       check-contrast.mjs + theme-lib.mjs, version.mjs, csp-preview.mjs (+ Tests),
+                               db-test-servers.sh (Container für die Treibertests)
 docs/                          architecture.md, best-practices.md, themes.md, feature-analysis.md, roadmap.md
 prompts/                       000-arbeitsweise.md, README.md (Index), offene Prompts; erledigte unter done/
 public/                        icon.svg (Quelle der App-Icons: `pnpm tauri icon public/icon.svg`), favicon.png

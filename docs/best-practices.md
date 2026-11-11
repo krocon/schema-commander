@@ -102,6 +102,9 @@ Unsere Ergänzungen und Abweichungen:
   `'wasm-unsafe-eval'` und `worker-src` (die Engine von editlicious).
 - **Geheimnisse** (Passwörter, Schlüssel-Passphrasen, Tokens) nur im Schlüsselbund des Betriebssystems, nie in
   Dateien, Einstellungen, Events oder Logs; im Speicher mit `zeroize`. Nichts verbindet sich ohne Zutun des Nutzers.
+  In Rust ist ein Geheimnis ein `db::secrets::Secret` (kein `Serialize`, `Debug` zeigt `***`); im Frontend geht ein
+  Passwort nur vom Eingabefeld zur Fassade, wird nie in einem Signal oder Store gehalten und das Feld danach geleert.
+  Fehlertexte dürfen nie ein Passwort enthalten (Tests prüfen das).
 - **SQL des Nutzers ist Nutzerdaten**: Anweisungen und Ergebnisse nie loggen. Werte, die die App selbst in SQL
   einsetzt (Filter, Bearbeiten im Gitter), immer als gebundene Parameter, Bezeichner über die Quoting-Funktion des
   Dialekts, nie per String-Verkettung.

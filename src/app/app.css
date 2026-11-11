@@ -50,6 +50,10 @@
   width: 9px;
   height: 9px;
   border-radius: 50%;
+  border: 2px solid var(--conn);
+}
+
+.conn i.open {
   background: var(--conn);
 }
 

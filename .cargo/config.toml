@@ -1,0 +1,4 @@
+# The bundled SQLite is built without extension loading: no SQL (`load_extension(...)`) can load native
+# code. Applies to every cargo call below this folder (pnpm scripts from the root, `tauri dev`).
+[env]
+LIBSQLITE3_FLAGS = { value = "-DSQLITE_OMIT_LOAD_EXTENSION", force = true }

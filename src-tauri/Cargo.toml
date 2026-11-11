@@ -20,6 +20,26 @@ tauri-build = { version = "2", features = [] }
 # server. Bundled (no system library), as in log-commander. The real drivers come with the
 # connection prompt (prompts/README.md).
 rusqlite = { version = "0.41", features = ["bundled", "column_decltype"] }
+# Drivers (prompt 003, the set log-commander proved in its prompt 019): pure Rust, TLS over rustls with the
+# roots of the OS. The sqlx sub-crates instead of the `sqlx` facade: the facade names `sqlx-sqlite`
+# (another libsqlite3-sys) even when unused, and two `links = "sqlite3"` cannot share a build with rusqlite.
+sqlx-core = { version = "=0.9.0", default-features = false, features = ["_rt-tokio", "_tls-rustls-ring-native-roots", "chrono"] }
+sqlx-postgres = { version = "=0.9.0", default-features = false, features = ["chrono"] }
+# `rsa`: MySQL 8 logs in with caching_sha2_password, which needs RSA on a connection without TLS.
+sqlx-mysql = { version = "=0.9.0", default-features = false, features = ["chrono", "rsa"] }
+# SQL Server (TDS); rustls, the ring provider is installed as the process default.
+tiberius = { version = "0.13", default-features = false, features = ["rustls", "tds73", "chrono"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "net", "sync", "io-util", "macros"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# Passwords only in the keychain of the OS, wiped from memory when dropped (prompt 003).
+keyring-core = "1"
+zeroize = "1.8"
+# Keychain account names are hashes: neither host nor user stand in the keychain's metadata.
+sha2 = "0.11"
+parking_lot = "0.12"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
@@ -29,6 +49,16 @@ tauri-plugin-dialog = "2"
 tauri-plugin-store = "2"
 # Window position and size over a restart.
 tauri-plugin-window-state = "2"
+
+# Keychain of the OS: Secret Service over D-Bus on Linux, Keychain on macOS, Credential Manager on Windows.
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-native-keyring-store = { version = "1.1", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"

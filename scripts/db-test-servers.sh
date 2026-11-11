@@ -1,0 +1,45 @@
+#!/bin/sh
+# Throwaway database servers for the ignored integration tests (src-tauri/tests/db_integration.rs):
+# PostgreSQL 17, MySQL 8.4, MariaDB 11.4 and SQL Server 2022 in Docker, each on 127.0.0.1 only, with a test
+# password and nothing kept. After log-commander's scripts/db-test-servers.sh.
+#
+#   sh scripts/db-test-servers.sh up      # starts the containers, waits until all answer
+#   pnpm rust:test:db                     # runs the tests against them
+#   sh scripts/db-test-servers.sh down    # removes the containers
+#
+# SQL Server runs as linux/amd64 (emulated on Apple Silicon, about 30 s to start).
+set -eu
+pw="Sc-test-003!"
+
+case "${1:-}" in
+up)
+  docker run -d --rm --name sc-dbtest-pg -p 127.0.0.1:25432:5432 -e POSTGRES_PASSWORD="$pw" \
+    postgres:17-alpine >/dev/null
+  docker run -d --rm --name sc-dbtest-my -p 127.0.0.1:23306:3306 -e MYSQL_ROOT_PASSWORD="$pw" \
+    -e MYSQL_DATABASE=shop mysql:8.4 >/dev/null
+  docker run -d --rm --name sc-dbtest-maria -p 127.0.0.1:23307:3306 -e MARIADB_ROOT_PASSWORD="$pw" \
+    -e MARIADB_DATABASE=shop mariadb:11.4 >/dev/null
+  docker run -d --rm --name sc-dbtest-ms --platform linux/amd64 -p 127.0.0.1:21433:1433 -e ACCEPT_EULA=Y \
+    -e MSSQL_SA_PASSWORD="$pw" mcr.microsoft.com/mssql/server:2022-latest >/dev/null
+  printf "waiting for the servers"
+  for _ in $(seq 1 120); do
+    ok=0
+    docker exec sc-dbtest-pg pg_isready -q -U postgres 2>/dev/null && ok=$((ok + 1))
+    docker exec sc-dbtest-my mysqladmin ping -uroot -p"$pw" --silent 2>/dev/null | grep -q alive && ok=$((ok + 1))
+    docker exec sc-dbtest-maria healthcheck.sh --connect 2>/dev/null && ok=$((ok + 1))
+    docker logs sc-dbtest-ms 2>&1 | grep -q "Recovery is complete" && ok=$((ok + 1))
+    [ "$ok" -eq 4 ] && { echo " ready"; exit 0; }
+    printf "."
+    sleep 2
+  done
+  echo " not all servers came up" >&2
+  exit 1
+  ;;
+down)
+  docker rm -f sc-dbtest-pg sc-dbtest-my sc-dbtest-maria sc-dbtest-ms >/dev/null 2>&1 || true
+  ;;
+*)
+  echo "usage: $0 up|down" >&2
+  exit 2
+  ;;
+esac

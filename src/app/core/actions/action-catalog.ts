@@ -9,7 +9,7 @@
  */
 export type ActionScope = 'global' | 'view';
 
-export const ACTION_GROUPS = ['Abfrage', 'Ansicht', 'Navigation', 'Hilfe'] as const;
+export const ACTION_GROUPS = ['Abfrage', 'Verbindung', 'Ansicht', 'Navigation', 'Hilfe'] as const;
 export type ActionGroup = (typeof ACTION_GROUPS)[number];
 
 export interface ActionDef {
@@ -32,6 +32,17 @@ export const ACTIONS = [
     group: 'Abfrage',
     scope: 'global',
   },
+  { id: 'CANCEL_QUERY', label: 'Laufende Anweisung abbrechen', group: 'Abfrage', scope: 'global' },
+  // Verbindung
+  { id: 'NEW_CONNECTION', label: 'Neue Verbindung …', group: 'Verbindung', scope: 'global' },
+  {
+    id: 'EDIT_CONNECTION',
+    label: 'Aktive Verbindung bearbeiten …',
+    group: 'Verbindung',
+    scope: 'global',
+  },
+  { id: 'CONNECT', label: 'Aktive Verbindung öffnen', group: 'Verbindung', scope: 'global' },
+  { id: 'DISCONNECT', label: 'Aktive Verbindung trennen', group: 'Verbindung', scope: 'global' },
   // Ansicht
   {
     id: 'TOGGLE_SIDEBAR',

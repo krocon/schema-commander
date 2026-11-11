@@ -10,6 +10,8 @@ export interface Settings {
   readonly resultHeight: number;
   /** Own shortcuts (prompt 002): only the actions that differ from the default keymap, `[]` = none. */
   readonly keymap: KeymapSetting;
+  /** The connection statements run on (prompt 003); unknown ids fall back to the demo database. */
+  readonly activeConnection: string;
   /** Ids of the actions run from the command palette, the latest first. */
   readonly recentActions: readonly string[];
 }
@@ -29,6 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
   resultHeight: 300,
   keymap: { version: KEYMAP_VERSION, bindings: {} },
   recentActions: [],
+  activeConnection: 'demo',
 };
 
 function size(value: unknown, fallback: number): number {
@@ -50,6 +53,10 @@ export function mergeSettings(saved: unknown): Settings {
     resultHeight: size(s['resultHeight'], DEFAULT_SETTINGS.resultHeight),
     keymap: mergeKeymap(s['keymap']).keymap,
     recentActions: recent(s['recentActions']),
+    activeConnection:
+      typeof s['activeConnection'] === 'string' && /^[a-z0-9-]{1,64}$/.test(s['activeConnection'])
+        ? s['activeConnection']
+        : DEFAULT_SETTINGS.activeConnection,
   };
 }
 

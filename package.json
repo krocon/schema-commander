@@ -25,6 +25,7 @@
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
     "rust:lint": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "rust:test:db": "cargo test --manifest-path src-tauri/Cargo.toml --test db_integration -- --ignored --test-threads=1",
     "contrast": "node scripts/check-contrast.mjs",
     "preview:csp": "node scripts/csp-preview.mjs",
     "version:check": "node scripts/version.mjs check",
