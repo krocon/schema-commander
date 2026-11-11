@@ -75,7 +75,8 @@ export const nullTexts = (typed: string): string[] => [
 /** How a value of a column of the table is bound, from the name of its type. */
 export function targetKind(typeName: string): TargetKind {
   const t = typeName.trim().toLowerCase();
-  if (/^(bool|boolean|bit)$/.test(t)) return 'bool';
+  // MySQL's `tinyint(1)` is its boolean: results show true/false, and so does an export
+  if (/^(bool|boolean|bit|tinyint\(1\))$/.test(t)) return 'bool';
   if (
     /^(tiny|small|medium|big)?(int|integer|serial)\d*\b/.test(t) ||
     /^(numeric|decimal|number|real|float|double|money|smallmoney|dec)\b/.test(t)

@@ -56,11 +56,13 @@
   Zellen einer Tabellen-Ansicht ändern, Änderungen sammeln (farbig, Undo/Redo), als SQL ansehen und gemeinsam
   in einer Transaktion schreiben – mit Sperre gegen Änderungen anderer (Prompt 031); **Zeilen**: einfügen,
   duplizieren, zum Löschen vormerken, Zellblock aus der Zwischenablage einfügen, nach unten füllen – ein Plan,
-  geschrieben als Löschen → Ändern → Einfügen (Prompt 032);
+  geschrieben als Löschen → Ändern → Einfügen (Prompt 032); **Import** einer Datei (CSV/TSV, JSON, NDJSON, gzip)
+  in eine vorhandene oder neue Tabelle: Vorschau, Zuordnung, gebundene Stapel-`INSERT`s, Fehlerdatei, als Job
+  (Prompt 033);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
-- **Noch nichts davon**: Import. Alle Features aus
+- Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–032),
+  erledigt: 001–033),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -109,6 +111,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/i18n/               i18n.ts (translatable, phrasebook, language, locale), common-texts,
                                catalogs.spec.ts (jeder Katalog vollständig in beiden Sprachen)
   app/core/history/            HistoryApi (history_*) + DTOs – spiegelt history.rs
+  app/core/import/             DataImportApi (load_*) + DTOs – spiegelt data_import.rs und db/load.rs
   app/core/menu/               MenuApi (set_app_menu, set_menu_state, subscribe_menu) + DTOs – spiegelt app_menu.rs
   app/core/saved/              SavedApi (saved_*) + DTOs – spiegelt saved.rs
   app/core/schema/             SchemaApi (meta_*) + DTOs (SchemaInfo, ObjectInfo, TableInfo) – spiegelt db/meta.rs
@@ -132,6 +135,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/edit/           EditService (Root: Zelle bearbeiten, Vorschau, schreiben), EditBar (Zeile über dem
                                Ergebnis), EditPreview, edit-buffer.ts (rein: Änderungspuffer mit neuen und zu
                                löschenden Zeilen, Undo als Schnappschuss, Plan, Prüfung), block-parser.ts (rein)
+  app/features/data-import/    DataImportDialog (Datei, Vorschau, Ziel, Zuordnung, Bericht), DataImportService
+                               (Root: ein Job, Rückfrage des Schutzes), data-import-logic.ts (rein)
   app/features/export/         ExportDialog, ExportService (Root: ein Job, Statuszeile), export-logic.ts (rein)
   app/features/filter/         FilterBar (Bedingungen der Tabellen-Ansicht, lokaler Filter), TableViews (Root:
                                Tabelle als Tabellen-Ansicht öffnen), filter-logic.ts (rein)
@@ -197,12 +202,16 @@ src-tauri/                     Rust
   src/saved.rs                 gespeicherte Abfragen: .sql-Dateien mit Kopfkommentar, Pfadprüfung, Suche,
                                Fingerabdruck des Ordners (rein, getestet)
   src/history.rs               Verlauf: history.sqlite, Suche, Aufbewahrung, endgültiges Löschen (rein, getestet)
+  src/data_import.rs           Dateien als Strom lesen: Kodierungen, CSV, JSON, NDJSON, gzip; Trenner, Kopfzeile
+                               und Typen erkennen (rein, getestet)
   src/export.rs                Dateien schreiben: FileWriter (Text, gzip, xlsx), from_store, FileSink (rein, getestet)
   src/ssh/                     SSH-Tunnel: mod.rs (russh-Client, Anmeldung, Weiterleitung), trust.rs (known_hosts),
                                ssh_config.rs (~/.ssh/config, nie ausgeführt) – trust/ssh_config wie in log-commander
   src/format.rs                SQL formatieren: Tokens, Gruppen, Layout, Selbstprüfung (rein; Tests format_tests.rs)
   src/extract.rs               Formate (TSV, CSV, JSON, Markdown, HTML, INSERT, IN, WHERE), Literale je Dialekt (rein)
   src/copy.rs                  Auswahl eines Ergebnisses als Text: Zeilenbereiche, Spalten, Abbruch, Grenze (rein)
+  src/db/load.rs               Datei in eine Tabelle laden: Zuordnung, Stapel-INSERTs aus edit.rs, Transaktion
+                               oder blockweise, Fehlerdatei, CREATE TABLE je Dialekt (rein, Katalog böser Werte)
   src/db/import.rs             Verbindungs-URLs und fremde Dateien lesen (rein, Katalog), eigener Export
   src/db/edit.rs               die Anweisungen eines Schreib-Plans: DELETE, UPDATE, gebündelte INSERTs (in dieser
                                Reihenfolge), Schlüssel, Sperre über alte Werte – alles gebunden (rein, Katalog)
@@ -273,6 +282,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   Fenster; das Fenster zeigt den Text, den es bekommt.
 - **Werte**: Eine `Cell` trägt den ganzen Wert; gekürzt wird nur beim Schreiben der Zeile. Nichts aus einem
   Wert wird als Markup in die Seite gesetzt; Bilder nur innerhalb der Grenzen von `value-logic.ts` als `blob:`.
+- **Import**: Die Datei ist feindlich. Ihre Spaltennamen werden nie SQL (Zielspalten nennt die Zuordnung, gequotet
+  im Backend), ihre Werte nur gebunden (`db/load.rs` über `edit::steps`); das Fenster zeigt Werte nur als Text.
 - **Parameter**: Werte des Nutzers gehen nur als `Bind` über `run_query` und werden vom Treiber gebunden
   (`Session::execute_bound`); nie in den SQL-Text, den Verlauf, die Sitzung oder ein Log schreiben.
 - **Schutz**: Was SQL ausführt, ruft im Backend `ConnectionManager::admit`; das Fenster fragt nur, entscheidet nie.

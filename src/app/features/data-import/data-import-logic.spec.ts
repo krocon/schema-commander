@@ -62,11 +62,12 @@ describe('data import logic', () => {
       'decimal(38, 10)',
       'double precision',
       'smallint',
+      'tinyint(4)',
       'money',
     ]) {
       expect(targetKind(t), t).toBe('number');
     }
-    for (const t of ['boolean', 'bool', 'bit']) expect(targetKind(t), t).toBe('bool');
+    for (const t of ['boolean', 'bool', 'bit', 'tinyint(1)']) expect(targetKind(t), t).toBe('bool');
     for (const t of [
       'text',
       'character varying(20)',

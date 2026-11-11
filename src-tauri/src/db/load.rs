@@ -420,7 +420,7 @@ pub fn load(
     let begin = begin_statement(kind);
     let mut in_tx = false;
     if whole {
-        run(session, begin, stop)?;
+        run(session, begin, &|| false)?;
         in_tx = true;
     }
     if plan.clear_first {
@@ -429,7 +429,14 @@ pub fn load(
             if in_tx && session.is_open() {
                 let _ = run(session, "ROLLBACK", &|| false);
             }
-            return Err(e);
+            if e.code != ErrorCode::Cancelled {
+                return Err(e);
+            }
+            // stopped while the table was being emptied: a statement that is stopped has changed
+            // nothing
+            out.cancelled = true;
+            out.rolled_back = whole;
+            return Ok(out);
         }
     }
     // (line, row, the record as it stands in the file)
@@ -480,7 +487,7 @@ pub fn load(
         let rows: Vec<RowInsert> = pending.iter().map(|(_, row, _)| row.clone()).collect();
         let steps = edit::steps(kind, &edit_plan(plan, rows))?;
         if !whole {
-            run(session, begin, stop)?;
+            run(session, begin, &|| false)?;
             in_tx = true;
         }
         let mut problem: Option<AppError> = None;

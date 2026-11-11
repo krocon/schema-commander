@@ -251,29 +251,56 @@ fn sniff_encoding(bytes: &[u8]) -> (Encoding, usize) {
     )
 }
 
-/// The separator that gives the lines of a sample the same number of fields: the candidate that occurs
-/// in every line, and the most often.
+/// The separator that gives the records of a sample the same number of fields as the first one. A record ends at a line break outside quotes – a quoted
+/// field may run over several lines.
 fn sniff_delimiter(sample: &str, quote: char) -> char {
-    let lines: Vec<&str> = sample.lines().filter(|l| !l.is_empty()).take(30).collect();
-    let mut best = (',', 0usize);
-    for candidate in [',', ';', '\t', '|'] {
-        let counts: Vec<usize> = lines
-            .iter()
-            .map(|line| {
-                let mut quoted = false;
-                line.chars()
-                    .filter(|c| {
-                        if *c == quote {
-                            quoted = !quoted;
-                        }
-                        !quoted && *c == candidate
-                    })
-                    .count()
-            })
-            .collect();
-        let least = counts.iter().copied().min().unwrap_or(0);
-        if least > best.1 {
-            best = (candidate, least);
+    const CANDIDATES: [char; 4] = [',', ';', '\t', '|'];
+    const RECORDS: usize = 30;
+    // how often each candidate stands outside quotes, per record
+    let mut records: Vec<[usize; 4]> = Vec::new();
+    let mut counts = [0usize; 4];
+    let mut quoted = false;
+    let mut any = false;
+    let mut open = false;
+    for c in sample.chars() {
+        if c == quote {
+            quoted = !quoted;
+            any = true;
+        } else if !quoted && (c == '\n' || c == '\r') {
+            if any {
+                records.push(counts);
+                if records.len() == RECORDS {
+                    break;
+                }
+            }
+            counts = [0; 4];
+            any = false;
+            open = false;
+            continue;
+        } else {
+            any = true;
+            if !quoted && let Some(i) = CANDIDATES.iter().position(|d| *d == c) {
+                counts[i] += 1;
+            }
+        }
+        open = true;
+    }
+    // what is left is a whole record only if the sample did not end inside it; taken when it is all
+    // there is
+    if open && any && !quoted && records.len() < RECORDS {
+        records.push(counts);
+    }
+    // the first record says how many fields there are; the candidate most records agree with wins,
+    // among equals the one that stands more often (`1;3,01;x`: two `;`, one `,`)
+    let mut best = (',', 0usize, 0usize);
+    for (i, candidate) in CANDIDATES.into_iter().enumerate() {
+        let first = records.first().map_or(0, |r| r[i]);
+        if first == 0 {
+            continue;
+        }
+        let agree = records.iter().filter(|r| r[i] == first).count();
+        if (agree, first) > (best.1, best.2) {
+            best = (candidate, agree, first);
         }
     }
     best.0
@@ -583,6 +610,9 @@ enum Records {
     },
 }
 
+/// A record, or the one that could not be read: its line, why, and how it stands in the file.
+pub type NextRecord = Result<Record, (u64, String, String)>;
+
 /// An open file: what it is, the names of its columns, and its records one after the other.
 pub struct Source {
     pub detected: Detected,
@@ -835,15 +865,36 @@ impl Source {
     /// The next record. `Err` in the record: it could not be read (its line and text are in the error),
     /// the reading goes on. An `Err` outside ends the reading.
     #[allow(clippy::type_complexity)]
-    pub fn next_record(&mut self) -> AppResult<Option<Result<Record, (u64, String, String)>>> {
+    /// A CSV record with more fields than the file has columns is not cut: an unquoted separator in a
+    /// value would shift what follows it into nothing. Empty fields at the end (a separator behind the
+    /// last value) are no fields.
+    fn fitting(&self, mut record: Record) -> NextRecord {
+        let width = self.columns.len();
+        if matches!(self.records, Records::Csv(_)) && record.cells.len() > width {
+            if record.cells[width..]
+                .iter()
+                .any(|c| c.as_deref().is_some_and(|v| !v.is_empty()))
+            {
+                return Err((
+                    record.line,
+                    "more fields than columns".to_owned(),
+                    record.raw,
+                ));
+            }
+            record.cells.truncate(width);
+        }
+        Ok(record)
+    }
+
+    pub fn next_record(&mut self) -> AppResult<Option<NextRecord>> {
         if let Some(record) = self.broken_ahead.pop_front() {
             return Ok(Some(record));
         }
         if let Some(record) = self.ahead.pop_front() {
-            return Ok(Some(Ok(record)));
+            return Ok(Some(self.fitting(record)));
         }
         if matches!(self.records, Records::Csv(_)) {
-            return Ok(self.raw_record()?.map(Ok));
+            return Ok(self.raw_record()?.map(|r| self.fitting(r)));
         }
         let Some((line, text)) = self.raw_object()? else {
             return Ok(None);
@@ -1332,13 +1383,44 @@ mod tests {
             [GuessKind::Int, GuessKind::Decimal, GuessKind::Date]
         );
         assert_eq!(p.broken, 0);
-        // a row with more fields than the header: the preview has a column for them
-        let wide = file(dir.path(), "w.csv", b"a,b\n1,2,3\n");
+        // a row with more fields than the header is a broken record; a separator at the end is not
+        let wide = file(dir.path(), "w.csv", b"a,b\n1,2,3\n4,5,\n");
+        let p = preview(&wide, &SourceOptions::default(), &[]).unwrap();
+        assert_eq!(p.columns, ["a", "b"]);
+        assert_eq!((p.broken, p.rows.len()), (1, 1));
+    }
+    #[test]
+    fn finds_the_delimiter_when_fields_hold_line_breaks() {
+        // a quoted field over two lines: counted by record, not by line – else no candidate is in
+        // "every line" and the comma of the amounts wins
+        let sample =
+            "id;amount;note\n1;3,01;\"a; b\nsecond line\"\n2;6,02;\"c\nd, e, f, g\"\n3;9,03;x\n";
+        assert_eq!(sniff_delimiter(sample, '"'), ';');
+        assert_eq!(sniff_delimiter("a,b\n\"x\ny\",2\n", '"'), ',');
+    }
+    #[test]
+    fn a_record_with_more_fields_than_columns_is_not_cut_in_silence() {
+        // an unquoted separator inside a value: the record has a field too many – it is a problem of
+        // that record, not a row with a cut value
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("in.csv");
+        std::fs::write(&path, "id;note\n1;fine\n2;a; b\n3;\n4\n").unwrap();
+        let mut source = Source::open(&path, &SourceOptions::default()).unwrap();
+        let mut seen = Vec::new();
+        while let Some(record) = source.next_record().unwrap() {
+            seen.push(match record {
+                Ok(r) => format!("{}: {}", r.line, r.cells.len()),
+                Err((line, reason, raw)) => format!("{line}: {reason} [{raw}]"),
+            });
+        }
         assert_eq!(
-            preview(&wide, &SourceOptions::default(), &[])
-                .unwrap()
-                .columns,
-            ["a", "b", "column_3"]
+            seen,
+            [
+                "2: 2",
+                "3: more fields than columns [2;a; b]",
+                "4: 2",
+                "5: 1"
+            ]
         );
     }
 }
