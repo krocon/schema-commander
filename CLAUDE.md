@@ -38,11 +38,13 @@
   einen Namensindex im Backend, in der gemeinsamen Palette (Prompt 020); **Vervollständigung**, die das Schema
   kennt: Tabellen, Spalten je Alias, JOIN aus Fremdschlüsseln, je Dialekt (Prompt 021); **Fehler an der
   Stelle**: Details der Datenbank (Code, Detail, Hinweis, Position), Markierung im Editor, laufende Anweisung
-  (Prompt 022);
+  (Prompt 022); **SQL formatieren**: Auswahl, Anweisung oder Skript als ein Undo-Schritt, Stil einstellbar mit
+  Vorschau, in Rust mit Selbstprüfung der Tokens; Schlüsselwörter groß/klein, eine Zeile, Zeilenkommentar
+  (Prompt 023);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–022),
+  erledigt: 001–023),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -87,6 +89,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/errors/             AppError + ErrorDetails + toAppError (spiegelt src-tauri/src/error.rs), error-texts
                                (Text je Code), error-position.ts (rein: Angabe der Datenbank → Stelle im Editor,
                                Katalog error-position.cases.json)
+  app/core/format/             FormatApi (format_sql, cancel_job) + Stil und Modus – spiegelt format.rs
   app/core/i18n/               i18n.ts (translatable, phrasebook, language, locale), common-texts,
                                catalogs.spec.ts (jeder Katalog vollständig in beiden Sprachen)
   app/core/history/            HistoryApi (history_*) + DTOs – spiegelt history.rs
@@ -109,6 +112,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                editor-colors.ts (Farben des Editors aus unseren Tokens),
                                sql-split.ts (rein: Skripte je Dialekt zerlegen, Katalog sql-split.cases.json)
   app/features/export/         ExportDialog, ExportService (Root: ein Job, Statuszeile), export-logic.ts (rein)
+  app/features/format/         FormatService (Root: ein Job, Statuszeile), format-logic.ts (rein: Stil, Stellen
+                               in Codepunkten, Cursor nach dem Formatieren, Zeilenkommentar)
   app/features/guard/          GuardDialog (Rückfrage), GuardService, guard-logic.ts (rein)
   app/features/history/        HistoryDialog (Listbox, Vorschau), HistoryPanel (Ansicht der Seitenleiste),
                                HistoryService (Root: aufzeichnen, blättern), history-logic.ts (rein)
@@ -148,6 +153,7 @@ src-tauri/                     Rust
   src/export.rs                Dateien schreiben: FileWriter (Text, gzip, xlsx), from_store, FileSink (rein, getestet)
   src/ssh/                     SSH-Tunnel: mod.rs (russh-Client, Anmeldung, Weiterleitung), trust.rs (known_hosts),
                                ssh_config.rs (~/.ssh/config, nie ausgeführt) – trust/ssh_config wie in log-commander
+  src/format.rs                SQL formatieren: Tokens, Gruppen, Layout, Selbstprüfung (rein; Tests format_tests.rs)
   src/extract.rs               Formate (TSV, CSV, JSON, Markdown, HTML, INSERT, IN, WHERE), Literale je Dialekt (rein)
   src/copy.rs                  Auswahl eines Ergebnisses als Text: Zeilenbereiche, Spalten, Abbruch, Grenze (rein)
   src/db/import.rs             Verbindungs-URLs und fremde Dateien lesen (rein, Katalog), eigener Export
@@ -192,6 +198,9 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   plant die Sicherung, die den Text einmal holt. Nichts fragt „Speichern?“.
 - **Bezeichner** quotet nur `meta::quote` in Rust; Knoten und DTOs bringen `quoted` mit. Katalogabfragen nur über
   `Session::ask` mit gebundenen Parametern.
+- **Formatieren** ändert nur Leerraum und die Schreibung von Schlüsselwörtern; `format.rs` prüft jedes Ergebnis
+  gegen die Tokens des Textes. Das Fenster ersetzt nur den Bereich (`replaceRange`), nie den ganzen Text.
+  Stellen des Editors zählen Spalten in **Codepunkten** (`format-logic.ts`: `placeIn`, `offsetAt`).
 - **Schutz**: Was SQL ausführt, ruft im Backend `ConnectionManager::admit`; das Fenster fragt nur, entscheidet nie.
 - **Zustand in Signals**, Stores je Instanz ohne `providedIn`, Globales in Root-Services; veraltete Antworten verwerfen.
 - **Texte nur in Katalogen**: `*-texts.ts` (Englisch, Quelle) + `*-texts.de.ts` über `translatable()`; nie beim
