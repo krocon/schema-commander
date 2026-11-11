@@ -23,6 +23,34 @@ describe('mergeSettings', () => {
   });
 });
 
+describe('the style of the formatter (prompt 023)', () => {
+  it('keeps what is valid and falls back for the rest', () => {
+    const s = mergeSettings({
+      formatKeywordCase: 'preserve',
+      formatIndent: 2,
+      formatComma: 'leading',
+      formatWidth: 80,
+      formatAndOr: 'trailing',
+      formatBlankLines: 0,
+    });
+    expect(s.formatKeywordCase).toBe('preserve');
+    expect(s.formatIndent).toBe(2);
+    expect(s.formatComma).toBe('leading');
+    expect(s.formatWidth).toBe(80);
+    expect(s.formatAndOr).toBe('trailing');
+    expect(s.formatBlankLines).toBe(0);
+    const broken = mergeSettings({
+      formatKeywordCase: 'Title',
+      formatIndent: 0,
+      formatComma: 'middle',
+      formatWidth: 39,
+      formatAndOr: 1,
+      formatBlankLines: 4,
+    });
+    expect(broken).toEqual(DEFAULT_SETTINGS);
+  });
+});
+
 describe('mergeKeymap', () => {
   it('keeps well-formed own shortcuts, bounded', () => {
     const { keymap, notice } = mergeKeymap({

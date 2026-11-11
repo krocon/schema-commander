@@ -25,6 +25,9 @@ export type ErrorCode =
   | 'invalid_profile'
   | 'unknown_connection'
   | 'not_connected'
+  | 'format_incomplete'
+  | 'format_too_deep'
+  | 'format_unsafe'
   | 'io'
   /** No desktop backend (browser, tests). */
   | 'backend_unavailable'
@@ -80,6 +83,9 @@ const CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'invalid_profile',
   'unknown_connection',
   'not_connected',
+  'format_incomplete',
+  'format_too_deep',
+  'format_unsafe',
   'io',
   'backend_unavailable',
   'unknown',

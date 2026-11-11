@@ -7,7 +7,15 @@ import {
 import { SETTINGS_TEXTS } from './settings-texts';
 
 /** The groups of the settings dialog (prompt 017), in their order. */
-export const GROUPS = ['general', 'editor', 'result', 'run', 'history', 'security'] as const;
+export const GROUPS = [
+  'general',
+  'editor',
+  'format',
+  'result',
+  'run',
+  'history',
+  'security',
+] as const;
 export type GroupId = (typeof GROUPS)[number];
 
 /** The settings the dialog shows; everything else of `Settings` is state (sizes, last choices). */
@@ -20,6 +28,12 @@ export type SettingKey =
   | 'editorLineNumbers'
   | 'editorSuggest'
   | 'completionKeywordCase'
+  | 'formatKeywordCase'
+  | 'formatIndent'
+  | 'formatWidth'
+  | 'formatComma'
+  | 'formatAndOr'
+  | 'formatBlankLines'
   | 'resultFontSize'
   | 'resultRowHeight'
   | 'nullText'
@@ -61,6 +75,17 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   },
   { key: 'editorSuggest', group: 'editor', kind: 'bool' },
   { key: 'completionKeywordCase', group: 'editor', kind: 'choice', values: ['upper', 'lower'] },
+  {
+    key: 'formatKeywordCase',
+    group: 'format',
+    kind: 'choice',
+    values: ['upper', 'lower', 'preserve'],
+  },
+  { key: 'formatIndent', group: 'format', kind: 'number', min: 1, max: 8, step: 1 },
+  { key: 'formatWidth', group: 'format', kind: 'number', min: 40, max: 400, step: 10 },
+  { key: 'formatComma', group: 'format', kind: 'choice', values: ['trailing', 'leading'] },
+  { key: 'formatAndOr', group: 'format', kind: 'choice', values: ['leading', 'trailing'] },
+  { key: 'formatBlankLines', group: 'format', kind: 'number', min: 0, max: 3, step: 1 },
   { key: 'resultFontSize', group: 'result', kind: 'number', min: 9, max: 24, step: 1 },
   { key: 'resultRowHeight', group: 'result', kind: 'number', min: 16, max: 60, step: 1 },
   { key: 'nullText', group: 'result', kind: 'choice', values: NULL_TEXTS },

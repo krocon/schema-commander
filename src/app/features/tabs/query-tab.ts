@@ -1,3 +1,5 @@
+import { FormatMode } from '../../core/format/format-api';
+import { FormatOutcome } from '../format/format-logic';
 import { RunGuard } from '../../core/sql/query-api';
 import { GuardAnswer, GuardedStatement, needingConfirmation } from '../guard/guard-logic';
 import type { RanStatement } from '../history/history.service';
@@ -38,6 +40,10 @@ export interface TabEditor {
   runScript(): Promise<void>;
   /** Writes out the `*` at the caret as its columns; resolves with whether it did. */
   expandStar(): Promise<boolean>;
+  /** Formats the script, or the selection / the statement under the caret (prompt 023). */
+  format(mode: FormatMode, whole: boolean): Promise<FormatOutcome>;
+  /** Comments the selected lines out or in. */
+  toggleComment(): Promise<void>;
   /**
    * Marks in the text (prompt 022). `statements` is the list a run was started with: the editor knows
    * where each of its statements stands. `markRunning(…, null)` ends the mark of the running statement.
@@ -228,6 +234,15 @@ export class QueryTab {
 
   runScript(): void {
     void this.editor?.runScript();
+  }
+
+  /** Formats in the editor; `nothing` while it is not on screen. Rejects when the text was refused. */
+  format(mode: FormatMode, whole: boolean): Promise<FormatOutcome> {
+    return this.editor?.format(mode, whole) ?? Promise.resolve('nothing');
+  }
+
+  toggleComment(): void {
+    void this.editor?.toggleComment();
   }
 
   /** Runs one statement; `origin` says whether the user wrote it or the app (for the history). */

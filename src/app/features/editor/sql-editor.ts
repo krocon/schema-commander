@@ -17,7 +17,18 @@ import { SettingsService } from '../../core/settings/settings.service';
 import { ErrorDetails } from '../../core/errors/app-error';
 import { Place, errorRange, placeOf } from '../../core/errors/error-position';
 import { ThemeService } from '../../core/theme/theme.service';
+import { FormatMode } from '../../core/format/format-api';
 import { CompletionService, LINES_AFTER, LINES_BEFORE } from '../completion/completion.service';
+import { FormatService } from '../format/format.service';
+import {
+  EdPlace,
+  FormatOutcome,
+  mapOffset,
+  offsetAt,
+  placeIn,
+  toggleComment,
+  trimmedSpan,
+} from '../format/format-logic';
 import { EDITOR_COLORS } from './editor-colors';
 import { EDITOR_TEXTS } from './editor-texts';
 import {
@@ -92,6 +103,7 @@ export class SqlEditor implements OnInit {
   protected readonly t = EDITOR_TEXTS;
   private readonly theme = inject(ThemeService);
   private readonly completion = inject(CompletionService);
+  private readonly formatter = inject(FormatService);
   /** Font, tab width, wrapping … of every editor are settings (prompt 017). */
   protected readonly look = inject(SettingsService).settings;
   /** The editor's own texts (search bar, menus) follow the language of the window. */
@@ -126,6 +138,8 @@ export class SqlEditor implements OnInit {
   /** The statements of the run started last and where each stands in the text. */
   private lastRun: { statements: readonly string[]; places: Place[] } | null = null;
   private errorMarks: Marker[] = [];
+  /** The revision of the text the editor reported last: an answer for an older text is thrown away. */
+  private revision = 0;
   private runningAsked = 0;
   private seeded = false;
   /** The start text is in the editor: changes from here on are the user's. */
@@ -345,6 +359,82 @@ export class SqlEditor implements OnInit {
     return true;
   }
 
+  /**
+   * Formats (prompt 023) the whole script, or the selection – without one the statement under the caret –
+   * and puts the result in its place as one undo step. Only that range is replaced: carets and marks
+   * elsewhere stay. Rejects with an `AppError` when the formatter refuses the text; then nothing changed.
+   */
+  async format(mode: FormatMode, whole: boolean): Promise<FormatOutcome> {
+    const editor = this.editor()?.nativeElement;
+    if (!editor || this.readonly()) return 'nothing';
+    const revision = this.revision;
+    const dialect = this.dialect();
+    let text: string;
+    let start: EdPlace;
+    let crlf: boolean;
+    /** The caret, counted from the start of `text`. */
+    let caret: number;
+    if (whole) {
+      text = await editor.getValue();
+      start = { line: 1, ch: 1 };
+      crlf = text.includes('\r\n');
+      caret = offsetAt(text, this.lastCaret ?? start);
+    } else {
+      const selection = await editor.getSelection();
+      if (selection.text.trim() !== '') {
+        // the blanks around the selected text stay where they are
+        const span = trimmedSpan(selection.text);
+        text = selection.text.slice(span.from, span.to);
+        start = placeIn(selection.text, span.from, selection.start);
+        crlf = selection.text.includes('\r\n');
+        caret = text.length;
+      } else {
+        // Where a statement starts and ends only the whole text tells (a line above may open a string).
+        // It is read, never written: the statement alone is replaced.
+        const script = await editor.getValue();
+        const at = offsetAt(script, this.lastCaret ?? { line: 1, ch: 1 });
+        const statement = statementAt(script, at, dialect);
+        if (!statement) return 'nothing';
+        text = statement.text;
+        start = placeIn(script, statement.start);
+        crlf = script.includes('\r\n');
+        caret = at - statement.start;
+      }
+    }
+    if (text.trim() === '') return 'nothing';
+    const formatted = await this.formatter.run(text, dialect, mode, crlf);
+    if (formatted === null) return 'busy';
+    if (this.revision !== revision) return 'stale';
+    if (formatted === text) return 'unchanged';
+    await editor.replaceRange(start, placeIn(text, text.length, start), formatted);
+    // The caret goes where it stood in the text. First to the start of its line: the editor stays
+    // scrolled to where a line ended that is gone now, and only showing column 1 brings the view back.
+    const to = placeIn(formatted, mapOffset(text, formatted, caret), start);
+    await editor.goTo(to.line, 1);
+    await editor.goTo(to.line, to.ch);
+    return 'done';
+  }
+
+  /** Comments the lines of the selection (or the line of the caret) out or in, as one undo step. */
+  async toggleComment(): Promise<void> {
+    const editor = this.editor()?.nativeElement;
+    if (!editor || this.readonly()) return;
+    const selection = await editor.getSelection();
+    const first = selection.start.line;
+    // a selection that ends at the start of a line does not mean that line
+    const last =
+      selection.end.line > first && selection.end.ch === 1
+        ? selection.end.line - 1
+        : selection.end.line;
+    const lines = await editor.getSlice(first, last);
+    // the break behind the last line is not part of it
+    const text = lines.replace(/\r?\n$/, '');
+    const out = toggleComment(text, this.dialect());
+    if (out === text) return;
+    const start = { line: first, ch: 1 };
+    await editor.replaceRange(start, placeIn(text, text.length, start), out);
+  }
+
   /** Asks to run the whole script, statement by statement (SQL Server: batch by batch). */
   async runScript(): Promise<void> {
     const editor = this.editor()?.nativeElement;
@@ -359,6 +449,7 @@ export class SqlEditor implements OnInit {
 
   protected onChange(event: Event): void {
     const detail = (event as CustomEvent<EdChange>).detail;
+    if (detail) this.revision = detail.revision;
     // the start text is no change of the user
     if (detail && this.seededDone) this.changed.emit(detail);
   }

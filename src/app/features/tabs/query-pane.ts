@@ -470,6 +470,8 @@ export class QueryPane implements OnInit, OnDestroy {
     runCurrent: () => this.editor()?.runCurrent() ?? Promise.resolve(),
     runScript: () => this.editor()?.runScript() ?? Promise.resolve(),
     expandStar: () => this.editor()?.expandStar() ?? Promise.resolve(false),
+    format: (mode, whole) => this.editor()?.format(mode, whole) ?? Promise.resolve('nothing'),
+    toggleComment: () => this.editor()?.toggleComment() ?? Promise.resolve(),
     clearMarks: () => this.editor()?.clearMarks(),
     markRunning: (statements, index) => void this.editor()?.markRunning(statements, index),
     markError: (statements, index, message, details, jump) =>

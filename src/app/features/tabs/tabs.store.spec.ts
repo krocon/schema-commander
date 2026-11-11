@@ -48,6 +48,8 @@ function attachEditor(tab: QueryTab, text: string) {
     runCurrent: () => Promise.resolve(),
     runScript: () => Promise.resolve(),
     expandStar: () => Promise.resolve(false),
+    format: () => Promise.resolve('nothing'),
+    toggleComment: () => Promise.resolve(),
     clearMarks: () => undefined,
     markRunning: () => undefined,
     markError: () => undefined,

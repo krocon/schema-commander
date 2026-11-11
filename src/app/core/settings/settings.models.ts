@@ -15,6 +15,16 @@ export interface Settings {
   readonly editorSuggest: boolean;
   /** Keywords the completion writes: `SELECT` or `select`. */
   readonly completionKeywordCase: 'upper' | 'lower';
+  /** How SQL is formatted (prompt 023): the case of keywords, blanks per level, the width of a line … */
+  readonly formatKeywordCase: 'upper' | 'lower' | 'preserve';
+  readonly formatIndent: number;
+  /** Where the comma stands when a list is broken into lines. */
+  readonly formatComma: 'trailing' | 'leading';
+  /** Characters a line may have before lists and brackets are broken. */
+  readonly formatWidth: number;
+  readonly formatAndOr: 'leading' | 'trailing';
+  /** Empty lines between two statements. */
+  readonly formatBlankLines: number;
   /** The result grid: font size and row height in px. */
   readonly resultFontSize: number;
   readonly resultRowHeight: number;
@@ -103,6 +113,12 @@ export const DEFAULT_SETTINGS: Settings = {
   editorLineNumbers: 'absolute',
   editorSuggest: true,
   completionKeywordCase: 'upper',
+  formatKeywordCase: 'upper',
+  formatIndent: 4,
+  formatComma: 'trailing',
+  formatWidth: 100,
+  formatAndOr: 'leading',
+  formatBlankLines: 1,
   resultFontSize: 12,
   resultRowHeight: 22,
   nullText: 'NULL',
@@ -176,6 +192,15 @@ export function mergeSettings(saved: unknown): Settings {
         : 'absolute',
     editorSuggest: bool('editorSuggest'),
     completionKeywordCase: s['completionKeywordCase'] === 'lower' ? 'lower' : 'upper',
+    formatKeywordCase:
+      s['formatKeywordCase'] === 'lower' || s['formatKeywordCase'] === 'preserve'
+        ? s['formatKeywordCase']
+        : 'upper',
+    formatIndent: within('formatIndent', 1, 8),
+    formatComma: s['formatComma'] === 'leading' ? 'leading' : 'trailing',
+    formatWidth: within('formatWidth', 40, 400),
+    formatAndOr: s['formatAndOr'] === 'trailing' ? 'trailing' : 'leading',
+    formatBlankLines: within('formatBlankLines', 0, 3),
     resultFontSize: within('resultFontSize', 9, 24),
     resultRowHeight: within('resultRowHeight', 16, 60),
     nullText: (NULL_TEXTS as readonly unknown[]).includes(s['nullText'])
