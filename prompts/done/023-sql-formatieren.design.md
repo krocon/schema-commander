@@ -74,6 +74,9 @@
   **Behoben am 11.11.2026** (Branch `fix/spalten-codepunkte`): `placeIn`/`offsetAt` liegen jetzt in
   `core/text/places.ts`, `offsetOf`, `positionOf` und `placeOf` rechnen damit; rote Tests zuerst, im Browser
   im echten Editor bestätigt.
+- **Nachtrag 11.11.2026:** beide Vorschläge sind mit `editlicious-editor` **1.3.0** umgesetzt (editlicious
+  Prompt 031). Das `goTo(zeile, 1)` ist entfallen, `TOGGLE_COMMENT` ruft `runAction('edit.toggleComment')`
+  (MySQL mit `line-comment="-- #"`), die eigene Funktion `toggleComment` ist gelöscht. Im Browser geprüft.
 - **Vorschläge für editlicious**: (1) Nach einem `replaceRange`, das die längste Zeile kürzt, bleibt die Ansicht
   waagerecht verschoben, bis Spalte 1 gezeigt wird – hier mit `goTo(zeile, 1)` vor dem Setzen des Cursors
   ausgeglichen. (2) Eine Aktion `edit.toggleComment`, die das Kommentarzeichen der Grammatik kennt.
