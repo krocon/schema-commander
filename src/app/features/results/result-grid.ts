@@ -7,6 +7,7 @@ import { CellFormat } from './cell-format';
 import { selectionOf } from './copy-logic';
 import { CopyService } from './copy.service';
 import { PAGE_ROWS, WindowAreaModel, resultModel, resultOptions } from './result-model';
+import { RESULTS_TEXTS } from './results-texts';
 
 /**
  * The rows of a result in a GuiExpert Table (prompt 006). The rows live in the backend: the grid fetches the
@@ -29,7 +30,7 @@ import { PAGE_ROWS, WindowAreaModel, resultModel, resultOptions } from './result
         [(tableApi)]="api"
       />
     } @else {
-      <p class="message">Zeilen werden geladen …</p>
+      <p class="message">{{ t.loadingRows }}</p>
     }
   `,
   styles: `
@@ -50,6 +51,7 @@ import { PAGE_ROWS, WindowAreaModel, resultModel, resultOptions } from './result
   `,
 })
 export class ResultGrid implements OnDestroy {
+  protected readonly t = RESULTS_TEXTS;
   /** The result to show. */
   readonly result = input.required<ResultRef>();
   /** How many rows it has by now (it grows while the statement runs). */

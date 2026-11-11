@@ -1,4 +1,6 @@
 import { HistoryEntry } from '../../core/history/history-api';
+import { locale } from '../../core/i18n/i18n';
+import { HISTORY_TEXTS } from './history-texts';
 
 /** Entries a page of the list has. */
 export const HISTORY_PAGE = 200;
@@ -20,7 +22,14 @@ export function whenLabel(at: number, now = Date.now()): string {
 /** A duration, short. */
 export function durationLabel(ms: number): string {
   if (ms < 1000) return `${ms} ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 2 : 1).replace('.', ',')} s`;
+  if (ms < 60_000) {
+    const digits = ms < 10_000 ? 2 : 1;
+    const value = (ms / 1000).toLocaleString(locale(), {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
+    return `${value} s`;
+  }
   const minutes = Math.floor(ms / 60_000);
   return `${minutes} min ${Math.round((ms % 60_000) / 1000)} s`;
 }
@@ -33,9 +42,9 @@ export function oneLine(text: string, max = 160): string {
 
 /** What the list says about how an entry ended. */
 export function outcomeLabel(entry: Pick<HistoryEntry, 'outcome' | 'rows'>): string {
-  if (entry.outcome === 'failed') return 'Fehler';
-  if (entry.outcome === 'cancelled') return 'abgebrochen';
-  return entry.rows === null ? 'ok' : entry.rows === 1 ? '1 Zeile' : `${entry.rows} Zeilen`;
+  if (entry.outcome === 'failed') return HISTORY_TEXTS.failed;
+  if (entry.outcome === 'cancelled') return HISTORY_TEXTS.cancelled;
+  return entry.rows === null ? 'ok' : HISTORY_TEXTS.rows(entry.rows);
 }
 
 /**

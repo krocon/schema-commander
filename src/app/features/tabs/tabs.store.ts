@@ -34,15 +34,18 @@ import {
   cleanTitle,
   cycled,
   fileName,
+  isUntitled,
   newTabId,
   untitled,
 } from './tab-logic';
+import { TABS_TEXTS } from './tabs-texts';
 
 const SESSION_DELAY_MS = 400;
 const MAX_CLOSED = 20;
-const SQL_FILES = [
+/** The filters of the file dialogs, in the current language. */
+const sqlFiles = () => [
   { name: 'SQL', extensions: ['sql'] },
-  { name: 'Alle Dateien', extensions: ['*'] },
+  { name: TABS_TEXTS.allFiles, extensions: ['*'] },
 ];
 
 /** A closed tab that can come back: what it was and its text. */
@@ -141,9 +144,7 @@ export class TabsStore {
       if (txOpen(tab.tx())) {
         // the transaction belongs to the session on the old connection: it is ended first
         const old = tab.connectionId();
-        this.notice.set(
-          'Dieser Tab hat eine offene Transaktion: erst Commit oder Rollback, dann die Verbindung wechseln.',
-        );
+        this.notice.set(TABS_TEXTS.txBlocksSwitch);
         queueMicrotask(() => this.connections.activate(old));
         return;
       }
@@ -314,18 +315,18 @@ export class TabsStore {
     if (open.length === 0) return true;
     const failed = open.every((t) => t.tx() === 'failed');
     const choice = await this.confirm.choose({
-      title: 'Offene Transaktion',
+      title: TABS_TEXTS.openTransaction,
       message: closeQuestion(what, open.length),
       // a failed transaction can only be rolled back
-      confirm: failed ? 'Rollback' : 'Commit',
-      second: failed ? undefined : 'Rollback',
+      confirm: failed ? TABS_TEXTS.rollback : TABS_TEXTS.commit,
+      second: failed ? undefined : TABS_TEXTS.rollback,
     });
     if (choice === 'no') return false;
     const commit = choice === 'yes' && !failed;
     for (const tab of open) {
       const problem = await tab.endTransaction(commit && tab.tx() !== 'failed');
       if (problem !== null) {
-        this.services.notify(`Die Transaktion ließ sich nicht beenden: ${problem}`);
+        this.services.notify(TABS_TEXTS.txNotEnded(problem));
         return false;
       }
     }
@@ -337,7 +338,7 @@ export class TabsStore {
     const index = tabs.findIndex((t) => t.id === id);
     if (index < 0) return;
     const tab = tabs[index];
-    if (!(await this.settleTransactions([tab], `Der Tab „${tab.title()}“`))) return;
+    if (!(await this.settleTransactions([tab], TABS_TEXTS.theTab(tab.title())))) return;
     this.cancelBackup(id);
     const text = (await tab.text().catch(() => null)) ?? (await this.startText(tab));
     // its statement stops and its results leave the store
@@ -433,7 +434,7 @@ export class TabsStore {
   async openFiles(paths?: readonly string[]): Promise<void> {
     let chosen = paths;
     if (!chosen) {
-      const path = await this.files.openFile('SQL-Datei öffnen', SQL_FILES);
+      const path = await this.files.openFile(TABS_TEXTS.openSqlFile, sqlFiles());
       chosen = path === null ? [] : [path];
     }
     for (const path of chosen.slice(0, 20)) {
@@ -469,9 +470,9 @@ export class TabsStore {
             tab
               .title()
               .replace(/[\\/:*?"<>|]+/g, ' ')
-              .trim() || 'Abfrage'
+              .trim() || TABS_TEXTS.untitled
           }.sql`;
-      path = await this.files.saveFile('SQL-Datei speichern', suggested, SQL_FILES);
+      path = await this.files.saveFile(TABS_TEXTS.saveSqlFile, suggested, sqlFiles());
       if (path === null) return;
     }
     const encoding = tab.encoding() ?? 'utf-8';
@@ -491,9 +492,7 @@ export class TabsStore {
       // the old encoding cannot hold the text: UTF-8 can, and the user is told
       await this.api.writeFile(path, text, 'utf-8');
       tab.encoding.set('utf-8');
-      this.notice.set(
-        `${fileName(path)} wurde als UTF-8 gespeichert: Die bisherige Kodierung kann nicht alle Zeichen des Textes darstellen.`,
-      );
+      this.notice.set(TABS_TEXTS.savedAsUtf8(fileName(path)));
     }
     tab.filePath.set(path);
     tab.title.set(fileName(path));
@@ -520,7 +519,7 @@ export class TabsStore {
     if (tab.customTitle()) return;
     const title = autoTitle(text);
     if (title !== null) tab.title.set(title);
-    else if (!tab.title().startsWith('Abfrage')) {
+    else if (!isUntitled(tab.title())) {
       tab.title.set(untitled(new Set(this.tabs().map((t) => t.title()))));
     }
   }

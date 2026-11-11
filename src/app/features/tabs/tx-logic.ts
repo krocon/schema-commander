@@ -1,4 +1,5 @@
 import { TxState } from '../../core/sql/query.models';
+import { TABS_TEXTS } from './tabs-texts';
 
 /** Whether a transaction is open (and something would be lost or kept by closing). */
 export const txOpen = (tx: TxState) => tx === 'active' || tx === 'failed';
@@ -23,19 +24,15 @@ export function txStatus(
   now: number,
   warnAfterMs: number,
 ): string | null {
-  if (tx === 'unknown') return 'Transaktion: Zustand unbekannt (der Server gab keine Auskunft)';
+  if (tx === 'unknown') return TABS_TEXTS.txUnknown;
   if (!txOpen(tx)) return null;
   const lasted = sinceMs === null ? 0 : now - sinceMs;
-  const count = statements === 1 ? '1 Anweisung' : `${statements} Anweisungen`;
-  if (tx === 'failed') {
-    return `Transaktion fehlgeschlagen – nur Rollback möglich (offen seit ${openFor(lasted)})`;
-  }
-  const late = warnAfterMs > 0 && lasted >= warnAfterMs ? ' – sie hält Sperren' : '';
-  return `Transaktion offen seit ${openFor(lasted)} · ${count}${late}`;
+  if (tx === 'failed') return TABS_TEXTS.txFailed(openFor(lasted));
+  const late = warnAfterMs > 0 && lasted >= warnAfterMs;
+  return TABS_TEXTS.txOpen(openFor(lasted), statements, late);
 }
 
-/** The question before something with an open transaction is closed. */
+/** The question before something with an open transaction is closed; `what` is its name as a subject. */
 export function closeQuestion(what: string, tabs: number): string {
-  const open = tabs === 1 ? 'eine offene Transaktion' : `${tabs} Tabs mit offener Transaktion`;
-  return `${what} hat ${open}. Was nicht mit Commit bestätigt wird, geht verloren.`;
+  return TABS_TEXTS.closeQuestion(what, tabs);
 }

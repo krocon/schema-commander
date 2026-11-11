@@ -20,10 +20,10 @@ import { HistoryService } from './features/history/history.service';
 import { ActionId } from './core/actions/action-catalog';
 import {
   COPY_FORMATS,
-  TABLE_PLACEHOLDER,
   isCopyFormat,
   orderedFormats,
   tableOf,
+  tablePlaceholder,
 } from './features/results/copy-logic';
 import { ExportDialog } from './features/export/export-dialog';
 import { ExportService } from './features/export/export.service';
@@ -59,6 +59,8 @@ import { ThemeEditor } from './features/themes/theme-editor';
 import { copyName } from './features/themes/theme-editor-logic';
 import { ThemePickerComponent } from './features/themes/theme-picker';
 import { SplitterComponent } from './shared/splitter';
+import { APP_TEXTS } from './app-texts';
+import { COMMON_TEXTS } from './core/i18n/common-texts';
 
 const SIDEBAR_MIN = 140;
 
@@ -90,11 +92,11 @@ const SIDEBAR_MIN = 140;
   ],
   template: `
     @if (!zen()) {
-      <header class="toolbar" role="toolbar" aria-label="Werkzeugleiste">
+      <header class="toolbar" role="toolbar" [attr.aria-label]="t.toolbar">
         <button
           type="button"
-          aria-label="Seitenleiste ein-/ausblenden"
-          [title]="'Seitenleiste ein-/ausblenden' + actions.hint('TOGGLE_SIDEBAR')"
+          [attr.aria-label]="t.toggleSidebar"
+          [title]="t.toggleSidebar + actions.hint('TOGGLE_SIDEBAR')"
           [attr.aria-pressed]="settings.settings().sidebarVisible"
           (click)="actions.run('TOGGLE_SIDEBAR')"
         >
@@ -103,29 +105,27 @@ const SIDEBAR_MIN = 140;
         <button
           type="button"
           class="primary"
-          [title]="
-            'Auswahl oder Anweisung unter dem Cursor ausführen' + actions.hint('RUN_STATEMENT')
-          "
+          [title]="t.runHint + actions.hint('RUN_STATEMENT')"
           [disabled]="running()"
           (click)="actions.run('RUN_STATEMENT')"
         >
-          ▶ Ausführen
+          ▶ {{ t.run }}
         </button>
         <button
           type="button"
-          [title]="'Ganzes Skript ausführen' + actions.hint('RUN_SCRIPT')"
+          [title]="t.runScriptHint + actions.hint('RUN_SCRIPT')"
           [disabled]="running()"
           (click)="actions.run('RUN_SCRIPT')"
         >
-          ▶▶ Skript
+          ▶▶ {{ t.script }}
         </button>
         @if (running()) {
           <button
             type="button"
-            [title]="'Laufende Anweisung abbrechen' + actions.hint('CANCEL_QUERY')"
+            [title]="t.cancelHint + actions.hint('CANCEL_QUERY')"
             (click)="actions.run('CANCEL_QUERY')"
           >
-            ■ Abbrechen
+            ■ {{ common.cancel }}
           </button>
         }
         @if (tabs.active(); as tab) {
@@ -134,31 +134,30 @@ const SIDEBAR_MIN = 140;
             class="tx-mode"
             [attr.aria-pressed]="tab.manual()"
             [title]="
-              (tab.manual()
-                ? 'Manueller Commit: Änderungen bleiben offen, bis sie bestätigt werden'
-                : 'Auto-Commit: jede Anweisung gilt sofort') + actions.hint('TOGGLE_AUTOCOMMIT')
+              (tab.manual() ? t.manualCommitHint : t.autoCommitHint) +
+              actions.hint('TOGGLE_AUTOCOMMIT')
             "
             (click)="actions.run('TOGGLE_AUTOCOMMIT')"
           >
-            {{ tab.manual() ? 'Tx: manuell' : 'Tx: auto' }}
+            {{ tab.manual() ? t.txManual : t.txAuto }}
           </button>
           @if (txIsOpen()) {
             <button
               type="button"
               class="tx-commit"
               [disabled]="running() || tab.tx() === 'failed'"
-              [title]="'Transaktion bestätigen' + actions.hint('TX_COMMIT')"
+              [title]="t.commitHint + actions.hint('TX_COMMIT')"
               (click)="actions.run('TX_COMMIT')"
             >
-              ✓ Commit
+              ✓ {{ t.commit }}
             </button>
             <button
               type="button"
               [disabled]="running()"
-              [title]="'Transaktion zurückrollen' + actions.hint('TX_ROLLBACK')"
+              [title]="t.rollbackHint + actions.hint('TX_ROLLBACK')"
               (click)="actions.run('TX_ROLLBACK')"
             >
-              ↶ Rollback
+              ↶ {{ t.rollback }}
             </button>
           }
         }
@@ -167,30 +166,28 @@ const SIDEBAR_MIN = 140;
           @let cs = connections.activeState();
           <span
             [class]="'conn conn-' + conn.color"
-            [title]="cs.kind === 'open' ? cs.serverVersion : 'nicht verbunden'"
+            [title]="cs.kind === 'open' ? cs.serverVersion : t.notConnected"
             ><i [class.open]="cs.kind === 'open'"></i>{{ conn.name }}</span
           >
           @if (badge(); as b) {
             <span class="guard-badge" [attr.data-protection]="conn.protection">{{ b }}</span>
           }
           @if (conn.kind !== 'sqlite' && uncheckedTls(conn.tls)) {
-            <span class="guard-badge" title="Das Zertifikat des Servers wird nicht geprüft"
-              >TLS ungeprüft</span
-            >
+            <span class="guard-badge" [title]="t.tlsUncheckedHint">{{ t.tlsUnchecked }}</span>
           }
         }
         <button
           type="button"
-          aria-label="Befehlspalette"
-          [title]="'Befehlspalette' + actions.hint('OPEN_PALETTE')"
+          [attr.aria-label]="t.palette"
+          [title]="t.palette + actions.hint('OPEN_PALETTE')"
           (click)="actions.run('OPEN_PALETTE')"
         >
           ⌘
         </button>
         <button
           type="button"
-          aria-label="Farbschema wählen"
-          [title]="'Farbschema wählen' + actions.hint('COLOR_SCHEME')"
+          [attr.aria-label]="t.colorScheme"
+          [title]="t.colorScheme + actions.hint('COLOR_SCHEME')"
           (click)="actions.run('COLOR_SCHEME')"
         >
           ◐
@@ -204,10 +201,10 @@ const SIDEBAR_MIN = 140;
           #sidebar
           id="sidebar"
           class="sidebar"
-          aria-label="Seitenleiste"
+          [attr.aria-label]="t.sidebar"
           [style.width.px]="sidebarW()"
         >
-          <div class="views" role="tablist" aria-label="Ansicht der Seitenleiste">
+          <div class="views" role="tablist" [attr.aria-label]="t.sidebarView">
             <button
               type="button"
               role="tab"
@@ -215,11 +212,11 @@ const SIDEBAR_MIN = 140;
               aria-controls="sidebar-view"
               [attr.aria-selected]="view === 'database'"
               [tabindex]="view === 'database' ? 0 : -1"
-              [title]="'Verbindungen und Schema' + actions.hint('SIDEBAR_DATABASE')"
+              [title]="t.databaseHint + actions.hint('SIDEBAR_DATABASE')"
               (click)="actions.run('SIDEBAR_DATABASE')"
               (keydown)="onViewKey($event)"
             >
-              Datenbank
+              {{ t.database }}
             </button>
             <button
               type="button"
@@ -228,11 +225,11 @@ const SIDEBAR_MIN = 140;
               aria-controls="sidebar-view"
               [attr.aria-selected]="view === 'history'"
               [tabindex]="view === 'history' ? 0 : -1"
-              [title]="'Zuletzt ausgeführte Anweisungen' + actions.hint('SIDEBAR_HISTORY')"
+              [title]="t.historyHint + actions.hint('SIDEBAR_HISTORY')"
               (click)="actions.run('SIDEBAR_HISTORY')"
               (keydown)="onViewKey($event)"
             >
-              Verlauf
+              {{ t.history }}
             </button>
           </div>
           <div
@@ -252,7 +249,7 @@ const SIDEBAR_MIN = 140;
         <app-splitter
           orientation="vertical"
           pane="before"
-          label="Breite der Seitenleiste"
+          [label]="t.sidebarWidth"
           controls="sidebar"
           [size]="sidebarW()"
           [min]="sidebarMin"
@@ -301,25 +298,25 @@ const SIDEBAR_MIN = 140;
             b
           }}</span>
         }
-        @if (txText(); as t) {
-          <span class="tx-status" [class.failed]="tabs.active()?.tx() === 'failed'">{{ t }}</span>
+        @if (txText(); as tx) {
+          <span class="tx-status" [class.failed]="tabs.active()?.tx() === 'failed'">{{ tx }}</span>
         }
         <span>{{ status() }}</span>
         @if (exporter.job(); as job) {
           @if (job.state === 'running') {
             <button type="button" class="status-button" (click)="exporter.cancel()">
-              Abbrechen
+              {{ common.cancel }}
             </button>
           } @else {
             @if (job.state === 'done') {
               <button type="button" class="status-button" (click)="exporter.reveal()">
-                Im Dateimanager zeigen
+                {{ t.revealExport }}
               </button>
             }
             <button
               type="button"
               class="status-button"
-              aria-label="Meldung des Exports schließen"
+              [attr.aria-label]="t.dismissExport"
               (click)="exporter.dismiss()"
             >
               ×
@@ -327,7 +324,9 @@ const SIDEBAR_MIN = 140;
           }
         }
         @if (copier.busy()) {
-          <button type="button" class="status-button" (click)="copier.cancel()">Abbrechen</button>
+          <button type="button" class="status-button" (click)="copier.cancel()">
+            {{ common.cancel }}
+          </button>
         }
         <span class="spacer"></span>
         @if (tabs.active(); as tab) {
@@ -335,14 +334,14 @@ const SIDEBAR_MIN = 140;
             <span>{{ encoding() }}</span>
           }
           @if (tab.caret(); as c) {
-            <span>Zeile {{ c.line }}, Spalte {{ c.ch }}</span>
+            <span>{{ t.caret(c.line, c.ch) }}</span>
           }
         }
       </footer>
     }
     @if (copier.menu(); as m) {
       <app-context-menu
-        label="Kopieren als"
+        [label]="t.copyAs"
         [items]="copyItems()"
         [x]="m.x"
         [y]="m.y"
@@ -367,11 +366,15 @@ const SIDEBAR_MIN = 140;
     @if (notice(); as message) {
       <div class="notice" role="alert">
         <span>{{ message }}</span>
-        <button type="button" aria-label="Meldung schließen" (click)="dismissNotice()">×</button>
+        <button type="button" [attr.aria-label]="common.closeMessage" (click)="dismissNotice()">
+          ×
+        </button>
       </div>
     }
     @if (dropActive()) {
-      <div class="drop" aria-hidden="true"><span>SQL-Datei hier ablegen</span></div>
+      <div class="drop" aria-hidden="true">
+        <span>{{ t.dropHint }}</span>
+      </div>
     }
     @if (connectionDialog(); as profile) {
       @defer (on immediate) {
@@ -422,6 +425,8 @@ const SIDEBAR_MIN = 140;
   styleUrl: './app.css',
 })
 export class App implements OnInit, OnDestroy {
+  protected readonly t = APP_TEXTS;
+  protected readonly common = COMMON_TEXTS;
   protected readonly settings = inject(SettingsService);
   /** Created first: it puts the colour scheme on screen and shows the window. */
   protected readonly theme = inject(ThemeService);
@@ -483,9 +488,9 @@ export class App implements OnInit, OnDestroy {
   protected readonly guard = inject(GuardService);
   protected readonly uncheckedTls = tlsUnchecked;
   protected readonly hostKeyQuestion = (hk: HostKeyRequest): ConfirmRequest => ({
-    title: 'Unbekannter SSH-Server',
-    message: `${hk.host} zeigt den Schlüssel ${hk.keyType} ${hk.fingerprint}. Stimmt der Fingerabdruck mit dem des Servers überein? Nur dann vertrauen – er wird gemerkt und künftig geprüft.`,
-    confirm: 'Vertrauen',
+    title: APP_TEXTS.hostKeyTitle,
+    message: APP_TEXTS.hostKeyMessage(hk.host, hk.keyType, hk.fingerprint),
+    confirm: APP_TEXTS.trust,
   });
   /** The mark of the active connection: its label and how it is protected. */
   protected readonly badge = computed(() => badgeText(this.connections.active()));
@@ -668,9 +673,7 @@ export class App implements OnInit, OnDestroy {
           const t = tab();
           if (!t) return;
           if (t.manual() && txOpen(t.tx())) {
-            this.ownNotice.set(
-              'Die Transaktion ist noch offen: erst Commit oder Rollback, dann zurück zu Auto-Commit.',
-            );
+            this.ownNotice.set(APP_TEXTS.txStillOpen);
             return;
           }
           t.manual.update((m) => !m);
@@ -696,8 +699,8 @@ export class App implements OnInit, OnDestroy {
           this.history.toggleConnection(id);
           this.ownNotice.set(
             this.history.enabled(id)
-              ? 'Der Verlauf merkt sich die Anweisungen dieser Verbindung wieder.'
-              : 'Der Verlauf merkt sich keine Anweisungen dieser Verbindung mehr.',
+              ? APP_TEXTS.historyConnectionOn
+              : APP_TEXTS.historyConnectionOff,
           );
         },
         () => !!tab(),
@@ -705,9 +708,7 @@ export class App implements OnInit, OnDestroy {
       this.actions.register('TOGGLE_HISTORY', () => {
         const on = !this.settings.settings().historyEnabled;
         this.settings.update({ historyEnabled: on });
-        this.ownNotice.set(
-          on ? 'Der Verlauf ist eingeschaltet.' : 'Der Verlauf ist ausgeschaltet.',
-        );
+        this.ownNotice.set(on ? APP_TEXTS.historyOn : APP_TEXTS.historyOff);
       }),
       this.actions.register(
         'COPY_RESULT',
@@ -737,11 +738,7 @@ export class App implements OnInit, OnDestroy {
       this.actions.register('TOGGLE_CONFIRM_DANGEROUS', () => {
         const on = !this.settings.settings().confirmDangerous;
         this.settings.update({ confirmDangerous: on });
-        this.ownNotice.set(
-          on
-            ? 'Zerstörende Anweisungen fragen wieder überall nach.'
-            : 'Zerstörende Anweisungen fragen auf ungeschützten Verbindungen nicht mehr nach. Geschützte Verbindungen fragen weiter.',
-        );
+        this.ownNotice.set(on ? APP_TEXTS.confirmDangerousOn : APP_TEXTS.confirmDangerousOff);
       }),
       this.actions.register('TOGGLE_DIGIT_GROUPING', () =>
         this.settings.update({ groupDigits: !this.settings.settings().groupDigits }),
@@ -833,7 +830,7 @@ export class App implements OnInit, OnDestroy {
           this.zen.set(zen);
           if (zen) {
             this.ownNotice.set(
-              `Zen-Modus: nur die Abfragen.${this.actions.hint('TOGGLE_ZEN')} beendet ihn, die Befehlspalette${this.actions.hint('OPEN_PALETTE')} bleibt.`,
+              APP_TEXTS.zen(this.actions.hint('TOGGLE_ZEN'), this.actions.hint('OPEN_PALETTE')),
             );
             this.focusFront();
           }
@@ -888,7 +885,11 @@ export class App implements OnInit, OnDestroy {
 
   private async endTransaction(commit: boolean): Promise<void> {
     const problem = await this.tabs.active()?.endTransaction(commit);
-    if (problem) this.ownNotice.set(`${commit ? 'Commit' : 'Rollback'} gescheitert: ${problem}`);
+    if (problem) {
+      this.ownNotice.set(
+        commit ? APP_TEXTS.commitFailed(problem) : APP_TEXTS.rollbackFailed(problem),
+      );
+    }
   }
 
   /** The window is about to close: tabs with an open transaction are asked about first. */
@@ -897,7 +898,7 @@ export class App implements OnInit, OnDestroy {
     return window.onCloseRequested(async (event) => {
       if (!this.tabs.tabs().some((t) => txOpen(t.tx()))) return;
       event.preventDefault();
-      if (await this.tabs.settleTransactions(this.tabs.tabs(), 'Das Fenster')) {
+      if (await this.tabs.settleTransactions(this.tabs.tabs(), APP_TEXTS.theWindow)) {
         await window.destroy();
       }
     });
@@ -917,7 +918,7 @@ export class App implements OnInit, OnDestroy {
       sql: current.sql,
       connectionId: current.connectionId,
       name: table?.replace(/["`[\]]/g, '') ?? this.tabs.active()?.title() ?? 'export',
-      table: table ?? TABLE_PLACEHOLDER,
+      table: table ?? tablePlaceholder(),
     });
   }
 
@@ -929,9 +930,7 @@ export class App implements OnInit, OnDestroy {
     const text = await this.history.recalled(tab.id, tab.connectionId(), now, step);
     if (text === null) {
       if (now.trim() !== '') {
-        this.ownNotice.set(
-          'Der Editor ist nicht leer: Der Verlauf ersetzt keinen geschriebenen Text. Verlauf öffnen fügt ein.',
-        );
+        this.ownNotice.set(APP_TEXTS.editorNotEmpty);
       }
       return;
     }

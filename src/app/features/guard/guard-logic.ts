@@ -1,5 +1,6 @@
 import { Profile, Protection } from '../../core/connections/connection.models';
 import { StatementClass, Verdict } from '../../core/sql/query.models';
+import { GUARD_TEXTS } from './guard-texts';
 
 /** A statement that waits for a yes. */
 export interface GuardedStatement {
@@ -21,18 +22,12 @@ export interface GuardAnswer {
   readonly typedName: string | null;
 }
 
-export const CLASS_LABELS: Readonly<Record<StatementClass, string>> = {
-  read: 'liest',
-  write: 'ändert Daten',
-  ddl: 'ändert das Schema',
-  dangerous: 'zerstört oder vergibt Rechte',
-};
+/** What a statement of a class does, in the current language. */
+export const classLabel = (cls: StatementClass): string => GUARD_TEXTS.classes[cls];
 
-export const PROTECTION_LABELS: Readonly<Record<Protection, string>> = {
-  free: 'frei',
-  ask: 'nachfragen',
-  readonly: 'nur lesen',
-};
+/** What a protection level is called, in the current language. */
+export const protectionLabel = (protection: Protection): string =>
+  GUARD_TEXTS.protections[protection];
 
 /** The statements of a run that need a confirmation, in their order. */
 export function needingConfirmation(
@@ -55,10 +50,7 @@ export const nameMatches = (typed: string, name: string) => typed.trim() === nam
 export function guardTitle(request: GuardRequest): string {
   const worst = request.statements.some((s) => s.verdict.class === 'dangerous');
   const n = request.statements.length;
-  const what = n === 1 ? 'Diese Anweisung' : `${n} Anweisungen`;
-  return worst
-    ? `${what} ${n === 1 ? 'zerstört' : 'zerstören'} Daten oder ändern Rechte`
-    : `${what} ${n === 1 ? 'ändert' : 'ändern'} die Datenbank`;
+  return worst ? GUARD_TEXTS.titleDangerous(n) : GUARD_TEXTS.titleChanging(n);
 }
 
 /** The mark of a connection in the window: its label, or what its protection is called. */
@@ -66,7 +58,8 @@ export function badgeText(profile: Pick<Profile, 'label' | 'protection'> | null)
   if (!profile) return null;
   const label = profile.label.trim();
   if (profile.protection === 'free') return label || null;
-  const protection = profile.protection === 'readonly' ? 'nur lesen' : 'geschützt';
+  const protection =
+    profile.protection === 'readonly' ? GUARD_TEXTS.badgeReadonly : GUARD_TEXTS.badgeProtected;
   return label ? `${label} · ${protection}` : protection;
 }
 

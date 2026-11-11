@@ -23,6 +23,7 @@ import { ResultGrid } from '../results/result-grid';
 import { QueryTab, TabEditor } from './query-tab';
 import { StatementRun, clock, outcomeText, statusText } from './run-state';
 import { TabsStore } from './tabs.store';
+import { TABS_TEXTS } from './tabs-texts';
 
 const RESULT_MIN = 80;
 /** What the editor keeps at least, px. */
@@ -50,7 +51,7 @@ const EDITOR_MIN_W = 160;
       <app-sql-editor
         class="editor"
         [initialValue]="start.text"
-        [label]="'SQL-Editor: ' + tab().title()"
+        [label]="t.editorLabel(tab().title())"
         [dialect]="dialect()"
         (run)="tab().runAll($event)"
         (caret)="tab().caret.set($event)"
@@ -58,13 +59,13 @@ const EDITOR_MIN_W = 160;
         (changed)="onChanged($event)"
       />
     } @else {
-      <p class="editor message">Text wird geladen …</p>
+      <p class="editor message">{{ t.loadingText }}</p>
     }
     @if (side()) {
       <app-splitter
         orientation="vertical"
         pane="after"
-        label="Breite des Ergebnisbereichs"
+        [label]="t.resultWidth"
         [controls]="'results-' + tab().id"
         [size]="resultW()"
         [min]="resultMinW"
@@ -77,7 +78,7 @@ const EDITOR_MIN_W = 160;
       <app-splitter
         orientation="horizontal"
         pane="after"
-        label="Höhe des Ergebnisbereichs"
+        [label]="t.resultHeight"
         [controls]="'results-' + tab().id"
         [size]="resultH()"
         [min]="resultMin"
@@ -89,14 +90,14 @@ const EDITOR_MIN_W = 160;
     }
     <section
       class="results"
-      aria-label="Ergebnis"
+      [attr.aria-label]="t.result"
       tabindex="-1"
       [id]="'results-' + tab().id"
       [style.height.px]="maximized() || side() ? null : resultH()"
       [style.width.px]="maximized() || !side() ? null : resultW()"
     >
       @if (tab().runs().length > 1 || tab().log().length > 0) {
-        <div class="subtabs" role="tablist" aria-label="Ergebnisse">
+        <div class="subtabs" role="tablist" [attr.aria-label]="t.results">
           @for (run of tab().runs(); track $index) {
             @if (tab().runs().length > 1) {
               <button
@@ -124,13 +125,13 @@ const EDITOR_MIN_W = 160;
             (click)="tab().shown.set('messages')"
             (keydown)="onSubKey($event)"
           >
-            Meldungen
+            {{ t.messages }}
           </button>
         </div>
       }
       <div class="body" role="tabpanel">
         @if (tab().shown() === 'messages') {
-          <ol class="log" aria-label="Meldungen">
+          <ol class="log" [attr.aria-label]="t.messages">
             @for (entry of tab().log(); track $index) {
               <li [class]="entry.kind">
                 <time>{{ time(entry.at) }}</time>
@@ -141,7 +142,7 @@ const EDITOR_MIN_W = 160;
                 }
               </li>
             } @empty {
-              <li class="info">Noch keine Meldungen.</li>
+              <li class="info">{{ t.noMessages }}</li>
             }
           </ol>
         } @else {
@@ -161,14 +162,14 @@ const EDITOR_MIN_W = 160;
               @if (result(); as r) {
                 <app-result-grid [result]="r" [rows]="rows()" [fetch]="fetch" />
               } @else {
-                <p class="message">Läuft …</p>
+                <p class="message">{{ t.runningNow }}</p>
               }
             }
             @case ('cancelled') {
-              <p class="message">Abgebrochen.</p>
+              <p class="message">{{ t.cancelledNow }}</p>
             }
             @default {
-              <p class="message">Noch kein Ergebnis.</p>
+              <p class="message">{{ t.noResult }}</p>
             }
           }
         }
@@ -294,6 +295,7 @@ const EDITOR_MIN_W = 160;
   `,
 })
 export class QueryPane implements OnInit, OnDestroy {
+  protected readonly t = TABS_TEXTS;
   private readonly tabs = inject(TabsStore);
   protected readonly settings = inject(SettingsService);
   private readonly connections = inject(ConnectionsStore);

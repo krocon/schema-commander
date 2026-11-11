@@ -14,12 +14,14 @@ import {
 import { ConnectionsStore } from '../../core/connections/connections.store';
 import { describeError, toAppError } from '../../core/errors/app-error';
 import { HistoryApi, HistoryEntry } from '../../core/history/history-api';
+import { COMMON_TEXTS } from '../../core/i18n/common-texts';
 import { ConfirmService } from '../../shared/confirm';
 import { SqlEditor } from '../editor/sql-editor';
 import { CopyService } from '../results/copy.service';
 import { TabsStore } from '../tabs/tabs.store';
 import { HISTORY_PAGE, durationLabel, oneLine, outcomeLabel, whenLabel } from './history-logic';
 import { HistoryService } from './history.service';
+import { HISTORY_TEXTS } from './history-texts';
 
 /** Wait this long after the last key before the history is searched. */
 export const HISTORY_SEARCH_DELAY_MS = 200;
@@ -39,9 +41,14 @@ export const HISTORY_SEARCH_DELAY_MS = 200;
       (cancel)="$event.preventDefault(); closed.emit()"
     >
       <header>
-        <h2 id="history-title">Verlauf</h2>
+        <h2 id="history-title">{{ t.title }}</h2>
         <span class="count">{{ countLabel() }}</span>
-        <button type="button" class="close" aria-label="Schließen" (click)="closed.emit()">
+        <button
+          type="button"
+          class="close"
+          [attr.aria-label]="common.close"
+          (click)="closed.emit()"
+        >
           ×
         </button>
       </header>
@@ -49,16 +56,20 @@ export const HISTORY_SEARCH_DELAY_MS = 200;
         <input
           #search
           type="search"
-          placeholder="Suchen …"
-          aria-label="Im Verlauf suchen"
+          [placeholder]="t.searchPlaceholder"
+          [attr.aria-label]="t.searchLabel"
           autocomplete="off"
           spellcheck="false"
           [value]="text()"
           (input)="onSearch(search.value)"
           (keydown.arrowdown)="$event.preventDefault(); focusList()"
         />
-        <select #which aria-label="Verbindung" (change)="connection.set(which.value || null)">
-          <option value="">Alle Verbindungen</option>
+        <select
+          #which
+          [attr.aria-label]="t.connection"
+          (change)="connection.set(which.value || null)"
+        >
+          <option value="">{{ t.allConnections }}</option>
           @for (p of connections.profiles(); track p.id) {
             <option [value]="p.id" [selected]="p.id === connection()">{{ p.name }}</option>
           }
@@ -70,11 +81,11 @@ export const HISTORY_SEARCH_DELAY_MS = 200;
             [checked]="failedOnly()"
             (change)="failedOnly.set(failed.checked)"
           />
-          nur Fehler
+          {{ t.failedOnly }}
         </label>
         <label>
           <input #own type="checkbox" [checked]="userOnly()" (change)="userOnly.set(own.checked)" />
-          nur eigene
+          {{ t.ownOnly }}
         </label>
       </div>
       @if (problem(); as p) {
@@ -85,7 +96,7 @@ export const HISTORY_SEARCH_DELAY_MS = 200;
         class="list"
         role="listbox"
         tabindex="0"
-        aria-label="Ausgeführte Anweisungen"
+        [attr.aria-label]="t.listLabel"
         [attr.aria-activedescendant]="selected() ? 'hist-' + selected()!.id : null"
         (keydown)="onKey($event)"
         (click)="onClick($event)"
@@ -111,10 +122,10 @@ export const HISTORY_SEARCH_DELAY_MS = 200;
             <span class="dur">{{ duration(e.elapsedMs) }}</span>
           </div>
         } @empty {
-          <p class="empty">{{ loading() ? 'Lädt …' : 'Nichts gefunden.' }}</p>
+          <p class="empty">{{ loading() ? t.loading : t.nothingFound }}</p>
         }
         @if (entries().length < total()) {
-          <button type="button" class="more" (click)="more()">Weitere laden</button>
+          <button type="button" class="more" (click)="more()">{{ t.loadMore }}</button>
         }
       </div>
       <div class="preview">
@@ -123,19 +134,23 @@ export const HISTORY_SEARCH_DELAY_MS = 200;
             <p class="message" role="note">{{ e.message }}</p>
           }
         }
-        <app-sql-editor class="editor" label="Anweisung aus dem Verlauf" [readonly]="true" />
+        <app-sql-editor class="editor" [label]="t.previewLabel" [readonly]="true" />
       </div>
       <footer>
-        <button type="button" [disabled]="!selected()" (click)="remove()">Eintrag löschen</button>
-        <button type="button" (click)="clear()">Verlauf löschen …</button>
+        <button type="button" [disabled]="!selected()" (click)="remove()">
+          {{ t.deleteEntry }}
+        </button>
+        <button type="button" (click)="clear()">{{ t.clear }}</button>
         <span class="spacer"></span>
-        <button type="button" [disabled]="!selected()" (click)="copy()">Kopieren</button>
-        <button type="button" [disabled]="!selected()" (click)="newTab(false)">In neuem Tab</button>
+        <button type="button" [disabled]="!selected()" (click)="copy()">{{ t.copy }}</button>
+        <button type="button" [disabled]="!selected()" (click)="newTab(false)">
+          {{ t.inNewTab }}
+        </button>
         <button type="button" [disabled]="!selected()" (click)="newTab(true)">
-          Erneut ausführen
+          {{ t.runAgain }}
         </button>
         <button type="button" class="primary" [disabled]="!selected()" (click)="insert()">
-          Einfügen
+          {{ t.insert }}
         </button>
       </footer>
     </dialog>
@@ -305,6 +320,8 @@ export const HISTORY_SEARCH_DELAY_MS = 200;
   `,
 })
 export class HistoryDialog {
+  protected readonly t = HISTORY_TEXTS;
+  protected readonly common = COMMON_TEXTS;
   readonly closed = output<void>();
 
   private readonly api = inject(HistoryApi);
@@ -333,10 +350,7 @@ export class HistoryDialog {
   protected readonly selected = computed(
     () => this.entries().find((e) => e.id === this.selectedId()) ?? null,
   );
-  protected readonly countLabel = computed(() => {
-    const total = this.total();
-    return total === 1 ? '1 Eintrag' : `${total} Einträge`;
-  });
+  protected readonly countLabel = computed(() => HISTORY_TEXTS.entries(this.total()));
 
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** Counts the searches, so an older answer is dropped. */
@@ -507,11 +521,9 @@ export class HistoryDialog {
     const name = this.connections.profiles().find((p) => p.id === id)?.name ?? id;
     // the dialog of the question opens above this one
     const yes = await this.confirm.ask({
-      title: 'Verlauf löschen',
-      message: id
-        ? `Alle Einträge der Verbindung „${name}“ werden endgültig gelöscht.`
-        : 'Der ganze Verlauf wird endgültig gelöscht.',
-      confirm: 'Löschen',
+      title: HISTORY_TEXTS.clearTitle,
+      message: id ? HISTORY_TEXTS.clearConnection(name ?? id) : HISTORY_TEXTS.clearAll,
+      confirm: COMMON_TEXTS.delete,
     });
     if (!yes) return;
     try {
