@@ -44,16 +44,19 @@ export class CopyService {
   private readonly sources = new Map<number, () => CopySelection>();
   private timer: ReturnType<typeof setTimeout> | null = null;
 
-  /** The result in front: of the statement shown in the active tab. */
+  /** The result in front: of the statement shown in the active tab, as its grid shows it. */
   readonly current = computed(() => {
     const tab = this.tabs.active();
     if (!tab) return null;
     const shown = tab.shown();
     const run = typeof shown === 'number' ? tab.runs()[shown] : undefined;
     if (!run?.result || run.rows === null) return null;
+    // looked at through a local filter or order: the grid shows the view, so that is what is copied
+    const view = tab.localView();
+    const viewed = view !== null && view.base === run.result.resultId;
     return {
-      result: run.result,
-      rows: run.rows,
+      result: viewed ? { ...run.result, resultId: view.resultId } : run.result,
+      rows: viewed ? view.rows : run.rows,
       sql: run.sql,
       connectionId: tab.connectionId(),
     };
