@@ -31,6 +31,10 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   OS and an editor for your own shortcuts (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>S</kbd>)
 - Split view: two tab groups side by side or stacked, each tab on its own connection; the result below or beside
   the editor, hidden or maximised; the sidebar shows connections and schema or the history; a zen mode
+- Value panel (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>V</kbd>): the whole value of the cell
+  under the cursor beside the grid – long text, JSON and XML laid out (without changing a digit), binary data
+  as hex or as a picture, numbers in hex and binary, instants in UTC. 50 MB in one cell stay usable; a value is
+  copied or saved whole by the backend
 - Parameters: `WHERE customer_id = :kunde AND id IN (:ids)` asks for the values when it runs, remembers them per
   tab and sends them bound – a value never becomes part of the SQL text. `:name`, `${name}`, `?`, `$1` …, set per
   connection; run again with the same values with <kbd>Ctrl/⌘</kbd>+<kbd>Alt</kbd>+<kbd>Enter</kbd>

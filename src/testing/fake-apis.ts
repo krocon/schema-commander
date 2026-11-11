@@ -52,6 +52,8 @@ import {
 import {
   BoundValue,
   Cell,
+  CellValuePart,
+  ImageInfo,
   QueryColumn,
   RowWindow,
   RunEvent,
@@ -222,6 +224,62 @@ export class FakeQueryApi extends QueryApi {
       this.freed.push(id);
     }
     return Promise.resolve();
+  }
+
+  /**
+   * Whole values of cells by `resultId:row:col` (prompt 026). Texts here are counted in characters, not
+   * bytes – fine for texts of one byte per character. A cell without an entry is NULL.
+   */
+  readonly values = new Map<
+    string,
+    { text?: string; bytes?: Uint8Array; image?: ImageInfo; unreadable?: string }
+  >();
+  readonly valueCalls: { resultId: number; row: number; col: number; from: number; max: number }[] =
+    [];
+  /** Answers to `cellValue` wait for this (to let a later question overtake an earlier one). */
+  valueGate: Promise<void> | null = null;
+  readonly savedValues: string[] = [];
+  readonly copiedValues: string[] = [];
+
+  async cellValue(
+    resultId: number,
+    row: number,
+    col: number,
+    from: number,
+    max: number,
+  ): Promise<CellValuePart> {
+    this.valueCalls.push({ resultId, row, col, from, max });
+    if (this.valueGate) await this.valueGate;
+    if (this.error) throw this.error;
+    const value = this.values.get(`${resultId}:${row}:${col}`);
+    if (!value) return { kind: 'null', total: 0, from: 0, to: 0 };
+    if (value.unreadable) {
+      return { kind: 'unreadable', total: 0, from: 0, to: 0, text: value.unreadable };
+    }
+    if (value.bytes) {
+      const part = value.bytes.slice(from, from + max);
+      return {
+        kind: 'bytes',
+        total: value.bytes.length,
+        from,
+        to: from + part.length,
+        base64: btoa(String.fromCharCode(...part)),
+        ...(from === 0 && value.image ? { image: value.image } : {}),
+      };
+    }
+    const text = value.text ?? '';
+    const part = text.slice(from, from + max);
+    return { kind: 'text', total: text.length, from, to: from + part.length, text: part };
+  }
+
+  saveCellValue(resultId: number, row: number, col: number, path: string): Promise<number> {
+    this.savedValues.push(`${resultId}:${row}:${col} → ${path}`);
+    return Promise.resolve(1);
+  }
+
+  copyCellValue(resultId: number, row: number, col: number): Promise<number> {
+    this.copiedValues.push(`${resultId}:${row}:${col}`);
+    return Promise.resolve(1);
   }
 }
 

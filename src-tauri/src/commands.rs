@@ -370,6 +370,95 @@ pub fn result_window(
         .map(tauri::ipc::Response::new)
 }
 
+/// A part of the whole value of a cell (prompt 026): long texts and binary data are not in the rows the
+/// grid gets. The window asks piece by piece (`to` of one answer is `from` of the next).
+#[tauri::command(async)]
+pub fn cell_value(
+    store: State<'_, ResultStore>,
+    result_id: u64,
+    row: u64,
+    col: u32,
+    from: u64,
+    max: u64,
+) -> AppResult<crate::results::CellValue> {
+    store.value(result_id, row, col, from, max)
+}
+
+/// Writes the whole value of a cell into a file: text as UTF-8, binary data as it is. `path` comes from
+/// the save dialog. Answers with the bytes written.
+#[tauri::command(async)]
+pub fn save_cell_value(
+    store: State<'_, ResultStore>,
+    result_id: u64,
+    row: u64,
+    col: u32,
+    path: String,
+) -> AppResult<u64> {
+    use std::io::Write;
+    let path = export_target(&path)?;
+    let fail = |e: std::io::Error| AppError::new(ErrorCode::Io, e.to_string());
+    // next to the target, then renamed: the file is never left half written
+    let part = path.with_extension("part-schema-commander");
+    let mut file = std::fs::File::create(&part).map_err(fail)?;
+    let mut written = 0u64;
+    let mut failed = None;
+    let read = store.each_part(
+        result_id,
+        row,
+        col,
+        &mut |bytes| match file.write_all(bytes) {
+            Ok(()) => {
+                written += bytes.len() as u64;
+                true
+            }
+            Err(e) => {
+                failed = Some(e);
+                false
+            }
+        },
+    );
+    let done = match (read, failed) {
+        (Err(e), _) => Err(e),
+        (_, Some(e)) => Err(fail(e)),
+        _ => file
+            .flush()
+            .and_then(|()| std::fs::rename(&part, &path))
+            .map_err(fail),
+    };
+    if done.is_err() {
+        let _ = std::fs::remove_file(&part);
+    }
+    done.map(|()| written)
+}
+
+/// Puts the whole text of a cell on the clipboard, without it passing the window. Binary data is refused
+/// (`unsupported`): the window copies what it shows of it.
+#[tauri::command(async)]
+pub fn copy_cell_value(
+    store: State<'_, ResultStore>,
+    clip: State<'_, ClipState>,
+    result_id: u64,
+    row: u64,
+    col: u32,
+) -> AppResult<u64> {
+    const MAX_CLIPBOARD: usize = 256 * 1024 * 1024;
+    let mut all: Vec<u8> = Vec::new();
+    let binary = store.each_part(result_id, row, col, &mut |bytes| {
+        all.extend_from_slice(bytes);
+        all.len() <= MAX_CLIPBOARD
+    })?;
+    if binary {
+        return Err(AppError::new(ErrorCode::Unsupported, "binary data"));
+    }
+    if all.len() > MAX_CLIPBOARD {
+        return Err(AppError::new(ErrorCode::TooLarge, "too much text"));
+    }
+    let text = String::from_utf8_lossy(&all).into_owned();
+    let chars = text.chars().count() as u64;
+    clip.put(text, None)?;
+    Ok(chars)
+}
+
 /// Forgets results the window no longer shows (their files go too).
 #[tauri::command(async)]
 pub fn free_results(store: State<'_, ResultStore>, result_ids: Vec<u64>) {

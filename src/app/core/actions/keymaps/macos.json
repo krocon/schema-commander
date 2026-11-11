@@ -116,6 +116,9 @@
   "SIDEBAR_SAVED": [
     "Mod+K Mod+Q"
   ],
+  "TOGGLE_VALUE_PANEL": [
+    "Mod+K Mod+V"
+  ],
   "SAVE_QUERY": [
     "Mod+Alt+S"
   ],

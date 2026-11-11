@@ -1,0 +1,51 @@
+import type { Translation } from '../../core/i18n/i18n';
+import type { VALUE_EN } from './value-texts';
+
+export const VALUE_DE: Translation<typeof VALUE_EN> = {
+  panel: 'Wert der Zelle',
+  none: 'Eine Zelle wählen: Hier steht ihr ganzer Wert.',
+  reading: 'Lese …',
+  nullValue: 'NULL – die Zelle hat keinen Wert.',
+  unreadable: (type) => `Der Treiber kann Werte vom Typ ${type} nicht lesen.`,
+  view: 'Ansicht',
+  views: {
+    text: 'Text',
+    json: 'JSON',
+    xml: 'XML',
+    hex: 'Hex',
+    image: 'Bild',
+    number: 'Zahl',
+    date: 'Datum',
+  },
+  wrap: 'Zeilen umbrechen',
+  copy: 'Kopieren',
+  save: 'Speichern …',
+  saveTitle: 'Wert speichern',
+  loadWhole: (size) => `Ganzen Wert lesen (${size})`,
+  loading: (percent) => `Lese den Wert … ${percent} %`,
+  layingOut: (percent) => `Formatiere … ${percent} %`,
+  partial: (shown, total) => `Gezeigt sind die ersten ${shown} von ${total}.`,
+  hexPartial: (shown, total) =>
+    `Gezeigt sind die ersten ${shown} von ${total}; „Speichern …“ schreibt alle.`,
+  tooLarge: (total) =>
+    `${total} sind zu viel zum Zeigen; „Speichern …“ schreibt den Wert in eine Datei.`,
+  bytes: (size) => `${size}, binär`,
+  textSize: (chars, size) => `${chars} Zeichen, ${size} (UTF-8)`,
+  textSizeOpen: (size) => `${size} (UTF-8)`,
+  image: (mime, width, height) => `${mime}, ${width} × ${height}`,
+  imageAlt: (column) => `Bild in der Spalte ${column}`,
+  imageBroken:
+    'Die Daten geben sich als Bild aus, lassen sich aber nicht zeichnen. Sie werden als Bytes gezeigt.',
+  copied: 'Der Wert wurde kopiert.',
+  saved: (size) => `Der Wert wurde gespeichert (${size}).`,
+  decimal: 'Dezimal',
+  hex: 'Hexadezimal',
+  binary: 'Binär',
+  utc: 'UTC',
+  local: 'Hier',
+  epoch: 'Sekunden seit 1970',
+  weekday: 'Wochentag',
+  days: ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'],
+  noZone: 'Der Wert hat keine Zeitzone: Er ist eine Uhrzeit, kein Zeitpunkt.',
+  width: 'Breite des Wert-Feldes',
+};

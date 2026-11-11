@@ -43,11 +43,12 @@
   (Prompt 023); **gespeicherte Abfragen** als `.sql`-Dateien mit Kopfkommentar in einem wählbaren Ordner
   (Ansicht der Seitenleiste, Suche, `q:` in der Palette) und **Textbausteine** mit Platzhaltern je Dialekt
   (Prompt 024); **Parameter** (`:name`, `${name}`, `?`, `$1` …): Werte werden abgefragt, je Tab gemerkt und vom
-  Treiber gebunden (Prompt 025);
+  Treiber gebunden (Prompt 025); **Wert-Ansicht**: der ganze Wert der Zelle unter dem Cursor neben dem Gitter
+  (Text, JSON/XML gesetzt, Hex, Bild, Zahl, Datum), stückweise aus dem Ergebnisspeicher (Prompt 026);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–025),
+  erledigt: 001–026),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -147,6 +148,9 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                Statuszeile), tx-logic.ts (rein: Texte zur Transaktion)
   app/features/themes/         Farbschema-Galerie (ThemePicker, ThemeThumb, theme-picker-logic.ts),
                                Schema-Editor (ThemeEditor, theme-editor-logic.ts rein: Ids, Import, Kontrast)
+  app/features/value/          ValuePanel (neben dem Gitter, <editlicious-editor readonly>), ValueService (Root:
+                               Zelle des Cursors, kopieren, speichern), value-logic.ts (rein: Ansichten, JSON/XML
+                               setzen ohne zu parsen, Hex, Bildgrenzen)
   app/shared/                  Splitter (+ splitter-logic.ts), ContextMenu (APG-Menü), confirm.ts (Rückfrage)
   testing/fake-apis.ts         Fake-Fassaden für Tests
 src-tauri/                     Rust
@@ -158,7 +162,9 @@ src-tauri/                     Rust
   src/app_menu.rs              native Menüleiste aus der MenuSpec des Fensters: Prüfung, Beschleuniger (rein, getestet)
   src/db/mod.rs                Profile, DbKind, TlsMode, Session-Trait, Laufzeit, Fehler in Worten
   src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
-  src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink (rein, getestet)
+  src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink; ganze Werte
+                               getrennt (`<id>.values`) und stückweise (`value`) (rein, getestet)
+  src/image_info.rs            Bildformat und Maße aus den ersten Bytes, nie dekodiert (rein, getestet)
   src/saved.rs                 gespeicherte Abfragen: .sql-Dateien mit Kopfkommentar, Pfadprüfung, Suche,
                                Fingerabdruck des Ordners (rein, getestet)
   src/history.rs               Verlauf: history.sqlite, Suche, Aufbewahrung, endgültiges Löschen (rein, getestet)
@@ -214,6 +220,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   gegen die Tokens des Textes. Das Fenster ersetzt nur den Bereich (`replaceRange`), nie den ganzen Text.
   Stellen des Editors zählen Spalten in **Codepunkten**, JavaScript in UTF-16: umgerechnet wird nur mit
   `core/text/places.ts` (`placeIn`, `offsetAt`).
+- **Werte**: Eine `Cell` trägt den ganzen Wert; gekürzt wird nur beim Schreiben der Zeile. Nichts aus einem
+  Wert wird als Markup in die Seite gesetzt; Bilder nur innerhalb der Grenzen von `value-logic.ts` als `blob:`.
 - **Parameter**: Werte des Nutzers gehen nur als `Bind` über `run_query` und werden vom Treiber gebunden
   (`Session::execute_bound`); nie in den SQL-Text, den Verlauf, die Sitzung oder ein Log schreiben.
 - **Schutz**: Was SQL ausführt, ruft im Backend `ConnectionManager::admit`; das Fenster fragt nur, entscheidet nie.

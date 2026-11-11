@@ -8,10 +8,10 @@
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
 use serde::Serialize;
 
-/// Text of a cell at most, in characters; longer values are cut and marked (prompt 006 brings the rest on
-/// request).
+/// Text of a cell at most **in a row**, in characters: a longer value is cut and marked there. The cell
+/// itself holds the whole value; the result store keeps it apart and hands it out on request (prompt 026).
 pub const MAX_TEXT_CHARS: usize = 32 * 1024;
-/// Bytes of a binary value shown as hex.
+/// Bytes of a binary value a row shows as hex; the cell holds all of them.
 pub const BYTES_PREVIEW: usize = 16;
 /// Integers JSON numbers hold exactly.
 const MAX_SAFE_INT: i64 = 9_007_199_254_740_991;
@@ -57,7 +57,7 @@ pub enum Cell {
     F64(f64),
     Decimal(String),
     Text(String),
-    /// Length and the first bytes.
+    /// Its length and its bytes – all of them; a row shows the first [`BYTES_PREVIEW`].
     Bytes(usize, Vec<u8>),
     Ts(NaiveDateTime),
     TsTz(DateTime<FixedOffset>),
@@ -84,7 +84,21 @@ impl Cell {
     }
 
     pub fn bytes(b: &[u8]) -> Cell {
-        Cell::Bytes(b.len(), b[..b.len().min(BYTES_PREVIEW)].to_vec())
+        Cell::Bytes(b.len(), b.to_vec())
+    }
+
+    /// The whole value, when a row does not show all of it: its bytes, and whether they are binary
+    /// (else UTF-8 text). The result store keeps these apart from the rows (prompt 026).
+    pub fn overflow(&self) -> Option<(&[u8], bool)> {
+        match self {
+            Cell::Text(s) | Cell::Json(s)
+                if s.len() > MAX_TEXT_CHARS && s.char_indices().nth(MAX_TEXT_CHARS).is_some() =>
+            {
+                Some((s.as_bytes(), false))
+            }
+            Cell::Bytes(_, all) if all.len() > BYTES_PREVIEW => Some((all, true)),
+            _ => None,
+        }
     }
 
     /// Roughly what the value takes in memory and on the bridge.
@@ -92,7 +106,7 @@ impl Cell {
         match self {
             Cell::Text(s) | Cell::Json(s) | Cell::Decimal(s) | Cell::Uuid(s) => 8 + s.len(),
             Cell::Unreadable(s) => 8 + s.len(),
-            Cell::Bytes(_, head) => 16 + head.len() * 2,
+            Cell::Bytes(_, all) => 16 + all.len(),
             _ => 16,
         }
     }
@@ -111,13 +125,24 @@ impl Serialize for Cell {
             Cell::F64(f) if f.is_finite() => s.serialize_f64(*f),
             // NaN and the infinities have no JSON number
             Cell::F64(f) => s.serialize_str(&f.to_string()),
-            Cell::Decimal(t) | Cell::Text(t) | Cell::Json(t) | Cell::Uuid(t) => s.serialize_str(t),
+            Cell::Decimal(t) | Cell::Uuid(t) => s.serialize_str(t),
+            // a row holds the start of a long text; the whole value is asked for apart
+            Cell::Text(t) | Cell::Json(t) => match t.char_indices().nth(MAX_TEXT_CHARS) {
+                Some((at, _)) if t.len() > MAX_TEXT_CHARS => {
+                    s.serialize_str(&format!("{}…", &t[..at]))
+                }
+                _ => s.serialize_str(t),
+            },
             Cell::Ts(t) => s.serialize_str(&t.format("%Y-%m-%d %H:%M:%S%.f").to_string()),
             Cell::TsTz(t) => s.serialize_str(&t.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string()),
             Cell::Date(d) => s.serialize_str(&d.format("%Y-%m-%d").to_string()),
             Cell::Time(t) => s.serialize_str(&t.format("%H:%M:%S%.f").to_string()),
-            Cell::Bytes(len, head) => {
-                let hex: String = head.iter().map(|b| format!("{b:02x}")).collect();
+            Cell::Bytes(len, all) => {
+                let hex: String = all
+                    .iter()
+                    .take(BYTES_PREVIEW)
+                    .map(|b| format!("{b:02x}"))
+                    .collect();
                 let mut m = s.serialize_map(Some(2))?;
                 m.serialize_entry("bytes", len)?;
                 m.serialize_entry("hex", &hex)?;
@@ -221,12 +246,10 @@ impl Budget {
     }
 }
 
-/// Text of a cell: cut at [`MAX_TEXT_CHARS`] with a mark.
+/// Text of a cell: the whole value (until prompt 026 it was cut here; now a row cuts it when it is
+/// written, see `Serialize for Cell`).
 pub fn text(s: &str) -> String {
-    match s.char_indices().nth(MAX_TEXT_CHARS) {
-        None => s.to_string(),
-        Some((at, _)) => format!("{}…", &s[..at]),
-    }
+    s.to_string()
 }
 
 /// Bytes that should be UTF-8; anything else is replaced, never an error.
@@ -352,11 +375,24 @@ mod tests {
     }
 
     #[test]
-    fn long_text_is_cut_at_a_character() {
+    fn long_text_is_whole_in_the_cell_and_cut_at_a_character_in_a_row() {
         let long = "ä".repeat(MAX_TEXT_CHARS + 10);
-        let cut = text(&long);
+        let cell = Cell::Text(text(&long));
+        assert_eq!(cell, Cell::Text(long.clone()));
+        let row = serde_json::to_value(&cell).unwrap();
+        let cut = row.as_str().unwrap();
         assert_eq!(cut.chars().count(), MAX_TEXT_CHARS + 1);
         assert!(cut.ends_with('…'));
+        // what a row does not show whole is handed to the store apart
+        assert_eq!(cell.overflow(), Some((long.as_bytes(), false)));
+        assert_eq!(Cell::Text("ä".repeat(MAX_TEXT_CHARS)).overflow(), None);
+        assert_eq!(
+            Cell::Json(long.clone()).overflow(),
+            Some((long.as_bytes(), false))
+        );
+        let blob: Vec<u8> = (0u8..40).collect();
+        assert_eq!(Cell::bytes(&blob).overflow(), Some((&blob[..], true)));
+        assert_eq!(Cell::bytes(&blob[..16]).overflow(), None);
         assert_eq!(text("kurz"), "kurz");
         assert_eq!(text_bytes(&[0x66, 0xff, 0x6f]), "f\u{fffd}o");
     }

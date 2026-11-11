@@ -1,7 +1,15 @@
 import { Injectable } from '@angular/core';
 import { Channel } from '@tauri-apps/api/core';
 import { call } from '../backend/call';
-import { BoundValue, RowWindow, RunEvent, RunOutcome, TxState, Verdict } from './query.models';
+import {
+  BoundValue,
+  CellValuePart,
+  RowWindow,
+  RunEvent,
+  RunOutcome,
+  TxState,
+  Verdict,
+} from './query.models';
 
 /** What lets a guarded statement run (prompt 012). */
 export interface RunGuard {
@@ -71,6 +79,22 @@ export abstract class QueryApi {
   abstract window(resultId: number, from: number, count: number): Promise<RowWindow>;
   /** Forgets results that are no longer shown. */
   abstract free(resultIds: readonly number[]): Promise<void>;
+  /**
+   * A part of the whole value of a cell (prompt 026): at most `max` bytes from byte `from` (a text part
+   * ends at a character, so it can be a few bytes longer). Rejects with `not_found` for a cell that is not
+   * there and `unknown_result` for a result that is gone.
+   */
+  abstract cellValue(
+    resultId: number,
+    row: number,
+    col: number,
+    from: number,
+    max: number,
+  ): Promise<CellValuePart>;
+  /** Writes the whole value into a file (text as UTF-8, binary data raw); resolves with the bytes. */
+  abstract saveCellValue(resultId: number, row: number, col: number, path: string): Promise<number>;
+  /** Puts the whole text of a cell on the clipboard; resolves with its characters. */
+  abstract copyCellValue(resultId: number, row: number, col: number): Promise<number>;
 }
 
 @Injectable()
@@ -136,5 +160,23 @@ export class TauriQueryApi extends QueryApi {
 
   free(resultIds: readonly number[]): Promise<void> {
     return call('free_results', { resultIds });
+  }
+
+  cellValue(
+    resultId: number,
+    row: number,
+    col: number,
+    from: number,
+    max: number,
+  ): Promise<CellValuePart> {
+    return call('cell_value', { resultId, row, col, from, max });
+  }
+
+  saveCellValue(resultId: number, row: number, col: number, path: string): Promise<number> {
+    return call('save_cell_value', { resultId, row, col, path });
+  }
+
+  copyCellValue(resultId: number, row: number, col: number): Promise<number> {
+    return call('copy_cell_value', { resultId, row, col });
   }
 }

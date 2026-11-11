@@ -9,6 +9,7 @@
 use crate::db::value::{Cell, Column, RowSink};
 use crate::error::{AppError, AppResult, ErrorCode};
 use parking_lot::Mutex;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -58,9 +59,76 @@ struct ResultData {
     file: Option<File>,
     path: PathBuf,
     limits: StoreLimits,
+    /// Values a row does not show whole (prompt 026): where each lies in the file of whole values. In the
+    /// order they came, so sorted by row and column.
+    whole: Vec<Whole>,
+    /// The file of whole values: always a file – such values are large by definition.
+    whole_file: Option<File>,
+    whole_path: PathBuf,
+    whole_bytes: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Whole {
+    row: u64,
+    col: u32,
+    offset: u64,
+    len: u64,
+    binary: bool,
 }
 
 impl ResultData {
+    /// Keeps the whole value of a cell whose row shows only its start.
+    fn keep_whole(
+        &mut self,
+        row: u64,
+        col: u32,
+        bytes: &[u8],
+        binary: bool,
+    ) -> std::io::Result<()> {
+        if self.whole_file.is_none() {
+            self.whole_file = Some(
+                File::options()
+                    .read(true)
+                    .write(true)
+                    .create_new(true)
+                    .open(&self.whole_path)?,
+            );
+        }
+        let Some(file) = &mut self.whole_file else {
+            return Ok(());
+        };
+        file.seek(SeekFrom::Start(self.whole_bytes))?;
+        file.write_all(bytes)?;
+        self.whole.push(Whole {
+            row,
+            col,
+            offset: self.whole_bytes,
+            len: bytes.len() as u64,
+            binary,
+        });
+        self.whole_bytes += bytes.len() as u64;
+        Ok(())
+    }
+
+    fn whole_of(&self, row: u64, col: u32) -> Option<Whole> {
+        self.whole
+            .binary_search_by(|w| (w.row, w.col).cmp(&(row, col)))
+            .ok()
+            .map(|i| self.whole[i])
+    }
+
+    fn read_whole(&mut self, whole: Whole, from: u64, len: u64) -> std::io::Result<Vec<u8>> {
+        let from = from.min(whole.len);
+        let len = len.min(whole.len - from);
+        let mut out = vec![0u8; len as usize];
+        if let Some(file) = &mut self.whole_file {
+            file.seek(SeekFrom::Start(whole.offset + from))?;
+            file.read_exact(&mut out)?;
+        }
+        Ok(out)
+    }
+
     fn rows(&self) -> u64 {
         (self.offsets.len() - 1) as u64
     }
@@ -117,6 +185,9 @@ impl Drop for ResultData {
     fn drop(&mut self) {
         if self.file.take().is_some() {
             let _ = fs::remove_file(&self.path);
+        }
+        if self.whole_file.take().is_some() {
+            let _ = fs::remove_file(&self.whole_path);
         }
     }
 }
@@ -182,6 +253,10 @@ impl ResultStore {
             file: None,
             path: self.dir.join(format!("{id}.rows")),
             limits: self.limits,
+            whole: Vec::new(),
+            whole_file: None,
+            whole_path: self.dir.join(format!("{id}.values")),
+            whole_bytes: 0,
         };
         self.results.lock().insert(id, Arc::new(Mutex::new(data)));
         Ok(id)
@@ -236,6 +311,112 @@ impl ResultStore {
         }
         out.push(']');
         Ok(out)
+    }
+
+    /// A part of the value of one cell – the whole value, not what a row shows of it (prompt 026).
+    /// `from` and `max` are bytes; a text part ends at a character, so `to` can lie a few bytes behind
+    /// `from + max`. Ask on from `to` until it is `total`.
+    pub fn value(&self, id: u64, row: u64, col: u32, from: u64, max: u64) -> AppResult<CellValue> {
+        let data = self.get(id)?;
+        let mut data = data.lock();
+        if row >= data.rows() || col as usize >= data.columns.len() {
+            return Err(AppError::new(ErrorCode::NotFound, "no such cell"));
+        }
+        let max = max.clamp(1, MAX_VALUE_PART);
+        if let Some(whole) = data.whole_of(row, col) {
+            let from = from.min(whole.len);
+            // a few bytes more: a text part ends at a character
+            let mut bytes = data.read_whole(whole, from, max + 4).map_err(io)?;
+            if whole.binary {
+                bytes.truncate(max as usize);
+                let image = if from == 0 {
+                    let head = data
+                        .read_whole(whole, 0, crate::image_info::HEAD_BYTES as u64)
+                        .map_err(io)?;
+                    crate::image_info::image_info(&head)
+                } else {
+                    None
+                };
+                return Ok(CellValue::bytes(whole.len, from, &bytes, image));
+            }
+            return Ok(CellValue::text_part(whole.len, from, bytes, max as usize));
+        }
+        // the row shows the cell whole
+        let stored = data.read(row, row + 1).map_err(io)?;
+        let cells: Vec<serde_json::Value> = serde_json::from_slice(&stored)
+            .map_err(|e| AppError::new(ErrorCode::Io, format!("a stored row is damaged: {e}")))?;
+        let cell = cells
+            .get(col as usize)
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        Ok(match cell {
+            serde_json::Value::Null => CellValue::empty("null"),
+            serde_json::Value::String(s) => {
+                let total = s.len() as u64;
+                let from = from.min(total) as usize;
+                CellValue::text_part(
+                    total,
+                    from as u64,
+                    s.as_bytes()[from..].to_vec(),
+                    max as usize,
+                )
+            }
+            serde_json::Value::Object(o) if o.contains_key("unreadable") => CellValue {
+                text: o
+                    .get("unreadable")
+                    .and_then(|t| t.as_str())
+                    .map(str::to_owned),
+                ..CellValue::empty("unreadable")
+            },
+            serde_json::Value::Object(o) => {
+                let bytes = data_encoding::HEXLOWER_PERMISSIVE
+                    .decode(
+                        o.get("hex")
+                            .and_then(|h| h.as_str())
+                            .unwrap_or("")
+                            .as_bytes(),
+                    )
+                    .unwrap_or_default();
+                let from = from.min(bytes.len() as u64) as usize;
+                let image = crate::image_info::image_info(&bytes);
+                CellValue::bytes(bytes.len() as u64, from as u64, &bytes[from..], image)
+            }
+            other => {
+                let s = other.to_string();
+                let total = s.len() as u64;
+                CellValue::text_part(total, 0, s.into_bytes(), max as usize)
+            }
+        })
+    }
+
+    /// Calls `f` with the whole value of a cell piece by piece (for a file or the clipboard); answers with
+    /// whether it is binary. `f` returns `false` to stop.
+    pub fn each_part(
+        &self,
+        id: u64,
+        row: u64,
+        col: u32,
+        f: &mut dyn FnMut(&[u8]) -> bool,
+    ) -> AppResult<bool> {
+        let mut from = 0;
+        loop {
+            let part = self.value(id, row, col, from, MAX_VALUE_PART)?;
+            let binary = part.kind == "bytes";
+            let bytes = match (&part.text, &part.base64) {
+                (Some(text), _) if part.kind == "text" => text.as_bytes().to_vec(),
+                (_, Some(b64)) => data_encoding::BASE64
+                    .decode(b64.as_bytes())
+                    .unwrap_or_default(),
+                _ => Vec::new(),
+            };
+            if !bytes.is_empty() && !f(&bytes) {
+                return Ok(binary);
+            }
+            if part.to >= part.total || part.to <= from {
+                return Ok(binary);
+            }
+            from = part.to;
+        }
     }
 
     /// Forgets a result and removes its file. Unknown ids are fine (freed twice).
@@ -321,6 +502,84 @@ fn push_row(out: &mut String, row: &str) {
             out.push_str(&serde_json::to_string(&cells).unwrap_or_else(|_| "[]".to_string()));
         }
         Err(_) => out.push_str(row),
+    }
+}
+
+/// Bytes of a value handed out in one piece at most.
+pub const MAX_VALUE_PART: u64 = 8 * 1024 * 1024;
+
+/// A part of the value of a cell, as it crosses the bridge (prompt 026).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CellValue {
+    /// `null`, `text`, `bytes` or `unreadable` (then `text` names the type).
+    pub kind: &'static str,
+    /// Bytes of the whole value (of a text: in UTF-8).
+    pub total: u64,
+    /// The bytes this part covers.
+    pub from: u64,
+    pub to: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// Binary data, Base64.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base64: Option<String>,
+    /// What picture a binary value is, read from its header (only with the first part).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<crate::image_info::ImageInfo>,
+}
+
+impl CellValue {
+    fn empty(kind: &'static str) -> Self {
+        Self {
+            kind,
+            total: 0,
+            from: 0,
+            to: 0,
+            text: None,
+            base64: None,
+            image: None,
+        }
+    }
+
+    fn bytes(
+        total: u64,
+        from: u64,
+        part: &[u8],
+        image: Option<crate::image_info::ImageInfo>,
+    ) -> Self {
+        Self {
+            total,
+            from,
+            to: from + part.len() as u64,
+            base64: Some(data_encoding::BASE64.encode(part)),
+            image,
+            ..Self::empty("bytes")
+        }
+    }
+
+    /// `bytes` start at `from` and may hold a little more than `max`: the part ends at the first
+    /// character boundary at or behind `max` (or where the bytes end).
+    fn text_part(total: u64, from: u64, mut bytes: Vec<u8>, max: usize) -> Self {
+        // a start inside a character (only a caller that does not use `to` gets there): skip its rest
+        let lead = bytes
+            .iter()
+            .take(3)
+            .take_while(|b| (**b & 0xc0) == 0x80)
+            .count();
+        let mut end = max.min(bytes.len());
+        while end < bytes.len() && (bytes[end] & 0xc0) == 0x80 {
+            end += 1;
+        }
+        bytes.truncate(end);
+        let text = String::from_utf8_lossy(&bytes[lead.min(bytes.len())..]).into_owned();
+        Self {
+            total,
+            from,
+            to: from + end as u64,
+            text: Some(text),
+            ..Self::empty("text")
+        }
     }
 }
 
@@ -423,6 +682,26 @@ impl RowSink for StoreSink<'_> {
             return false;
         }
         let limits = self.store.limits;
+        // what the row will not show whole is kept apart, under the number this row gets
+        let mut whole_bytes = 0u64;
+        for (col, cell) in cells.iter().enumerate() {
+            let Some((bytes, binary)) = cell.overflow() else {
+                continue;
+            };
+            whole_bytes += bytes.len() as u64;
+            if self.bytes + whole_bytes > limits.max_bytes {
+                self.full = true;
+                self.flush();
+                return false;
+            }
+            if let Some(data) = &self.data
+                && let Err(e) = data.lock().keep_whole(self.rows, col as u32, bytes, binary)
+            {
+                self.error = Some(io(e));
+                return false;
+            }
+        }
+        self.bytes += whole_bytes;
         let before = self.buffer.len();
         if serde_json::to_writer(&mut self.buffer, &cells).is_err() {
             self.buffer.truncate(before);
@@ -637,5 +916,143 @@ mod tests {
         let _store = ResultStore::new(dir.path());
         assert!(!old.exists());
         assert!(fresh.exists());
+    }
+
+    /// Prompt 026: the rows stay small, the whole value is there on request.
+    #[test]
+    fn keeps_whole_values_apart_and_hands_them_out_in_parts() {
+        use crate::db::value::{MAX_TEXT_CHARS, text};
+        let dir = tempdir().unwrap();
+        let store = ResultStore::new(dir.path());
+        let report = |_: Progress| {};
+        let mut sink = StoreSink::new(&store, &report);
+        sink.start(&columns());
+        // row 0: short values; row 1: a long text with characters of several bytes; row 2: binary data
+        let long: String = "ä😀x".repeat(MAX_TEXT_CHARS);
+        let blob: Vec<u8> = (0..100_000u32).map(|n| (n % 251) as u8).collect();
+        assert!(sink.row(vec![Cell::I64(1), Cell::Text("kurz".into())]));
+        assert!(sink.row(vec![Cell::I64(2), Cell::Text(text(&long))]));
+        assert!(sink.row(vec![Cell::Null, Cell::bytes(&blob)]));
+        assert!(sink.row(vec![Cell::I64(4), Cell::bytes(&[1, 2, 3])]));
+        sink.finish();
+        let id = sink.result_id().unwrap();
+        // the window still gets the start of the long text and of the bytes
+        let window: Value = serde_json::from_str(&store.window(id, 0, 10).unwrap()).unwrap();
+        assert_eq!(
+            window[1][1].as_str().unwrap().chars().count(),
+            WINDOW_TEXT_CHARS + 1
+        );
+        assert_eq!(window[2][1]["bytes"], json!(100_000));
+        // a short value comes from its row
+        let short = store.value(id, 0, 1, 0, 1000).unwrap();
+        assert_eq!(
+            (short.kind, short.text.as_deref(), short.total),
+            ("text", Some("kurz"), 4)
+        );
+        assert_eq!(
+            store.value(id, 0, 0, 0, 1000).unwrap().text.as_deref(),
+            Some("1")
+        );
+        assert_eq!(store.value(id, 2, 0, 0, 1000).unwrap().kind, "null");
+        let few = store.value(id, 3, 1, 0, 1000).unwrap();
+        assert_eq!(
+            (few.kind, few.total, few.base64.as_deref()),
+            ("bytes", 3, Some("AQID"))
+        );
+        // the long text: piece by piece, each ending at a character, together the whole value
+        let mut got = String::new();
+        let mut from = 0;
+        let mut parts = 0;
+        loop {
+            let part = store.value(id, 1, 1, from, 1000).unwrap();
+            assert_eq!(part.total, long.len() as u64);
+            assert_eq!(part.from, from);
+            got.push_str(part.text.as_deref().unwrap());
+            parts += 1;
+            if part.to >= part.total {
+                break;
+            }
+            assert!(part.to > from && part.to - from <= 1004);
+            from = part.to;
+        }
+        assert_eq!(got, long);
+        assert!(parts > 200);
+        // the bytes: every one of them
+        let mut all = Vec::new();
+        let binary = store.each_part(id, 2, 1, &mut |b| {
+            all.extend_from_slice(b);
+            true
+        });
+        assert!(binary.unwrap());
+        assert_eq!(all, blob);
+        let mut text_bytes = Vec::new();
+        assert_eq!(
+            store.each_part(id, 1, 1, &mut |b| {
+                text_bytes.extend_from_slice(b);
+                true
+            }),
+            Ok(false)
+        );
+        assert_eq!(text_bytes, long.as_bytes());
+        // a place behind the end, a cell that is not there
+        let end = store.value(id, 1, 1, u64::MAX, 10).unwrap();
+        assert_eq!(
+            (end.from, end.to, end.text.as_deref()),
+            (end.total, end.total, Some(""))
+        );
+        assert_eq!(
+            store.value(id, 9, 0, 0, 10).unwrap_err().code,
+            ErrorCode::NotFound
+        );
+        assert_eq!(
+            store.value(id, 0, 9, 0, 10).unwrap_err().code,
+            ErrorCode::NotFound
+        );
+        assert_eq!(
+            store.value(999, 0, 0, 0, 10).unwrap_err().code,
+            ErrorCode::UnknownResult
+        );
+        // the file of whole values goes with the result
+        let values = dir
+            .path()
+            .join("results")
+            .join(std::process::id().to_string())
+            .join(format!("{id}.values"));
+        assert!(values.exists());
+        // the sink holds the result too: it is gone when both let go
+        drop(sink);
+        store.free(id);
+        assert!(!values.exists());
+    }
+
+    #[test]
+    fn says_what_picture_a_binary_value_is_and_counts_whole_values_against_the_limit() {
+        let dir = tempdir().unwrap();
+        let limits = StoreLimits {
+            max_bytes: 50_000,
+            ..StoreLimits::default()
+        };
+        let store = ResultStore::with_limits(dir.path(), limits);
+        let report = |_: Progress| {};
+        let mut sink = StoreSink::new(&store, &report);
+        sink.start(&columns());
+        let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR\0\0\x02\x80\0\0\x01\xe0".to_vec();
+        png.resize(20_000, 7);
+        assert!(sink.row(vec![Cell::I64(1), Cell::bytes(&png)]));
+        assert!(sink.row(vec![Cell::I64(2), Cell::bytes(&png)]));
+        // the third does not fit any more: the result is cut there
+        assert!(!sink.row(vec![Cell::I64(3), Cell::bytes(&png)]));
+        assert!(sink.full);
+        sink.finish();
+        let id = sink.result_id().unwrap();
+        assert_eq!(store.rows(id).unwrap(), 2);
+        let first = store.value(id, 1, 1, 0, 1000).unwrap();
+        let image = first.image.unwrap();
+        assert_eq!(
+            (image.mime, image.width, image.height),
+            ("image/png", 640, 480)
+        );
+        // only the first part says it
+        assert!(store.value(id, 1, 1, 1000, 1000).unwrap().image.is_none());
     }
 }
