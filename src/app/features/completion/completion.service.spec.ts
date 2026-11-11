@@ -126,6 +126,23 @@ describe('CompletionService', () => {
     expect(await service.provide('pg', 'postgres', ask('SELECT * FROM ▮', true))).toBeNull();
   });
 
+  it('opens by itself after a blank only where a table is due', async () => {
+    const typed = (text: string, character: string) =>
+      service.provide('pg', 'postgres', { ...ask(text), triggerCharacter: character });
+    expect((await typed('SELECT * FROM ▮', ' '))?.items[0].label).toBe('orders');
+    expect((await typed('SELECT * FROM orders o JOIN ▮', ' '))?.items.length).toBeGreaterThan(0);
+    expect((await typed('INSERT INTO orders (▮', '('))?.items.length).toBeGreaterThan(0);
+    // not after every word …
+    expect(await typed('SELECT ▮', ' ')).toBeNull();
+    expect(await typed('SELECT * FROM orders ▮', ' ')).toBeNull();
+    expect(await typed('SELECT * FROM orders WHERE id = ▮', ' ')).toBeNull();
+    // … but a dot always asks, and so does the user
+    expect((await typed('SELECT o.▮ FROM orders o', '.'))?.items.length).toBe(3);
+    expect(
+      (await service.provide('pg', 'postgres', ask('SELECT ▮ FROM orders')))?.items.length,
+    ).toBeGreaterThan(3);
+  });
+
   it('reads only the lines around the caret, and of them only the statement it is in', async () => {
     const before = Array.from({ length: 5000 }, (_, i) => `SELECT ${i} FROM customer;`).join('\n');
     const question = ask(`${before}\nSELECT o.▮ FROM orders o;\nSELECT 1 FROM customer c;`);

@@ -135,7 +135,8 @@ export class SqlEditor implements OnInit {
       }
       const provider = (context: CompletionContext) =>
         this.completion.provide(this.connectionId(), this.dialect(), context);
-      provider.triggerCharacters = ['.'];
+      // a dot always asks; a blank, a comma and `(` only where a table or a column list is due
+      provider.triggerCharacters = ['.', ' ', ',', '('];
       editor.completionProvider = provider;
     });
   }

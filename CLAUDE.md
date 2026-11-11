@@ -35,11 +35,12 @@
   **Menüleiste** (macOS nativ, sonst im Fenster) und **Kontextmenüs** aus einem Menümodell (Prompt 018);
   **Objekt-Details** (Spalten, Indizes, Constraints, Beziehungen, Rechte, Statistik) und **DDL** je Objekt
   (Prompt 019); **Springen zu allem** (`Mod+P`): Tabellen, Views, Routinen, Spalten, Tabs, Verbindungen über
-  einen Namensindex im Backend, in der gemeinsamen Palette (Prompt 020);
+  einen Namensindex im Backend, in der gemeinsamen Palette (Prompt 020); **Vervollständigung**, die das Schema
+  kennt: Tabellen, Spalten je Alias, JOIN aus Fremdschlüsseln, je Dialekt (Prompt 021);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–020),
+  erledigt: 001–021),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -93,6 +94,9 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/theme/              Farbschemata: tokens.ts (Katalog), themes/*.json, theme-logic.ts (rein),
                                ThemeService (Root: Auswahl, Vorschau, eigene Schemata), ThemeApi (themes.json),
                                contrast-pairs.json
+  app/features/completion/     sql-lex.ts, sql-context.ts (rein: was an der Stelle passt, Katalog
+                               sql-context.cases.json), suggest.ts (rein: die Liste, suggest.cases.json),
+                               sql-words.ts (Wörter je Dialekt), CompletionService (Root: liest, was fehlt)
   app/features/connections/    Verbindungsliste (Seitenleiste), Verbindungsdialog, Passwortabfrage,
                                connection-logic.ts (rein: Gruppen, Prüfung, Vorschläge)
   app/features/details/        DetailsDialog (Listen als Gitter, Filter, Beziehungen, DDL), ObjectDetailsService

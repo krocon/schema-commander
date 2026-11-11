@@ -12,6 +12,8 @@ import { ForeignKey, Meta, RoutineMeta, Suggestion, TableMeta, needsOf, suggest 
 export interface ProviderContext {
   readonly position: { readonly line: number; readonly ch: number };
   readonly word: string;
+  /** The character whose typing asked (`.`, a blank …); `null` when the user asked or typed a word. */
+  readonly triggerCharacter?: string | null;
   readonly signal: AbortSignal;
   /** Lines `from..to` (1-based, inclusive). */
   getSlice(from: number, to: number): Promise<string>;
@@ -27,6 +29,9 @@ export interface ProvidedItem {
   sortText: string;
   filterText?: string;
 }
+
+/** Where the list opens by itself after a blank: a table is named, or the columns of an INSERT. */
+const OPENS_ITSELF: ReadonlySet<string> = new Set(['table', 'join', 'insertColumns']);
 
 /** Lines read around the caret: the statement being written is found in them. */
 export const LINES_BEFORE = 400;
@@ -84,6 +89,10 @@ export class CompletionService {
       return null;
     }
     if (sql.expect === 'none' || context.signal.aborted) return null;
+    // a blank, a comma or a parenthesis opens the list only where a name of the database is due –
+    // behind FROM, JOIN, INTO … –, never after every word
+    const quiet = context.triggerCharacter && context.triggerCharacter !== '.';
+    if (quiet && !OPENS_ITSELF.has(sql.expect)) return null;
     const meta = connectionId ? await this.meta(connectionId, sql, context.signal) : null;
     if (context.signal.aborted) return null;
     const list = suggest(sql, meta?.meta ?? this.offline(), {
