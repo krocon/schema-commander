@@ -31,6 +31,8 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   OS and an editor for your own shortcuts (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>S</kbd>)
 - Split view: two tab groups side by side or stacked, each tab on its own connection; the result below or beside
   the editor, hidden or maximised; the sidebar shows connections and schema or the history; a zen mode
+- Errors where they happen: the place the database names is underlined in the editor and the caret jumps
+  there; code, detail and hint of the server are shown apart; the running statement is highlighted
 - Completion that knows the schema: tables behind `FROM`, the columns of an alias behind `o.`, the join
   condition from a foreign key behind `JOIN`, keywords and types per database
 - Go to anything (<kbd>Ctrl/⌘</kbd>+<kbd>P</kbd>): a few letters find a table, view, routine, column, open tab

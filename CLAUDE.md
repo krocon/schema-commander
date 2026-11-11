@@ -36,11 +36,13 @@
   **Objekt-Details** (Spalten, Indizes, Constraints, Beziehungen, Rechte, Statistik) und **DDL** je Objekt
   (Prompt 019); **Springen zu allem** (`Mod+P`): Tabellen, Views, Routinen, Spalten, Tabs, Verbindungen über
   einen Namensindex im Backend, in der gemeinsamen Palette (Prompt 020); **Vervollständigung**, die das Schema
-  kennt: Tabellen, Spalten je Alias, JOIN aus Fremdschlüsseln, je Dialekt (Prompt 021);
+  kennt: Tabellen, Spalten je Alias, JOIN aus Fremdschlüsseln, je Dialekt (Prompt 021); **Fehler an der
+  Stelle**: Details der Datenbank (Code, Detail, Hinweis, Position), Markierung im Editor, laufende Anweisung
+  (Prompt 022);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–021),
+  erledigt: 001–022),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -82,7 +84,9 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                ExportApi (export_result, export_query, cancel_job, reveal_export)
   app/core/connections/        Profile (Modell), ConnectionsApi, ConnectionsStore (Root: Profile, Zustände, aktive
                                Verbindung, Passwortabfrage)
-  app/core/errors/             AppError + toAppError (spiegelt src-tauri/src/error.rs), error-texts (Text je Code)
+  app/core/errors/             AppError + ErrorDetails + toAppError (spiegelt src-tauri/src/error.rs), error-texts
+                               (Text je Code), error-position.ts (rein: Angabe der Datenbank → Stelle im Editor,
+                               Katalog error-position.cases.json)
   app/core/i18n/               i18n.ts (translatable, phrasebook, language, locale), common-texts,
                                catalogs.spec.ts (jeder Katalog vollständig in beiden Sprachen)
   app/core/history/            HistoryApi (history_*) + DTOs – spiegelt history.rs
@@ -156,7 +160,7 @@ src-tauri/                     Rust
   src/db/profiles.rs           connections.json (nie ein Geheimnis); db/secrets.rs: Secret, Schlüsselbund
   tests/db_integration.rs      Treiber gegen echte Server (ignoriert; pnpm rust:test:db)
   src/themes.rs                eigene Farbschemata: themes.json, Grenzen, Import/Export (rein, getestet)
-  src/error.rs                 AppError { code, message }
+  src/error.rs                 AppError { code, message, details } – details: was die Datenbank zum Fehler sagt
   capabilities/default.json    minimale Rechte (core:default, store:default, dialog:allow-open/-save)
   tauri.conf.json              Fenster, CSP, Bundle (Version aus package.json)
 scripts/                       check-contrast.mjs + theme-lib.mjs, version.mjs, csp-preview.mjs (+ Tests),
