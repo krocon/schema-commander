@@ -28,7 +28,6 @@ import {
   mapOffset,
   offsetAt,
   placeIn,
-  toggleComment,
   trimmedSpan,
 } from '../format/format-logic';
 import { EDITOR_COLORS } from './editor-colors';
@@ -72,6 +71,7 @@ const RUNNING_MARKS = 'sql-running';
         [attr.line-numbers]="look().editorLineNumbers"
         [attr.word-wrap]="look().editorWordWrap ? '' : null"
         [attr.word-suggest]="look().editorSuggest ? '' : null"
+        [attr.line-comment]="dialect() === 'mysql' ? '-- #' : null"
         (ed-caret)="onCaret($event)"
         (ed-change)="onChange($event)"
       />
@@ -437,32 +437,20 @@ export class SqlEditor implements OnInit {
     if (this.revision !== revision) return 'stale';
     if (formatted === text) return 'unchanged';
     await editor.replaceRange(start, placeIn(text, text.length, start), formatted);
-    // The caret goes where it stood in the text. First to the start of its line: the editor stays
-    // scrolled to where a line ended that is gone now, and only showing column 1 brings the view back.
+    // the caret goes where it stood in the text
     const to = placeIn(formatted, mapOffset(text, formatted, caret), start);
-    await editor.goTo(to.line, 1);
     await editor.goTo(to.line, to.ch);
     return 'done';
   }
 
-  /** Comments the lines of the selection (or the line of the caret) out or in, as one undo step. */
+  /**
+   * Comments the lines of the selection (or the line of the caret) out or in – the editor's own action
+   * (editlicious-editor 1.3): one undo step, the selection stays on its text.
+   */
   async toggleComment(): Promise<void> {
     const editor = this.editor()?.nativeElement;
     if (!editor || this.readonly()) return;
-    const selection = await editor.getSelection();
-    const first = selection.start.line;
-    // a selection that ends at the start of a line does not mean that line
-    const last =
-      selection.end.line > first && selection.end.ch === 1
-        ? selection.end.line - 1
-        : selection.end.line;
-    const lines = await editor.getSlice(first, last);
-    // the break behind the last line is not part of it
-    const text = lines.replace(/\r?\n$/, '');
-    const out = toggleComment(text, this.dialect());
-    if (out === text) return;
-    const start = { line: first, ch: 1 };
-    await editor.replaceRange(start, placeIn(text, text.length, start), out);
+    await editor.runAction('edit.toggleComment');
   }
 
   /** Asks to run the whole script, statement by statement (SQL Server: batch by batch). */

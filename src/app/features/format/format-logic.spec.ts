@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS } from '../../core/settings/settings.models';
-import { mapOffset, offsetAt, placeIn, styleOf, toggleComment, trimmedSpan } from './format-logic';
+import { mapOffset, offsetAt, placeIn, styleOf, trimmedSpan } from './format-logic';
 
 describe('format-logic', () => {
   it('takes the style from the settings', () => {
@@ -65,40 +65,6 @@ describe('format-logic', () => {
       expect(mapOffset('  select 1', 'SELECT 1', 2)).toBe(0);
       // behind a word, before a blank: behind that word
       expect(mapOffset(before, after, before.indexOf(' from'))).toBe(after.indexOf('\nFROM'));
-    });
-  });
-
-  describe('toggleComment', () => {
-    it('comments lines out where the least indented one starts', () => {
-      expect(toggleComment('  select a\n    , b\n\n  from t', 'postgres')).toBe(
-        '  -- select a\n  --   , b\n\n  -- from t',
-      );
-    });
-
-    it('comments in again when every line with text is a comment', () => {
-      expect(toggleComment('  -- select a\n  --   , b\n\n  --from t', 'postgres')).toBe(
-        '  select a\n    , b\n\n  from t',
-      );
-    });
-
-    it('is its own inverse and keeps the line breaks', () => {
-      const text = 'select 1\r\n  from t\r\n';
-      const out = toggleComment(text, 'sqlserver');
-      expect(out).toBe('-- select 1\r\n--   from t\r\n');
-      expect(toggleComment(out, 'sqlserver')).toBe(text);
-    });
-
-    it('comments a mixed block out as a whole', () => {
-      expect(toggleComment('-- a\nb', 'sqlite')).toBe('-- -- a\n-- b');
-    });
-
-    it('knows # in MySQL only', () => {
-      expect(toggleComment('# a', 'mysql')).toBe('a');
-      expect(toggleComment('# a', 'postgres')).toBe('-- # a');
-    });
-
-    it('leaves empty text alone', () => {
-      expect(toggleComment(' \n', 'postgres')).toBe(' \n');
     });
   });
 });

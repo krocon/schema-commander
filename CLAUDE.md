@@ -118,7 +118,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                sql-split.ts (rein: Skripte je Dialekt zerlegen, Katalog sql-split.cases.json)
   app/features/export/         ExportDialog, ExportService (Root: ein Job, Statuszeile), export-logic.ts (rein)
   app/features/format/         FormatService (Root: ein Job, Statuszeile), format-logic.ts (rein: Stil,
-                               Cursor nach dem Formatieren, Zeilenkommentar)
+                               Cursor nach dem Formatieren)
   app/features/guard/          GuardDialog (Rückfrage), GuardService, guard-logic.ts (rein)
   app/features/history/        HistoryDialog (Listbox, Vorschau), HistoryPanel (Ansicht der Seitenleiste),
                                HistoryService (Root: aufzeichnen, blättern), history-logic.ts (rein)

@@ -1,11 +1,11 @@
-import { FormatDialect, FormatStyle } from '../../core/format/format-api';
+import { FormatStyle } from '../../core/format/format-api';
 import { Settings } from '../../core/settings/settings.models';
 
 export { type EdPlace, offsetAt, placeIn } from '../../core/text/places';
 
 /**
  * What formatting needs around the formatter itself (prompt 023; the formatter is `src-tauri/src/format.rs`):
- * the style from the settings, places in the editor's way of counting, and the line comment. Pure.
+ * the style from the settings, and where the caret stands after formatting. Pure.
  */
 
 export function styleOf(settings: Settings): FormatStyle {
@@ -48,45 +48,6 @@ export function mapOffset(before: string, after: string, offset: number): number
     end < before.length && !isBlank(before, end) && (end === 0 || isBlank(before, end - 1));
   if (beforeWord) while (at < after.length && isBlank(after, at)) at++;
   return at;
-}
-
-/** What starts a line comment. MySQL wants a blank behind `--`; it gets one everywhere. */
-const MARK = '--';
-
-/**
- * Comments whole lines out, or in again when every line with text is a comment already. The mark goes
- * where the least indented line starts, so the block keeps its shape. Empty lines stay empty; line breaks
- * stay what they are.
- */
-export function toggleComment(text: string, dialect: FormatDialect): string {
-  const lines = text.split('\n');
-  const body = (line: string) => (line.endsWith('\r') ? line.slice(0, -1) : line);
-  const filled = lines.filter((line) => body(line).trim() !== '');
-  if (filled.length === 0) return text;
-  const hash = dialect === 'mysql';
-  const marked = (line: string) => {
-    const t = body(line).trimStart();
-    return t.startsWith(MARK) || (hash && t.startsWith('#'));
-  };
-  if (filled.every(marked)) {
-    return lines
-      .map((line) => {
-        if (body(line).trim() === '') return line;
-        const indent = line.length - line.trimStart().length;
-        const rest = line.slice(indent);
-        const mark = rest.startsWith(MARK) ? MARK.length : 1;
-        // the one blank that was put behind the mark goes with it
-        const cut = rest[mark] === ' ' ? mark + 1 : mark;
-        return line.slice(0, indent) + rest.slice(cut);
-      })
-      .join('\n');
-  }
-  const indent = Math.min(...filled.map((line) => line.length - line.trimStart().length));
-  return lines
-    .map((line) =>
-      body(line).trim() === '' ? line : `${line.slice(0, indent)}${MARK} ${line.slice(indent)}`,
-    )
-    .join('\n');
 }
 
 /** What the settings dialog formats to show the style. */
