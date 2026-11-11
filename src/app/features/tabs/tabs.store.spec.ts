@@ -47,6 +47,7 @@ function attachEditor(tab: QueryTab, text: string) {
     },
     runCurrent: () => Promise.resolve(),
     runScript: () => Promise.resolve(),
+    expandStar: () => Promise.resolve(false),
   };
   tab.attach(editor);
   return editor;

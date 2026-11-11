@@ -2,6 +2,8 @@ import type { Translation } from './core/i18n/i18n';
 import type { APP_EN } from './app-texts';
 
 export const APP_DE: Translation<typeof APP_EN> = {
+  noStar:
+    'Kein * an der Stelle des Cursors, oder die Spalten seiner Tabellen sind nicht bekannt (ist die Verbindung offen?).',
   toolbar: 'Werkzeugleiste',
   toggleSidebar: 'Seitenleiste ein-/ausblenden',
   runHint: 'Auswahl oder Anweisung unter dem Cursor ausführen',

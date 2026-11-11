@@ -53,6 +53,7 @@ const EDITOR_MIN_W = 160;
         [initialValue]="start.text"
         [label]="t.editorLabel(tab().title())"
         [dialect]="dialect()"
+        [connectionId]="tab().connectionId()"
         (run)="tab().runAll($event)"
         (caret)="tab().caret.set($event)"
         (seededText)="onSeeded()"
@@ -373,6 +374,7 @@ export class QueryPane implements OnInit, OnDestroy {
     insert: (text, snippet) => this.editor()?.insert(text, snippet) ?? Promise.resolve(),
     runCurrent: () => this.editor()?.runCurrent() ?? Promise.resolve(),
     runScript: () => this.editor()?.runScript() ?? Promise.resolve(),
+    expandStar: () => this.editor()?.expandStar() ?? Promise.resolve(false),
   };
 
   constructor() {

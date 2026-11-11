@@ -18,6 +18,7 @@ const name = (kind: NameHit['kind'], n: string, over: Partial<NameHit> = {}): Na
   parent: null,
   detail: '',
   quoted: `shop.${n}`,
+  quotedName: n,
   marks: [],
   ...over,
 });

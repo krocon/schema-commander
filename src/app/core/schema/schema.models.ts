@@ -86,6 +86,8 @@ export interface NameHit {
   readonly detail: string;
   /** The name as it is written in SQL, with its schema (a column: only its own name). */
   readonly quoted: string;
+  /** The name alone as it is written in SQL. */
+  readonly quotedName: string;
   /** The characters of `name` that matched (indices of characters, not of UTF-16 units). */
   readonly marks: readonly number[];
 }

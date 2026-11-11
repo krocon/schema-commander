@@ -3,6 +3,8 @@ import { APP_DE } from './app-texts.de';
 
 /** Texts of the window: toolbar, sidebar, status line, notices. English is the source. */
 export const APP_EN = {
+  noStar:
+    'No * to expand at the caret, or the columns of its tables are not known (is the connection open?).',
   toolbar: 'Toolbar',
   toggleSidebar: 'Show or hide the sidebar',
   runHint: 'Run the selection or the statement under the cursor',

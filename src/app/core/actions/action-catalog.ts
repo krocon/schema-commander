@@ -47,6 +47,12 @@ export const ACTIONS = [
     group: 'Query',
     scope: 'global',
   },
+  {
+    id: 'EXPAND_STAR',
+    label: 'Expand * to the list of columns',
+    group: 'Query',
+    scope: 'global',
+  },
   { id: 'SHOW_MESSAGES', label: 'Show messages', group: 'Query', scope: 'global' },
   {
     id: 'TOGGLE_DIGIT_GROUPING',

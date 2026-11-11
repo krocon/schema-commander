@@ -5,6 +5,9 @@
   "RUN_SCRIPT": [
     "Mod+Shift+Enter"
   ],
+  "EXPAND_STAR": [
+    "Mod+K Mod+8"
+  ],
   "CANCEL_QUERY": [
     "Mod+."
   ],

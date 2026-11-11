@@ -45,6 +45,7 @@ export const SETTINGS_EN = {
     editorWordWrap: 'Wrap long lines',
     editorLineNumbers: 'Line numbers',
     editorSuggest: 'Suggest while typing',
+    completionKeywordCase: 'Keywords of the completion',
     resultFontSize: 'Font size (px)',
     resultRowHeight: 'Row height (px)',
     nullText: 'Show NULL as',
@@ -70,7 +71,9 @@ export const SETTINGS_EN = {
     editorTabWidth: 'Columns a tab character takes.',
     editorWordWrap: '',
     editorLineNumbers: '',
-    editorSuggest: 'Words of the text are offered while you type.',
+    editorSuggest:
+      'Tables, columns and keywords that fit at the caret; Ctrl+Space asks for them at any time.',
+    completionKeywordCase: '',
     resultFontSize: '',
     resultRowHeight: '',
     nullText: 'Only how the grid shows it; copies and exports have their own setting.',
@@ -93,6 +96,7 @@ export const SETTINGS_EN = {
   choices: {
     language: { system: 'As the system', en: 'English', de: 'Deutsch' },
     editorLineNumbers: { absolute: 'Absolute', relative: 'Relative to the caret', off: 'Off' },
+    completionKeywordCase: { upper: 'SELECT', lower: 'select' },
     nullText: { NULL: 'NULL', '∅': '∅', '(null)': '(null)', '': 'empty' },
     resultPlacement: { bottom: 'Below the editor', right: 'Beside the editor' },
     copyNullAs: { '': 'empty', NULL: 'NULL', '\\N': '\\N' },

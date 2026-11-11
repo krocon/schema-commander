@@ -277,3 +277,14 @@ export function statementAt(
   }
   return statements[statements.length - 1];
 }
+
+/** The line and column (both from 1) of an offset of a text whose first line is line `firstLine`. */
+export function positionOf(
+  text: string,
+  offset: number,
+  firstLine = 1,
+): { line: number; ch: number } {
+  const before = text.slice(0, Math.max(0, offset));
+  const breaks = before.split('\n');
+  return { line: firstLine + breaks.length - 1, ch: breaks[breaks.length - 1].length + 1 };
+}

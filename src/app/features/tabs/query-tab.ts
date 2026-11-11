@@ -36,6 +36,8 @@ export interface TabEditor {
   runCurrent(): Promise<void>;
   /** Runs the whole script. */
   runScript(): Promise<void>;
+  /** Writes out the `*` at the caret as its columns; resolves with whether it did. */
+  expandStar(): Promise<boolean>;
 }
 
 /** The services a tab works with (handed in by the `TabsStore`, tabs are no injectables). */
@@ -197,6 +199,11 @@ export class QueryTab {
 
   runCurrent(): void {
     void this.editor?.runCurrent();
+  }
+
+  /** `*` at the caret → the columns it stands for; `false` when there is nothing to write out. */
+  expandStar(): Promise<boolean> {
+    return this.editor?.expandStar() ?? Promise.resolve(false);
   }
 
   runScript(): void {

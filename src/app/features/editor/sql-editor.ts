@@ -15,10 +15,17 @@ import {
 import { language } from '../../core/i18n/i18n';
 import { SettingsService } from '../../core/settings/settings.service';
 import { ThemeService } from '../../core/theme/theme.service';
+import { CompletionService, LINES_AFTER, LINES_BEFORE } from '../completion/completion.service';
 import { EDITOR_COLORS } from './editor-colors';
 import { EDITOR_TEXTS } from './editor-texts';
-import { EdCaret, EdChange, EditliciousEditorElement, loadEditlicious } from './editlicious';
-import { Dialect, offsetOf, splitForRun, statementAt } from './sql-split';
+import {
+  CompletionContext,
+  EdCaret,
+  EdChange,
+  EditliciousEditorElement,
+  loadEditlicious,
+} from './editlicious';
+import { Dialect, offsetOf, positionOf, splitForRun, statementAt } from './sql-split';
 
 /**
  * The SQL editor: `<editlicious-editor>` with the SQL grammar, coloured by the app's tokens.
@@ -77,6 +84,7 @@ import { Dialect, offsetOf, splitForRun, statementAt } from './sql-split';
 export class SqlEditor implements OnInit {
   protected readonly t = EDITOR_TEXTS;
   private readonly theme = inject(ThemeService);
+  private readonly completion = inject(CompletionService);
   /** Font, tab width, wrapping … of every editor are settings (prompt 017). */
   protected readonly look = inject(SettingsService).settings;
   /** The editor's own texts (search bar, menus) follow the language of the window. */
@@ -90,6 +98,8 @@ export class SqlEditor implements OnInit {
   readonly readonly = input(false);
   /** The rules statements are split by. */
   readonly dialect = input<Dialect>('sqlite');
+  /** The connection whose names the completion offers; `null` = keywords and the words of the text. */
+  readonly connectionId = input<string | null>(null);
   /** The statements to run, in their order. */
   readonly run = output<readonly string[]>();
   readonly caret = output<EdCaret>();
@@ -114,6 +124,19 @@ export class SqlEditor implements OnInit {
     // the element exists once the module is loaded and the view is rendered
     effect(() => {
       if (this.editor()) this.seed();
+    });
+    // the completion that knows the schema (prompt 021): asked by the editor, answered by the service
+    effect(() => {
+      const editor = this.editor()?.nativeElement;
+      if (!editor) return;
+      if (this.readonly()) {
+        editor.completionProvider = null;
+        return;
+      }
+      const provider = (context: CompletionContext) =>
+        this.completion.provide(this.connectionId(), this.dialect(), context);
+      provider.triggerCharacters = ['.'];
+      editor.completionProvider = provider;
     });
   }
 
@@ -178,6 +201,32 @@ export class SqlEditor implements OnInit {
       dialect,
     );
     if (statement) this.run.emit([statement.text]);
+  }
+
+  /**
+   * Writes out the `*` at or before the caret as the columns it stands for (prompt 021). Resolves with
+   * whether something was replaced.
+   */
+  async expandStar(): Promise<boolean> {
+    const editor = this.editor()?.nativeElement;
+    const connection = this.connectionId();
+    if (!editor || !connection || this.readonly()) return false;
+    const caret = this.lastCaret ?? { line: 1, ch: 1 };
+    const first = Math.max(1, caret.line - LINES_BEFORE);
+    const text = await editor.getSlice(first, caret.line + LINES_AFTER);
+    const offset = offsetOf(text, caret.line - first + 1, caret.ch);
+    const statement = statementAt(text, offset, this.dialect());
+    if (!statement) return false;
+    const found = await this.completion.expandStar(
+      connection,
+      this.dialect(),
+      statement.text,
+      offset - statement.start,
+    );
+    if (!found) return false;
+    const at = (index: number) => positionOf(text, statement.start + index, first);
+    await editor.replaceRange(at(found.from), at(found.to), found.text);
+    return true;
   }
 
   /** Asks to run the whole script, statement by statement (SQL Server: batch by batch). */

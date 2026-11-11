@@ -19,6 +19,7 @@ export type SettingKey =
   | 'editorWordWrap'
   | 'editorLineNumbers'
   | 'editorSuggest'
+  | 'completionKeywordCase'
   | 'resultFontSize'
   | 'resultRowHeight'
   | 'nullText'
@@ -59,6 +60,7 @@ export const SETTING_DEFS: readonly SettingDef[] = [
     values: ['absolute', 'relative', 'off'],
   },
   { key: 'editorSuggest', group: 'editor', kind: 'bool' },
+  { key: 'completionKeywordCase', group: 'editor', kind: 'choice', values: ['upper', 'lower'] },
   { key: 'resultFontSize', group: 'result', kind: 'number', min: 9, max: 24, step: 1 },
   { key: 'resultRowHeight', group: 'result', kind: 'number', min: 16, max: 60, step: 1 },
   { key: 'nullText', group: 'result', kind: 'choice', values: NULL_TEXTS },
