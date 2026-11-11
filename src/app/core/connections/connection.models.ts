@@ -159,3 +159,41 @@ export function whereLabel(p: Profile): string {
 export function usesPassword(p: Pick<Profile, 'kind'>): boolean {
   return p.kind !== 'sqlite';
 }
+
+/** Mirrors `Source` in src-tauri/src/db/import.rs: where connections can be taken from (prompt 015). */
+export type ImportSource =
+  'dbeaver' | 'datagrip' | 'pgpass' | 'pg-service' | 'my-cnf' | 'environment' | 'own';
+
+/** Mirrors `ImportItem`: a connection found in a source. Its password, if any, stays in the backend. */
+export interface ImportItem {
+  /** Its place in the source: what a pick names. */
+  readonly index: number;
+  readonly profile: Profile;
+  /** A password stands there in clear text and can be taken along (into the keychain). */
+  readonly hasPassword: boolean;
+  /** What is missing before it can be stored; `null` = nothing. */
+  readonly problem: string | null;
+  /** A stored profile has this name already (the import adds a number). */
+  readonly nameTaken: boolean;
+}
+
+/** Mirrors `ImportPick`. */
+export interface ImportPick {
+  readonly index: number;
+  readonly withPassword: boolean;
+}
+
+/** Mirrors `ImportPreview`. */
+export interface ImportPreview {
+  /** The file that was read; `null` for the environment. */
+  readonly path: string | null;
+  readonly items: readonly ImportItem[];
+}
+
+/** Mirrors `UrlDraft`: a connection read from a pasted URL. */
+export interface UrlDraft {
+  readonly profile: Profile;
+  /** The password of the URL, for the password field of the dialog – never part of a profile. */
+  readonly password: string | null;
+  readonly problem: string | null;
+}

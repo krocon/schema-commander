@@ -54,6 +54,24 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
           </h2>
           <button type="button" aria-label="Schließen" (click)="cancel()">×</button>
         </header>
+        @if (!draft().id) {
+          <div class="from-url">
+            <input
+              #url
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Verbindungs-URL einfügen"
+              placeholder="URL einfügen: postgres://…, mysql://…, jdbc:…, Server=…;, Pfad einer SQLite-Datei"
+              (paste)="pasteUrl($event)"
+              (keydown.enter)="$event.preventDefault(); fromUrl(url.value)"
+            />
+            <button type="button" (click)="fromUrl(url.value)">Übernehmen</button>
+          </div>
+          @if (urlProblem(); as p) {
+            <p class="message problem" role="alert">{{ p }}</p>
+          }
+        }
         <div class="fields">
           <label for="conn-kind">Datenbank</label>
           <select id="conn-kind" #kind (change)="setKind(kind.value)">
@@ -458,6 +476,7 @@ export class ConnectionDialog implements OnInit {
   protected readonly sshHosts = signal<readonly SshHost[]>([]);
   /** The key an SSH server showed in a test and nobody confirmed yet. */
   protected readonly unknownKey = signal<{ keyType: string; fingerprint: string } | null>(null);
+  protected readonly urlProblem = signal<string | null>(null);
   protected readonly uncheckedTls = computed(
     () => this.draft().kind !== 'sqlite' && tlsUnchecked(this.draft().tls),
   );
@@ -513,6 +532,32 @@ export class ConnectionDialog implements OnInit {
   protected setTls(mode: string): void {
     this.tlsChosen = true;
     this.patch({ tls: mode as TlsMode });
+  }
+
+  /** A pasted text that is a connection URL fills the dialog at once. */
+  protected pasteUrl(event: ClipboardEvent): void {
+    const text = event.clipboardData?.getData('text/plain') ?? '';
+    if (text.trim()) void this.fromUrl(text);
+  }
+
+  /** Fills the dialog from a URL; its password goes into the password field, nowhere else. */
+  protected async fromUrl(text: string): Promise<void> {
+    if (!text.trim()) return;
+    try {
+      const found = await this.store.parseUrl(text);
+      this.urlProblem.set(null);
+      this.tlsChosen = true;
+      this.draft.set({ ...found.profile, name: this.draft().name || found.profile.name });
+      this.result.set(null);
+      if (found.profile.ssh) this.loadSshHosts();
+      // the field exists once the form shows the new kind
+      setTimeout(() => {
+        const field = this.password()?.nativeElement;
+        if (field) field.value = found.password ?? '';
+      });
+    } catch (e) {
+      this.urlProblem.set(describeError(e));
+    }
   }
 
   protected setSsh(on: boolean): void {

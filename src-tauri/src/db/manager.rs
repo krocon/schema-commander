@@ -2,6 +2,7 @@
 //! A statement that runs can be stopped from another thread ([`ConnectionManager::cancel`]).
 
 use super::guard::{self, Class, Need, Protection};
+use super::import;
 use super::profiles::{self, LoadedProfiles};
 use super::secrets::{self, Secret, SecretKind, SecretStore};
 use super::value::{MAX_ROWS, Outcome, QueryResult, RowSink, VecSink};
@@ -40,6 +41,31 @@ impl Open {
             tx: Mutex::new(TxState::Idle),
         })
     }
+}
+
+/// A connection found in another tool's file, as the preview shows it (prompt 015).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportItem {
+    /// Its place in the source: what a pick names.
+    pub index: usize,
+    pub profile: Profile,
+    /// A password stands there in clear text and can be taken along.
+    pub has_password: bool,
+    /// What is missing before it can be stored.
+    pub problem: Option<String>,
+    /// A stored profile has this name already (the import adds a number).
+    pub name_taken: bool,
+}
+
+/// One connection the user ticked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportPick {
+    pub index: usize,
+    /// Take the clear-text password along, into the keychain.
+    #[serde(default)]
+    pub with_password: bool,
 }
 
 /// What a statement is and what it needs on its connection (prompt 012).
@@ -619,6 +645,75 @@ impl ConnectionManager {
         self.run_in(id, None, sql, timeout, sink, false).0
     }
 
+    /// A name no stored profile has: the name itself, or with ` (2)`, ` (3)` … behind it.
+    fn free_name(&self, name: &str, taken: &mut Vec<String>) -> String {
+        let mut candidate = name.to_string();
+        let mut n = 2;
+        while taken.iter().any(|t| t.eq_ignore_ascii_case(&candidate)) {
+            candidate = format!("{name} ({n})");
+            n += 1;
+        }
+        taken.push(candidate.clone());
+        candidate
+    }
+
+    /// The connections of a source, for the preview: what would be stored, whether a clear-text password
+    /// stands there (the password itself stays here), what is missing, whether the name is taken.
+    pub fn import_preview(
+        &self,
+        source: import::Source,
+        path: Option<&std::path::Path>,
+    ) -> AppResult<Vec<ImportItem>> {
+        let names: Vec<String> = self.stored().into_iter().map(|p| p.name).collect();
+        Ok(import::read(source, path)?
+            .into_iter()
+            .enumerate()
+            .map(|(index, c)| ImportItem {
+                index,
+                name_taken: names
+                    .iter()
+                    .any(|n| n.eq_ignore_ascii_case(&c.profile.name)),
+                has_password: c.password.is_some(),
+                problem: c.problem,
+                profile: c.profile,
+            })
+            .collect())
+    }
+
+    /// Stores the picked connections of a source. A password is stored (in the keychain) only for a
+    /// pick that asks for it. A name that is taken gets a number. Returns what was stored.
+    pub fn import_selected(
+        &self,
+        source: import::Source,
+        path: Option<&std::path::Path>,
+        picks: &[ImportPick],
+    ) -> AppResult<Vec<Profile>> {
+        let mut found: Vec<Option<import::Candidate>> =
+            import::read(source, path)?.into_iter().map(Some).collect();
+        let mut names: Vec<String> = self.stored().into_iter().map(|p| p.name).collect();
+        let mut stored = Vec::new();
+        for pick in picks.iter().take(import::MAX_CANDIDATES) {
+            let Some(candidate) = found.get_mut(pick.index).and_then(Option::take) else {
+                continue;
+            };
+            if candidate.problem.is_some() {
+                continue;
+            }
+            let mut profile = candidate.profile;
+            profile.id.clear();
+            profile.name = self.free_name(&profile.name, &mut names);
+            let password = candidate.password.filter(|_| pick.with_password);
+            profile.save_password = password.is_some() || profile.save_password;
+            stored.push(self.save(profile, password)?);
+        }
+        Ok(stored)
+    }
+
+    /// The stored profiles as a file for another machine: no ids, never a secret.
+    pub fn export_profiles(&self) -> AppResult<String> {
+        import::export_own(&self.stored())
+    }
+
     /// What a statement is and what it needs on a connection.
     pub fn verdict(&self, id: &str, sql: &str, allow_dangerous: bool) -> AppResult<Verdict> {
         let profile = self.find(id)?;
@@ -1020,6 +1115,79 @@ mod tests {
             assert!(store.len() >= 2);
             m.close(&saved.id);
         }
+    }
+
+    #[test]
+    fn imports_what_is_ticked_with_passwords_only_where_asked() {
+        let dir = tempdir().unwrap();
+        let (m, store) = manager(dir.path());
+        let pgpass = dir.path().join(".pgpass");
+        std::fs::write(
+            &pgpass,
+            "db.example:5432:shop:app:s3cret-one\ndb.example:5432:shop:app:s3cret-two\n*:*:*:x:y\nother.example:5433:crm:crm:s3cret-three\n",
+        )
+        .unwrap();
+        let preview = m
+            .import_preview(import::Source::Pgpass, Some(&pgpass))
+            .unwrap();
+        assert_eq!(preview.len(), 4);
+        assert!(preview[0].has_password && preview[0].problem.is_none() && !preview[0].name_taken);
+        // the wildcard line has no host
+        assert!(preview[2].problem.is_some());
+        // nothing of a password is in what goes to the window
+        assert!(!serde_json::to_string(&preview).unwrap().contains("s3cret"));
+
+        let picks = [
+            ImportPick {
+                index: 0,
+                with_password: true,
+            },
+            ImportPick {
+                index: 1,
+                with_password: false,
+            },
+            ImportPick {
+                index: 2,
+                with_password: true,
+            },
+            ImportPick {
+                index: 99,
+                with_password: true,
+            },
+        ];
+        let stored = m
+            .import_selected(import::Source::Pgpass, Some(&pgpass), &picks)
+            .unwrap();
+        // the one with a problem and the one that is not there are left out
+        let names: Vec<&str> = stored.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, vec!["shop@db.example", "shop@db.example (2)"]);
+        assert!(stored.iter().all(|p| !p.id.is_empty()));
+        // one password went to the keychain, none into the file
+        assert_eq!(store.len(), 1);
+        let file = std::fs::read_to_string(dir.path().join(profiles::FILE_NAME)).unwrap();
+        assert!(!file.contains("s3cret"));
+        // the next preview knows the names
+        let again = m
+            .import_preview(import::Source::Pgpass, Some(&pgpass))
+            .unwrap();
+        assert!(again[0].name_taken && !again[3].name_taken);
+
+        // our own export has the profiles and no secret, and comes back in
+        let export = m.export_profiles().unwrap();
+        assert!(!export.contains("s3cret") && export.contains("shop@db.example (2)"));
+        let own = dir.path().join("export.json");
+        std::fs::write(&own, export).unwrap();
+        let back = m
+            .import_selected(
+                import::Source::Own,
+                Some(&own),
+                &[ImportPick {
+                    index: 0,
+                    with_password: true,
+                }],
+            )
+            .unwrap();
+        assert_eq!(back[0].name, "shop@db.example (3)");
     }
 
     #[test]

@@ -3,7 +3,12 @@ import {
   ConnectionInfo,
   LoadedProfiles as LoadedConnections,
   Profile,
+  ImportItem,
+  ImportPick,
+  ImportPreview,
+  ImportSource,
   SshCredentials,
+  UrlDraft,
   SshHost,
 } from '../app/core/connections/connection.models';
 import {
@@ -295,6 +300,46 @@ export class FakeConnectionsApi extends ConnectionsApi {
 
   sshHosts(): Promise<SshHost[]> {
     return Promise.resolve(this.hosts);
+  }
+
+  /** What `parseUrl` answers per text; anything else is refused. */
+  urls = new Map<string, UrlDraft>();
+  /** What a source holds. */
+  importable: ImportItem[] = [];
+  readonly imports: { source: ImportSource; path: string | null; picks: readonly ImportPick[] }[] =
+    [];
+  readonly exported: string[] = [];
+  failImport: { code: string; message: string } | null = null;
+
+  parseUrl(text: string): Promise<UrlDraft> {
+    const found = this.urls.get(text.trim());
+    return found
+      ? Promise.resolve(found)
+      : Promise.reject({ code: 'invalid_profile', message: 'this is no connection URL' });
+  }
+
+  importPreview(_source: ImportSource, path: string | null): Promise<ImportPreview> {
+    if (this.failImport) return Promise.reject(this.failImport);
+    return Promise.resolve({ path: path ?? '/home/me/.pgpass', items: this.importable });
+  }
+
+  importConnections(
+    source: ImportSource,
+    path: string | null,
+    picks: readonly ImportPick[],
+  ): Promise<Profile[]> {
+    this.imports.push({ source, path, picks });
+    const stored = picks
+      .map((pick) => this.importable.find((i) => i.index === pick.index))
+      .filter((i): i is ImportItem => !!i && i.problem === null)
+      .map((i, n) => ({ ...i.profile, id: `imported-${this.profiles.length + n}` }));
+    this.profiles = [...this.profiles, ...stored];
+    return Promise.resolve(stored);
+  }
+
+  exportConnections(path: string): Promise<void> {
+    this.exported.push(path);
+    return Promise.resolve();
   }
 
   test(profile: Profile, password: string | null, ssh?: SshCredentials): Promise<string> {

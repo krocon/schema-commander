@@ -9,6 +9,8 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { ImportDialog } from './features/connections/import-dialog';
+import { isDatabaseFile } from './features/connections/import-logic';
 import { GuardDialog } from './features/guard/guard-dialog';
 import { badgeText } from './features/guard/guard-logic';
 import { GuardService } from './features/guard/guard.service';
@@ -74,6 +76,7 @@ const SIDEBAR_MIN = 140;
     ExportDialog,
     GuardDialog,
     HistoryDialog,
+    ImportDialog,
     PasswordDialog,
     SchemaTree,
     QueryPane,
@@ -320,6 +323,11 @@ const SIDEBAR_MIN = 140;
         <app-export-dialog [source]="source" (closed)="exporter.request.set(null)" />
       }
     }
+    @if (importOpen()) {
+      @defer (on immediate) {
+        <app-import-dialog (closed)="importOpen.set(false)" />
+      }
+    }
     @if (history.open()) {
       @defer (on immediate) {
         <app-history-dialog (closed)="history.open.set(false)" />
@@ -359,6 +367,7 @@ export class App implements OnInit, OnDestroy {
   /** The connection dialog is open with this profile (`id === ''` = a new one). */
   protected readonly connectionDialog = signal<Profile | null>(null);
   protected readonly paletteOpen = signal(false);
+  protected readonly importOpen = signal(false);
   /** The shortcut editor, `read` as an overview. */
   protected readonly shortcutsOpen = signal<'edit' | 'read' | null>(null);
   /** A message of the app itself (failed action, unreadable shortcuts). */
@@ -503,7 +512,18 @@ export class App implements OnInit, OnDestroy {
         this.dropActive.set(false);
       } else {
         this.dropActive.set(false);
-        if (payload.paths.length > 0) void this.tabs.openFiles(payload.paths);
+        // a database file becomes a connection, everything else a tab
+        const database = payload.paths.find(isDatabaseFile);
+        if (database) {
+          this.connectionDialog.set({
+            ...emptyProfile('sqlite'),
+            database,
+            name: database.split(/[\\/]/).pop() ?? '',
+            savePassword: false,
+          });
+        }
+        const scripts = payload.paths.filter((p) => !isDatabaseFile(p));
+        if (scripts.length > 0) void this.tabs.openFiles(scripts);
       }
     });
   }
@@ -695,6 +715,7 @@ export class App implements OnInit, OnDestroy {
         SAVE_FILE: withTab((id) => this.tabs.save(id)),
         SAVE_FILE_AS: withTab((id) => this.tabs.save(id, true)),
         NEW_CONNECTION: () => this.connectionDialog.set(emptyProfile()),
+        IMPORT_CONNECTIONS: () => this.importOpen.set(true),
         TOGGLE_SIDEBAR: () =>
           this.settings.update({ sidebarVisible: !this.settings.settings().sidebarVisible }),
         COLOR_SCHEME: () => this.theme.pickerOpen.set(true),
