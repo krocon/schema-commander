@@ -8,6 +8,7 @@ pub mod db;
 pub mod error;
 pub mod export;
 pub mod extract;
+pub mod format;
 pub mod history;
 pub mod menu;
 pub mod results;
@@ -108,6 +109,7 @@ pub fn run() {
             commands::export_result,
             commands::export_query,
             commands::cancel_job,
+            commands::format_sql,
             commands::export_preview,
             commands::reveal_export,
             commands::history_add,
