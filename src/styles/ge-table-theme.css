@@ -176,3 +176,18 @@
   text-decoration: underline dotted var(--accent);
   text-underline-offset: 3px;
 }
+
+/* cells changed and not written yet (prompt 031); the row whose statement failed */
+.sc-result .ge-table-col-div.sc-edited {
+  background: var(--cell-changed-bg);
+  color: var(--cell-changed-text);
+}
+
+.sc-result .ge-table-col-div.sc-edited.sc-null .ge-table-label {
+  color: var(--cell-changed-text);
+  font-style: italic;
+}
+
+.sc-result .ge-table-col-div.sc-edit-failed {
+  box-shadow: inset 0 0 0 1px var(--danger);
+}

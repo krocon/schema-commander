@@ -258,3 +258,45 @@ export interface SearchFound {
 
 /** Mirrors `Seek`: the next cell with another value, or the next NULL. */
 export type SeekKind = 'change' | 'null';
+
+/** Mirrors `CellValue` in src-tauri/src/db/edit.rs: a column and a value of it (`null` = NULL). */
+export interface EditCell {
+  readonly column: string;
+  readonly kind: 'number' | 'bool' | 'text';
+  readonly typeName: string;
+  readonly value: string | null;
+}
+
+/** Mirrors `SetCell`: what a cell becomes; `default` asks for the default of the column. */
+export interface EditSet extends EditCell {
+  readonly default: boolean;
+}
+
+/** Mirrors `RowUpdate`: a row by its key, the cells to set, and the old values that must still be there. */
+export interface RowUpdate {
+  readonly key: readonly EditCell[];
+  readonly set: readonly EditSet[];
+  readonly expect: readonly EditCell[];
+}
+
+/** Mirrors `UpdatePlan` (prompt 031): the changed rows of one table. The backend writes the SQL. */
+export interface UpdatePlan {
+  readonly schema: string | null;
+  readonly table: string;
+  readonly rows: readonly RowUpdate[];
+}
+
+/** Mirrors `Applied` in src-tauri/src/db/manager.rs: all statements are committed (`done`), or none. */
+export interface Applied {
+  readonly done: number;
+  /** The statement that stopped everything, counted from 0. */
+  readonly failed: number | null;
+  /** It changed no row or several: the row is not what it was when it was read. */
+  readonly conflict: boolean;
+  readonly error: { readonly code: string; readonly message: string } | null;
+  /** A transaction of the user's own is open on the session: nothing was tried. */
+  readonly blocked: boolean;
+  /** The connection was lost while committing: whether the rows are written is not known. */
+  readonly unknown: boolean;
+  readonly tx: TxState;
+}

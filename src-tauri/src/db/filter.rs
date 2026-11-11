@@ -158,11 +158,11 @@ pub struct Built {
     pub display: String,
 }
 
-fn invalid(message: &str) -> AppError {
+pub(super) fn invalid(message: &str) -> AppError {
     AppError::new(ErrorCode::Unsupported, message)
 }
 
-fn name(raw: &str, kind: DbKind) -> AppResult<String> {
+pub(super) fn name(raw: &str, kind: DbKind) -> AppResult<String> {
     if raw.is_empty() || raw.len() > 256 || raw.contains('\0') {
         return Err(invalid("not a name"));
     }
@@ -227,13 +227,61 @@ fn castable(type_name: &str) -> Option<String> {
     while b[i..].starts_with(b"[]") {
         i += 2;
     }
-    (i == b.len()).then_some(t)
+    if i != b.len() {
+        return None;
+    }
+    // a cast must not change the value: `char` and `bit` without a length mean one character (the driver
+    // names `character(n)` just `CHAR`) – cast to the types that keep all of it instead
+    let (base, brackets) = match t.find('[') {
+        Some(at) => t.split_at(at),
+        None => (t.as_str(), ""),
+    };
+    Some(match base {
+        "char" | "character" | "bpchar" => format!("bpchar{brackets}"),
+        "bit" => format!("varbit{brackets}"),
+        _ => t,
+    })
 }
 
+/// SQL Server reads the text `2024-03-04 10:00:00` for a `datetime` or `smalldatetime` by the language
+/// of the login (day and month may swap); with a `T` between date and time it reads it the same for
+/// everyone. `type_name` is the driver's (`Datetime`, `Datetimen`, `Datetime4`).
+fn mssql_datetime(raw: &str, type_name: &str) -> Option<String> {
+    if !matches!(
+        type_name.trim().to_ascii_lowercase().as_str(),
+        "datetime" | "datetimen" | "datetime4" | "smalldatetime"
+    ) {
+        return None;
+    }
+    let t = raw.trim();
+    let b = t.as_bytes();
+    let digits = |from: usize, to: usize| {
+        b.get(from..to)
+            .is_some_and(|d| d.iter().all(u8::is_ascii_digit))
+    };
+    let shaped = b.len() >= 19
+        && digits(0, 4)
+        && b[4] == b'-'
+        && digits(5, 7)
+        && b[7] == b'-'
+        && digits(8, 10)
+        && b[10] == b' '
+        && digits(11, 13)
+        && b[13] == b':'
+        && digits(14, 16)
+        && b[16] == b':'
+        && digits(17, 19)
+        && (b.len() == 19 || (b[19] == b'.' && b.len() > 20 && digits(20, b.len())));
+    shaped.then(|| format!("{}T{}", &t[..10], &t[11..]))
+}
+
+/// A whole number as far as 64 bits reach: bound as one, never through a float.
 fn is_int(text: &str) -> bool {
     let t = text.trim();
     let digits = t.strip_prefix(['-', '+']).unwrap_or(t);
-    !digits.is_empty() && digits.len() <= 18 && digits.bytes().all(|b| b.is_ascii_digit())
+    !digits.is_empty()
+        && digits.bytes().all(|b| b.is_ascii_digit())
+        && t.trim_start_matches('+').parse::<i64>().is_ok()
 }
 
 fn is_decimal(text: &str) -> bool {
@@ -246,21 +294,32 @@ fn is_decimal(text: &str) -> bool {
         && a.bytes().chain(b.bytes()).all(|c| c.is_ascii_digit())
 }
 
-struct Builder {
-    kind: DbKind,
-    sql: String,
-    display: String,
-    params: Vec<Bind>,
+/// Writes a statement twice: with placeholders (and the values beside it), and readable with literals.
+/// Also used for the `UPDATE`s of `edit.rs` – the one place that turns a value into a placeholder.
+pub(super) struct Builder {
+    pub(super) kind: DbKind,
+    pub(super) sql: String,
+    pub(super) display: String,
+    pub(super) params: Vec<Bind>,
 }
 
 impl Builder {
-    fn text(&mut self, text: &str) {
+    pub(super) fn new(kind: DbKind) -> Self {
+        Builder {
+            kind,
+            sql: String::new(),
+            display: String::new(),
+            params: Vec::new(),
+        }
+    }
+
+    pub(super) fn text(&mut self, text: &str) {
         self.sql.push_str(text);
         self.display.push_str(text);
     }
 
     /// A placeholder for a value of a column, and the value beside it.
-    fn value(&mut self, raw: &str, kind: ValueKind, type_name: &str) {
+    pub(super) fn value(&mut self, raw: &str, kind: ValueKind, type_name: &str) {
         let n = self.params.len() + 1;
         let (bind, cast) = match self.kind {
             // the server reads the text as what the column is
@@ -278,7 +337,10 @@ impl Builder {
                         "false" | "f" | "0" | "no" | "nein" => Bind::Bool(false),
                         _ => Bind::Text(raw.to_owned()),
                     },
-                    _ => Bind::Text(raw.to_owned()),
+                    _ => match (self.kind, mssql_datetime(raw, type_name)) {
+                        (DbKind::Sqlserver, Some(iso)) => Bind::Text(iso),
+                        _ => Bind::Text(raw.to_owned()),
+                    },
                 };
                 (bind, None)
             }
@@ -1186,6 +1248,99 @@ mod tests {
 
     /// Review 027: a type name comes from the server (anyone may `CREATE TYPE "…"`) or from a stored
     /// filter – it is written into a cast only when it has the shape of a type name.
+    /// Review 031: a cast must not change the value. PostgreSQL's driver names `character(n)` `CHAR` and
+    /// `bit(n)` `BIT` – and a cast to `char` or `bit` without a length keeps one character.
+    #[test]
+    fn a_cast_never_shortens_a_value() {
+        for (name, cast) in [
+            ("CHAR", "bpchar"),
+            ("char", "bpchar"),
+            ("CHAR[]", "bpchar[]"),
+            ("BIT", "varbit"),
+            ("character", "bpchar"),
+            ("char(10)", "char(10)"),
+            ("VARCHAR", "varchar"),
+            ("bit(8)", "bit(8)"),
+        ] {
+            let q = query(vec![Condition {
+                type_name: name.into(),
+                ..cond("code", Op::Eq, &["DE"])
+            }]);
+            let sql = build(DbKind::Postgres, &q).unwrap().sql;
+            assert!(
+                sql.ends_with(&format!("code = CAST($1 AS {cast})")),
+                "{name}: {sql}"
+            );
+        }
+    }
+
+    /// Review 031: SQL Server reads `2024-03-04 10:00:00` for a `datetime` by the language of the login
+    /// (4 March or 3 April); with a `T` it is the same day for everyone. Only for those types: a text
+    /// that looks like a date stays what it is.
+    #[test]
+    fn a_datetime_for_sql_server_does_not_depend_on_the_language() {
+        let with = |type_name: &str, value: &str| {
+            let q = query(vec![Condition {
+                type_name: type_name.into(),
+                ..cond("at", Op::Eq, &[value])
+            }]);
+            build(DbKind::Sqlserver, &q).unwrap()
+        };
+        for ty in ["Datetime", "Datetimen", "Datetime4"] {
+            let built = with(ty, "2024-03-04 10:00:00.123");
+            assert_eq!(
+                built.params,
+                vec![Bind::Text("2024-03-04T10:00:00.123".into())],
+                "{ty}"
+            );
+            assert!(
+                built.display.ends_with("'2024-03-04T10:00:00.123'"),
+                "{}",
+                built.display
+            );
+        }
+        for (ty, value) in [
+            ("NVarchar", "2024-03-04 10:00:00"),
+            ("Datetime2", "2024-03-04 10:00:00"),
+            ("Datetime", "not a date"),
+        ] {
+            assert_eq!(
+                with(ty, value).params,
+                vec![Bind::Text(value.into())],
+                "{ty}"
+            );
+        }
+        // and nowhere else
+        let q = query(vec![Condition {
+            type_name: "datetime".into(),
+            ..cond("at", Op::Eq, &["2024-03-04 10:00:00"])
+        }]);
+        assert_eq!(
+            build(DbKind::Mysql, &q).unwrap().params,
+            vec![Bind::Text("2024-03-04 10:00:00".into())]
+        );
+    }
+
+    /// Review 031: a whole number is bound as one as far as 64 bits reach – never through a float.
+    #[test]
+    fn big_whole_numbers_stay_whole() {
+        for value in [
+            "1234567890123456789",
+            "-9223372036854775808",
+            "9223372036854775807",
+        ] {
+            let q = query(vec![Condition {
+                kind: ValueKind::Number,
+                ..cond("id", Op::Eq, &[value])
+            }]);
+            assert_eq!(
+                build(DbKind::Sqlite, &q).unwrap().params,
+                vec![Bind::Int(value.into())],
+                "{value}"
+            );
+        }
+    }
+
     #[test]
     fn a_type_name_that_is_sql_is_never_written() {
         for evil in [

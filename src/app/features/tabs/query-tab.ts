@@ -1,4 +1,5 @@
 import { BuiltQuery, QueryColumn, ViewSpec } from '../../core/sql/query.models';
+import { EMPTY_BUFFER, EditBuffer, editCount } from '../edit/edit-buffer';
 import { ResultFind } from '../find/result-find';
 import { EMPTY_NAV, NavState, navReplace } from '../relations/relation-logic';
 import { ColumnLayout, EMPTY_LAYOUT, ResultGridHandle } from '../results/column-layout';
@@ -117,6 +118,11 @@ export interface TabServices {
     forms(connectionId: string): readonly string[] | undefined;
     ask(request: ParamRequest): Promise<Readonly<Record<string, ParamValue>> | null>;
   };
+  /**
+   * The rows of the tab are about to be read anew while it has changes that are not written (prompt 031):
+   * asks whether they may go. `false`: the run does not happen. Without it, changes are dropped silently.
+   */
+  readonly dropEdits?: (tab: QueryTab) => Promise<boolean>;
   /** A table view was applied on a connection (its filter is remembered for the table). */
   readonly tableApplied?: (connection: string, view: TableView) => void;
   /** A statement ended, one way or the other (the history notes it). */
@@ -156,6 +162,8 @@ export class QueryTab {
   readonly paramValues = signal<Readonly<Record<string, ParamValue>>>({});
   /** The statements of the last run that had parameters: to run them again with the same values. */
   private lastStatements: readonly string[] | null = null;
+  /** Changes to cells of the table view that are not written yet (prompt 031). */
+  readonly edits = signal<EditBuffer>(EMPTY_BUFFER);
   /** The table views the user came along in this tab, following foreign keys (prompt 030). */
   readonly nav = signal<NavState>(EMPTY_NAV);
   /** Searching in the result of this tab (prompt 029). */
@@ -339,6 +347,8 @@ export class QueryTab {
      */
     prebuilt: readonly BoundStatement[] | null = null,
   ): Promise<void> {
+    // no extra turn where there is nothing to lose: a run starts at once, as ever
+    if (this.hasEdits() && !(await this.mayDropEdits())) return;
     this.origin = origin;
     // any other run ends the table view: the text in the editor is the user's again
     if (!prebuilt) this.tableView.set(null);
@@ -601,8 +611,31 @@ export class QueryTab {
    * `view`, if the caller has it already (the text of a new tab is its readable form).
    */
   async openTable(view: TableView, built?: BuiltQuery): Promise<void> {
+    // asked before the tab shows anything else: a no leaves it exactly where it is
+    // no extra turn where there is nothing to lose: a run starts at once, as ever
+    if (this.hasEdits() && !(await this.mayDropEdits())) return;
     this.tableView.set(view);
     await this.runTable(view, built ?? null);
+  }
+
+  /**
+   * Rows read anew would leave changes that are not written without their rows (prompt 031): the user
+   * says whether they may go. `true`: there are none (any more). Asked before anything of the tab changes.
+   */
+  /** Whether the tab holds anything of a change buffer (changes, or only steps of undo). */
+  private hasEdits(): boolean {
+    return this.edits() !== EMPTY_BUFFER;
+  }
+
+  private async mayDropEdits(): Promise<boolean> {
+    if (editCount(this.edits()).cells === 0) {
+      // nothing to lose; steps of undo that lead to no change go with the rows
+      if (this.edits() !== EMPTY_BUFFER) this.edits.set(EMPTY_BUFFER);
+      return true;
+    }
+    if (this.services.dropEdits && !(await this.services.dropEdits(this))) return false;
+    this.edits.set(EMPTY_BUFFER);
+    return true;
   }
 
   /** Filters, orders or limits the table view anew and reads it again. */
@@ -613,6 +646,8 @@ export class QueryTab {
   }
 
   private async runTable(view: TableView, known: BuiltQuery | null): Promise<void> {
+    // no extra turn where there is nothing to lose: a run starts at once, as ever
+    if (this.hasEdits() && !(await this.mayDropEdits())) return;
     const connection = this.connectionId();
     let built = known;
     if (!built) {

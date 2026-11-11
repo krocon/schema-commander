@@ -13,7 +13,9 @@ import {
   TxState,
   Verdict,
   ViewSpec,
+  Applied,
   ResultStats,
+  UpdatePlan,
   SearchFound,
   SearchSpec,
   SeekKind,
@@ -150,6 +152,20 @@ export abstract class QueryApi {
     seek: SeekKind,
   ): Promise<number | null>;
   abstract cancelSearch(jobId: number): Promise<void>;
+  /** The `UPDATE`s for changed cells (prompt 031), one per row: to show and to ask the guard about. */
+  abstract editPreview(connectionId: string, plan: UpdatePlan): Promise<BuiltQuery[]>;
+  /**
+   * Writes changed cells in one transaction on the session of a tab: all rows or none, each statement
+   * must change exactly one row. `confirmations[i]` confirms statement `i` where the connection asks.
+   * Rejects with `permission_denied`, `confirmation_required`, `unsupported` (a transaction is open).
+   */
+  abstract editApply(
+    connectionId: string,
+    session: string,
+    plan: UpdatePlan,
+    confirmations: readonly (string | null)[],
+    timeoutMs: number,
+  ): Promise<Applied>;
 }
 
 @Injectable()
@@ -283,5 +299,25 @@ export class TauriQueryApi extends QueryApi {
 
   cancelSearch(jobId: number): Promise<void> {
     return call('cancel_job', { jobId });
+  }
+
+  editPreview(connectionId: string, plan: UpdatePlan): Promise<BuiltQuery[]> {
+    return call('edit_preview', { id: connectionId, plan });
+  }
+
+  editApply(
+    connectionId: string,
+    session: string,
+    plan: UpdatePlan,
+    confirmations: readonly (string | null)[],
+    timeoutMs: number,
+  ): Promise<Applied> {
+    return call('edit_apply', {
+      id: connectionId,
+      session,
+      plan,
+      confirmations,
+      timeoutMs: timeoutMs > 0 ? timeoutMs : null,
+    });
   }
 }

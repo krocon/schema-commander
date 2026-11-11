@@ -1954,3 +1954,321 @@ fn every_server_knows_its_foreign_keys_and_follows_them() {
         );
     }
 }
+
+// --- writing changed cells (prompt 031) -------------------------------------------------------------
+
+use schema_commander_lib::db::edit::{self, CellValue, RowUpdate, SetCell, UpdatePlan};
+
+/// The statements the app builds for changed cells, on every server: what counts as „one row changed“,
+/// values that look like SQL, NULL and DEFAULT, the lock on old values, and a trigger.
+#[test]
+#[ignore]
+fn every_server_writes_changed_cells_one_row_at_a_time() {
+    // (profile, schema, type of the money column as the result names it, a trigger that counts updates)
+    let cases: Vec<(Profile, &str, &str, Vec<&str>)> = vec![
+        (
+            pg(),
+            "public",
+            "numeric(10,2)",
+            vec![
+                "CREATE OR REPLACE FUNCTION sc_edit_touch() RETURNS trigger LANGUAGE plpgsql AS \
+                 'BEGIN NEW.touched := OLD.touched + 1; RETURN NEW; END'",
+                "CREATE TRIGGER sc_edit_t BEFORE UPDATE ON sc_edit FOR EACH ROW EXECUTE FUNCTION sc_edit_touch()",
+            ],
+        ),
+        (
+            my(),
+            "shop",
+            "decimal(10,2)",
+            vec![
+                "CREATE TRIGGER sc_edit_t BEFORE UPDATE ON sc_edit FOR EACH ROW SET NEW.touched = OLD.touched + 1",
+            ],
+        ),
+        (
+            maria(),
+            "shop",
+            "decimal(10,2)",
+            vec![
+                "CREATE TRIGGER sc_edit_t BEFORE UPDATE ON sc_edit FOR EACH ROW SET NEW.touched = OLD.touched + 1",
+            ],
+        ),
+        (
+            ms(),
+            "dbo",
+            "decimal(10,2)",
+            // a trigger that changes rows itself and does not hide its counts
+            vec![
+                "CREATE TRIGGER sc_edit_t ON sc_edit AFTER UPDATE AS \
+                 UPDATE sc_edit SET touched = sc_edit.touched + 1 FROM sc_edit JOIN inserted i ON i.id = sc_edit.id \
+                 WHERE NOT UPDATE(touched)",
+            ],
+        ),
+    ];
+    for (p, schema, money, trigger) in cases {
+        let kind = p.kind;
+        let mut s = open(&p);
+        run(&mut s, "DROP TABLE IF EXISTS sc_edit");
+        run(
+            &mut s,
+            // SQL Server keeps Unicode only in its n-types
+            &format!(
+                "CREATE TABLE sc_edit (id int NOT NULL PRIMARY KEY, name {}(100), qty int, \
+                 price decimal(10,2), note varchar(200) DEFAULT 'none', touched int NOT NULL DEFAULT 0)",
+                if kind == DbKind::Sqlserver {
+                    "nvarchar"
+                } else {
+                    "varchar"
+                }
+            ),
+        );
+        run(
+            &mut s,
+            "INSERT INTO sc_edit (id, name, qty, price, note) VALUES (1, 'a', 1, 1.50, NULL), (2, 'b', 2, 2.50, 'x')",
+        );
+        for sql in trigger {
+            run(&mut s, sql);
+        }
+        let cell = |column: &str, value: Option<&str>, number: bool, type_name: &str| CellValue {
+            column: column.into(),
+            kind: if number {
+                ValueKind::Number
+            } else {
+                ValueKind::Text
+            },
+            type_name: type_name.into(),
+            value: value.map(str::to_owned),
+        };
+        let set = |column: &str, value: Option<&str>, number: bool, type_name: &str| SetCell {
+            column: column.into(),
+            kind: if number {
+                ValueKind::Number
+            } else {
+                ValueKind::Text
+            },
+            type_name: type_name.into(),
+            value: value.map(str::to_owned),
+            default: false,
+        };
+        let write = |s: &mut Box<dyn Session>, row: RowUpdate| {
+            let plan = UpdatePlan {
+                schema: Some(schema.into()),
+                table: "sc_edit".into(),
+                rows: vec![row],
+            };
+            let built = edit::build(kind, &plan).unwrap();
+            bound(s, &built[0].sql, &built[0].params).rows_affected
+        };
+        let evil = "it's \\ \"ä😀\"; DROP TABLE sc_edit; --";
+        // several cells of a row, with the old values as a lock (one of them NULL)
+        let changed = write(
+            &mut s,
+            RowUpdate {
+                key: vec![cell("id", Some("1"), true, "int4")],
+                set: vec![
+                    set("name", Some(evil), false, "varchar"),
+                    set("qty", Some("7"), true, "int4"),
+                    set("price", Some("1234.56"), true, money),
+                ],
+                expect: vec![
+                    cell("name", Some("a"), false, "varchar"),
+                    cell("qty", Some("1"), true, "int4"),
+                    cell("note", None, false, "varchar"),
+                ],
+            },
+        );
+        assert_eq!(changed, Some(1), "{kind:?}");
+        // the same again: the row is not what the lock expects any more – no row, nothing written
+        let stale = write(
+            &mut s,
+            RowUpdate {
+                key: vec![cell("id", Some("1"), true, "int4")],
+                set: vec![set("qty", Some("99"), true, "int4")],
+                expect: vec![cell("qty", Some("1"), true, "int4")],
+            },
+        );
+        assert_eq!(stale, Some(0), "{kind:?}");
+        // NULL and DEFAULT; a row that does not exist changes nothing
+        let null = write(
+            &mut s,
+            RowUpdate {
+                key: vec![cell("id", Some("2"), true, "int4")],
+                set: vec![
+                    set("name", None, false, "varchar"),
+                    SetCell {
+                        default: true,
+                        ..set("note", None, false, "varchar")
+                    },
+                ],
+                expect: vec![],
+            },
+        );
+        assert_eq!(null, Some(1), "{kind:?}");
+        let gone = write(
+            &mut s,
+            RowUpdate {
+                key: vec![cell("id", Some("3"), true, "int4")],
+                set: vec![set("qty", Some("1"), true, "int4")],
+                expect: vec![],
+            },
+        );
+        assert_eq!(gone, Some(0), "{kind:?}");
+        // a cell set to the value it has is still one row found (the user typed the same value again)
+        let same = write(
+            &mut s,
+            RowUpdate {
+                key: vec![cell("id", Some("2"), true, "int4")],
+                set: vec![set("qty", Some("2"), true, "int4")],
+                expect: vec![],
+            },
+        );
+        assert_eq!(same, Some(1), "{kind:?}");
+        let chars = if kind == DbKind::Sqlserver || kind == DbKind::Postgres {
+            "varchar(40)"
+        } else {
+            "char(40)"
+        };
+        let after = run(
+            &mut s,
+            &format!(
+                "SELECT id, name, qty, CAST(price AS {chars}), note, touched FROM sc_edit ORDER BY id"
+            ),
+        );
+        // what looked like SQL is the name; the trigger ran once per written row
+        assert_eq!(
+            rows(&after),
+            json!([
+                [1, evil, 7, "1234.56", null, 1],
+                [2, null, 2, "2.50", "none", 2]
+            ]),
+            "{kind:?}"
+        );
+        run(&mut s, "DROP TABLE sc_edit");
+    }
+}
+
+/// Review 031: a value must arrive as it was typed. PostgreSQL's `character(n)` and `bit(n)` (the driver
+/// names them `CHAR` and `BIT`, and a cast to those keeps one character), and SQL Server's `datetime`
+/// under a login whose language reads day and month the other way round. The type names are the ones
+/// the drivers report for a result – what the window sends back.
+#[test]
+#[ignore]
+fn values_keep_their_length_and_their_day_when_they_are_written() {
+    let write =
+        |s: &mut Box<dyn Session>, kind: DbKind, schema: &str, table: &str, row: RowUpdate| {
+            let plan = UpdatePlan {
+                schema: Some(schema.into()),
+                table: table.into(),
+                rows: vec![row],
+            };
+            let built = edit::build(kind, &plan).unwrap();
+            bound(s, &built[0].sql, &built[0].params).rows_affected
+        };
+    let cell = |column: &str, value: &str, type_name: &str| CellValue {
+        column: column.into(),
+        kind: ValueKind::Text,
+        type_name: type_name.into(),
+        value: Some(value.into()),
+    };
+    let set = |column: &str, value: &str, type_name: &str| SetCell {
+        column: column.into(),
+        kind: ValueKind::Text,
+        type_name: type_name.into(),
+        value: Some(value.into()),
+        default: false,
+    };
+
+    // PostgreSQL: a key and a value of character(n), a value of bit(n)
+    let mut s = open(&pg());
+    run(&mut s, "DROP TABLE IF EXISTS sc_char");
+    run(
+        &mut s,
+        "CREATE TABLE sc_char (code character(10) PRIMARY KEY, land character(3), flags bit(4))",
+    );
+    run(
+        &mut s,
+        "INSERT INTO sc_char VALUES ('AB', 'DE', B'0000'), ('A', 'FR', B'0000')",
+    );
+    let shown = run(
+        &mut s,
+        "SELECT code, land, flags FROM sc_char ORDER BY code",
+    );
+    let types: Vec<String> = shown.columns.iter().map(|c| c.type_name.clone()).collect();
+    let changed = write(
+        &mut s,
+        DbKind::Postgres,
+        "public",
+        "sc_char",
+        RowUpdate {
+            // the key as the result shows it (padded or not, as the driver gives it)
+            key: vec![cell("code", "AB", &types[0])],
+            set: vec![
+                set("land", "USA", &types[1]),
+                set("flags", "1010", &types[2]),
+            ],
+            expect: vec![cell("land", "DE", &types[1])],
+        },
+    );
+    assert_eq!(changed, Some(1), "types {types:?}");
+    let after = run(
+        &mut s,
+        "SELECT rtrim(code), rtrim(land), flags::text FROM sc_char ORDER BY code",
+    );
+    // the row with the key 'AB' got all three characters; the row 'A' is untouched
+    assert_eq!(
+        rows(&after),
+        json!([["A", "FR", "0000"], ["AB", "USA", "1010"]]),
+        "types {types:?}"
+    );
+    run(&mut s, "DROP TABLE sc_char");
+
+    // SQL Server: a datetime under a language that reads 03-04 as the 3rd of April
+    let mut s = open(&ms());
+    run(&mut s, "DROP TABLE IF EXISTS sc_when");
+    run(
+        &mut s,
+        "CREATE TABLE sc_when (id int NOT NULL PRIMARY KEY, at datetime, small smalldatetime, note varchar(40))",
+    );
+    run(
+        &mut s,
+        "INSERT INTO sc_when VALUES (1, '2024-01-20T08:00:00', '2024-01-20T08:00:00', 'x')",
+    );
+    run(&mut s, "SET LANGUAGE Deutsch");
+    let shown = run(&mut s, "SELECT id, at, small, note FROM sc_when");
+    let types: Vec<String> = shown.columns.iter().map(|c| c.type_name.clone()).collect();
+    let old = rows(&shown)[0][1].as_str().unwrap().to_owned();
+    let changed = write(
+        &mut s,
+        DbKind::Sqlserver,
+        "dbo",
+        "sc_when",
+        RowUpdate {
+            key: vec![CellValue {
+                kind: ValueKind::Number,
+                ..cell("id", "1", &types[0])
+            }],
+            set: vec![
+                set("at", "2024-03-04 10:00:00.000", &types[1]),
+                set("small", "2024-03-04 10:00:00", &types[2]),
+                // a text that looks like a date stays the text it is
+                set("note", "2024-03-04 10:00:00", &types[3]),
+            ],
+            // the lock: the old value as the result showed it (the 20th could not be a month)
+            expect: vec![cell("at", &old, &types[1])],
+        },
+    );
+    assert_eq!(changed, Some(1), "types {types:?}, old {old}");
+    let after = run(
+        &mut s,
+        "SELECT CONVERT(varchar(30), at, 126), CONVERT(varchar(30), small, 126), note FROM sc_when",
+    );
+    assert_eq!(
+        rows(&after),
+        json!([[
+            "2024-03-04T10:00:00",
+            "2024-03-04T10:00:00",
+            "2024-03-04 10:00:00"
+        ]]),
+        "types {types:?}"
+    );
+    run(&mut s, "DROP TABLE sc_when");
+}

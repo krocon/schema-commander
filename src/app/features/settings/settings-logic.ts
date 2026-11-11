@@ -40,6 +40,7 @@ export type SettingKey =
   | 'groupDigits'
   | 'resultPlacement'
   | 'copyHeader'
+  | 'editLock'
   | 'copyNullAs'
   | 'csvDelimiter'
   | 'stopOnError'
@@ -93,6 +94,7 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   { key: 'groupDigits', group: 'result', kind: 'bool' },
   { key: 'resultPlacement', group: 'result', kind: 'choice', values: ['bottom', 'right'] },
   { key: 'copyHeader', group: 'result', kind: 'bool' },
+  { key: 'editLock', group: 'result', kind: 'bool' },
   { key: 'copyNullAs', group: 'result', kind: 'choice', values: ['', 'NULL', '\\N'] },
   { key: 'csvDelimiter', group: 'result', kind: 'choice', values: [',', ';', '\t'] },
   { key: 'stopOnError', group: 'run', kind: 'bool' },

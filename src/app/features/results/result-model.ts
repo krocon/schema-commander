@@ -11,7 +11,8 @@ import {
   TableOptionsIf,
 } from '@guiexpert/table';
 import { QueryColumn, RowWindow } from '../../core/sql/query.models';
-import { CellFormat, PLAIN_FORMAT, showCell, typeLabel } from './cell-format';
+import { EditMarks } from '../edit/edit-buffer';
+import { CellFormat, PLAIN_FORMAT, cut, defuse, showCell, typeLabel } from './cell-format';
 import { ResolvedLayout } from './column-layout';
 
 /** Row heights in px; the line height of the cells follows them in `ge-table-theme.css`. */
@@ -106,6 +107,8 @@ export class WindowAreaModel extends AreaModel {
   /** The cells a search found, and the one it stands on (prompt 029). */
   private hits: HitMarks | null = null;
   private links: ReadonlySet<number> | null = null;
+  private edits: EditMarks | null = null;
+  private editTexts = { null: 'NULL', default: 'DEFAULT' };
 
   /** Which result column each grid column shows (the caller builds a new table model). */
   setShown(shown: readonly number[] | null): void {
@@ -115,6 +118,12 @@ export class WindowAreaModel extends AreaModel {
   /** The columns of the result whose cells lead to another table (prompt 030; the caller repaints). */
   setLinks(links: ReadonlySet<number> | null): void {
     this.links = links;
+  }
+
+  /** The changes that are not written: what their cells show instead (prompt 031; the caller repaints). */
+  setEdits(edits: EditMarks | null, texts: { null: string; default: string }): void {
+    this.edits = edits;
+    this.editTexts = texts;
   }
 
   /** The hits to mark from now on (the caller repaints). */
@@ -177,6 +186,10 @@ export class WindowAreaModel extends AreaModel {
 
   override getValueAt(row: number, col: number): string | number {
     if (col === 0) return row + 1;
+    const edit = this.edits?.at(row, this.resultColumn(col));
+    if (edit) {
+      return edit.kind === 'value' ? cut(defuse(edit.text)) : this.editTexts[edit.kind];
+    }
     return this.shown(row, col)?.text ?? '';
   }
 
@@ -185,7 +198,15 @@ export class WindowAreaModel extends AreaModel {
   }
 
   override getCustomClassesAt(row: number, col: number): string[] {
-    if (col === 0) return [];
+    if (col === 0) return this.edits?.failed(row) ? ['sc-edit-failed'] : [];
+    const edit = this.edits?.at(row, this.resultColumn(col));
+    if (edit) {
+      // a changed cell: its new value, marked – and how its row fared when it was written
+      const changed = ['sc-edited'];
+      if (edit.kind !== 'value') changed.push('sc-null');
+      if (this.edits?.failed(row)) changed.push('sc-edit-failed');
+      return changed;
+    }
     const cls = this.shown(row, col)?.cls;
     const out: string[] = cls ? [cls] : [];
     // a cell of a foreign key that holds a value is a link

@@ -35,6 +35,10 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   written into the SQL), sort by a click on a column head, add a condition from the cell under the cursor
   (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>E</kbd>); the filter of a table is remembered. Any other
   result is filtered and sorted in the backend's store without running the query again
+- Edit data: change cells of a table (<kbd>F2</kbd> or a double click; NULL and default at hand) – nothing is
+  sent while you type. Changes are collected and shown in colour, can be undone, previewed as SQL, and are
+  written together in one transaction with <kbd>Ctrl/⌘</kbd>+<kbd>S</kbd>: all rows or none, values bound, and
+  a row somebody else changed in the meantime is reported instead of overwritten
 - Follow foreign keys in a table: <kbd>F4</kbd> on `customer_id = 42` shows the customer (in the tab, in a new
   one, or as a quick look with <kbd>Shift</kbd>+<kbd>F4</kbd>); <kbd>Alt</kbd>+<kbd>F7</kbd> lists the tables
   that point to the row, with counts. Several marked rows at once, composite keys, a path with back and forward

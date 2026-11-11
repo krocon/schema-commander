@@ -43,6 +43,8 @@ import { SnippetDialog } from './features/snippets/snippet-dialog';
 import { StatsPopover } from './features/stats/stats-popover';
 import { ColumnsPopover } from './features/find/columns-popover';
 import { RelationsDialog } from './features/relations/relations-dialog';
+import { EditPreview } from './features/edit/edit-preview';
+import { EditService } from './features/edit/edit.service';
 import { QueryTab } from './features/tabs/query-tab';
 import { RelationsService } from './features/relations/relations.service';
 import { QueryColumn } from './core/sql/query.models';
@@ -133,6 +135,7 @@ const SIDEBAR_MIN = 140;
     StatsPopover,
     ColumnsPopover,
     RelationsDialog,
+    EditPreview,
     DetailsDialog,
     MenuBar,
     SettingsDialog,
@@ -439,6 +442,9 @@ const SIDEBAR_MIN = 140;
     @if (stats.summary()) {
       <app-stats-popover />
     }
+    @if (edit.preview()) {
+      <app-edit-preview />
+    }
     @if (relations.dialog()) {
       <app-relations-dialog />
     }
@@ -655,6 +661,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly stats = inject(StatsService);
   protected readonly layouts = inject(ColumnLayouts);
   protected readonly relations = inject(RelationsService);
+  protected readonly edit = inject(EditService);
   /** The column list is open. */
   private readonly columnsOpen = signal(false);
   /** What the column list shows: the columns of the result in front and their layout. */
@@ -1137,7 +1144,11 @@ export class App implements OnInit, OnDestroy {
         PREV_TAB: () => this.tabs.cycle(-1),
         DUPLICATE_TAB: withTab((id) => this.tabs.duplicate(id)),
         OPEN_FILE: () => this.tabs.openFiles(),
-        SAVE_FILE: withTab((id) => this.tabs.save(id)),
+        // a table with changes that are not written: „save“ writes them (as TablePlus does)
+        SAVE_FILE: withTab((id) => {
+          const t = this.tabs.active();
+          return t && this.edit.count(t).cells > 0 ? this.edit.save(t) : this.tabs.save(id);
+        }),
         SAVE_FILE_AS: withTab((id) => this.tabs.save(id, true)),
         NEW_CONNECTION: () => this.connectionDialog.set(emptyProfile()),
         IMPORT_CONNECTIONS: () => this.importOpen.set(true),
@@ -1323,7 +1334,9 @@ export class App implements OnInit, OnDestroy {
   private async listenForClose(): Promise<() => void> {
     const window = getCurrentWindow();
     return window.onCloseRequested(async (event) => {
-      if (!this.tabs.tabs().some((t) => txOpen(t.tx()))) return;
+      // nothing is lost by closing: no open transaction, no change that is not written
+      const loses = (t: QueryTab) => txOpen(t.tx()) || this.edit.count(t).cells > 0;
+      if (!this.tabs.tabs().some(loses)) return;
       event.preventDefault();
       if (await this.tabs.settleTransactions(this.tabs.tabs(), APP_TEXTS.theWindow)) {
         await window.destroy();
@@ -1349,11 +1362,63 @@ export class App implements OnInit, OnDestroy {
     const register = this.actions.register.bind(this.actions);
     // following foreign keys (prompt 030): in a table view, where the table of every column is known
     const table = () => has() && !!tab()?.tableView();
+    const edited = () => this.edit.count(tab()).cells > 0;
     const related = (run: (t: QueryTab) => unknown) => () => {
       const t = tab();
       if (t) void run(t);
     };
     return [
+      // editing cells (prompt 031): changes are collected, then written together
+      register(
+        'EDIT_CELL',
+        related((t) => this.edit.begin(t)),
+        table,
+      ),
+      register(
+        'EDIT_SET_NULL',
+        related((t) => this.edit.setAtCursor(t, { kind: 'null' })),
+        table,
+      ),
+      register(
+        'EDIT_SET_DEFAULT',
+        related((t) => this.edit.setAtCursor(t, { kind: 'default' })),
+        table,
+      ),
+      register(
+        'EDIT_UNDO',
+        related((t) => this.edit.undo(t)),
+        () => (tab()?.edits().undo.length ?? 0) > 0,
+      ),
+      register(
+        'EDIT_REDO',
+        related((t) => this.edit.redo(t)),
+        () => (tab()?.edits().redo.length ?? 0) > 0,
+      ),
+      register(
+        'EDIT_RESET_CELL',
+        related((t) => this.edit.resetCell(t)),
+        edited,
+      ),
+      register(
+        'EDIT_RESET_ROW',
+        related((t) => this.edit.resetRowAtCursor(t)),
+        edited,
+      ),
+      register(
+        'EDIT_DISCARD',
+        related((t) => this.edit.discardAsked(t)),
+        edited,
+      ),
+      register(
+        'EDIT_PREVIEW',
+        related((t) => this.edit.showPreview(t)),
+        edited,
+      ),
+      register(
+        'EDIT_SAVE',
+        related((t) => this.edit.save(t)),
+        edited,
+      ),
       register(
         'FK_FOLLOW',
         related((t) => this.relations.follow(t, 'here')),

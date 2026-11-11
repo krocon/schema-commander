@@ -52,11 +52,13 @@
   Spaltenliste mit Sprung; **Suche im Ergebnis** (Text, Wort, Regex, je Spalte) in Rust mit Treffer-Sprung,
   Gehe zu Zeile, nächster anderer Wert / nächstes NULL (Prompt 029); **Fremdschlüsseln folgen** in
   Tabellen-Ansichten: zur referenzierten Zeile (im Tab, neuer Tab, Vorschau), „wird referenziert von“ mit
-  Anzahl, mehrere Zeilen, Pfad mit Zurück/Vor, eigene Beziehungen (Prompt 030);
+  Anzahl, mehrere Zeilen, Pfad mit Zurück/Vor, eigene Beziehungen (Prompt 030); **Daten bearbeiten**:
+  Zellen einer Tabellen-Ansicht ändern, Änderungen sammeln (farbig, Undo/Redo), als SQL ansehen und gemeinsam
+  in einer Transaktion schreiben – mit Sperre gegen Änderungen anderer (Prompt 031);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
-- **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
+- **Noch nichts davon**: Zeilen einfügen/löschen, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–030),
+  erledigt: 001–031),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -125,6 +127,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/editor/         SqlEditor (<editlicious-editor scheme="none">), editlicious.ts (Laden),
                                editor-colors.ts (Farben des Editors aus unseren Tokens),
                                sql-split.ts (rein: Skripte je Dialekt zerlegen, Katalog sql-split.cases.json)
+  app/features/edit/           EditService (Root: Zelle bearbeiten, Vorschau, schreiben), EditBar (Zeile über dem
+                               Ergebnis), EditPreview, edit-buffer.ts (rein: Änderungspuffer, Undo, Plan, Prüfung)
   app/features/export/         ExportDialog, ExportService (Root: ein Job, Statuszeile), export-logic.ts (rein)
   app/features/filter/         FilterBar (Bedingungen der Tabellen-Ansicht, lokaler Filter), TableViews (Root:
                                Tabelle als Tabellen-Ansicht öffnen), filter-logic.ts (rein)
@@ -197,6 +201,8 @@ src-tauri/                     Rust
   src/extract.rs               Formate (TSV, CSV, JSON, Markdown, HTML, INSERT, IN, WHERE), Literale je Dialekt (rein)
   src/copy.rs                  Auswahl eines Ergebnisses als Text: Zeilenbereiche, Spalten, Abbruch, Grenze (rein)
   src/db/import.rs             Verbindungs-URLs und fremde Dateien lesen (rein, Katalog), eigener Export
+  src/db/edit.rs               ein UPDATE je geänderter Zeile: Schlüssel, neue Werte, Sperre über alte Werte –
+                               alles gebunden (rein, Katalog böser Werte)
   src/db/filter.rs             das SELECT einer Tabellen-Ansicht: Namen gequotet, Werte gebunden (rein, Katalog
                                auch böser Werte)
   src/db/guard.rs              Anweisungen einstufen (lesend/schreibend/DDL/gefährlich), Schutzstufen (rein, Katalog)
@@ -255,6 +261,11 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   Tabelle). Das Gitter hängt nur an der Zeilenhöhe, nie am ganzen Einstellungs-Signal.
 - **Aktionen im Ergebnis** (`scope: 'result'`): wirken nur, solange ein Ergebnisgitter die Tastatur hat – so
   bleibt `Mod+F` im Editor dessen Suche.
+- **Bearbeiten**: Nichts geht beim Tippen an die Datenbank. Änderungen liegen im Puffer des Tabs
+  (`edit-buffer.ts`), eine Zeile ist ihr Schlüssel, nicht ihre Stelle. Geschrieben wird nur über `edit_apply`:
+  Das Backend baut die `UPDATE`s aus dem Plan (das Fenster sendet nie SQL), lässt jede durch `admit`, und
+  schreibt alle in einer Transaktion – jede muss genau eine Zeile treffen, sonst Rollback. Was Zeilen neu liest,
+  läuft über `QueryTab.runAll` und fragt vorher (`dropEdits`).
 - **Kennzahlen**: Summen rechnet nur `stats.rs` (dezimal, exakt) – nie JavaScript und nie über die Zeilen im
   Fenster; das Fenster zeigt den Text, den es bekommt.
 - **Werte**: Eine `Cell` trägt den ganzen Wert; gekürzt wird nur beim Schreiben der Zeile. Nichts aus einem

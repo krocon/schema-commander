@@ -27,6 +27,8 @@ import { CopyService } from '../results/copy.service';
 import { errorObjectText, errorReport } from './run-state';
 import { TabsStore } from './tabs.store';
 import { FilterBar } from '../filter/filter-bar';
+import { EditBar } from '../edit/edit-bar';
+import { EditService } from '../edit/edit.service';
 import { FindBar } from '../find/find-bar';
 import { RelationPath } from '../relations/relation-path';
 import { RelationsService } from '../relations/relations.service';
@@ -51,7 +53,16 @@ const EDITOR_MIN_W = 160;
  */
 @Component({
   selector: 'app-query-pane',
-  imports: [FilterBar, FindBar, RelationPath, ResultGrid, SplitterComponent, SqlEditor, ValuePanel],
+  imports: [
+    EditBar,
+    FilterBar,
+    FindBar,
+    RelationPath,
+    ResultGrid,
+    SplitterComponent,
+    SqlEditor,
+    ValuePanel,
+  ],
   host: {
     '[class.side]': 'side()',
     '[class.no-result]': '!settings.settings().resultVisible && !maximized()',
@@ -155,6 +166,9 @@ const EDITOR_MIN_W = 160;
       @if (pathShown()) {
         <app-relation-path [tab]="tab()" />
       }
+      @if (tab().tableView() && tab().shown() !== 'messages') {
+        <app-edit-bar [tab]="tab()" />
+      }
       @if (tab().find.open() && filterBar()) {
         <app-find-bar
           [find]="tab().find"
@@ -199,6 +213,8 @@ const EDITOR_MIN_W = 160;
                     [layout]="layout()"
                     [hits]="hits()"
                     [links]="links()"
+                    [edits]="edits()"
+                    (editCell)="edit.begin(tab())"
                     (follow)="relations.follow(tab(), 'here')"
                     (layoutChange)="setLayout($event)"
                     (active)="onActive(r, $event)"
@@ -274,6 +290,8 @@ const EDITOR_MIN_W = 160;
                     [layout]="layout()"
                     [hits]="hits()"
                     [links]="links()"
+                    [edits]="edits()"
+                    (editCell)="edit.begin(tab())"
                     (follow)="relations.follow(tab(), 'here')"
                     (layoutChange)="setLayout($event)"
                     (active)="onActive(r, $event)"
@@ -617,6 +635,12 @@ export class QueryPane implements OnInit, OnDestroy {
   private readonly editor = viewChild(SqlEditor);
   protected readonly grid = viewChild(ResultGrid);
   protected readonly relations = inject(RelationsService);
+  protected readonly edit = inject(EditService);
+  /** The changes that are not written yet: the grid shows them instead of what was read. */
+  protected readonly edits = computed(() =>
+    // a local order or filter shows the rows elsewhere than where they were edited: no marks there
+    this.tab().localView() ? null : this.edit.marks(this.tab()),
+  );
   /** The columns whose cells lead to another table: those of the foreign keys of a table view. */
   protected readonly links = computed(() => {
     const columns = this.result()?.columns;
@@ -674,7 +698,11 @@ export class QueryPane implements OnInit, OnDestroy {
     effect(() => {
       // a table view: its foreign keys are read once, so its cells can say where they lead
       const tab = this.tab();
-      if (tab.tableView()) void this.relations.ensure(tab);
+      if (tab.tableView()) {
+        void this.relations.ensure(tab);
+        // and its columns, to know its key: whether its cells can be edited
+        this.edit.ensure(tab);
+      }
     });
     effect((onCleanup) => {
       // the app moves the cursor of the grid from outside (search, go to row, column list)

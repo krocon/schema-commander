@@ -134,6 +134,8 @@ pub fn run() {
             commands::meta_objects,
             commands::meta_table,
             commands::meta_relations,
+            commands::edit_preview,
+            commands::edit_apply,
             commands::meta_details,
             commands::names_refresh,
             commands::names_query,

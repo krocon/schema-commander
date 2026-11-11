@@ -20,6 +20,7 @@ export const MENU_EN = {
   format: 'More formatting',
   saved: 'Folder of the saved queries',
   filterCell: 'Filter by this cell',
+  editCells: 'Edit cells',
   relations: 'Relations',
   resultColumns: 'Columns',
   resultFind: 'Find and go to',

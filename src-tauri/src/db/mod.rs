@@ -5,6 +5,7 @@
 //! Rust, TLS over rustls with the roots of the OS.
 
 pub mod details;
+pub mod edit;
 pub mod filter;
 pub mod guard;
 pub mod import;

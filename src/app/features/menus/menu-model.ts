@@ -62,6 +62,25 @@ const COPY_AS: MenuDef = {
   ],
 };
 
+/** Editing the cells of a table (prompt 031). */
+const EDIT_CELLS: MenuDef = {
+  sub: () => T.editCells,
+  items: [
+    'EDIT_CELL',
+    'EDIT_SET_NULL',
+    'EDIT_SET_DEFAULT',
+    '-',
+    'EDIT_UNDO',
+    'EDIT_REDO',
+    'EDIT_RESET_CELL',
+    'EDIT_RESET_ROW',
+    'EDIT_DISCARD',
+    '-',
+    'EDIT_PREVIEW',
+    'EDIT_SAVE',
+  ],
+};
+
 /** From a row to its relatives (prompt 030). */
 const RELATIONS: MenuDef = {
   sub: () => T.relations,
@@ -267,6 +286,7 @@ export const MENU_BAR: readonly TopMenu[] = [
       'SHOW_MESSAGES',
       '-',
       FILTER_CELL,
+      EDIT_CELLS,
       RELATIONS,
       RESULT_FIND,
       RESULT_COLUMNS,
@@ -356,6 +376,7 @@ export const RESULT_MENU: readonly MenuDef[] = [
   'COPY_CELL_VALUE',
   'SAVE_CELL_VALUE',
   'TOGGLE_VALUE_PANEL',
+  EDIT_CELLS,
   FILTER_CELL,
   RELATIONS,
   RESULT_FIND,
