@@ -5,6 +5,8 @@ export type ErrorCode =
   | 'invalid_theme'
   | 'too_large'
   | 'not_found'
+  | 'invalid_session'
+  | 'encoding_failed'
   | 'connection_failed'
   | 'auth_failed'
   | 'tls_failed'
@@ -32,6 +34,8 @@ const CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'invalid_theme',
   'too_large',
   'not_found',
+  'invalid_session',
+  'encoding_failed',
   'connection_failed',
   'auth_failed',
   'tls_failed',
@@ -69,6 +73,8 @@ const TEXTS: Readonly<Record<ErrorCode, string>> = {
   invalid_theme: 'Das ist kein gültiges Farbschema.',
   too_large: 'Die Datei ist zu groß.',
   not_found: 'Nicht gefunden.',
+  invalid_session: 'Die gespeicherte Sitzung ist ungültig.',
+  encoding_failed: 'Die Kodierung der Datei kann nicht alle Zeichen des Textes darstellen.',
   connection_failed: 'Die Verbindung ist fehlgeschlagen.',
   auth_failed: 'Die Anmeldung wurde abgelehnt.',
   tls_failed: 'Die verschlüsselte Verbindung (TLS) kam nicht zustande.',
@@ -102,6 +108,8 @@ export function describeError(e: unknown): string {
     'tls_failed',
     'permission_denied',
     'not_found',
+    'invalid_session',
+    'encoding_failed',
     'invalid_profile',
     'keychain_unavailable',
     'unknown',

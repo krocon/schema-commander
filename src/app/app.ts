@@ -1,5 +1,4 @@
 import {
-  ChangeDetectionStrategy,
   Component,
   ElementRef,
   OnDestroy,
@@ -10,8 +9,10 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { isTauri } from '@tauri-apps/api/core';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { ActionService } from './core/actions/action.service';
-import { emptyProfile, DEMO_ID, Profile } from './core/connections/connection.models';
+import { DEMO_ID, Profile, emptyProfile } from './core/connections/connection.models';
 import { ConnectionsStore } from './core/connections/connections.store';
 import { DEFAULT_SETTINGS } from './core/settings/settings.models';
 import { SettingsService } from './core/settings/settings.service';
@@ -19,52 +20,35 @@ import { ThemeService } from './core/theme/theme.service';
 import { ConnectionDialog } from './features/connections/connection-dialog';
 import { ConnectionList } from './features/connections/connection-list';
 import { PasswordDialog } from './features/connections/password-dialog';
-import { EdCaret } from './features/editor/editlicious';
-import { SqlEditor } from './features/editor/sql-editor';
 import { CommandPalette } from './features/palette/command-palette';
-import { ResultGrid } from './features/results/result-grid';
-import { QuerySession, statusText } from './features/shell/query-session';
 import { ShortcutDialogComponent } from './features/shortcuts/shortcut-dialog';
+import { QueryPane } from './features/tabs/query-pane';
+import { statusText } from './features/tabs/run-state';
+import { TabBar } from './features/tabs/tab-bar';
+import { encodingLabel } from './features/tabs/tab-logic';
+import { TabsStore } from './features/tabs/tabs.store';
 import { ThemeEditor } from './features/themes/theme-editor';
 import { copyName } from './features/themes/theme-editor-logic';
 import { ThemePickerComponent } from './features/themes/theme-picker';
 import { SplitterComponent } from './shared/splitter';
 
 const SIDEBAR_MIN = 140;
-const RESULT_MIN = 80;
-/** What the editor keeps at least, px. */
-const EDITOR_MIN = 120;
-
-const START_SQL = `-- Schema Commander
--- Die Demo-Datenbank im Speicher (SQLite) hat die Tabellen customer, product, orders.
--- Strg/Cmd+Enter führt die Anweisung unter dem Cursor aus, Strg/Cmd+Shift+P zeigt alle Befehle.
-
-SELECT c.name, c.country, count(*) AS orders, round(sum(o.quantity * p.price), 2) AS revenue
-FROM orders o
-JOIN customer c ON c.id = o.customer_id
-JOIN product p ON p.id = o.product_id
-GROUP BY c.id
-ORDER BY revenue DESC;
-
-SELECT * FROM orders;
-`;
 
 /**
- * The window of the walking skeleton: toolbar, sidebar (the schema tree to be), SQL editor, result
- * area and status line. Sizes and the colour scheme are settings.
+ * The window: toolbar, sidebar (connections; the schema tree to be), the query tabs with editor and result,
+ * and the status line. Sizes and the colour scheme are settings.
  */
 @Component({
   selector: 'app-root',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommandPalette,
     ConnectionDialog,
     ConnectionList,
     PasswordDialog,
-    ResultGrid,
+    QueryPane,
     ShortcutDialogComponent,
     SplitterComponent,
-    SqlEditor,
+    TabBar,
     ThemeEditor,
     ThemePickerComponent,
   ],
@@ -83,12 +67,12 @@ SELECT * FROM orders;
         type="button"
         class="primary"
         [title]="'Anweisung unter dem Cursor ausführen' + actions.hint('RUN_STATEMENT')"
-        [disabled]="state().kind === 'running'"
+        [disabled]="running()"
         (click)="actions.run('RUN_STATEMENT')"
       >
         ▶ Ausführen
       </button>
-      @if (state().kind === 'running') {
+      @if (running()) {
         <button
           type="button"
           [title]="'Laufende Anweisung abbrechen' + actions.hint('CANCEL_QUERY')"
@@ -147,71 +131,41 @@ SELECT * FROM orders;
           (sizeCommit)="commitWidth($event)"
         />
       }
-      <div class="column">
-        <app-sql-editor
-          class="editor"
-          [initialValue]="startSql"
-          (run)="session.run($event)"
-          (caret)="caret.set($event)"
-        />
-        <app-splitter
-          orientation="horizontal"
-          pane="after"
-          label="Höhe des Ergebnisbereichs"
-          controls="results"
-          [size]="resultH()"
-          [min]="resultMin"
-          [max]="resultMaxH()"
-          [defaultSize]="defaults.resultHeight"
-          (sizeChange)="dragHeight.set($event)"
-          (sizeCommit)="commitHeight($event)"
-        />
-        <section
-          #results
-          id="results"
-          class="results"
-          aria-label="Ergebnis"
-          tabindex="-1"
-          [style.height.px]="resultH()"
-        >
-          @switch (state().kind) {
-            @case ('done') {
-              @if (result(); as r) {
-                @if (r.rowsAffected === null) {
-                  <app-result-grid [result]="r" />
-                } @else {
-                  <p class="message">{{ status() }}</p>
-                }
-              }
-            }
-            @case ('failed') {
-              <p class="message error" role="alert">{{ errorMessage() }}</p>
-            }
-            @case ('running') {
-              <p class="message">Läuft …</p>
-            }
-            @case ('cancelled') {
-              <p class="message">Abgebrochen.</p>
-            }
-            @default {
-              <p class="message">Noch kein Ergebnis. Strg/Cmd+Enter führt die Anweisung aus.</p>
-            }
+      <div #column class="column">
+        <app-tab-bar />
+        @for (tab of tabs.tabs(); track tab.id) {
+          <!-- A tab is built when it is first shown and stays: undo history, caret and scroll survive. -->
+          @if (tab.mounted()) {
+            <app-query-pane
+              class="pane"
+              [tab]="tab"
+              [class.hidden]="tab.id !== tabs.activeId()"
+              [inert]="tab.id !== tabs.activeId()"
+            />
           }
-        </section>
+        }
       </div>
     </div>
     <footer class="status" role="status">
       <span>{{ status() }}</span>
       <span class="spacer"></span>
-      @if (caret(); as c) {
-        <span>Zeile {{ c.line }}, Spalte {{ c.ch }}</span>
+      @if (tabs.active(); as tab) {
+        @if (tab.filePath()) {
+          <span>{{ encoding() }}</span>
+        }
+        @if (tab.caret(); as c) {
+          <span>Zeile {{ c.line }}, Spalte {{ c.ch }}</span>
+        }
       }
     </footer>
     @if (notice(); as message) {
       <div class="notice" role="alert">
         <span>{{ message }}</span>
-        <button type="button" aria-label="Meldung schließen" (click)="notice.set(null)">×</button>
+        <button type="button" aria-label="Meldung schließen" (click)="dismissNotice()">×</button>
       </div>
+    }
+    @if (dropActive()) {
+      <div class="drop" aria-hidden="true"><span>SQL-Datei hier ablegen</span></div>
     }
     @if (connectionDialog(); as profile) {
       @defer (on immediate) {
@@ -250,62 +204,46 @@ export class App implements OnInit, OnDestroy {
   protected readonly settings = inject(SettingsService);
   /** Created first: it puts the colour scheme on screen and shows the window. */
   protected readonly theme = inject(ThemeService);
-  protected readonly session = inject(QuerySession);
   protected readonly actions = inject(ActionService);
   protected readonly connections = inject(ConnectionsStore);
+  protected readonly tabs = inject(TabsStore);
 
   /** The connection dialog is open with this profile (`id === ''` = a new one). */
   protected readonly connectionDialog = signal<Profile | null>(null);
-
   protected readonly paletteOpen = signal(false);
   /** The shortcut editor, `read` as an overview. */
   protected readonly shortcutsOpen = signal<'edit' | 'read' | null>(null);
   /** A message of the app itself (failed action, unreadable shortcuts). */
-  protected readonly notice = signal<string | null>(null);
+  private readonly ownNotice = signal<string | null>(null);
+  protected readonly notice = computed(() => this.ownNotice() ?? this.tabs.notice());
+  /** A file is dragged over the window. */
+  protected readonly dropActive = signal(false);
   private readonly sidebar = viewChild<ElementRef<HTMLElement>>('sidebar');
-  private readonly results = viewChild<ElementRef<HTMLElement>>('results');
+  private readonly column = viewChild<ElementRef<HTMLElement>>('column');
   private readonly cleanups: (() => void)[] = [];
 
-  protected readonly startSql = START_SQL;
   protected readonly defaults = DEFAULT_SETTINGS;
   protected readonly sidebarMin = SIDEBAR_MIN;
-  protected readonly resultMin = RESULT_MIN;
 
-  protected readonly editor = viewChild(SqlEditor);
-  protected readonly caret = signal<EdCaret | null>(null);
-  protected readonly state = this.session.state;
-  protected readonly status = computed(() => statusText(this.state()));
-  protected readonly result = computed(() => {
-    const s = this.state();
-    return s.kind === 'done' ? s.result : null;
+  protected readonly running = computed(() => this.tabs.active()?.running() ?? false);
+  protected readonly status = computed(() => {
+    const tab = this.tabs.active();
+    return tab ? statusText(tab.state()) : '';
   });
-  protected readonly errorMessage = computed(() => {
-    const s = this.state();
-    return s.kind === 'failed' ? s.message : '';
-  });
+  protected readonly encoding = computed(() =>
+    encodingLabel(this.tabs.active()?.encoding() ?? null),
+  );
 
-  // Sizes are stored when a drag ends; in between the drag signals hold them.
+  // The width is stored when a drag ends; in between the drag signal holds it.
   protected readonly dragWidth = signal<number | null>(null);
-  protected readonly dragHeight = signal<number | null>(null);
   private readonly workspace = viewChild<ElementRef<HTMLElement>>('workspace');
   private readonly workspaceW = signal(0);
-  private readonly workspaceH = signal(0);
   protected readonly sidebarMaxW = computed(() => Math.max(SIDEBAR_MIN, this.workspaceW() * 0.6));
-  protected readonly resultMaxH = computed(() =>
-    Math.max(RESULT_MIN, this.workspaceH() - EDITOR_MIN),
-  );
   protected readonly sidebarW = computed(() =>
     clamp(
       this.dragWidth() ?? this.settings.settings().sidebarWidth,
       SIDEBAR_MIN,
       this.sidebarMaxW(),
-    ),
-  );
-  protected readonly resultH = computed(() =>
-    clamp(
-      this.dragHeight() ?? this.settings.settings().resultHeight,
-      RESULT_MIN,
-      this.resultMaxH(),
     ),
   );
   private observer: ResizeObserver | null = null;
@@ -316,10 +254,7 @@ export class App implements OnInit, OnDestroy {
       this.observer?.disconnect();
       this.observer = null;
       if (!element || typeof ResizeObserver === 'undefined') return;
-      const measure = () => {
-        this.workspaceW.set(element.clientWidth);
-        this.workspaceH.set(element.clientHeight);
-      };
+      const measure = () => this.workspaceW.set(element.clientWidth);
       measure();
       this.observer = new ResizeObserver(measure);
       this.observer.observe(element);
@@ -327,16 +262,27 @@ export class App implements OnInit, OnDestroy {
   }
 
   async ngOnInit(): Promise<void> {
-    // both before the window shows: the stored scheme may be one of the user's own (design 001 E7)
     this.cleanups.push(this.actions.attach(document), this.registerActions());
-    this.actions.reportError = (message) => this.notice.set(message);
+    this.actions.reportError = (message) => this.ownNotice.set(message);
     const engine = this.actions.load();
+    // both before the window shows: the stored scheme may be one of the user's own (design 001 E7)
     await Promise.all([this.settings.load(), this.theme.loadUserThemes()]);
     await engine;
-    // after the settings: they name the active connection
+    // after the settings: they name the active connection; the tabs name theirs
     await this.connections.load();
+    await this.tabs.load();
     const notice = this.actions.startNotice();
-    if (notice) this.notice.set(notice);
+    if (notice) this.ownNotice.set(notice);
+    // the backup of a text that was just typed must not wait for its timer when the window goes
+    const flush = () => this.tabs.flush();
+    const hidden = () => document.visibilityState === 'hidden' && flush();
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', hidden);
+    this.cleanups.push(() => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', hidden);
+    });
+    if (isTauri()) this.cleanups.push(await this.listenForDrops());
   }
 
   ngOnDestroy(): void {
@@ -344,16 +290,49 @@ export class App implements OnInit, OnDestroy {
     for (const cleanup of this.cleanups) cleanup();
   }
 
-  /** The actions of the window: run, layout, dialogs, moving between its areas. */
+  protected dismissNotice(): void {
+    this.ownNotice.set(null);
+    this.tabs.notice.set(null);
+  }
+
+  /** Files dropped onto the window open as tabs. */
+  private async listenForDrops(): Promise<() => void> {
+    return getCurrentWebview().onDragDropEvent((event) => {
+      const payload = event.payload;
+      if (payload.type === 'enter' || payload.type === 'over') {
+        this.dropActive.set(true);
+      } else if (payload.type === 'leave') {
+        this.dropActive.set(false);
+      } else {
+        this.dropActive.set(false);
+        void this.tabs.openFiles(payload.paths);
+      }
+    });
+  }
+
+  /** The actions of the window: run, tabs, files, connections, layout, dialogs, moving between its areas. */
   private registerActions(): () => void {
-    const running = () => this.state().kind === 'running';
+    const tab = () => this.tabs.active();
+    const withTab = (run: (id: string) => unknown) => () => {
+      const id = this.tabs.activeId();
+      if (id) void run(id);
+    };
     const offs = [
       this.actions.register(
         'RUN_STATEMENT',
-        () => this.editor()?.runCurrent(),
-        () => !running() && !!this.editor(),
+        () => tab()?.runCurrent(),
+        () => !this.running() && !!tab(),
       ),
-      this.actions.register('CANCEL_QUERY', () => this.session.cancel(), running),
+      this.actions.register(
+        'CANCEL_QUERY',
+        () => tab()?.cancel(),
+        () => this.running(),
+      ),
+      this.actions.register(
+        'REOPEN_TAB',
+        () => this.tabs.reopen(),
+        () => this.tabs.canReopen(),
+      ),
       this.actions.register(
         'EDIT_CONNECTION',
         () => this.connectionDialog.set(this.connections.active()),
@@ -370,6 +349,18 @@ export class App implements OnInit, OnDestroy {
         () => this.connections.activeState().kind === 'open',
       ),
       this.actions.registerAll({
+        NEW_TAB: () => {
+          this.tabs.newTab();
+          // the editor of the new tab is drawn with the next change detection
+          setTimeout(() => this.tabs.active()?.focus(), 50);
+        },
+        CLOSE_TAB: withTab((id) => this.tabs.close(id)),
+        NEXT_TAB: () => this.tabs.cycle(1),
+        PREV_TAB: () => this.tabs.cycle(-1),
+        DUPLICATE_TAB: withTab((id) => this.tabs.duplicate(id)),
+        OPEN_FILE: () => this.tabs.openFiles(),
+        SAVE_FILE: withTab((id) => this.tabs.save(id)),
+        SAVE_FILE_AS: withTab((id) => this.tabs.save(id, true)),
         NEW_CONNECTION: () => this.connectionDialog.set(emptyProfile()),
         TOGGLE_SIDEBAR: () =>
           this.settings.update({ sidebarVisible: !this.settings.settings().sidebarVisible }),
@@ -407,18 +398,27 @@ export class App implements OnInit, OnDestroy {
       : ['editor', 'result'];
   }
 
+  /** The result area of the tab in front. */
+  private results(): HTMLElement | null {
+    return (
+      this.column()?.nativeElement.querySelector<HTMLElement>(
+        'app-query-pane:not(.hidden) .results',
+      ) ?? null
+    );
+  }
+
   private currentArea(): Area | null {
     const active = document.activeElement;
     if (!active) return null;
     if (this.sidebar()?.nativeElement.contains(active)) return 'sidebar';
-    if (this.results()?.nativeElement.contains(active)) return 'result';
+    if (this.results()?.contains(active)) return 'result';
     if (active.closest('app-sql-editor')) return 'editor';
     return null;
   }
 
   private focusArea(area: Area): void {
     if (area === 'editor') {
-      this.editor()?.focus();
+      this.tabs.active()?.focus();
     } else if (area === 'sidebar') {
       if (!this.settings.settings().sidebarVisible) {
         this.settings.update({ sidebarVisible: true });
@@ -428,7 +428,7 @@ export class App implements OnInit, OnDestroy {
       }
       this.sidebar()?.nativeElement.querySelector('button')?.focus();
     } else {
-      const host = this.results()?.nativeElement;
+      const host = this.results();
       const grid = host?.querySelector<HTMLElement>('.ge-table [tabindex], .ge-table');
       (grid ?? host)?.focus();
     }
@@ -437,11 +437,6 @@ export class App implements OnInit, OnDestroy {
   protected commitWidth(width: number): void {
     this.dragWidth.set(null);
     this.settings.update({ sidebarWidth: width });
-  }
-
-  protected commitHeight(height: number): void {
-    this.dragHeight.set(null);
-    this.settings.update({ resultHeight: height });
   }
 }
 

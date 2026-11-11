@@ -17,6 +17,8 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
 
 - Connections to PostgreSQL, MySQL/MariaDB, SQL Server and SQLite files: profiles in folders with colour tags,
   passwords only in the keychain of your OS; a demo database in memory to try things out
+- Query tabs, each with its own connection and result. Nothing ever asks „save?“: every text is backed up a
+  moment after you type and is there again after a restart or a crash; `.sql` files keep their encoding
 - SQL editor with syntax highlighting; <kbd>Ctrl/⌘</kbd>+<kbd>Enter</kbd> runs the statement under the caret
 - Result grid with virtual scrolling, sortable and resizable columns
 - 17 colour schemes (dark, light, One Dark, Solarized Light, Matrix, Amber …), fixed or following the system –

@@ -4,13 +4,20 @@
 pub mod commands;
 pub mod db;
 pub mod error;
+pub mod menu;
+pub mod session;
+pub mod textfile;
 pub mod themes;
 
 /// The window starts hidden and is shown with the first colour scheme; at the latest then.
 const SHOW_FALLBACK: std::time::Duration = std::time::Duration::from_secs(1);
 
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Windows and Linux have no menu bar yet (prompt 018).
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(menu::macos_menu);
+    builder
         // Native file dialogs: the only way a path gets into a command (design 001 E4).
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -30,6 +37,7 @@ pub fn run() {
             let store: std::sync::Arc<dyn db::secrets::SecretStore> =
                 std::sync::Arc::new(db::secrets::SystemStore);
             app.manage(db::manager::ConnectionManager::new(file, store));
+            app.manage(session::SessionDir::new(app.path().app_data_dir()?));
             // A frontend that never applies a scheme must not leave the window hidden.
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -47,6 +55,13 @@ pub fn run() {
             commands::close_connection,
             commands::run_query,
             commands::cancel_query,
+            commands::load_session,
+            commands::save_session,
+            commands::load_tab_text,
+            commands::save_tab_text,
+            commands::delete_tab_text,
+            commands::read_text_file,
+            commands::write_text_file,
             commands::set_window_chrome,
             commands::load_themes,
             commands::save_themes,

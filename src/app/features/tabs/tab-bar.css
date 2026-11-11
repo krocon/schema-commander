@@ -1,0 +1,143 @@
+:host {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.tabs {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tab {
+  flex: 0 1 190px;
+  min-width: 90px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 10px;
+  border-right: 1px solid var(--border);
+  border-top: 2px solid transparent;
+  color: var(--text-dim);
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tab:hover {
+  background: var(--bg-hover);
+}
+
+.tab.active {
+  background: var(--bg-app);
+  color: var(--text);
+  border-top-color: var(--conn);
+}
+
+.tab.drop {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.tab:focus-visible {
+  outline-offset: -2px;
+}
+
+.mark {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--conn);
+}
+
+.mark.running {
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dirty {
+  flex: none;
+  font-size: 9px;
+}
+
+.rename {
+  flex: 1;
+  min-width: 0;
+  padding: 0 4px;
+}
+
+.close {
+  flex: none;
+  padding: 0 5px;
+  line-height: 1.2;
+  color: var(--text-dim);
+  visibility: hidden;
+}
+
+.tab:hover .close,
+.tab.active .close {
+  visibility: visible;
+}
+
+.new {
+  flex: none;
+  margin: 3px 4px;
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.backdrop:hover {
+  background: transparent;
+}
+
+.menu {
+  position: fixed;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+}
+
+.menu button {
+  text-align: left;
+  padding: 4px 10px;
+}
+
+.menu hr {
+  width: 100%;
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}

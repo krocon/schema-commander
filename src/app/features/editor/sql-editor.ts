@@ -14,7 +14,7 @@ import {
 } from '@angular/core';
 import { ThemeService } from '../../core/theme/theme.service';
 import { EDITOR_COLORS } from './editor-colors';
-import { EdCaret, EditliciousEditorElement, loadEditlicious } from './editlicious';
+import { EdCaret, EdChange, EditliciousEditorElement, loadEditlicious } from './editlicious';
 import { offsetOf, statementAt } from './sql-split';
 
 /**
@@ -35,6 +35,7 @@ import { offsetOf, statementAt } from './sql-split';
         [style]="colors"
         [attr.aria-label]="label()"
         (ed-caret)="onCaret($event)"
+        (ed-change)="onChange($event)"
       />
     } @else if (state() === 'failed') {
       <p class="message error" role="alert">Der Editor konnte nicht geladen werden.</p>
@@ -71,6 +72,8 @@ export class SqlEditor implements OnInit {
   /** The statement to run. */
   readonly run = output<string>();
   readonly caret = output<EdCaret>();
+  /** The text changed (revision, size – never the text itself). Not sent for the start text. */
+  readonly changed = output<EdChange>();
 
   protected readonly state = signal<'loading' | 'ready' | 'failed'>('loading');
   /** All colours of the editor come from our tokens (design 001 E1). */
@@ -80,6 +83,8 @@ export class SqlEditor implements OnInit {
   /** The last caret the editor reported; `null` = still at the start. */
   private lastCaret: EdCaret | null = null;
   private seeded = false;
+  /** The start text is in the editor: changes from here on are the user's. */
+  private seededDone = false;
 
   constructor() {
     // the element exists once the module is loaded and the view is rendered
@@ -102,6 +107,18 @@ export class SqlEditor implements OnInit {
     this.editor()?.nativeElement.focus();
   }
 
+  /** The whole text; `''` while the editor is not there yet. */
+  getText(): Promise<string> {
+    const editor = this.editor()?.nativeElement;
+    // before the start text is in, the start text is the text
+    if (!editor || !this.seededDone) return Promise.resolve(this.initialValue());
+    return editor.getValue();
+  }
+
+  async setText(text: string): Promise<void> {
+    await this.editor()?.nativeElement.setValue(text);
+  }
+
   /** Asks to run the statement under the caret. */
   async runCurrent(): Promise<void> {
     const editor = this.editor()?.nativeElement;
@@ -112,6 +129,12 @@ export class SqlEditor implements OnInit {
       offsetOf(script, this.lastCaret?.line ?? 1, this.lastCaret?.ch ?? 1),
     );
     if (statement) this.run.emit(statement.text);
+  }
+
+  protected onChange(event: Event): void {
+    const detail = (event as CustomEvent<EdChange>).detail;
+    // the start text is no change of the user
+    if (detail && this.seededDone) this.changed.emit(detail);
   }
 
   protected onCaret(event: Event): void {
@@ -126,6 +149,9 @@ export class SqlEditor implements OnInit {
     const editor = this.editor()?.nativeElement;
     if (this.seeded || !editor) return;
     this.seeded = true;
-    void editor.setValue(this.initialValue());
+    void editor.setValue(this.initialValue()).then(
+      () => (this.seededDone = true),
+      () => (this.seededDone = true),
+    );
   }
 }

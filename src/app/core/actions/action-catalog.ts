@@ -9,7 +9,15 @@
  */
 export type ActionScope = 'global' | 'view';
 
-export const ACTION_GROUPS = ['Abfrage', 'Verbindung', 'Ansicht', 'Navigation', 'Hilfe'] as const;
+export const ACTION_GROUPS = [
+  'Abfrage',
+  'Tabs',
+  'Datei',
+  'Verbindung',
+  'Ansicht',
+  'Navigation',
+  'Hilfe',
+] as const;
 export type ActionGroup = (typeof ACTION_GROUPS)[number];
 
 export interface ActionDef {
@@ -33,6 +41,22 @@ export const ACTIONS = [
     scope: 'global',
   },
   { id: 'CANCEL_QUERY', label: 'Laufende Anweisung abbrechen', group: 'Abfrage', scope: 'global' },
+  // Tabs
+  { id: 'NEW_TAB', label: 'Neuer Tab', group: 'Tabs', scope: 'global' },
+  { id: 'CLOSE_TAB', label: 'Tab schließen', group: 'Tabs', scope: 'global' },
+  {
+    id: 'REOPEN_TAB',
+    label: 'Geschlossenen Tab wiederherstellen',
+    group: 'Tabs',
+    scope: 'global',
+  },
+  { id: 'NEXT_TAB', label: 'Nächster Tab', group: 'Tabs', scope: 'global', repeat: true },
+  { id: 'PREV_TAB', label: 'Voriger Tab', group: 'Tabs', scope: 'global', repeat: true },
+  { id: 'DUPLICATE_TAB', label: 'Tab duplizieren', group: 'Tabs', scope: 'global' },
+  // Datei
+  { id: 'OPEN_FILE', label: 'SQL-Datei öffnen …', group: 'Datei', scope: 'global' },
+  { id: 'SAVE_FILE', label: 'Tab als Datei speichern', group: 'Datei', scope: 'global' },
+  { id: 'SAVE_FILE_AS', label: 'Tab speichern unter …', group: 'Datei', scope: 'global' },
   // Verbindung
   { id: 'NEW_CONNECTION', label: 'Neue Verbindung …', group: 'Verbindung', scope: 'global' },
   {

@@ -6,6 +6,8 @@ use crate::db::profiles::LoadedProfiles;
 use crate::db::secrets::Secret;
 use crate::db::value::QueryResult;
 use crate::error::{AppError, AppResult, ErrorCode};
+use crate::session::{LoadedSession, SessionDir, SessionFile};
+use crate::textfile::{self, TextFile};
 use crate::themes::{self, LoadedThemes, ThemesFile, UserTheme};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, State};
@@ -70,6 +72,48 @@ pub fn run_query(
 #[tauri::command(async)]
 pub fn cancel_query(manager: State<'_, ConnectionManager>, id: String) {
     manager.cancel(&id);
+}
+
+/// The open tabs of the last run (prompt 004). Text files no tab owns any more are removed.
+#[tauri::command(async)]
+pub fn load_session(dir: State<'_, SessionDir>) -> LoadedSession {
+    let loaded = dir.load();
+    let keep: Vec<&str> = loaded.session.tabs.iter().map(|t| t.id.as_str()).collect();
+    dir.sweep(&keep);
+    loaded
+}
+
+#[tauri::command(async)]
+pub fn save_session(dir: State<'_, SessionDir>, session: SessionFile) -> AppResult<()> {
+    dir.save(&session)
+}
+
+#[tauri::command(async)]
+pub fn load_tab_text(dir: State<'_, SessionDir>, id: String) -> AppResult<String> {
+    dir.load_text(&id)
+}
+
+/// The running backup of a tab's text.
+#[tauri::command(async)]
+pub fn save_tab_text(dir: State<'_, SessionDir>, id: String, text: String) -> AppResult<()> {
+    dir.save_text(&id, &text)
+}
+
+#[tauri::command(async)]
+pub fn delete_tab_text(dir: State<'_, SessionDir>, id: String) -> AppResult<()> {
+    dir.delete_text(&id)
+}
+
+/// Reads a text file the user chose (native dialog, or dropped onto the window).
+#[tauri::command(async)]
+pub fn read_text_file(path: String) -> AppResult<TextFile> {
+    textfile::read(Path::new(&path))
+}
+
+/// Writes a text to the path the user chose in the native dialog, in the given encoding.
+#[tauri::command(async)]
+pub fn write_text_file(path: String, text: String, encoding: String) -> AppResult<()> {
+    textfile::write(Path::new(&path), &text, &encoding)
 }
 
 /// `#rrggbb` → channels.

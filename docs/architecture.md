@@ -37,6 +37,9 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | A15 | Treiber wie log-commander (`sqlx`-Unterkrates, `tiberius`, `rusqlite`), Anweisungen über das einfache Protokoll, eine Sitzung je Profil | Design 003 E1–E5 |
 | A16 | Zellen als JSON ohne Verlust (Ganzzahlen jenseits 2^53, Dezimal, Datum als Text; Spalte trägt die Art) | Design 003 E6 |
 | A17 | Passwörter nur im Schlüsselbund des Systems; `connections.json` kennt kein Geheimnis | Design 003 E7–E9 |
+| A18 | Ein Editor je Tab, gebaut beim ersten Zeigen; Text je Tab als eigene Datei, eine Weile nach der letzten Änderung gesichert; Schließen ohne Rückfrage | Design 004 E1–E7 |
+| A19 | `.sql`-Dateien behalten ihre Kodierung (`textfile.rs`, ohne Abhängigkeit); nie Schreiben mit Verlust | Design 004 E10 |
+| A20 | Eigenes macOS-Menü ohne „Fenster schließen“ | `Cmd+W` gehört den Tabs (Design 004 E12) |
 | A10 | Oberflächentexte vorerst deutsch in den Komponenten | übernommene Galerie ist deutsch; Kataloge de/en kommen mit dem Prompt „Einstellungen und Sprache“ |
 
 ## Offene Architekturfragen (entscheidet der jeweilige Prompt)

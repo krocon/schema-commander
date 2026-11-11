@@ -14,11 +14,12 @@
   Farbschemata umschaltbar (auch „System folgen“), **eigene Schemata** mit Live-Editor, Import und Export (Prompt 001);
   der Editor folgt jedem Schema; **Aktionssystem** mit Keymap je OS, Befehlspalette (`Mod+Shift+P`) und
   Kürzel-Editor (Prompt 002); **Verbindungen** zu PostgreSQL, MySQL/MariaDB, SQL Server und SQLite-Dateien mit
-  Profilen, Ordnern, Farbmarken und Passwörtern im Schlüsselbund (Prompt 003); Einstellungen und Fensterzustand
-  bleiben über einen Neustart.
-- **Noch nichts davon**: Schema-Baum, Tabs, Bearbeiten, Export. Alle Features aus
+  Profilen, Ordnern, Farbmarken und Passwörtern im Schlüsselbund (Prompt 003); **Abfrage-Tabs** mit eigener
+  Verbindung, laufender Sicherung des Textes, Wiederherstellung nach Neustart und `.sql`-Dateien (Prompt 004);
+  Einstellungen und Fensterzustand bleiben über einen Neustart.
+- **Noch nichts davon**: Schema-Baum, Bearbeiten, Export. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–003),
+  erledigt: 001–004),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -48,7 +49,7 @@ Nicht ausführbare Checks im Abschlussbericht mit Grund nennen.
 src/                           Angular 22 (zoneless, Signals, Standalone)
   styles.css                   Design-Tokens (@theme dark / light), Grundstile – einzige Stelle für Farben
   styles/ge-table-theme.css    Brücke Tokens → --ge-table-* der GuiExpert Table
-  app/app.ts, app.css          Fenster: Toolbar, Seitenleiste, Editor, Ergebnis, Statuszeile, Splitter
+  app/app.ts, app.css          Fenster: Toolbar, Seitenleiste, Tab-Leiste, Tabs, Statuszeile; registriert Aktionen
   app/app.config.ts            Provider: *Api-Fassaden → Tauri-Implementierungen
   app/core/actions/            Aktionen: action-catalog.ts (Ids, Namen, Bereich), keymaps/*.json (je OS),
                                keymap.ts (Vorgabe + eigene Belegung, Reserviertes), shortcut.ts (Notation),
@@ -58,6 +59,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/connections/        Profile (Modell), ConnectionsApi, ConnectionsStore (Root: Profile, Zustände, aktive
                                Verbindung, Passwortabfrage)
   app/core/errors/             AppError + toAppError (spiegelt src-tauri/src/error.rs)
+  app/core/session/            SessionApi: session.json, Texte der Tabs, .sql lesen/schreiben
   app/core/settings/           Settings (Modell, mergeSettings), SettingsService (tauri-plugin-store)
   app/core/sql/                QueryApi (run, cancel) + DTOs (QueryResult, Cell, ColKind) – spiegelt db/value.rs
   app/core/theme/              Farbschemata: tokens.ts (Katalog), themes/*.json, theme-logic.ts (rein),
@@ -71,7 +73,9 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/palette/        Befehlspalette (CommandPalette, palette-logic.ts rein: unscharfe Suche)
   app/features/shortcuts/      Kürzel-Editor und -Übersicht (ShortcutDialog, shortcut-logic.ts)
   app/features/results/        ResultGrid (GuiExpert Table), result-model.ts (rein: Spalten, Breiten, Modell)
-  app/features/shell/          QuerySession (Root: letzte Anweisung und ihr Ausgang auf der aktiven Verbindung)
+  app/features/tabs/           TabsStore (Root: Tabs, Sicherung, Dateien), QueryTab (Tab mit Ausführung, kein
+                               Injectable), QueryPane (Editor + Ergebnis eines Tabs), TabBar,
+                               tab-logic.ts (rein: Titel, Ids, Reihenfolge), run-state.ts
   app/features/themes/         Farbschema-Galerie (ThemePicker, ThemeThumb, theme-picker-logic.ts),
                                Schema-Editor (ThemeEditor, theme-editor-logic.ts rein: Ids, Import, Kontrast)
   app/shared/                  Splitter (+ splitter-logic.ts)
@@ -79,6 +83,9 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
 src-tauri/                     Rust
   src/lib.rs                   Builder: Plugins (store, window-state), State, Commands
   src/commands.rs              dünne Command-Schicht (Verbindungen, run_query, cancel_query, Fenster, Farbschemata)
+  src/session.rs               Sitzung der Tabs: session.json + tabs/<id>.sql (rein, getestet)
+  src/textfile.rs              .sql lesen/schreiben mit Kodierung (UTF-8/-BOM, UTF-16, Windows-1252)
+  src/menu.rs                  macOS-Menü ohne Cmd+W (das volle Menü: Prompt 018)
   src/db/mod.rs                Profile, DbKind, TlsMode, Session-Trait, Laufzeit, Fehler in Worten
   src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
   src/db/value.rs              Cell, ColKind, QueryResult (verlustfrei über die Brücke)
@@ -109,6 +116,9 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   Handler per `ActionService.register`. Keine eigenen `keydown`-Handler für Funktionen (Ausnahmen: Widgets nach
   APG – Dialoge, Listen, Menüs, Splitter). Die Tasten des Editors (`Mod+C/V/X/A/Z`, `Mod+F`, `F3`,
   `Strg+Leertaste`) sind reserviert; einfache Tasten und AltGr-Zeichen erreichen im Editor nie eine Aktion.
+- **Tabs**: Ein Tab ist ein `QueryTab` (per Id adressiert), sein Editor bleibt in der Seite, auch wenn er nicht
+  vorn ist. Der Text eines Tabs wird nie bei jedem Tastendruck über die Brücke geschickt: `TabsStore.textChanged`
+  plant die Sicherung, die den Text einmal holt. Nichts fragt „Speichern?“.
 - **Zustand in Signals**, Stores je Instanz ohne `providedIn`, Globales in Root-Services; veraltete Antworten verwerfen.
 - **Farben nur als Tokens**; jeder Token in dark und light, im Katalog und in den Kontrastpaaren.
 - **Sicherheit**: schmale Commands statt breiter Plugins, strikte CSP, Geheimnisse nur im Schlüsselbund, SQL und

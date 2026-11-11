@@ -15,6 +15,10 @@ pub enum ErrorCode {
     /// A file is larger than a command reads.
     TooLarge,
     NotFound,
+    /// The session of open tabs (prompt 004): a tab id or entry that breaks a rule.
+    InvalidSession,
+    /// A text cannot be written in the encoding of its file without losing characters.
+    EncodingFailed,
     /// Connections (prompt 003): the server cannot be reached, does not answer or the connection broke.
     ConnectionFailed,
     /// The server refused the login (user, password).

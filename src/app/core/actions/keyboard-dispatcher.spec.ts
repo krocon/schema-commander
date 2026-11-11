@@ -150,11 +150,11 @@ describe('KeyboardDispatcher', () => {
     expect(d.handle(first)).toBeNull();
     expect(first.preventDefault).toHaveBeenCalled();
     expect(d.handle(key('s', 'KeyS', body, { ctrlKey: true }))).toBe('OPEN_SHORTCUTS');
-    // too late: the chord is forgotten, Ctrl+S alone is nothing
+    // too late: the chord is forgotten, Ctrl+S alone is its own action
     d.handle(key('k', 'KeyK', body, { ctrlKey: true }));
     vi.advanceTimersByTime(CHORD_TIMEOUT_MS + 1);
-    expect(d.handle(key('s', 'KeyS', body, { ctrlKey: true }))).toBeNull();
-    expect(h.ran).toEqual(['OPEN_SHORTCUTS']);
+    expect(d.handle(key('s', 'KeyS', body, { ctrlKey: true }))).toBe('SAVE_FILE');
+    expect(h.ran).toEqual(['OPEN_SHORTCUTS', 'SAVE_FILE']);
   });
 
   it('passes a key on when its action cannot run, and repeats only what may repeat', () => {

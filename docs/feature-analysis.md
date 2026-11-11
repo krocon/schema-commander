@@ -72,7 +72,7 @@ Prompts) · **Stufe** = meine Empfehlung: **1** Grundlage (ohne das ist es kein 
 
 | Id | Feature | Vorbild | Umfang | Stufe | Freigabe |
 |---|---|---|---|---|---|
-| C1 | **Abfrage-Tabs**, jeder mit eigener Verbindung; Inhalt wird laufend gesichert und ist nach einem Neustart wieder da – **nie eine „Speichern?“-Frage**; Tabs benennen, als Datei speichern/öffnen | DataGrip (Konsolen), TablePlus | M | 1 | ☑ [004](../prompts/004-abfrage-tabs.md) |
+| C1 | **Abfrage-Tabs**, jeder mit eigener Verbindung; Inhalt wird laufend gesichert und ist nach einem Neustart wieder da – **nie eine „Speichern?“-Frage**; Tabs benennen, als Datei speichern/öffnen | DataGrip (Konsolen), TablePlus | M | 1 | ☑ [004](../prompts/done/004-abfrage-tabs.md) |
 | C2 | **Ausführen**: Anweisung unter dem Cursor, Auswahl, ganzes Skript; mehrere Ergebnisse; **Abbrechen** auf dem Server; Laufzeit und betroffene Zeilen; Skript bei Fehler anhalten oder weiterlaufen | alle | M | 1 | ☑ [005](../prompts/005-ausfuehren.md) |
 | C3 | **Vervollständigung, die das Schema kennt**: Tabellen, Spalten (auch über Aliase), Funktionen, Schlüsselwörter je Dialekt; `JOIN`-Vorschläge aus Fremdschlüsseln; `*` zu Spaltenliste aufklappen. *Braucht in editlicious eine Schnittstelle für Vorschläge von außen.* | DataGrip | L | 2 | ☑ [021](../prompts/021-vervollstaendigung.md) |
 | C4 | **Fehler an der Stelle**: Position der Fehlermeldung im Editor markieren, dorthin springen; Meldung des Servers vollständig (Hinweis, Detail, Kontext) | pgAdmin, DataGrip | M | 2 | ☑ [022](../prompts/022-fehler-im-editor.md) |
