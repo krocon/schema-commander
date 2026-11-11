@@ -15,6 +15,28 @@ pub enum ErrorCode {
     /// A file is larger than a command reads.
     TooLarge,
     NotFound,
+    /// Connections (prompt 003): the server cannot be reached, does not answer or the connection broke.
+    ConnectionFailed,
+    /// The server refused the login (user, password).
+    AuthFailed,
+    /// TLS could not be set up (certificate, host name, protocol).
+    TlsFailed,
+    /// No answer in time.
+    Timeout,
+    /// The work was stopped on request. Not an error for the user.
+    Cancelled,
+    /// The server refused the statement for lack of rights.
+    PermissionDenied,
+    /// A password is needed and none is known: the frontend asks for it.
+    SecretRequired,
+    /// The keychain of the OS is not available (no Secret Service, locked, error).
+    KeychainUnavailable,
+    /// A connection profile breaks a rule (name, host, user …).
+    InvalidProfile,
+    /// There is no profile with this id.
+    UnknownConnection,
+    /// The profile is not connected (any more).
+    NotConnected,
     Io,
 }
 

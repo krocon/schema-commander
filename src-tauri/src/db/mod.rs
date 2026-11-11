@@ -1,0 +1,382 @@
+//! Database connections (prompt 003): profiles, the drivers behind one trait, and what they need in common
+//! (runtime, time limits, errors in words). Pure of Tauri; `commands.rs` is the thin layer above.
+//!
+//! Drivers after log-commander (its prompt 019): `sqlx-postgres`, `sqlx-mysql`, `tiberius`, `rusqlite` – pure
+//! Rust, TLS over rustls with the roots of the OS.
+
+pub mod manager;
+pub mod mssql;
+pub mod mysql;
+pub mod pg;
+pub mod profiles;
+pub mod secrets;
+pub mod sqlite;
+pub mod value;
+
+use crate::error::{AppError, AppResult, ErrorCode};
+use secrets::Secret;
+use serde::{Deserialize, Serialize};
+use std::future::Future;
+use std::sync::OnceLock;
+use std::time::Duration;
+use value::QueryResult;
+
+/// Connecting at most.
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DbKind {
+    Postgres,
+    /// MySQL and MariaDB.
+    Mysql,
+    Sqlserver,
+    Sqlite,
+}
+
+impl DbKind {
+    pub fn default_port(self) -> u16 {
+        match self {
+            DbKind::Postgres => 5432,
+            DbKind::Mysql => 3306,
+            DbKind::Sqlserver => 1433,
+            DbKind::Sqlite => 0,
+        }
+    }
+}
+
+/// How the connection is protected. More modes (own CA, client certificate, no verification as a visible
+/// choice) come with prompt 014.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TlsMode {
+    /// No TLS. Meant for servers on this machine.
+    #[default]
+    Off,
+    /// TLS, certificate and host name checked against the roots of the OS.
+    Verify,
+}
+
+/// A stored connection – never a secret.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Profile {
+    /// `[a-z0-9-]`; empty for a profile that is not stored yet.
+    #[serde(default)]
+    pub id: String,
+    pub name: String,
+    pub kind: DbKind,
+    #[serde(default)]
+    pub host: String,
+    /// 0 = the default port of the database.
+    #[serde(default)]
+    pub port: u16,
+    /// The database; for SQLite the path of the file.
+    #[serde(default)]
+    pub database: String,
+    #[serde(default)]
+    pub user: String,
+    #[serde(default)]
+    pub tls: TlsMode,
+    /// A folder in the list, `""` = top level.
+    #[serde(default)]
+    pub folder: String,
+    /// 1–8: the colour tag (`--conn-N`).
+    #[serde(default = "default_color")]
+    pub color: u8,
+    /// Keep the password in the keychain of the OS after a login that worked.
+    #[serde(default)]
+    pub save_password: bool,
+}
+
+fn default_color() -> u8 {
+    1
+}
+
+impl Profile {
+    pub fn port_or_default(&self) -> u16 {
+        if self.port == 0 {
+            self.kind.default_port()
+        } else {
+            self.port
+        }
+    }
+
+    /// `host:port/database` (or the file) for messages; never holds a secret.
+    pub fn where_label(&self) -> String {
+        if self.kind == DbKind::Sqlite {
+            return self.database.trim().to_string();
+        }
+        let db = self.database.trim();
+        let tail = if db.is_empty() {
+            String::new()
+        } else {
+            format!("/{db}")
+        };
+        format!("{}:{}{tail}", self.host.trim(), self.port_or_default())
+    }
+
+    /// What the password belongs to in the keychain: user, place and kind – not the name, so renaming a
+    /// profile keeps its password.
+    pub fn secret_subject(&self) -> String {
+        format!(
+            "{:?}:{}@{}:{}",
+            self.kind,
+            self.user.trim(),
+            self.host.trim().to_lowercase(),
+            self.port_or_default()
+        )
+    }
+
+    /// SQLite needs no password, the others may.
+    pub fn uses_password(&self) -> bool {
+        self.kind != DbKind::Sqlite
+    }
+}
+
+/// `true` when the work is stopped (cancelled, tab closed): requests end with [`cancelled`].
+pub type Stop<'a> = &'a (dyn Fn() -> bool + Sync);
+
+/// An open connection.
+pub trait Session: Send {
+    /// Runs one statement and reads at most `max_rows` rows. After an error that leaves the connection in
+    /// an unknown state (cancelled, timed out, broken) the session is closed: [`Session::is_open`].
+    fn execute(&mut self, sql: &str, max_rows: usize, stop: Stop) -> AppResult<QueryResult>;
+    /// Product and version as the server names itself.
+    fn server_version(&mut self, stop: Stop) -> AppResult<String>;
+    fn is_open(&self) -> bool;
+}
+
+/// Opens a connection. `secret` is the password, if one is known.
+pub fn connect(
+    profile: &Profile,
+    secret: Option<&Secret>,
+    stop: Stop,
+) -> AppResult<Box<dyn Session>> {
+    profiles::check(profile)?;
+    Ok(match profile.kind {
+        DbKind::Postgres => Box::new(pg::connect(profile, secret, stop)?),
+        DbKind::Mysql => Box::new(mysql::connect(profile, secret, stop)?),
+        DbKind::Sqlserver => Box::new(mssql::connect(profile, secret, stop)?),
+        DbKind::Sqlite => Box::new(sqlite::open(profile)?),
+    })
+}
+
+/// The runtime all network drivers run on (never Tauri's).
+pub fn runtime() -> &'static tokio::runtime::Runtime {
+    static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RT.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .thread_name("sc-db")
+            .enable_all()
+            .build()
+            .expect("tokio runtime for database connections")
+    })
+}
+
+pub fn cancelled() -> AppError {
+    AppError::new(ErrorCode::Cancelled, "cancelled")
+}
+
+pub fn closed() -> AppError {
+    AppError::new(ErrorCode::ConnectionFailed, "the connection is closed")
+}
+
+/// Runs `f` until it ends, the time (if any) is up or the work is stopped.
+pub fn block<T>(
+    timeout: Option<Duration>,
+    stop: Stop,
+    f: impl Future<Output = AppResult<T>>,
+) -> AppResult<T> {
+    runtime().block_on(async move {
+        let stopped = async {
+            loop {
+                if stop() {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        };
+        let timed = async {
+            match timeout {
+                Some(t) => tokio::time::timeout(t, f).await.unwrap_or_else(|_| {
+                    Err(AppError::new(
+                        ErrorCode::Timeout,
+                        format!("no answer within {} s", t.as_secs()),
+                    ))
+                }),
+                None => f.await,
+            }
+        };
+        tokio::select! {
+            r = timed => r,
+            _ = stopped => Err(cancelled()),
+        }
+    })
+}
+
+/// Makes sure rustls has its process-wide provider (ring) before any TLS connection: tiberius asks for the
+/// installed one and would otherwise take aws-lc-rs.
+pub fn install_crypto() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
+
+/// One line, bounded, without control characters: what a server said.
+pub fn clean(message: &str) -> String {
+    let one: String = message
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let one = one.split_whitespace().collect::<Vec<_>>().join(" ");
+    match one.char_indices().nth(2000) {
+        None => one,
+        Some((at, _)) => format!("{}…", &one[..at]),
+    }
+}
+
+fn is_tls(text: &str) -> bool {
+    let t = text.to_lowercase();
+    t.contains("certificate") || t.contains("tls") || t.contains("ssl") || t.contains("handshake")
+}
+
+/// Whether an error leaves the connection usable: only what the server answered to the statement.
+pub fn keeps_connection(code: ErrorCode) -> bool {
+    matches!(
+        code,
+        ErrorCode::InvalidQuery | ErrorCode::PermissionDenied | ErrorCode::NotFound
+    )
+}
+
+/// Errors of sqlx (PostgreSQL, MySQL) with a code the frontend can act on; they never hold the password.
+pub fn sqlx_error(profile: &Profile, e: &sqlx_core::error::Error) -> AppError {
+    use sqlx_core::error::Error as E;
+    let on = profile.where_label();
+    match e {
+        E::Database(d) => {
+            let code = d.code().map(|c| c.to_string()).unwrap_or_default();
+            let message = clean(d.message());
+            let lower = message.to_lowercase();
+            let has = |w: &str| lower.contains(w);
+            // 28xxx: invalid authorization (PostgreSQL); 1045/1698: access denied for user (MySQL)
+            if code.starts_with("28") || has("access denied for user") {
+                AppError::new(ErrorCode::AuthFailed, message)
+            } else if code == "3D000" || has("unknown database") {
+                AppError::new(ErrorCode::NotFound, message)
+            } else if code == "42501" || has("command denied") || has("permission denied") {
+                AppError::new(ErrorCode::PermissionDenied, message)
+            } else if code == "57014" {
+                AppError::new(ErrorCode::Cancelled, message)
+            } else if code.is_empty() {
+                AppError::new(ErrorCode::InvalidQuery, message)
+            } else {
+                AppError::new(ErrorCode::InvalidQuery, format!("{message} ({code})"))
+            }
+        }
+        E::Tls(t) => AppError::new(
+            ErrorCode::TlsFailed,
+            format!("{on}: {}", clean(&t.to_string())),
+        ),
+        E::Io(io) if is_tls(&io.to_string()) => AppError::new(
+            ErrorCode::TlsFailed,
+            format!("{on}: {}", clean(&io.to_string())),
+        ),
+        E::Io(io) => AppError::new(
+            ErrorCode::ConnectionFailed,
+            format!("{on}: {}", clean(&io.to_string())),
+        ),
+        E::Configuration(c) => AppError::new(ErrorCode::InvalidProfile, clean(&c.to_string())),
+        other => {
+            let text = clean(&other.to_string());
+            let code = if is_tls(&text) {
+                ErrorCode::TlsFailed
+            } else {
+                ErrorCode::ConnectionFailed
+            };
+            AppError::new(code, format!("{on}: {text}"))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    pub fn profile(kind: DbKind) -> Profile {
+        Profile {
+            id: "p1".into(),
+            name: "Test".into(),
+            kind,
+            host: " DB.Example.com ".into(),
+            port: 0,
+            database: "shop".into(),
+            user: "alice".into(),
+            tls: TlsMode::Off,
+            folder: String::new(),
+            color: 1,
+            save_password: false,
+        }
+    }
+
+    #[test]
+    fn labels_and_default_ports() {
+        let p = profile(DbKind::Postgres);
+        assert_eq!(p.port_or_default(), 5432);
+        assert_eq!(p.where_label(), "DB.Example.com:5432/shop");
+        assert_eq!(profile(DbKind::Mysql).port_or_default(), 3306);
+        assert_eq!(profile(DbKind::Sqlserver).port_or_default(), 1433);
+        let mut lite = profile(DbKind::Sqlite);
+        lite.database = "/tmp/a b.db".into();
+        assert_eq!(lite.where_label(), "/tmp/a b.db");
+        assert!(!lite.uses_password());
+    }
+
+    #[test]
+    fn the_secret_belongs_to_user_and_place_not_to_the_name() {
+        let a = profile(DbKind::Postgres);
+        let mut renamed = a.clone();
+        renamed.name = "Anders".into();
+        renamed.host = "db.example.com".into();
+        assert_eq!(a.secret_subject(), renamed.secret_subject());
+        let mut other = a.clone();
+        other.user = "bob".into();
+        assert_ne!(a.secret_subject(), other.secret_subject());
+        let mut port = a.clone();
+        port.port = 5433;
+        assert_ne!(a.secret_subject(), port.secret_subject());
+    }
+
+    #[test]
+    fn server_messages_become_one_bounded_line() {
+        assert_eq!(clean("a\n  b\tc\u{7}"), "a b c");
+        assert_eq!(clean(&"x".repeat(5000)).chars().count(), 2001);
+    }
+
+    #[test]
+    fn stops_and_times_out() {
+        let never = std::future::pending::<AppResult<()>>();
+        let e = block(Some(Duration::from_millis(30)), &|| false, never).unwrap_err();
+        assert_eq!(e.code, ErrorCode::Timeout);
+        let never = std::future::pending::<AppResult<()>>();
+        let e = block(None, &|| true, never).unwrap_err();
+        assert_eq!(e.code, ErrorCode::Cancelled);
+        assert_eq!(block(None, &|| false, async { Ok(7) }).unwrap(), 7);
+    }
+
+    #[test]
+    fn a_profile_survives_json_with_defaults() {
+        let p: Profile =
+            serde_json::from_str(r#"{"name":"Lokal","kind":"postgres","host":"localhost"}"#)
+                .unwrap();
+        assert_eq!(p.color, 1);
+        assert_eq!(p.tls, TlsMode::Off);
+        assert_eq!(p.id, "");
+        let json = serde_json::to_value(&p).unwrap();
+        assert_eq!(json["savePassword"], false);
+        assert_eq!(json["kind"], "postgres");
+        assert!(json.get("password").is_none());
+    }
+}

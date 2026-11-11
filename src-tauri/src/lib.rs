@@ -2,7 +2,7 @@
 //! shows a window of the data.
 
 pub mod commands;
-pub mod demo_db;
+pub mod db;
 pub mod error;
 pub mod themes;
 
@@ -24,8 +24,12 @@ pub fn run() {
                 )
                 .build(),
         )
-        .manage(commands::DemoState::default())
         .setup(|app| {
+            use tauri::Manager;
+            let file = app.path().app_config_dir()?.join(db::profiles::FILE_NAME);
+            let store: std::sync::Arc<dyn db::secrets::SecretStore> =
+                std::sync::Arc::new(db::secrets::SystemStore);
+            app.manage(db::manager::ConnectionManager::new(file, store));
             // A frontend that never applies a scheme must not leave the window hidden.
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -35,7 +39,14 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::run_demo_query,
+            commands::list_connections,
+            commands::save_connection,
+            commands::delete_connection,
+            commands::test_connection,
+            commands::open_connection,
+            commands::close_connection,
+            commands::run_query,
+            commands::cancel_query,
             commands::set_window_chrome,
             commands::load_themes,
             commands::save_themes,
