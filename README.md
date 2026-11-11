@@ -29,7 +29,9 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
 - Editor and grid follow every scheme
 - Every function is an action: command palette (<kbd>Ctrl/⌘</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>), a keymap per
   OS and an editor for your own shortcuts (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>S</kbd>)
-- Layout, colour scheme and window position survive a restart
+- Split view: two tab groups side by side or stacked, each tab on its own connection; the result below or beside
+  the editor, hidden or maximised; the sidebar shows connections and schema or the history; a zen mode
+- Layout, tab groups, caret positions, colour scheme and window position survive a restart
 
 ## Development
 

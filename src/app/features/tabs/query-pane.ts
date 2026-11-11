@@ -8,6 +8,7 @@ import {
   inject,
   input,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
@@ -26,6 +27,8 @@ import { TabsStore } from './tabs.store';
 const RESULT_MIN = 80;
 /** What the editor keeps at least, px. */
 const EDITOR_MIN = 120;
+const RESULT_MIN_W = 160;
+const EDITOR_MIN_W = 160;
 
 /**
  * The content of one query tab (prompt 004): its editor above, its result below, a splitter between. Every
@@ -35,6 +38,9 @@ const EDITOR_MIN = 120;
   selector: 'app-query-pane',
   imports: [ResultGrid, SplitterComponent, SqlEditor],
   host: {
+    '[class.side]': 'side()',
+    '[class.no-result]': '!settings.settings().resultVisible && !maximized()',
+    '[class.max-result]': 'maximized()',
     role: 'tabpanel',
     '[attr.aria-labelledby]': '"tab-" + tab().id',
     '[id]': '"pane-" + tab().id',
@@ -48,29 +54,46 @@ const EDITOR_MIN = 120;
         [dialect]="dialect()"
         (run)="tab().runAll($event)"
         (caret)="tab().caret.set($event)"
+        (seededText)="onSeeded()"
         (changed)="onChanged($event)"
       />
     } @else {
       <p class="editor message">Text wird geladen …</p>
     }
-    <app-splitter
-      orientation="horizontal"
-      pane="after"
-      label="Höhe des Ergebnisbereichs"
-      [controls]="'results-' + tab().id"
-      [size]="resultH()"
-      [min]="resultMin"
-      [max]="resultMaxH()"
-      [defaultSize]="defaults.resultHeight"
-      (sizeChange)="dragHeight.set($event)"
-      (sizeCommit)="commitHeight($event)"
-    />
+    @if (side()) {
+      <app-splitter
+        orientation="vertical"
+        pane="after"
+        label="Breite des Ergebnisbereichs"
+        [controls]="'results-' + tab().id"
+        [size]="resultW()"
+        [min]="resultMinW"
+        [max]="resultMaxW()"
+        [defaultSize]="defaults.resultWidth"
+        (sizeChange)="dragWidth.set($event)"
+        (sizeCommit)="commitWidth($event)"
+      />
+    } @else {
+      <app-splitter
+        orientation="horizontal"
+        pane="after"
+        label="Höhe des Ergebnisbereichs"
+        [controls]="'results-' + tab().id"
+        [size]="resultH()"
+        [min]="resultMin"
+        [max]="resultMaxH()"
+        [defaultSize]="defaults.resultHeight"
+        (sizeChange)="dragHeight.set($event)"
+        (sizeCommit)="commitHeight($event)"
+      />
+    }
     <section
       class="results"
       aria-label="Ergebnis"
       tabindex="-1"
       [id]="'results-' + tab().id"
-      [style.height.px]="resultH()"
+      [style.height.px]="maximized() || side() ? null : resultH()"
+      [style.width.px]="maximized() || !side() ? null : resultW()"
     >
       @if (tab().runs().length > 1 || tab().log().length > 0) {
         <div class="subtabs" role="tablist" aria-label="Ergebnisse">
@@ -159,12 +182,27 @@ const EDITOR_MIN = 120;
       min-width: 0;
       min-height: 0;
     }
+    /* the result beside the editor, hidden, or alone (prompt 016) */
+    :host(.side) {
+      flex-direction: row;
+    }
+    :host(.no-result) .results,
+    :host(.no-result) app-splitter,
+    :host(.max-result) .editor,
+    :host(.max-result) app-splitter {
+      display: none;
+    }
+    :host(.max-result) .results {
+      flex: 1 1 0;
+    }
     .editor {
       flex: 1 1 0;
+      min-width: 0;
       min-height: 0;
     }
     .results {
       flex: none;
+      min-width: 0;
       min-height: 0;
       display: flex;
       flex-direction: column;
@@ -257,7 +295,7 @@ const EDITOR_MIN = 120;
 })
 export class QueryPane implements OnInit, OnDestroy {
   private readonly tabs = inject(TabsStore);
-  private readonly settings = inject(SettingsService);
+  protected readonly settings = inject(SettingsService);
   private readonly connections = inject(ConnectionsStore);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
@@ -307,9 +345,26 @@ export class QueryPane implements OnInit, OnDestroy {
     ),
   );
 
+  /** The result lies beside the editor. */
+  protected readonly side = computed(() => this.settings.settings().resultPlacement === 'right');
+  protected readonly maximized = this.tabs.resultMaximized;
+  protected readonly resultMinW = RESULT_MIN_W;
+  protected readonly dragWidth = signal<number | null>(null);
+  private readonly width = signal(0);
+  protected readonly resultMaxW = computed(() =>
+    Math.max(RESULT_MIN_W, this.width() - EDITOR_MIN_W),
+  );
+  protected readonly resultW = computed(() =>
+    Math.min(
+      this.resultMaxW(),
+      Math.max(RESULT_MIN_W, this.dragWidth() ?? this.settings.settings().resultWidth),
+    ),
+  );
+
   private readonly editor = viewChild(SqlEditor);
   private observer: ResizeObserver | null = null;
   private readonly handle: TabEditor = {
+    goTo: (line, ch) => this.editor()?.goTo(line, ch) ?? Promise.resolve(),
     getText: () => this.editor()?.getText() ?? Promise.resolve(this.startText()?.text ?? ''),
     setText: (text) => this.editor()?.setText(text) ?? Promise.resolve(),
     focus: () => this.editor()?.focus(),
@@ -319,6 +374,13 @@ export class QueryPane implements OnInit, OnDestroy {
   };
 
   constructor() {
+    // a statement that runs shows its result: a hidden result area comes back
+    effect(() => {
+      if (!this.tab().running()) return;
+      untracked(() => {
+        if (!this.settings.settings().resultVisible) this.settings.update({ resultVisible: true });
+      });
+    });
     effect(() => {
       // a hidden pane has no size: keep the last one
       const element = this.host.nativeElement;
@@ -326,6 +388,7 @@ export class QueryPane implements OnInit, OnDestroy {
       if (typeof ResizeObserver === 'undefined') return;
       this.observer = new ResizeObserver(() => {
         if (element.clientHeight > 0) this.height.set(element.clientHeight);
+        if (element.clientWidth > 0) this.width.set(element.clientWidth);
       });
       this.observer.observe(element);
     });
@@ -380,8 +443,19 @@ export class QueryPane implements OnInit, OnDestroy {
     );
   }
 
+  /** The editor has its text: back to where the caret was in the last run. */
+  protected onSeeded(): void {
+    const at = this.tab().takeStartCaret();
+    if (at) void this.editor()?.goTo(at.line, at.ch);
+  }
+
   protected onChanged(change: EdChange): void {
     this.tabs.textChanged(this.tab(), change.charCount, change.dirty);
+  }
+
+  protected commitWidth(width: number): void {
+    this.dragWidth.set(null);
+    this.settings.update({ resultWidth: width });
   }
 
   protected commitHeight(height: number): void {

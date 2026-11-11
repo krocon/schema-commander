@@ -5,6 +5,7 @@ import { computed, signal } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
 import { describeError, toAppError } from '../../core/errors/app-error';
 import { TabMeta } from '../../core/session/session-api';
+import { Group, restoreGroup } from './layout-logic';
 import { QueryApi } from '../../core/sql/query-api';
 import { RowWindow, RunEvent, RunOutcome, TxState } from '../../core/sql/query.models';
 import { txOpen } from './tx-logic';
@@ -23,6 +24,8 @@ import {
 
 /** What a tab needs of its editor; the pane of the tab registers it. */
 export interface TabEditor {
+  /** Puts the caret at a line and column (both from 1) and shows the place. */
+  goTo(line: number, ch: number): Promise<void>;
   getText(): Promise<string>;
   setText(text: string): Promise<void>;
   focus(): void;
@@ -94,6 +97,10 @@ export class QueryTab {
     return stateOf(this.runs()[shown === 'messages' ? 0 : shown]);
   });
   readonly caret = signal<EdCaret | null>(null);
+  /** The tab group it is in (prompt 016); only the `TabsStore` moves it. */
+  readonly group = signal<Group>(0);
+  /** Where the caret was when the app closed; the editor goes there once it has its text. */
+  private restoreCaret: { line: number; ch: number } | null = null;
   /** The tab was shown once: its editor exists (tabs restored at the start are built when first looked at). */
   readonly mounted = signal(false);
   /** The text changed since it was loaded or written to its file. Only tabs with a file show it. */
@@ -134,6 +141,18 @@ export class QueryTab {
     this.connectionId.set(meta.connection ?? 'demo');
     this.filePath.set(meta.filePath);
     this.encoding.set(meta.encoding);
+    this.group.set(restoreGroup(meta.group));
+    const line = meta.caretLine ?? 0;
+    if (Number.isInteger(line) && line > 0) {
+      this.restoreCaret = { line, ch: Math.max(1, Math.trunc(meta.caretCh ?? 1) || 1) };
+    }
+  }
+
+  /** Where the editor starts (once): the place of the last run; `null` = at the top. */
+  takeStartCaret(): { line: number; ch: number } | null {
+    const at = this.restoreCaret;
+    this.restoreCaret = null;
+    return at;
   }
 
   meta(): TabMeta {
@@ -144,6 +163,10 @@ export class QueryTab {
       connection: this.connectionId(),
       filePath: this.filePath(),
       encoding: this.encoding(),
+      group: this.group(),
+      // a tab never looked at keeps the place it was restored with
+      caretLine: this.caret()?.line ?? this.restoreCaret?.line ?? 0,
+      caretCh: this.caret()?.ch ?? this.restoreCaret?.ch ?? 0,
     };
   }
 

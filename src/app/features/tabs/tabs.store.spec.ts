@@ -33,6 +33,7 @@ const meta = (id: string, over: Partial<TabMeta> = {}): TabMeta => ({
 function attachEditor(tab: QueryTab, text: string) {
   const editor: TabEditor & { text: string } = {
     text,
+    goTo: () => Promise.resolve(),
     getText: () => Promise.resolve(editor.text),
     setText: (t) => {
       editor.text = t;
@@ -299,5 +300,173 @@ describe('TabsStore', () => {
     expect(copy.id).not.toBe(tab.id);
     expect(copy.connectionId()).toBe('pg');
     expect(await store.startText(copy)).toBe('SELECT * FROM kunden');
+  });
+
+  describe('split view (prompt 016)', () => {
+    const layout = () =>
+      store
+        .groups()
+        .map((g) => g.map((t) => t.id).join(' '))
+        .join(' | ');
+
+    async function three() {
+      await start();
+      store.newTab();
+      store.newTab();
+      store.activate('tab-2');
+      return store;
+    }
+
+    it('splits by moving the tab in front to a second group, which gets the focus', async () => {
+      await three();
+      expect(store.isSplit()).toBe(false);
+      store.split('row');
+      expect(layout()).toBe('tab-1 tab-3 | tab-2');
+      expect(store.activeId()).toBe('tab-2');
+      expect(store.focusedGroup()).toBe(1);
+      expect(store.shownIds()).toEqual(['tab-3', 'tab-2']);
+      // both tabs on screen have their editor
+      expect(
+        store
+          .tabs()
+          .find((t) => t.id === 'tab-3')
+          ?.mounted(),
+      ).toBe(false);
+      TestBed.tick();
+      expect(
+        store
+          .tabs()
+          .find((t) => t.id === 'tab-3')
+          ?.mounted(),
+      ).toBe(true);
+      // a second split only changes how the groups lie
+      store.split('column');
+      expect(layout()).toBe('tab-1 tab-3 | tab-2');
+      expect(store.splitDir()).toBe('column');
+    });
+
+    it('gives the only tab of the window a neighbour to split with', async () => {
+      await start();
+      store.split('row');
+      expect(layout()).toBe('tab-1 | tab-2');
+      expect(store.activeId()).toBe('tab-2');
+    });
+
+    it('changes the focused group, cycles inside it and opens new tabs there', async () => {
+      await three();
+      store.split('row');
+      store.focusOtherGroup();
+      expect(store.activeId()).toBe('tab-3');
+      expect(store.shownIds()).toEqual(['tab-3', 'tab-2']);
+      store.cycle(1);
+      expect(store.activeId()).toBe('tab-1');
+      store.cycle(1);
+      expect(store.activeId()).toBe('tab-3');
+      store.activate('tab-2');
+      const tab = store.newTab();
+      expect(tab.group()).toBe(1);
+      expect(layout()).toBe('tab-1 tab-3 | tab-2 tab-4');
+    });
+
+    it('runs two tabs side by side on their own connections', async () => {
+      await three();
+      store.split('row');
+      TestBed.inject(ConnectionsStore).activate('pg');
+      store.focusOtherGroup();
+      TestBed.tick();
+      expect(store.active()?.connectionId()).toBe('demo');
+      expect(TestBed.inject(ConnectionsStore).activeId()).toBe('demo');
+      store.focusOtherGroup();
+      TestBed.tick();
+      // the connection shown as active follows the focused group
+      expect(store.active()?.connectionId()).toBe('pg');
+      expect(TestBed.inject(ConnectionsStore).activeId()).toBe('pg');
+    });
+
+    it('ends the split when a group is emptied, by closing or by moving', async () => {
+      await three();
+      store.split('row');
+      await store.close('tab-2');
+      expect(store.isSplit()).toBe(false);
+      expect(layout()).toBe('tab-1 tab-3 | ');
+      expect(store.activeId()).toBe('tab-3');
+      expect(store.otherId()).toBeNull();
+      store.split('row');
+      expect(layout()).toBe('tab-1 | tab-3');
+      store.moveToOtherGroup('tab-3');
+      expect(layout()).toBe('tab-1 tab-3 | ');
+      expect(store.activeId()).toBe('tab-3');
+    });
+
+    it('unsplits on request and keeps the tab in front', async () => {
+      await three();
+      store.split('row');
+      store.unsplit();
+      expect(layout()).toBe('tab-1 tab-2 tab-3 | ');
+      expect(store.activeId()).toBe('tab-2');
+    });
+
+    it('drops a dragged tab at a place of its own or of the other group', async () => {
+      await three();
+      store.move('tab-1', 2);
+      expect(ids()).toEqual(['tab-2', 'tab-3', 'tab-1']);
+      store.move('tab-1', 0);
+      expect(ids()).toEqual(['tab-1', 'tab-2', 'tab-3']);
+      store.split('row');
+      // onto the first place of the other group
+      store.move('tab-1', 0, 1);
+      expect(layout()).toBe('tab-3 | tab-1 tab-2');
+      expect(store.activeId()).toBe('tab-1');
+      // behind its last tab
+      store.move('tab-1', 9);
+      expect(layout()).toBe('tab-3 | tab-2 tab-1');
+      // the last tab of a group leaves it: one group again
+      store.move('tab-3', 0, 1);
+      expect(store.isSplit()).toBe(false);
+      // the only tab of the window has nowhere to go
+      await store.closeOthers('tab-3');
+      store.move('tab-3', 0, 1);
+      expect(layout()).toBe('tab-3 | ');
+    });
+
+    it('keeps groups, shown tabs and direction over a restart', async () => {
+      await three();
+      store.split('column');
+      store.focusOtherGroup();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(session.session).toMatchObject({ active: 'tab-3', other: 'tab-2', split: 'column' });
+      expect(session.session.tabs.map((t) => t.group)).toEqual([0, 1, 0]);
+    });
+
+    it('restores a split view and repairs a broken one', async () => {
+      session.session = {
+        version: 1,
+        tabs: [meta('a'), meta('b', { group: 1 }), meta('c', { group: 1 })],
+        active: 'c',
+        other: 'a',
+        split: 'column',
+      };
+      await start();
+      expect(layout()).toBe('a | b c');
+      expect(store.shownIds()).toEqual(['a', 'c']);
+      expect(store.splitDir()).toBe('column');
+      expect(store.focusedGroup()).toBe(1);
+    });
+
+    it('repairs a stored layout that names what is gone', async () => {
+      session.session = {
+        version: 1,
+        tabs: [meta('a', { group: 1 }), meta('b', { group: 1 })],
+        active: 'gone',
+        other: 'gone',
+        split: 'diagonal',
+      };
+      await start();
+      // a second group alone is the first group
+      expect(layout()).toBe('a b | ');
+      expect(store.activeId()).toBe('a');
+      expect(store.otherId()).toBeNull();
+      expect(store.splitDir()).toBe('row');
+    });
   });
 });

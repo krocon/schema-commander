@@ -171,3 +171,13 @@
   color: var(--badge-danger-fg);
   box-shadow: none;
 }
+
+/* split view (prompt 016): the strip of the group without the focus steps back, the other is marked */
+:host(.unfocused) .tab.active {
+  border-top-color: transparent;
+  color: var(--text-dim);
+}
+
+:host(.focused) {
+  border-bottom-color: var(--accent);
+}

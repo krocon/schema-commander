@@ -1,6 +1,7 @@
-import { Component, ElementRef, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, computed, inject, input, signal } from '@angular/core';
 import { ActionService } from '../../core/actions/action.service';
 import { ConnectionsStore } from '../../core/connections/connections.store';
+import { Group } from './layout-logic';
 import { QueryTab } from './query-tab';
 import { TabsStore } from './tabs.store';
 
@@ -13,14 +14,15 @@ interface Menu {
 /**
  * The tab strip (prompt 004), after the APG tabs pattern: arrows move between tabs and show them at once,
  * `Delete` closes, `F2` or a double click renames, dragging reorders, the middle button closes. The colour of
- * a tab is that of its connection.
+ * a tab is that of its connection. In a split view (prompt 016) every group has its own strip; a tab dragged
+ * onto the other strip moves to that group.
  */
 @Component({
   selector: 'app-tab-bar',
   template: `
-    <div class="tabs" role="tablist" aria-label="Abfragen">
-      @for (tab of store.tabs(); track tab.id; let i = $index) {
-        @let active = tab.id === store.activeId();
+    <div class="tabs" role="tablist" [attr.aria-label]="label()">
+      @for (tab of tabs(); track tab.id; let i = $index) {
+        @let active = tab.id === shownId();
         <div
           role="tab"
           draggable="true"
@@ -42,7 +44,7 @@ interface Menu {
           (dragover)="onDragOver($event, i)"
           (dragleave)="dropAt.set(null)"
           (drop)="onDrop($event, i)"
-          (dragend)="dropAt.set(null)"
+          (dragend)="dropAt.set(null); store.dragged = null"
         >
           <i class="mark" [class.running]="tab.running()"></i>
           @if (renaming() === tab.id) {
@@ -94,7 +96,7 @@ interface Menu {
       class="new"
       aria-label="Neuer Tab"
       [title]="'Neuer Tab' + actions.hint('NEW_TAB')"
-      (click)="actions.run('NEW_TAB')"
+      (click)="newTab()"
     >
       +
     </button>
@@ -122,6 +124,20 @@ interface Menu {
           Als Datei speichern …
         </button>
         <hr />
+        <button
+          type="button"
+          role="menuitem"
+          [disabled]="store.tabs().length < 2"
+          (click)="pick(m.id, 'other')"
+        >
+          {{ store.isSplit() ? 'In die andere Gruppe' : 'Nach rechts teilen' }}
+        </button>
+        @if (store.isSplit()) {
+          <button type="button" role="menuitem" (click)="pick(m.id, 'unsplit')">
+            Teilung aufheben
+          </button>
+        }
+        <hr />
         <button type="button" role="menuitem" (click)="pick(m.id, 'close')">Schließen</button>
         <button
           type="button"
@@ -143,6 +159,13 @@ interface Menu {
     }
   `,
   styleUrl: './tab-bar.css',
+  host: {
+    '[class.focused]': 'store.isSplit() && focused()',
+    '[class.unfocused]': '!focused()',
+    // a drop behind the last tab puts the dragged tab at the end of this group
+    '(dragover)': 'onDragOver($event, tabs().length)',
+    '(drop)': 'onDrop($event, tabs().length)',
+  },
 })
 export class TabBar {
   protected readonly store = inject(TabsStore);
@@ -150,11 +173,22 @@ export class TabBar {
   private readonly connections = inject(ConnectionsStore);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
+  /** The group whose tabs this strip shows. */
+  readonly group = input<Group>(0);
+  protected readonly tabs = computed(() => this.store.groups()[this.group()]);
+  protected readonly shownId = computed(() => this.store.shownIds()[this.group()]);
+  /** This strip belongs to the group that has the focus (always, while the view is not split). */
+  protected readonly focused = computed(
+    () => !this.store.isSplit() || this.store.focusedGroup() === this.group(),
+  );
+  protected readonly label = computed(() =>
+    this.store.isSplit() ? `Abfragen, Gruppe ${this.group() + 1}` : 'Abfragen',
+  );
+
   protected readonly renaming = signal<string | null>(null);
   protected readonly menu = signal<Menu | null>(null);
   /** The index a dragged tab would land on. */
   protected readonly dropAt = signal<number | null>(null);
-  private dragged: string | null = null;
 
   private readonly colors = computed(
     () => new Map(this.connections.profiles().map((p) => [p.id, p.color])),
@@ -176,11 +210,18 @@ export class TabBar {
     return [tab.title(), name, tab.filePath()].filter(Boolean).join('\n');
   }
 
+  /** A new tab in this group. */
+  protected newTab(): void {
+    const shown = this.shownId();
+    if (shown) this.store.activate(shown);
+    this.actions.run('NEW_TAB');
+  }
+
   /** Arrows, Home and End move and show; Delete closes; F2 renames. */
   protected onKey(event: KeyboardEvent): void {
     if (this.renaming() !== null || this.menu() !== null) return;
-    const tabs = this.store.tabs();
-    const index = tabs.findIndex((t) => t.id === this.store.activeId());
+    const tabs = this.tabs();
+    const index = tabs.findIndex((t) => t.id === this.shownId());
     const go = (to: number) => {
       event.preventDefault();
       const tab = tabs[(to + tabs.length) % tabs.length];
@@ -199,7 +240,7 @@ export class TabBar {
         return go(tabs.length - 1);
       case 'Delete': {
         event.preventDefault();
-        const id = this.store.activeId();
+        const id = this.shownId();
         if (id) void this.store.close(id).then(() => this.focusTab(this.store.activeId()));
         return;
       }
@@ -211,6 +252,7 @@ export class TabBar {
       case ' ':
         // into the editor of the tab
         event.preventDefault();
+        if (tabs[index]) this.store.activate(tabs[index].id);
         this.store.active()?.focus();
         return;
     }
@@ -286,7 +328,7 @@ export class TabBar {
 
   protected pick(
     id: string,
-    what: 'rename' | 'duplicate' | 'save' | 'close' | 'others' | 'reopen',
+    what: 'rename' | 'duplicate' | 'save' | 'close' | 'others' | 'reopen' | 'other' | 'unsplit',
   ): void {
     this.menu.set(null);
     const tab = this.store.tabs().find((t) => t.id === id);
@@ -309,26 +351,35 @@ export class TabBar {
       case 'reopen':
         this.store.reopen();
         return;
+      case 'other':
+        this.store.moveToOtherGroup(id);
+        return;
+      case 'unsplit':
+        this.store.unsplit();
+        return;
     }
   }
 
   protected onDragStart(event: DragEvent, id: string): void {
-    this.dragged = id;
+    this.store.dragged = id;
     event.dataTransfer?.setData('text/plain', id);
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
   }
 
   protected onDragOver(event: DragEvent, index: number): void {
-    if (this.dragged === null) return;
+    if (this.store.dragged === null) return;
     event.preventDefault();
+    // the strip itself is asked too (a drop behind the last tab): the tab under the pointer answers first
+    event.stopPropagation();
     this.dropAt.set(index);
   }
 
   protected onDrop(event: DragEvent, index: number): void {
     event.preventDefault();
+    event.stopPropagation();
     this.dropAt.set(null);
-    if (this.dragged !== null) this.store.move(this.dragged, index);
-    this.dragged = null;
+    if (this.store.dragged !== null) this.store.move(this.store.dragged, index, this.group());
+    this.store.dragged = null;
   }
 
   private focusTab(id: string | null): void {

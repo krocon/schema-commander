@@ -5,12 +5,14 @@
 | 0 | Technischer Aufbau, Walking Skeleton (Editor → Rust → Gitter), Farbschemata, Best Practices | ✅ |
 | 1 | Feature-Analyse der wichtigsten SQL-Tools (`docs/feature-analysis.md`) | ✅ alle Features freigegeben |
 | 2 | Prompts 001–049 (`prompts/`) und E1–E5 für editlicious (`prompts/done/editlicious/`) | ✅ geschrieben |
-| 3 | Umsetzung Prompt für Prompt in der Reihenfolge von `prompts/README.md` | 001–015 ✅, nächster: 016; E1–E5 erledigt mit `editlicious-editor` 1.2.0 |
+| 3 | Umsetzung Prompt für Prompt in der Reihenfolge von `prompts/README.md` | 001–016 ✅, nächster: 017; E1–E5 erledigt mit `editlicious-editor` 1.2.0 |
 
 Bekannte Lücken des Skeletons (werden von den ersten Prompts geschlossen):
 
 - Das Gitter sortiert nicht mehr lokal (kommt mit 027); 10 Mio. Zeilen und ein Release-Build wurden nicht gemessen
   (Design 006).
+- Arbeitsbereich: zwei Gruppen sind gleich groß (kein Splitter dazwischen), keine eigene Scrollposition, die
+  Ansicht „gespeicherte Abfragen“ fehlt; im nativen Fenster nicht bedient (Design 016).
 - Import: die Formate von DBeaver und DataGrip sind nicht an echten Dateien belegt; TablePlus fehlt (Design 015).
 - SSH/TLS: kein `ProxyJump`, kein Hostname-Check des Zertifikats durch den Tunnel; Zertifikatsprüfung und Agent
   sind gegen keinen echten Server gelaufen (Design 014).

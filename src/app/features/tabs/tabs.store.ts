@@ -13,13 +13,27 @@ import { SettingsService } from '../../core/settings/settings.service';
 import { QueryApi } from '../../core/sql/query-api';
 import { QueryTab } from './query-tab';
 import {
+  Group,
+  Shown,
+  Slot,
+  SplitDirection,
+  activate,
+  afterClose,
+  collapse,
+  focusOther,
+  isSplit,
+  moveToOther,
+  repair,
+  restoreDirection,
+  shownIn,
+  unsplit,
+} from './layout-logic';
+import {
   autoTitle,
   backupDelay,
   cleanTitle,
   cycled,
   fileName,
-  moved,
-  neighbour,
   newTabId,
   untitled,
 } from './tab-logic';
@@ -78,6 +92,31 @@ export class TabsStore {
   readonly tabs = signal<readonly QueryTab[]>([]);
   readonly activeId = signal<string | null>(null);
   readonly active = computed(() => this.tabs().find((t) => t.id === this.activeId()) ?? null);
+  /** The tab the other group of a split view shows (prompt 016); `null` while not split. */
+  readonly otherId = signal<string | null>(null);
+  /** How the two groups lie. */
+  readonly splitDir = signal<SplitDirection>('row');
+  private readonly slots = computed<Slot[]>(() =>
+    this.tabs().map((t) => ({ id: t.id, group: t.group() })),
+  );
+  readonly isSplit = computed(() => isSplit(this.slots()));
+  /** The tabs of both groups; the second is empty while the view is not split. */
+  readonly groups = computed<readonly [readonly QueryTab[], readonly QueryTab[]]>(() => {
+    const tabs = this.tabs();
+    return [tabs.filter((t) => t.group() === 0), tabs.filter((t) => t.group() === 1)];
+  });
+  /** The tab each group shows. */
+  readonly shownIds = computed<readonly [string | null, string | null]>(() => {
+    const slots = this.slots();
+    const shown = this.shown();
+    return [shownIn(slots, shown, 0), shownIn(slots, shown, 1)];
+  });
+  /** The group with the focus: the one of the tab in front. */
+  readonly focusedGroup = computed<Group>(() => this.active()?.group() ?? 0);
+  /** The result fills its tab, the editor is out of sight (until asked back; not kept over a restart). */
+  readonly resultMaximized = signal(false);
+  /** The tab that is dragged, for both tab strips. */
+  dragged: string | null = null;
   /** What the store has to say (broken session, a file that could not be read or written). */
   readonly notice = signal<string | null>(null);
   readonly canReopen = computed(() => this.closed().length > 0);
@@ -115,9 +154,10 @@ export class TabsStore {
       const tab = this.active();
       if (tab) untracked(() => this.connections.activate(tab.connectionId()));
     });
-    // The tab in front is built (its editor created) the first time it is looked at.
+    // A tab that is shown is built (its editor created) the first time it is looked at.
     effect(() => {
-      this.active()?.mounted.set(true);
+      const shown = this.shownIds();
+      for (const tab of this.tabs()) if (shown.includes(tab.id)) tab.mounted.set(true);
     });
   }
 
@@ -126,17 +166,41 @@ export class TabsStore {
       version: SESSION_VERSION,
       tabs: this.tabs().map((t) => t.meta()),
       active: this.activeId(),
+      other: this.otherId(),
+      split: this.splitDir(),
     };
+  }
+
+  private shown(): Shown {
+    return { active: this.activeId(), other: this.otherId() };
+  }
+
+  /** Takes a new layout: the group of every tab and what the groups show. */
+  private apply(layout: { slots: readonly Slot[]; shown: Shown }): void {
+    const groups = new Map(layout.slots.map((s) => [s.id, s.group]));
+    for (const tab of this.tabs()) tab.group.set(groups.get(tab.id) ?? 0);
+    this.activeId.set(layout.shown.active);
+    this.otherId.set(layout.shown.other);
+  }
+
+  /** Brings a tab to the front (its group gets the focus) after the tabs or groups changed. */
+  private front(id: string | null): void {
+    const slots = collapse(this.slots());
+    const shown = repair(slots, this.shown());
+    this.apply({ slots, shown: id === null ? shown : activate(slots, shown, id) });
   }
 
   /** Restores the tabs of the last run; always ends with at least one tab. */
   async load(): Promise<void> {
     let metas: readonly TabMeta[] = [];
     let active: string | null = null;
+    let other: string | null = null;
     try {
       const loaded = await this.api.load();
       metas = loaded.session.tabs;
       active = loaded.session.active;
+      other = loaded.session.other ?? null;
+      this.splitDir.set(restoreDirection(loaded.session.split));
       this.notice.set(loaded.notice);
     } catch (e) {
       // no backend (browser, tests without a fake): one empty tab, nothing is kept
@@ -151,7 +215,10 @@ export class TabsStore {
         ),
     );
     this.tabs.set(tabs);
-    this.activeId.set(tabs.some((t) => t.id === active) ? active : (tabs[0]?.id ?? null));
+    this.activeId.set(active);
+    this.otherId.set(other);
+    // a stored layout may name what is gone: one group, the first tab
+    this.front(null);
     if (tabs.length === 0) this.newTab();
     this.loaded.set(true);
   }
@@ -180,30 +247,61 @@ export class TabsStore {
         connection: this.active()?.connectionId() ?? this.connections.activeId(),
         filePath: null,
         encoding: null,
+        // a new tab opens in the group that has the focus
+        group: this.focusedGroup(),
         ...over,
       },
       this.services,
       text,
     );
     this.tabs.set([...tabs, tab]);
-    this.activeId.set(id);
+    this.front(id);
     if (text) this.backupNow(tab, text);
     return tab;
   }
 
   activate(id: string): void {
-    if (this.tabs().some((t) => t.id === id)) this.activeId.set(id);
+    if (id !== this.activeId() && this.tabs().some((t) => t.id === id)) this.front(id);
   }
 
-  /** The next (`1`) or previous (`-1`) tab, around the ends. */
+  /** The next (`1`) or previous (`-1`) tab of the focused group, around the ends. */
   cycle(step: 1 | -1): void {
-    const tabs = this.tabs();
+    const tabs = this.groups()[this.focusedGroup()];
     const index = cycled(
       tabs.findIndex((t) => t.id === this.activeId()),
       tabs.length,
       step,
     );
-    if (index >= 0) this.activeId.set(tabs[index].id);
+    if (index >= 0) this.front(tabs[index].id);
+  }
+
+  /**
+   * Splits the view (prompt 016): the tab in front moves to a second group, beside (`row`) or below
+   * (`column`). A view that is split already only changes how it lies. The only tab of the window gets a
+   * new neighbour to move.
+   */
+  split(direction: SplitDirection): void {
+    this.splitDir.set(direction);
+    if (this.isSplit()) return;
+    if (this.tabs().length < 2) this.newTab();
+    const id = this.activeId();
+    if (id) this.moveToOtherGroup(id);
+  }
+
+  /** Moves a tab to the other group, with the focus; the last tab of a group ends the split. */
+  moveToOtherGroup(id: string): void {
+    const layout = moveToOther(this.slots(), this.shown(), id);
+    if (layout) this.apply(layout);
+  }
+
+  focusOtherGroup(): void {
+    const shown = focusOther(this.slots(), this.shown());
+    this.apply({ slots: this.slots(), shown });
+    this.active()?.focus();
+  }
+
+  unsplit(): void {
+    this.apply(unsplit(this.slots(), this.shown()));
   }
 
   /** Closes a tab without a question: it can be brought back, its text is kept until then. */
@@ -246,11 +344,10 @@ export class TabsStore {
     tab.dispose();
     this.closed.update((c) => [{ meta: tab.meta(), text, index }, ...c].slice(0, MAX_CLOSED));
     const rest = tabs.filter((t) => t.id !== id);
-    if (this.activeId() === id) {
-      const next = neighbour(index, tabs.length);
-      this.activeId.set(next < 0 ? null : tabs[next].id);
-    }
+    // the neighbour in its group comes to the front; an emptied group ends the split
+    const layout = afterClose(this.slots(), this.shown(), id);
     this.tabs.set(rest);
+    this.apply(layout);
     void this.api.deleteText(id).catch(() => undefined);
     // the window always has a tab
     if (rest.length === 0) this.newTab();
@@ -271,7 +368,7 @@ export class TabsStore {
     const tabs = [...this.tabs()];
     tabs.splice(Math.min(last.index, tabs.length), 0, tab);
     this.tabs.set(tabs);
-    this.activeId.set(tab.id);
+    this.front(tab.id);
     this.backupNow(tab, last.text);
   }
 
@@ -293,15 +390,23 @@ export class TabsStore {
     else void tab.text().then((text) => this.retitle(tab, text ?? ''));
   }
 
-  move(id: string, to: number): void {
-    const tabs = this.tabs();
-    this.tabs.set(
-      moved(
-        tabs,
-        tabs.findIndex((t) => t.id === id),
-        to,
-      ),
-    );
+  /** Puts a tab at a place of a group (its own unless told otherwise): how dragging reorders and moves. */
+  move(id: string, to: number, group?: Group): void {
+    const tab = this.tabs().find((t) => t.id === id);
+    if (!tab) return;
+    if (group !== undefined && group !== tab.group()) {
+      const layout = moveToOther(this.slots(), this.shown(), id);
+      if (!layout) return;
+      this.apply(layout);
+      // its group is empty now: the split is over, the order stays
+      if (!this.isSplit()) return;
+    }
+    const rest = this.tabs().filter((t) => t !== tab);
+    const peers = rest.filter((t) => t.group() === tab.group());
+    const anchor = peers[Math.max(0, to)];
+    const last = peers[peers.length - 1];
+    const at = anchor ? rest.indexOf(anchor) : last ? rest.indexOf(last) + 1 : rest.length;
+    this.tabs.set([...rest.slice(0, at), tab, ...rest.slice(at)]);
   }
 
   /** The editor of a tab says its text changed: the backup follows a moment later. */
@@ -334,7 +439,7 @@ export class TabsStore {
     for (const path of chosen.slice(0, 20)) {
       const open = this.tabs().find((t) => t.filePath() === path);
       if (open) {
-        this.activeId.set(open.id);
+        this.front(open.id);
         continue;
       }
       try {

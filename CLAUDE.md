@@ -28,11 +28,13 @@
   Tab, Zustand vom Server, Auto-Commit oder manuell, Commit/Rollback, Frage beim Schließen (Prompt 013);
   **SSH-Tunnel** (Agent, Schlüssel, Passwort; Host-Schlüssel gegen `known_hosts`) und **TLS-Modi** mit eigener CA und
   Client-Zertifikat (Prompt 014); **Verbindung aus URL** und **Import** aus DBeaver, DataGrip, `.pgpass`,
-  `pg_service.conf`, `.my.cnf`, Umgebung; eigener Export (Prompt 015);
+  `pg_service.conf`, `.my.cnf`, Umgebung; eigener Export (Prompt 015); **Arbeitsbereich**: zwei Tab-Gruppen
+  (neben- oder übereinander), Ergebnis unten/rechts/aus/maximiert, Seitenleiste mit Ansichten Datenbank und
+  Verlauf, Zen, Gruppen und Cursor in der Sitzung (Prompt 016);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–015),
+  erledigt: 001–016),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -89,8 +91,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                sql-split.ts (rein: Skripte je Dialekt zerlegen, Katalog sql-split.cases.json)
   app/features/export/         ExportDialog, ExportService (Root: ein Job, Statuszeile), export-logic.ts (rein)
   app/features/guard/          GuardDialog (Rückfrage), GuardService, guard-logic.ts (rein)
-  app/features/history/        HistoryDialog (Listbox, Vorschau), HistoryService (Root: aufzeichnen, blättern),
-                               history-logic.ts (rein)
+  app/features/history/        HistoryDialog (Listbox, Vorschau), HistoryPanel (Ansicht der Seitenleiste),
+                               HistoryService (Root: aufzeichnen, blättern), history-logic.ts (rein)
   app/features/palette/        Befehlspalette (CommandPalette, palette-logic.ts rein: unscharfe Suche)
   app/features/schema/         SchemaTree (virtuelle Liste, APG-Baum), SchemaStore (Root: Zustand je Verbindung),
                                SchemaActions, schema-logic.ts (rein: Zeilen, Filter, Tasten, Vorlagen)
@@ -101,7 +103,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                copy-logic.ts (rein: Auswahl → Zeilen/Spalten, Formate)
   app/features/tabs/           TabsStore (Root: Tabs, Sicherung, Dateien), QueryTab (Tab mit Ausführung, kein
                                Injectable), QueryPane (Editor + Ergebnis eines Tabs), TabBar,
-                               tab-logic.ts (rein: Titel, Ids, Reihenfolge), run-state.ts (Läufe, Meldungen,
+                               tab-logic.ts (rein: Titel, Ids, Reihenfolge), layout-logic.ts (rein: zwei
+                               Gruppen – teilen, verschieben, schließen, reparieren), run-state.ts (Läufe, Meldungen,
                                Statuszeile), tx-logic.ts (rein: Texte zur Transaktion)
   app/features/themes/         Farbschema-Galerie (ThemePicker, ThemeThumb, theme-picker-logic.ts),
                                Schema-Editor (ThemeEditor, theme-editor-logic.ts rein: Ids, Import, Kontrast)
@@ -156,7 +159,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
 - **Sitzungen**: Jeder Tab läuft auf seiner eigenen Sitzung (`session` = Tab-Id am Command); die Sitzung der
   Verbindung gehört der App. Ob eine Transaktion offen ist, sagt der Server (`TxState`), nie eine Annahme.
 - **Tabs**: Ein Tab ist ein `QueryTab` (per Id adressiert), sein Editor bleibt in der Seite, auch wenn er nicht
-  vorn ist. Der Text eines Tabs wird nie bei jedem Tastendruck über die Brücke geschickt: `TabsStore.textChanged`
+  vorn ist. Höchstens zwei Tab-Gruppen; alle `QueryPane` bleiben Kinder des einen Rasters in `app.ts` und
+  wechseln nur die Zelle (nie im DOM umhängen: der Editor ginge verloren). Der Text eines Tabs wird nie bei jedem Tastendruck über die Brücke geschickt: `TabsStore.textChanged`
   plant die Sicherung, die den Text einmal holt. Nichts fragt „Speichern?“.
 - **Bezeichner** quotet nur `meta::quote` in Rust; Knoten und DTOs bringen `quoted` mit. Katalogabfragen nur über
   `Session::ask` mit gebundenen Parametern.

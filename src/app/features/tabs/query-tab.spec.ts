@@ -248,6 +248,51 @@ describe('QueryTab', () => {
       connection: 'pg',
       filePath: null,
       encoding: null,
+      group: 0,
+      caretLine: 0,
+      caretCh: 0,
     });
+  });
+
+  it('keeps its group and the place of the caret over a restart', () => {
+    const restored = new QueryTab(
+      {
+        id: 'r',
+        title: 'R',
+        customTitle: false,
+        connection: 'demo',
+        filePath: null,
+        encoding: null,
+        group: 1,
+        caretLine: 12,
+        caretCh: 4,
+      },
+      {} as never,
+    );
+    expect(restored.group()).toBe(1);
+    // never looked at: the place it came with is the place it leaves with
+    expect(restored.meta()).toMatchObject({ group: 1, caretLine: 12, caretCh: 4 });
+    // the editor is sent there once
+    expect(restored.takeStartCaret()).toEqual({ line: 12, ch: 4 });
+    expect(restored.takeStartCaret()).toBeNull();
+    restored.caret.set({ line: 3, ch: 9 } as never);
+    expect(restored.meta()).toMatchObject({ caretLine: 3, caretCh: 9 });
+    // a broken file: first group, no place
+    const broken = new QueryTab(
+      {
+        id: 'b',
+        title: 'B',
+        customTitle: false,
+        connection: null,
+        filePath: null,
+        encoding: null,
+        group: 9,
+        caretLine: -3,
+        caretCh: 2.5,
+      },
+      {} as never,
+    );
+    expect(broken.group()).toBe(0);
+    expect(broken.takeStartCaret()).toBeNull();
   });
 });
