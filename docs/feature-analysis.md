@@ -104,7 +104,7 @@ Prompts) · **Stufe** = meine Empfehlung: **1** Grundlage (ohne das ist es kein 
 | Id | Feature | Vorbild | Umfang | Stufe | Freigabe |
 |---|---|---|---|---|---|
 | E1 | **Tabelle öffnen und direkt bearbeiten, Änderungen sammeln**: geänderte Zellen farbig, **SQL-Vorschau** aller Änderungen, dann gemeinsam schreiben oder verwerfen (`Strg/Cmd+S`); nur mit Primärschlüssel, sonst klarer Hinweis | TablePlus | L | 2 | ☑ [031](../prompts/done/031-daten-bearbeiten.md) |
-| E2 | **Zeilen** einfügen, duplizieren, löschen; `NULL`/Default setzen; **Block aus Excel einfügen** | TablePlus, Postico | M | 2 | ☑ [032](../prompts/032-zeilen-bearbeiten.md) |
+| E2 | **Zeilen** einfügen, duplizieren, löschen; `NULL`/Default setzen; **Block aus Excel einfügen** | TablePlus, Postico | M | 2 | ☑ [032](../prompts/done/032-zeilen-bearbeiten.md) |
 | E3 | **Struktur bearbeiten**: Spalten, Indizes, Fremdschlüssel in Tabellenform mit **DDL-Vorschau** vor dem Ausführen | HeidiSQL, TablePlus | L | 3 | ☑ [043](../prompts/043-struktur-bearbeiten.md) |
 
 ### F – Import und Export

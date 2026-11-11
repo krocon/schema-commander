@@ -53,7 +53,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 | 029 | [Spalten verwalten und im Ergebnis suchen](done/029-spalten-suche.md) ([Design](done/029-spalten-suche.design.md)) | D8 | 006, 007 | S–M | ✅ 11.11.2026 |
 | 030 | [Fremdschlüsseln folgen](done/030-fremdschluessel-folgen.md) ([Design](done/030-fremdschluessel-folgen.design.md)) | D10 | 008, 027 | M | ✅ 11.11.2026 |
 | 031 | [Daten bearbeiten mit Änderungsvorschau](done/031-daten-bearbeiten.md) ([Design](done/031-daten-bearbeiten.design.md)) | E1 | 007, 012, 013, 027 | L | ✅ 11.11.2026 |
-| 032 | [Zeilen einfügen, duplizieren, löschen, Block einfügen](032-zeilen-bearbeiten.md) | E2 | 031 | M | ✅ editlicious 027, in `editlicious-editor` 1.2.0 |
+| 032 | [Zeilen einfügen, duplizieren, löschen, Block einfügen](done/032-zeilen-bearbeiten.md) ([Design](done/032-zeilen-bearbeiten.design.md)) | E2 | 031 | M | ✅ 11.11.2026 |
 | 033 | [Import aus CSV und JSON](033-import.md) | F2 | 008, 011 | M–L | offen |
 | 034 | [Release und Verteilung](034-release.md) | G6 | – (sinnvoll nach Stufe 1) | M | offen |
 | | **Stufe 3 – nach Bedarf** | | | | |

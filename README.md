@@ -39,6 +39,10 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   sent while you type. Changes are collected and shown in colour, can be undone, previewed as SQL, and are
   written together in one transaction with <kbd>Ctrl/⌘</kbd>+<kbd>S</kbd>: all rows or none, values bound, and
   a row somebody else changed in the meantime is reported instead of overwritten
+- Rows too: add a row (<kbd>Ctrl/⌘</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd>), duplicate rows, mark rows to delete
+  (<kbd>Ctrl/⌘</kbd>+<kbd>⌫</kbd>), paste a block of cells from a spreadsheet (<kbd>Ctrl/⌘</kbd>+<kbd>V</kbd>
+  in the grid – over the rows below the cursor and on into new rows), fill down
+  (<kbd>Ctrl/⌘</kbd>+<kbd>D</kbd>). Everything is written together: deletes, then changes, then inserts
 - Follow foreign keys in a table: <kbd>F4</kbd> on `customer_id = 42` shows the customer (in the tab, in a new
   one, or as a quick look with <kbd>Shift</kbd>+<kbd>F4</kbd>); <kbd>Alt</kbd>+<kbd>F7</kbd> lists the tables
   that point to the row, with counts. Several marked rows at once, composite keys, a path with back and forward
