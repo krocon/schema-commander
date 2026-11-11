@@ -10,6 +10,7 @@ pub mod export;
 pub mod extract;
 pub mod format;
 pub mod history;
+pub mod image_info;
 pub mod menu;
 pub mod results;
 pub mod saved;
@@ -135,6 +136,9 @@ pub fn run() {
             commands::names_query,
             commands::meta_search,
             commands::result_window,
+            commands::cell_value,
+            commands::save_cell_value,
+            commands::copy_cell_value,
             commands::free_results,
             commands::load_session,
             commands::save_session,
