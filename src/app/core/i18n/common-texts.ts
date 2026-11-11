@@ -21,6 +21,7 @@ export const COMMON_EN = {
   name: 'Name',
   closeMenu: 'Close menu',
   closeMessage: 'Close message',
+  keymapUnreadable: 'Your own shortcuts could not be read; the defaults apply.',
 };
 
 export const COMMON_TEXTS = translatable('common', COMMON_EN, { de: COMMON_DE });

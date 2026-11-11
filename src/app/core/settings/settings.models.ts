@@ -1,3 +1,4 @@
+import { COMMON_TEXTS } from '../i18n/common-texts';
 import { DEFAULT_SELECTION, ThemeSelection, sanitizeSelection } from '../theme/theme.models';
 
 /** What the app remembers over a restart (`settings.json` in the app's config folder). */
@@ -267,7 +268,7 @@ export function mergeKeymap(raw: unknown): { keymap: KeymapSetting; notice: stri
   if (raw === undefined || raw === null) return { keymap: empty(), notice: null };
   const broken = {
     keymap: empty(),
-    notice: 'Die eigenen Tastenkürzel waren nicht lesbar; es gelten die Vorgaben.',
+    notice: COMMON_TEXTS.keymapUnreadable,
   };
   if (typeof raw !== 'object' || Array.isArray(raw)) return broken;
   const o = raw as Record<string, unknown>;

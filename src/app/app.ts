@@ -49,6 +49,7 @@ import { ConnectionDialog } from './features/connections/connection-dialog';
 import { ConnectionList } from './features/connections/connection-list';
 import { PasswordDialog } from './features/connections/password-dialog';
 import { CommandPalette } from './features/palette/command-palette';
+import { SettingsDialog } from './features/settings/settings-dialog';
 import { ShortcutDialogComponent } from './features/shortcuts/shortcut-dialog';
 import { QueryPane } from './features/tabs/query-pane';
 import { runStatus } from './features/tabs/run-state';
@@ -60,7 +61,9 @@ import { copyName } from './features/themes/theme-editor-logic';
 import { ThemePickerComponent } from './features/themes/theme-picker';
 import { SplitterComponent } from './shared/splitter';
 import { APP_TEXTS } from './app-texts';
+import { WindowApi } from './core/backend/window-api';
 import { COMMON_TEXTS } from './core/i18n/common-texts';
+import { language } from './core/i18n/i18n';
 
 const SIDEBAR_MIN = 140;
 
@@ -84,6 +87,7 @@ const SIDEBAR_MIN = 140;
     PasswordDialog,
     SchemaTree,
     QueryPane,
+    SettingsDialog,
     ShortcutDialogComponent,
     SplitterComponent,
     TabBar,
@@ -406,6 +410,11 @@ const SIDEBAR_MIN = 140;
         <app-command-palette (closed)="paletteOpen.set(false)" />
       }
     }
+    @if (settingsOpen()) {
+      @defer (on immediate) {
+        <app-settings-dialog (closed)="settingsOpen.set(false)" />
+      }
+    }
     @if (shortcutsOpen(); as mode) {
       @defer (on immediate) {
         <app-shortcut-dialog [startMode]="mode" (closed)="shortcutsOpen.set(null)" />
@@ -440,6 +449,8 @@ export class App implements OnInit, OnDestroy {
   protected readonly importOpen = signal(false);
   /** The shortcut editor, `read` as an overview. */
   protected readonly shortcutsOpen = signal<'edit' | 'read' | null>(null);
+  protected readonly settingsOpen = signal(false);
+  private readonly windowApi = inject(WindowApi);
   /** A message of the app itself (failed action, unreadable shortcuts). */
   private readonly ownNotice = signal<string | null>(null);
   protected readonly notice = computed(() => this.ownNotice() ?? this.tabs.notice());
@@ -523,6 +534,11 @@ export class App implements OnInit, OnDestroy {
   private observer: ResizeObserver | null = null;
 
   constructor() {
+    // the native parts (the menu bar of macOS) speak the language of the window
+    effect(() => {
+      const lang = language();
+      void this.windowApi.setLanguage(lang).catch(() => undefined);
+    });
     effect(() => {
       const element = this.workspace()?.nativeElement;
       this.observer?.disconnect();
@@ -838,6 +854,7 @@ export class App implements OnInit, OnDestroy {
         COLOR_SCHEME: () => this.theme.pickerOpen.set(true),
         EDIT_COLOR_SCHEME: () => this.editCurrentScheme(),
         OPEN_PALETTE: () => this.paletteOpen.set(true),
+        OPEN_SETTINGS: () => this.settingsOpen.set(true),
         OPEN_SHORTCUTS: () => this.shortcutsOpen.set('edit'),
         SHOW_SHORTCUTS: () => this.shortcutsOpen.set('read'),
         FOCUS_EDITOR: () => this.focusArea('editor'),

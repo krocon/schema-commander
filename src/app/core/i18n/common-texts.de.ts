@@ -20,4 +20,5 @@ export const COMMON_DE: Translation<typeof COMMON_EN> = {
   name: 'Name',
   closeMenu: 'Menü schließen',
   closeMessage: 'Meldung schließen',
+  keymapUnreadable: 'Die eigenen Tastenkürzel waren nicht lesbar; es gelten die Vorgaben.',
 };

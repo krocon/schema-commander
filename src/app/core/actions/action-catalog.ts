@@ -307,6 +307,7 @@ export const ACTIONS = [
     scope: 'global',
     repeat: true,
   },
+  { id: 'OPEN_SETTINGS', label: 'Settings …', group: 'View', scope: 'global' },
   // Help
   { id: 'OPEN_SHORTCUTS', label: 'Edit keyboard shortcuts …', group: 'Help', scope: 'global' },
   { id: 'SHOW_SHORTCUTS', label: 'Show keyboard shortcuts', group: 'Help', scope: 'view' },

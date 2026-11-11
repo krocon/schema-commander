@@ -1,0 +1,152 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { CATALOGS, PHRASEBOOKS, setLanguage } from './i18n';
+import { ACTIONS, ACTION_GROUPS } from '../actions/action-catalog';
+import { actionLabel, groupLabel } from '../actions/action-texts';
+import '../../app-texts';
+import '../actions/keymap-texts';
+import '../connections/connection-model-texts';
+import '../errors/error-texts';
+import './common-texts';
+import '../theme/theme-texts';
+import '../../features/connections/connection-dialog-texts';
+import '../../features/connections/connection-texts';
+import '../../features/connections/import-texts';
+import '../../features/editor/editor-texts';
+import '../../features/export/export-texts';
+import '../../features/guard/guard-texts';
+import '../../features/history/history-texts';
+import '../../features/palette/palette-texts';
+import '../../features/results/results-texts';
+import '../../features/schema/schema-texts';
+import '../../features/settings/settings-texts';
+import '../../features/shortcuts/shortcut-dialog-texts';
+import '../../features/tabs/tab-bar-texts';
+import '../../features/tabs/tabs-texts';
+import '../../features/themes/theme-editor-texts';
+import '../../features/themes/theme-picker-texts';
+import '../../shared/shared-texts';
+import '../theme/tokens';
+
+/** The same in both languages on purpose: names, symbols, technical terms. */
+const SAME = new Set<string>([
+  '(null)',
+  'Alt',
+  'CSV',
+  'Commit',
+  'DBeaver (data-sources.json)',
+  'DataGrip / JetBrains (dataSources.xml)',
+  'Deutsch',
+  'Editor',
+  'English',
+  'Esc',
+  'Excel (.xlsx)',
+  'Filter',
+  'Format',
+  'Host',
+  'JSON',
+  'MySQL / MariaDB',
+  'NULL',
+  'Name',
+  'Navigation',
+  'Passphrase',
+  'Port',
+  'PostgreSQL',
+  'Rollback',
+  'SQL Server',
+  'Schema',
+  'TLS: ',
+  'Tab',
+  'Tabs',
+  'Tx: auto',
+  'Views',
+  'gzip',
+  '~/.my.cnf (MySQL, MariaDB)',
+  '~/.pg_service.conf (PostgreSQL)',
+  '~/.pgpass (PostgreSQL)',
+]);
+
+const CATALOG_FILES = 24;
+const SAMPLE_ARGS: unknown[] = [2, 'x', 3, 4];
+
+function walk(path: string, en: unknown, de: unknown, problems: string[], same: string[]): void {
+  if (typeof en === 'string') {
+    if (typeof de !== 'string' || (de.trim() === '' && en.trim() !== '')) {
+      problems.push(`${path}: missing or empty`);
+    } else if (de === en && !SAME.has(en) && /[a-z]{3}/i.test(en)) {
+      same.push(en);
+    }
+  } else if (typeof en === 'function') {
+    if (typeof de !== 'function') {
+      problems.push(`${path}: not a function`);
+      return;
+    }
+    if (de.length !== (en as (...a: unknown[]) => unknown).length) {
+      problems.push(`${path}: ${de.length} instead of ${en.length} parameters`);
+    }
+    let a: unknown;
+    let b: unknown;
+    try {
+      a = (en as (...x: unknown[]) => unknown)(...SAMPLE_ARGS);
+      b = (de as (...x: unknown[]) => unknown)(...SAMPLE_ARGS);
+    } catch {
+      return; // the sample arguments do not fit this function's types
+    }
+    if (typeof a === 'string' && (typeof b !== 'string' || b === '')) {
+      problems.push(`${path}(): no text`);
+    }
+  } else if (en && typeof en === 'object') {
+    if (!de || typeof de !== 'object') {
+      problems.push(`${path}: missing object`);
+      return;
+    }
+    const ek = Object.keys(en).sort();
+    const dk = Object.keys(de).sort();
+    for (const k of ek) {
+      walk(
+        `${path}.${k}`,
+        (en as Record<string, unknown>)[k],
+        (de as Record<string, unknown>)[k],
+        problems,
+        same,
+      );
+    }
+    for (const k of dk.filter((k) => !ek.includes(k)))
+      problems.push(`${path}.${k}: only in German`);
+  }
+}
+
+describe('translation catalogs (prompt 017)', () => {
+  beforeEach(() => setLanguage('en'));
+  afterEach(() => setLanguage('de'));
+
+  it('registers every catalog this spec imports', () => {
+    expect(CATALOGS.size).toBeGreaterThanOrEqual(CATALOG_FILES);
+    expect(PHRASEBOOKS.has('themeLabels')).toBe(true);
+  });
+
+  it('German has every key of English, with the same signatures', () => {
+    const problems: string[] = [];
+    for (const [name, { en, tr }] of CATALOGS) {
+      if (name.startsWith('test.')) continue;
+      walk(name, en, tr['de'], problems, []);
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('translates the texts: what is the same in both languages is on the list', () => {
+    const same: string[] = [];
+    for (const [name, { en, tr }] of CATALOGS) {
+      if (name.startsWith('test.')) continue;
+      walk(name, en, tr['de'], [], same);
+    }
+    expect([...new Set(same)].sort()).toEqual([]);
+  });
+
+  it('names every action and group in both languages', () => {
+    for (const lang of ['en', 'de'] as const) {
+      setLanguage(lang);
+      for (const action of ACTIONS) expect(actionLabel(action.id), action.id).toBeTruthy();
+      for (const group of ACTION_GROUPS) expect(groupLabel(group), group).toBeTruthy();
+    }
+  });
+});

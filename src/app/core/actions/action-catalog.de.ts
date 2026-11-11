@@ -76,6 +76,7 @@ export const ACTION_LABELS_DE: Readonly<Record<ActionId, string>> = {
   FOCUS_SIDEBAR: 'In die Seitenleiste',
   FOCUS_NEXT_AREA: 'Nächster Bereich',
   FOCUS_PREV_AREA: 'Voriger Bereich',
+  OPEN_SETTINGS: 'Einstellungen …',
   OPEN_SHORTCUTS: 'Tastenkürzel bearbeiten …',
   SHOW_SHORTCUTS: 'Tastenkürzel anzeigen',
 };
