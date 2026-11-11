@@ -209,6 +209,7 @@ export const MENU_BAR: readonly TopMenu[] = [
           'SCHEMA_FILTER',
           'TOGGLE_SYSTEM_SCHEMAS',
           '-',
+          'SCHEMA_DETAILS',
           'SCHEMA_OPEN_DATA',
           'SCHEMA_EXPORT_TABLE',
           '-',

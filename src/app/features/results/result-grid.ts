@@ -15,7 +15,7 @@ import { TableApi, TableModelIf } from '@guiexpert/table';
 import { ResultRef, RowWindow } from '../../core/sql/query.models';
 import { SettingsService } from '../../core/settings/settings.service';
 import { CellFormat } from './cell-format';
-import { selectionOf } from './copy-logic';
+import { localTsv, selectionOf } from './copy-logic';
 import { CopyService } from './copy.service';
 import { PAGE_ROWS, WindowAreaModel, resultModel, resultOptions } from './result-model';
 import { RESULTS_TEXTS } from './results-texts';
@@ -75,6 +75,12 @@ export class ResultGrid implements OnDestroy {
   readonly fetch =
     input.required<(resultId: number, from: number, count: number) => Promise<RowWindow>>();
 
+  /**
+   * Rows that live in the page instead of the result store (the lists of the object details): the grid
+   * copies its selection itself, and the actions for results leave it alone.
+   */
+  readonly local = input<RowWindow | null>(null);
+
   protected readonly settings = inject(SettingsService);
   private readonly copier = inject(CopyService);
   private readonly menus = inject(MenuService);
@@ -117,24 +123,38 @@ export class ResultGrid implements OnDestroy {
 
   private format(): CellFormat {
     const s = this.settings.settings();
+    if (this.local()) return { groupDigits: false, plain: true };
     return { groupDigits: s.groupDigits, nullText: s.nullText };
   }
 
   /** `Mod+C` in the grid: the selection, tab-separated. */
   protected onCopy(event: ClipboardEvent): void {
     event.preventDefault();
+    const local = this.local();
+    if (local) {
+      const selection = this.options.getSelectionModel?.();
+      const chosen = selectionOf(
+        selection?.getRanges() ?? [],
+        selection?.isAllSelected() ?? false,
+        this.result().columns.length,
+      );
+      void this.copier.copyText(localTsv(local, chosen));
+      return;
+    }
     void this.copier.copy();
   }
 
   /** What can be done with the selection and the result (prompt 018). */
   protected onContextMenu(event: MouseEvent): void {
     event.preventDefault();
+    if (this.local()) return;
     this.openMenu(event.clientX, event.clientY);
   }
 
   /** `Shift+F10` or the menu key: the same menu, at the top left of the grid. */
   protected onKey(event: KeyboardEvent): void {
     if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+    if (this.local()) return;
     event.preventDefault();
     event.stopPropagation();
     const rect = this.host.nativeElement.getBoundingClientRect();
@@ -164,13 +184,16 @@ export class ResultGrid implements OnDestroy {
     this.options = resultOptions(rowHeight);
     const selection = this.options.getSelectionModel?.();
     selection?.clear();
-    this.unregister = this.copier.register(result.resultId, () =>
-      selectionOf(
-        selection?.getRanges() ?? [],
-        selection?.isAllSelected() ?? false,
-        result.columns.length,
-      ),
-    );
+    // rows in the page are no result of the store: the copy actions do not know them
+    this.unregister = untracked(() => this.local())
+      ? null
+      : this.copier.register(result.resultId, () =>
+          selectionOf(
+            selection?.getRanges() ?? [],
+            selection?.isAllSelected() ?? false,
+            result.columns.length,
+          ),
+        );
     const fetch = this.fetch();
     let first: RowWindow = [];
     try {

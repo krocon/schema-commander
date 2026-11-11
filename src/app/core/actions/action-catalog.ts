@@ -252,6 +252,7 @@ export const ACTIONS = [
     scope: 'global',
   },
   { id: 'SCHEMA_EXPORT_TABLE', label: 'Export table …', group: 'Schema', scope: 'global' },
+  { id: 'SCHEMA_DETAILS', label: 'Object details and DDL …', group: 'Schema', scope: 'global' },
   { id: 'SCHEMA_OPEN_DATA', label: 'Open the data of the table', group: 'Schema', scope: 'global' },
   {
     id: 'SCHEMA_INSERT_NAME',

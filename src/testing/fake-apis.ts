@@ -31,7 +31,13 @@ import { ConnectionsApi } from '../app/core/connections/connections-api';
 import { LoadedSession, SessionApi, SessionFile, TextFile } from '../app/core/session/session-api';
 import { QueryApi, RunGuard } from '../app/core/sql/query-api';
 import { SchemaApi } from '../app/core/schema/schema-api';
-import { Found, ObjectInfo, SchemaInfo, TableInfo } from '../app/core/schema/schema.models';
+import {
+  Found,
+  ObjectDetails,
+  ObjectInfo,
+  SchemaInfo,
+  TableInfo,
+} from '../app/core/schema/schema.models';
 import {
   Cell,
   QueryColumn,
@@ -552,6 +558,70 @@ export class FakeSchemaApi extends SchemaApi {
       }
     }
     return this.answer(`search ${text}`, found);
+  }
+
+  /** What `details` answers, by object name; any other object has the first one's. */
+  detailList: Record<string, ObjectDetails> = {
+    orders: {
+      sections: [
+        {
+          id: 'columns',
+          columns: ['name', 'type', 'nullable', 'default', 'key', 'extra', 'comment'],
+          rows: [
+            ['id', 'integer', 'no', null, 'pk', 'identity always', null],
+            ['customer_id', 'integer', 'no', null, 'fk', '', 'who ordered'],
+            ['note', 'text', 'yes', "'none'", '', '', null],
+          ],
+          cut: false,
+        },
+        {
+          id: 'references',
+          columns: [
+            'name',
+            'columns',
+            'refSchema',
+            'refName',
+            'refColumns',
+            'onUpdate',
+            'onDelete',
+          ],
+          rows: [
+            ['orders_customer', 'customer_id', 'public', 'customer', 'id', 'no action', 'cascade'],
+          ],
+          cut: false,
+        },
+        {
+          id: 'stats',
+          columns: ['property', 'value'],
+          rows: [
+            ['rows', '2500000'],
+            ['totalSize', '312 MB'],
+          ],
+          cut: false,
+        },
+      ],
+      ddl: 'CREATE TABLE public.orders (\n    id integer NOT NULL\n);\n',
+      notes: ['privileges'],
+    },
+    customer: {
+      sections: [
+        {
+          id: 'referencedBy',
+          columns: ['name', 'refSchema', 'refName', 'columns'],
+          rows: [['orders_customer', 'public', 'orders', 'customer_id']],
+          cut: false,
+        },
+      ],
+      ddl: null,
+      notes: ['ddl'],
+    },
+  };
+
+  details(_id: string, schema: string, name: string, kind: string): Promise<ObjectDetails> {
+    return this.answer(
+      `details ${schema}.${name} ${kind}`,
+      this.detailList[name] ?? this.detailList['orders'],
+    );
   }
 }
 

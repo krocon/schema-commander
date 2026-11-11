@@ -116,6 +116,7 @@ pub fn run() {
             commands::meta_schemas,
             commands::meta_objects,
             commands::meta_table,
+            commands::meta_details,
             commands::meta_search,
             commands::result_window,
             commands::free_results,

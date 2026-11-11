@@ -392,3 +392,18 @@ export function changesSchema(sql: string): boolean {
     .toLowerCase();
   return /^(create|alter|drop|rename|truncate|comment|attach|detach|use)\b/.test(start);
 }
+
+/** Columns a quick info shows at most. */
+export const QUICK_INFO_COLUMNS = 30;
+
+/** The lines of a quick info: each column with its type and key, the rest counted. */
+export function quickInfoLines(columns: readonly ColumnInfo[]): string[] {
+  const lines = columns.slice(0, QUICK_INFO_COLUMNS).map((c) => {
+    const marks = [c.key === 'pk' ? 'PK' : c.key === 'fk' ? 'FK' : '', c.nullable ? '' : 'NOT NULL']
+      .filter(Boolean)
+      .join(', ');
+    return `${c.name}  ${c.typeName}${marks ? `  (${marks})` : ''}`;
+  });
+  if (columns.length > QUICK_INFO_COLUMNS) lines.push(`… +${columns.length - QUICK_INFO_COLUMNS}`);
+  return lines;
+}

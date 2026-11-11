@@ -1,6 +1,13 @@
 import { Injectable } from '@angular/core';
 import { call } from '../backend/call';
-import { Found, ObjectInfo, SchemaInfo, TableInfo } from './schema.models';
+import {
+  Found,
+  ObjectDetails,
+  ObjectInfo,
+  ObjectKind,
+  SchemaInfo,
+  TableInfo,
+} from './schema.models';
 
 /**
  * What is in the database of an open connection (prompt 008). Every call asks the system catalog; it waits
@@ -15,6 +22,14 @@ export abstract class SchemaApi {
   abstract table(connectionId: string, schema: string, table: string): Promise<TableInfo>;
   /** Tables and views whose name holds `text`, in all schemas but the system's (at most 200). */
   abstract search(connectionId: string, text: string): Promise<Found[]>;
+  /** Everything about one object and its DDL; `detail` tells overloaded routines apart. */
+  abstract details(
+    connectionId: string,
+    schema: string,
+    name: string,
+    kind: ObjectKind,
+    detail: string,
+  ): Promise<ObjectDetails>;
 }
 
 @Injectable()
@@ -33,5 +48,15 @@ export class TauriSchemaApi extends SchemaApi {
 
   search(connectionId: string, text: string): Promise<Found[]> {
     return call('meta_search', { id: connectionId, text });
+  }
+
+  details(
+    connectionId: string,
+    schema: string,
+    name: string,
+    kind: ObjectKind,
+    detail: string,
+  ): Promise<ObjectDetails> {
+    return call('meta_details', { id: connectionId, schema, name, kind, detail });
   }
 }

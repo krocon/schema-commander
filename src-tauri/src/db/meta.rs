@@ -24,7 +24,7 @@ pub struct SchemaInfo {
     pub current: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ObjectKind {
     Table,

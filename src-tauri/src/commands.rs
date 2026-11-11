@@ -656,6 +656,30 @@ pub fn meta_table(
     })
 }
 
+/// Everything about one object: its lists and its DDL (prompt 019). `detail` tells overloaded routines
+/// apart.
+#[tauri::command(async)]
+pub fn meta_details(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    schema: String,
+    name: String,
+    kind: meta::ObjectKind,
+    detail: Option<String>,
+) -> AppResult<crate::db::details::ObjectDetails> {
+    manager.ask(&id, |s, db, stop| {
+        crate::db::details::details(
+            s,
+            db,
+            &schema,
+            &name,
+            kind,
+            detail.as_deref().unwrap_or(""),
+            stop,
+        )
+    })
+}
+
 /// Tables and views by a part of their name, in all schemas.
 #[tauri::command(async)]
 pub fn meta_search(
