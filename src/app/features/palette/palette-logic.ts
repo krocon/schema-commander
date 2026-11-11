@@ -19,7 +19,7 @@ export interface PaletteHit {
 
 /**
  * Lower case without accents, one character for each character of the input (so indices in the folded text
- * are indices in the original): `ä` → `a`, `…` stays one character.
+ * are indices in the original): `é` → `e`, `…` stays one character.
  */
 function fold(text: string): string {
   let out = '';

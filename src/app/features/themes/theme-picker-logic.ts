@@ -1,6 +1,7 @@
 import { toHex } from '../../core/theme/color';
 import { completeTokens, resolveColor } from '../../core/theme/theme-logic';
 import { Theme, isUserTheme } from '../../core/theme/theme.models';
+import { THEME_PICKER_TEXTS } from './theme-picker-texts';
 
 /** A card of the picker: `system` = follow the system, otherwise a scheme id. */
 export interface PickerCard {
@@ -15,12 +16,27 @@ export interface PickerSection {
   readonly cards: readonly PickerCard[];
 }
 
-export const SYSTEM_CARD: PickerCard = { id: 'system', name: 'System folgen', dark: false };
+/** The card that follows the system; its name is read in the current language. */
+export const SYSTEM_CARD: PickerCard = {
+  id: 'system',
+  get name() {
+    return THEME_PICKER_TEXTS.followSystem;
+  },
+  dark: false,
+};
 
-/** Every word of the filter occurs in the name or in „dunkel“/„dark“ resp. „hell“/„light“; case does not matter. */
+/**
+ * Every word of the filter occurs in the name or in the word for the brightness – "dark" resp. "light" in
+ * the current language and in English; case does not matter.
+ */
 export function matchesFilter(card: PickerCard, filter: string): boolean {
+  const t = THEME_PICKER_TEXTS;
   const kind =
-    card.id === 'system' ? 'system hell dunkel' : card.dark ? 'dunkel dark' : 'hell light';
+    card.id === 'system'
+      ? `system ${t.lightKind} ${t.darkKind}`
+      : card.dark
+        ? `${t.darkKind} dark`
+        : `${t.lightKind} light`;
   const hay = `${card.name} ${kind}`.toLowerCase();
   return filter
     .toLowerCase()
@@ -30,24 +46,25 @@ export function matchesFilter(card: PickerCard, filter: string): boolean {
 }
 
 /**
- * „System folgen“ first, then the user's own schemes, the dark and the light built-in ones, each filtered;
+ * "Follow the system" first, then the user's own schemes, the dark and the light built-in ones, each filtered;
  * empty sections are left out.
  */
 export function pickerSections(themes: readonly Theme[], filter: string): PickerSection[] {
   const card = (t: Theme): PickerCard => ({ id: t.id, name: t.name, dark: t.dark });
   const keep = (cards: PickerCard[]) => cards.filter((c) => matchesFilter(c, filter));
   const own = (t: Theme) => isUserTheme(t.id);
+  const texts = THEME_PICKER_TEXTS;
   return [
-    { key: 'system' as const, label: 'System folgen', cards: keep([SYSTEM_CARD]) },
-    { key: 'user' as const, label: 'Eigene', cards: keep(themes.filter(own).map(card)) },
+    { key: 'system' as const, label: texts.followSystem, cards: keep([SYSTEM_CARD]) },
+    { key: 'user' as const, label: texts.own, cards: keep(themes.filter(own).map(card)) },
     {
       key: 'dark' as const,
-      label: 'Dunkel',
+      label: texts.dark,
       cards: keep(themes.filter((t) => t.dark && !own(t)).map(card)),
     },
     {
       key: 'light' as const,
-      label: 'Hell',
+      label: texts.light,
       cards: keep(themes.filter((t) => !t.dark && !own(t)).map(card)),
     },
   ].filter((s) => s.cards.length > 0);
@@ -62,7 +79,7 @@ export interface CardBox {
 /**
  * The card after a key (arrows, Home, End); `null` = not a moving key, `-1` = up from the first row (back to
  * the filter field). Up and down go to the nearest card of the row above or below, so sections of different
- * length and the single „System folgen“ card line up; without a layout (all boxes at 0) by `columns`.
+ * length and the single "follow the system" card line up; without a layout (all boxes at 0) by `columns`.
  */
 export function moveInGrid(
   index: number,

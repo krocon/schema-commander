@@ -10,7 +10,7 @@ describe('shortcutGroups', () => {
   it('lists all actions by group and marks the changed ones', () => {
     const groups = shortcutGroups(keymap, override, '', 'macos');
     expect(groups.map((g) => g.name)).toEqual([...ACTION_GROUPS]);
-    const view = groups.find((g) => g.name === 'Ansicht')!;
+    const view = groups.find((g) => g.name === 'View')!;
     const sidebar = view.rows.find((r) => r.id === 'TOGGLE_SIDEBAR')!;
     expect(sidebar.changed).toBe(true);
     expect(sidebar.keys).toEqual([{ value: 'Mod+Shift+B', text: '⇧⌘B' }]);

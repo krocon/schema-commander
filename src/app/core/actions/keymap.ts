@@ -1,4 +1,6 @@
 import { ACTION_IDS, ActionId, ActionScope, actionDef, isActionId } from './action-catalog';
+import { actionLabel } from './action-texts';
+import { KEYMAP_TEXTS } from './keymap-texts';
 import linux from './keymaps/linux.json';
 import macos from './keymaps/macos.json';
 import windows from './keymaps/windows.json';
@@ -12,20 +14,32 @@ export type RawBindings = Readonly<Record<string, unknown>>;
 
 export const DEFAULT_KEYMAPS: Readonly<Record<Platform, RawBindings>> = { macos, windows, linux };
 
+/** A text of the keymap catalog; the table holds the key, the text is read when it is needed. */
+type ReasonKey =
+  | 'macQuit'
+  | 'macHide'
+  | 'macHideOthers'
+  | 'macMinimize'
+  | 'macFullScreen'
+  | 'macAppSwitch'
+  | 'macSpotlight'
+  | 'closeWindow'
+  | 'appSwitch';
+
 /** Taken by the system or the native application menu on this OS: never bound. */
-const RESERVED: Readonly<Record<Platform, Readonly<Record<string, string>>>> = {
+const RESERVED: Readonly<Record<Platform, Readonly<Record<string, ReasonKey>>>> = {
   macos: {
-    'Mod+Q': 'Beenden im macOS-Menü',
-    'Mod+H': 'Ausblenden im macOS-Menü',
-    'Mod+Alt+H': 'Andere ausblenden im macOS-Menü',
-    'Mod+M': 'Im Dock ablegen im macOS-Menü',
-    'Mod+Ctrl+F': 'Vollbild im macOS-Menü',
-    'Mod+Tab': 'Programmwechsel von macOS',
-    'Mod+Shift+Tab': 'Programmwechsel von macOS',
-    'Mod+Space': 'Spotlight von macOS',
+    'Mod+Q': 'macQuit',
+    'Mod+H': 'macHide',
+    'Mod+Alt+H': 'macHideOthers',
+    'Mod+M': 'macMinimize',
+    'Mod+Ctrl+F': 'macFullScreen',
+    'Mod+Tab': 'macAppSwitch',
+    'Mod+Shift+Tab': 'macAppSwitch',
+    'Mod+Space': 'macSpotlight',
   },
-  windows: { 'Alt+F4': 'Fenster schließen', 'Alt+Tab': 'Programmwechsel' },
-  linux: { 'Alt+F4': 'Fenster schließen', 'Alt+Tab': 'Programmwechsel' },
+  windows: { 'Alt+F4': 'closeWindow', 'Alt+Tab': 'appSwitch' },
+  linux: { 'Alt+F4': 'closeWindow', 'Alt+Tab': 'appSwitch' },
 };
 
 /**
@@ -45,16 +59,16 @@ const TEXT_FIELD_KEYS: readonly string[] = [
   'Ctrl+Space',
 ];
 
-/** Why a shortcut cannot be given to an action of this scope, `null` if it can. */
+/** Why a shortcut cannot be given to an action of this scope (in the current language), `null` if it can. */
 export function reservedReason(
   shortcut: string,
   scope: ActionScope,
   platform: Platform,
 ): string | null {
   const own = RESERVED[platform][shortcut];
-  if (own) return own;
+  if (own) return KEYMAP_TEXTS[own];
   if (scope !== 'view' && TEXT_FIELD_KEYS.includes(shortcut)) {
-    return 'Bearbeiten in Eingabefeldern und im Editor';
+    return KEYMAP_TEXTS.textEditing;
   }
   return null;
 }
@@ -63,11 +77,11 @@ export interface ResolvedKeymap {
   readonly bindings: Bindings;
   /** Canonical shortcut → the actions that own it (at most one per place). */
   readonly lookup: ReadonlyMap<string, readonly ActionId[]>;
-  /** Problems found while merging, in German, for the notice list. */
+  /** Problems found while merging, in the language at that time, for the notice list. */
   readonly problems: readonly string[];
 }
 
-const label = (id: ActionId) => actionDef(id).label;
+const label = actionLabel;
 
 /**
  * Defaults + user override: an override entry replaces the list of that action (`[]` = no shortcut), so new
@@ -80,24 +94,23 @@ export function resolveKeymap(
   defaults: RawBindings = DEFAULT_KEYMAPS[platform],
 ): ResolvedKeymap {
   const problems: string[] = [];
+  const t = KEYMAP_TEXTS;
   const show = (s: string) => formatShortcut(s, platform);
   const normalise = (id: ActionId, list: unknown, own: boolean): string[] => {
     const out: string[] = [];
-    const where = own ? 'eigene Belegung' : 'Vorgabe';
+    const where = own ? t.ownBindings : t.defaults;
     if (!Array.isArray(list)) {
-      problems.push(`„${label(id)}“ (${where}): keine Liste von Kürzeln, übergangen.`);
+      problems.push(t.notAList(label(id), where));
       return out;
     }
     for (const raw of list.slice(0, 8)) {
       const c = typeof raw === 'string' ? canonicalShortcut(raw, platform) : null;
       if (c === null) {
-        problems.push(
-          `„${String(raw).slice(0, 40)}“ ist kein gültiges Kürzel (${label(id)}, ${where}).`,
-        );
+        problems.push(t.invalidShortcut(String(raw).slice(0, 40), label(id), where));
         continue;
       }
       const why = reservedReason(c, actionDef(id).scope, platform);
-      if (why) problems.push(`${show(c)} für „${label(id)}“ ist reserviert: ${why}.`);
+      if (why) problems.push(t.reserved(show(c), label(id), why));
       else if (!out.includes(c)) out.push(c);
     }
     return out;
@@ -106,12 +119,12 @@ export function resolveKeymap(
   const merged = new Map<ActionId, string[]>(ACTION_IDS.map((id) => [id, []]));
   for (const [id, list] of Object.entries(defaults)) {
     if (isActionId(id)) merged.set(id, normalise(id, list, false));
-    else problems.push(`Unbekannte Aktion „${id}“ in der Vorgabe.`);
+    else problems.push(t.unknownInDefaults(id));
   }
   const overridden = new Set<ActionId>();
   for (const [id, list] of Object.entries(override)) {
     if (!isActionId(id)) {
-      problems.push(`Unbekannte Aktion „${id.slice(0, 64)}“ in der eigenen Belegung, übergangen.`);
+      problems.push(t.unknownInOwn(id.slice(0, 64)));
       continue;
     }
     merged.set(id, normalise(id, list, true));
@@ -130,7 +143,7 @@ export function resolveKeymap(
       // every pair of scopes overlaps (a global action on a plain key acts in the view too)
       const rival = owners[0];
       if (rival) {
-        problems.push(`${show(s)} gehört „${label(rival)}“, „${label(id)}“ verliert es.`);
+        problems.push(t.conflict(show(s), label(rival), label(id)));
         continue;
       }
       lookup.set(s, [...owners, id]);
@@ -142,7 +155,7 @@ export function resolveKeymap(
   for (const s of [...lookup.keys()]) {
     const first = s.split(' ')[0];
     if (s.includes(' ') && lookup.has(first)) {
-      problems.push(`${show(first)} allein verdeckt den Akkord ${show(s)}.`);
+      problems.push(t.hidesChord(show(first), show(s)));
     }
   }
   return { bindings: Object.fromEntries(merged) as unknown as Bindings, lookup, problems };

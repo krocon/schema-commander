@@ -12,20 +12,22 @@ import {
 } from '@angular/core';
 import { FileDialogApi } from '../../core/backend/file-dialog-api';
 import { errorText } from '../../core/errors/app-error';
+import { COMMON_TEXTS } from '../../core/i18n/common-texts';
 import { DARK, LIGHT } from '../../core/theme/builtin-themes';
 import { Theme, isUserTheme } from '../../core/theme/theme.models';
 import { ThemeService } from '../../core/theme/theme.service';
 import { CardBox, PickerCard, moveInGrid, pickerSections } from './theme-picker-logic';
 import { copyName, importDraft, themeOf as storedTheme } from './theme-editor-logic';
+import { THEME_PICKER_TEXTS } from './theme-picker-texts';
 import { ThemeThumb } from './theme-thumb';
 
 /** Cards per row assumed when there is no layout (tests). */
 const FALLBACK_COLUMNS = 4;
 
 /**
- * The colour scheme picker (prompt 020): a grid of thumbnails, „System folgen“ first, then the dark and the
+ * The colour scheme picker (prompt 020): a grid of thumbnails, "Follow the system" first, then the dark and the
  * light schemes. Arrow keys and the pointer show a scheme at once (the preview of the `ThemeService`),
- * `Enter`/OK keeps it, `Esc`/Abbrechen/× go back to the scheme from before. A filter narrows the cards.
+ * `Enter`/OK keeps it, `Esc`/Cancel/× go back to the scheme from before. A filter narrows the cards.
  */
 @Component({
   selector: 'app-theme-picker',
@@ -40,30 +42,30 @@ const FALLBACK_COLUMNS = 4;
       (close)="closed.emit()"
     >
       <header>
-        <h2 id="theme-picker-title">Farbschema</h2>
-        <button type="button" aria-label="Schließen" (click)="cancel()">×</button>
+        <h2 id="theme-picker-title">{{ t.title }}</h2>
+        <button type="button" [attr.aria-label]="c.close" (click)="cancel()">×</button>
       </header>
       <div class="filter">
-        <label for="theme-filter">Filter</label>
+        <label for="theme-filter">{{ t.filter }}</label>
         <input
           #filterInput
           id="theme-filter"
           type="search"
           spellcheck="false"
           autocomplete="off"
-          placeholder="Name, „hell“ oder „dunkel“"
+          [placeholder]="t.filterPlaceholder"
           [value]="filter()"
           (input)="onFilter(filterInput.value)"
           (keydown)="onFilterKey($event)"
         />
-        <span class="count" role="status">{{ shown() }} von {{ total() }} Schemata</span>
+        <span class="count" role="status">{{ t.count(shown(), total()) }}</span>
       </div>
       <div
         #grid
         class="grid"
         role="listbox"
         tabindex="-1"
-        aria-label="Farbschemata"
+        [attr.aria-label]="t.schemes"
         [attr.aria-activedescendant]="current() ? optionId(current()!) : null"
         (keydown)="onGridKey($event)"
         (pointerleave)="hover(null)"
@@ -100,7 +102,7 @@ const FALLBACK_COLUMNS = 4;
                   }
                   <span class="name">{{ card.name }}</span>
                   @if (card.id !== 'system') {
-                    <span class="kind">{{ card.dark ? 'dunkel' : 'hell' }}</span>
+                    <span class="kind">{{ card.dark ? t.darkKind : t.lightKind }}</span>
                   }
                 </div>
               }
@@ -108,13 +110,13 @@ const FALLBACK_COLUMNS = 4;
           </div>
         }
         @if (shown() === 0 && !systemShown()) {
-          <p class="none" role="status">Kein Schema passt zum Filter.</p>
+          <p class="none" role="status">{{ t.none }}</p>
         }
       </div>
       @if (current() === 'system') {
         <div class="pair">
           <label>
-            Hell
+            {{ t.light }}
             <select id="theme-pair-light" (change)="setPair('light', $event)">
               @for (t of lightThemes(); track t.id) {
                 <option [value]="t.id" [selected]="t.id === pair().light">{{ t.name }}</option>
@@ -122,7 +124,7 @@ const FALLBACK_COLUMNS = 4;
             </select>
           </label>
           <label>
-            Dunkel
+            {{ t.dark }}
             <select id="theme-pair-dark" (change)="setPair('dark', $event)">
               @for (t of darkThemes(); track t.id) {
                 <option [value]="t.id" [selected]="t.id === pair().dark">{{ t.name }}</option>
@@ -132,7 +134,7 @@ const FALLBACK_COLUMNS = 4;
         </div>
       }
       @if (theme.notice(); as notice) {
-        <p class="note" role="note">Eigene Schemata: {{ notice }}</p>
+        <p class="note" role="note">{{ t.ownNotice(notice) }}</p>
       }
       @if (error(); as message) {
         <p class="note problem" role="alert">{{ message }}</p>
@@ -140,29 +142,27 @@ const FALLBACK_COLUMNS = 4;
       <div class="actions">
         <button
           type="button"
-          title="Legt eine Kopie des gewählten Schemas an und öffnet sie zum Bearbeiten"
+          [title]="t.newFromChosenHint"
           [disabled]="current() === null"
           (click)="createFromCurrent()"
         >
-          Neu aus gewähltem …
+          {{ t.newFromChosen }}
         </button>
         <button
           type="button"
-          title="Nur eigene Schemata lassen sich bearbeiten"
+          [title]="t.editHint"
           [disabled]="!currentIsOwn()"
           (click)="editCurrent()"
         >
-          Bearbeiten …
+          {{ t.edit }}
         </button>
-        <button type="button" (click)="importFile()">Importieren …</button>
+        <button type="button" (click)="importFile()">{{ t.import }}</button>
       </div>
       <footer>
-        <span class="hint"
-          >Pfeiltasten zeigen ein Schema sofort, Enter behält es, Esc kehrt zurück.</span
-        >
-        <button type="button" (click)="cancel()">Abbrechen</button>
+        <span class="hint">{{ t.hint }}</span>
+        <button type="button" (click)="cancel()">{{ c.cancel }}</button>
         <button type="button" class="primary" [disabled]="current() === null" (click)="ok()">
-          OK
+          {{ c.ok }}
         </button>
       </footer>
     </dialog>
@@ -305,6 +305,8 @@ const FALLBACK_COLUMNS = 4;
 })
 export class ThemePickerComponent implements OnInit {
   protected readonly theme = inject(ThemeService);
+  protected readonly t = THEME_PICKER_TEXTS;
+  protected readonly c = COMMON_TEXTS;
   private readonly files = inject(FileDialogApi);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private readonly grid = viewChild.required<ElementRef<HTMLElement>>('grid');
@@ -318,7 +320,7 @@ export class ThemePickerComponent implements OnInit {
   protected readonly filter = signal('');
   /** The chosen card (keyboard, click). */
   protected readonly current = signal<string | null>(this.before);
-  /** The pair „System folgen“ uses, as chosen here. */
+  /** The pair "follow the system" uses, as chosen here. */
   protected readonly pair = signal({
     light: this.theme.selection().light,
     dark: this.theme.selection().dark,
@@ -431,7 +433,7 @@ export class ThemePickerComponent implements OnInit {
     this.dialog().nativeElement.close();
   }
 
-  /** A copy of the chosen scheme (of the one on screen for „System folgen“), opened in the editor. */
+  /** A copy of the chosen scheme (of the one on screen for "follow the system"), opened in the editor. */
   protected createFromCurrent(): void {
     const id = this.current();
     const source = id === 'system' ? this.draftOf('system') : id ? this.theme.find(id) : null;
@@ -449,15 +451,15 @@ export class ThemePickerComponent implements OnInit {
   protected async importFile(): Promise<void> {
     this.error.set(null);
     try {
-      const path = await this.files.openFile('Farbschema importieren', [
-        { name: 'Farbschema', extensions: ['json'] },
+      const path = await this.files.openFile(this.t.importTitle, [
+        { name: this.t.fileKind, extensions: ['json'] },
       ]);
       if (path === null) return;
       const raw = await this.theme.importFile(path);
       const names = new Set(this.themes().map((t) => t.name));
       const { draft, dropped } = importDraft(raw, LIGHT, DARK, names);
       if (!draft) {
-        this.error.set('Die Datei ist kein Farbschema.');
+        this.error.set(this.t.notAScheme);
         return;
       }
       this.edit(storedTheme(draft, '', LIGHT, DARK), dropped);
@@ -473,7 +475,7 @@ export class ThemePickerComponent implements OnInit {
     this.dialog().nativeElement.close();
   }
 
-  /** Esc / Abbrechen / ×: the scheme from before stays. */
+  /** Esc / Cancel / ×: the scheme from before stays. */
   protected cancel(): void {
     if (!this.done) this.theme.preview.set(null);
     this.dialog().nativeElement.close();

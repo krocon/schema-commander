@@ -7,6 +7,8 @@ import {
   input,
   output,
 } from '@angular/core';
+import { COMMON_TEXTS } from '../core/i18n/common-texts';
+import { SHARED_TEXTS } from './shared-texts';
 
 /** An entry of a context menu; `separator` draws a line above it. */
 export interface MenuItem {
@@ -43,7 +45,7 @@ export function menuPosition(
       type="button"
       class="backdrop"
       tabindex="-1"
-      aria-label="Menü schließen"
+      [attr.aria-label]="c.closeMenu"
       (click)="closed.emit()"
       (contextmenu)="$event.preventDefault(); closed.emit()"
     ></button>
@@ -51,7 +53,7 @@ export function menuPosition(
       class="menu"
       role="menu"
       tabindex="-1"
-      [attr.aria-label]="label()"
+      [attr.aria-label]="label() ?? t.contextMenu"
       [style.left.px]="left"
       [style.top.px]="top"
       (keydown)="onKey($event)"
@@ -120,7 +122,10 @@ export class ContextMenu {
   readonly items = input.required<readonly MenuItem[]>();
   readonly x = input.required<number>();
   readonly y = input.required<number>();
-  readonly label = input('Kontextmenü');
+  /** The name of the menu; without one it is "Context menu" in the current language. */
+  readonly label = input<string | null>(null);
+  protected readonly c = COMMON_TEXTS;
+  protected readonly t = SHARED_TEXTS;
   readonly picked = output<string>();
   readonly closed = output<void>();
 

@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, input, output } from '@angular/core';
+import { SHARED_TEXTS } from './shared-texts';
 import { SplitPane, clampSize, dragSize, keySize } from './splitter-logic';
 
 /**
@@ -20,7 +21,7 @@ import { SplitPane, clampSize, dragSize, keySize } from './splitter-logic';
     '[attr.aria-valuenow]': 'size()',
     '[attr.aria-valuemin]': 'min()',
     '[attr.aria-valuemax]': 'max()',
-    '[attr.aria-label]': 'label()',
+    '[attr.aria-label]': 'label() ?? t.resize',
     '[attr.aria-controls]': 'controls()',
     '[attr.title]': 'title()',
     '(pointerdown)': 'onPointerDown($event)',
@@ -103,7 +104,9 @@ export class SplitterComponent implements OnDestroy {
   readonly max = input(Number.MAX_SAFE_INTEGER);
   /** Double click goes back to this. */
   readonly defaultSize = input<number | null>(null);
-  readonly label = input('Größe ändern');
+  /** The name of the bar; without one it is "Resize" in the current language. */
+  readonly label = input<string | null>(null);
+  protected readonly t = SHARED_TEXTS;
   readonly title = input<string | null>(null);
   /** Id of the pane it resizes. */
   readonly controls = input<string | null>(null);
