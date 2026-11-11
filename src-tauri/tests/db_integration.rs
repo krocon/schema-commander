@@ -5,6 +5,7 @@ use schema_commander_lib::db::secrets::Secret;
 use schema_commander_lib::db::value::{ColKind, MAX_ROWS, QueryResult};
 use schema_commander_lib::db::{DbKind, Limits, Profile, Session, TlsMode, connect};
 use schema_commander_lib::error::ErrorCode;
+use schema_commander_lib::results::{Progress, ResultStore, StoreLimits, StoreSink};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -46,7 +47,7 @@ fn open(p: &Profile) -> Box<dyn Session> {
 }
 
 fn run(s: &mut Box<dyn Session>, sql: &str) -> QueryResult {
-    s.execute(sql, Limits::rows(MAX_ROWS), &|| false)
+    s.query(sql, Limits::rows(MAX_ROWS), &|| false)
         .unwrap_or_else(|e| panic!("{sql}: {e}"))
 }
 
@@ -143,7 +144,7 @@ fn postgres_changes_empty_results_limits_and_errors() {
     assert_eq!(none.rows_affected, None);
     assert!(none.rows.is_empty());
     let cut = s
-        .execute("SELECT * FROM sc_t ORDER BY id", Limits::rows(100), &|| {
+        .query("SELECT * FROM sc_t ORDER BY id", Limits::rows(100), &|| {
             false
         })
         .unwrap();
@@ -154,14 +155,12 @@ fn postgres_changes_empty_results_limits_and_errors() {
         rows(&run(&mut s, "SELECT count(*) FROM sc_t")),
         json!([[500]])
     );
-    let e = s
-        .execute("SELEC 1", Limits::rows(10), &|| false)
-        .unwrap_err();
+    let e = s.query("SELEC 1", Limits::rows(10), &|| false).unwrap_err();
     assert_eq!(e.code, ErrorCode::InvalidQuery);
     assert!(e.message.contains("syntax error"), "{}", e.message);
     assert!(s.is_open());
     let e = s
-        .execute("SELECT * FROM gibt_es_nicht", Limits::rows(10), &|| false)
+        .query("SELECT * FROM gibt_es_nicht", Limits::rows(10), &|| false)
         .unwrap_err();
     assert_eq!(e.code, ErrorCode::InvalidQuery);
     // what the extended protocol refuses runs too: several statements, the last result counts
@@ -210,7 +209,7 @@ fn stop_after_start(p: &Profile, sql: &str) -> (ErrorCode, Duration, bool) {
         Instant::now()
     });
     let e = s
-        .execute(sql, Limits::rows(10), &|| stop.load(Ordering::Relaxed))
+        .query(sql, Limits::rows(10), &|| stop.load(Ordering::Relaxed))
         .unwrap_err();
     let asked = stopper.join().unwrap();
     (e.code, asked.elapsed(), s.is_open())
@@ -242,7 +241,7 @@ fn a_cancelled_session_goes_on_with_its_state() {
     run(&mut s, "CREATE TEMP TABLE sc_keep (n int)");
     run(&mut s, "INSERT INTO sc_keep VALUES (7)");
     let e = s
-        .execute("SELECT pg_sleep(60)", Limits::rows(1), &|| true)
+        .query("SELECT pg_sleep(60)", Limits::rows(1), &|| true)
         .unwrap_err();
     assert_eq!(e.code, ErrorCode::Cancelled);
     assert!(s.is_open());
@@ -252,7 +251,7 @@ fn a_cancelled_session_goes_on_with_its_state() {
         let mut s = open(&p);
         run(&mut s, "SET @sc_keep = 7");
         // MySQL ends a killed SLEEP() without an error (it returns 1); a real query is interrupted
-        let r = s.execute(
+        let r = s.query(
             "SELECT COUNT(*) FROM information_schema.columns a, information_schema.columns b, \
              information_schema.columns c",
             Limits::rows(1),
@@ -274,7 +273,7 @@ fn a_time_limit_ends_a_statement_and_keeps_the_session() {
     let mut s = open(&pg());
     let started = Instant::now();
     let e = s
-        .execute("SELECT pg_sleep(60)", limits, &|| false)
+        .query("SELECT pg_sleep(60)", limits, &|| false)
         .unwrap_err();
     assert_eq!(e.code, ErrorCode::Timeout);
     assert!(started.elapsed() < Duration::from_secs(2));
@@ -282,7 +281,7 @@ fn a_time_limit_ends_a_statement_and_keeps_the_session() {
     assert_eq!(rows(&run(&mut s, "SELECT 1")), json!([[1]]));
     let mut s = open(&ms());
     let e = s
-        .execute("WAITFOR DELAY '00:01:00'", limits, &|| false)
+        .query("WAITFOR DELAY '00:01:00'", limits, &|| false)
         .unwrap_err();
     assert_eq!(e.code, ErrorCode::Timeout);
     assert!(!s.is_open());
@@ -342,9 +341,7 @@ fn mysql_family(p: &Profile, product: &str) {
     assert_eq!(changed.rows_affected, Some(2));
     // statements the prepared protocol does not know
     run(&mut s, "USE shop");
-    let e = s
-        .execute("SELEC 1", Limits::rows(10), &|| false)
-        .unwrap_err();
+    let e = s.query("SELEC 1", Limits::rows(10), &|| false).unwrap_err();
     assert_eq!(e.code, ErrorCode::InvalidQuery);
     assert!(s.is_open());
     run(&mut s, "DROP TABLE sc_t");
@@ -426,9 +423,7 @@ fn sqlserver_types_changes_and_errors() {
     run(&mut s, "CREATE OR ALTER VIEW sc_v AS SELECT 1 AS one");
     assert_eq!(rows(&run(&mut s, "SELECT one FROM sc_v")), json!([[1]]));
     run(&mut s, "DROP VIEW sc_v");
-    let e = s
-        .execute("SELEC 1", Limits::rows(10), &|| false)
-        .unwrap_err();
+    let e = s.query("SELEC 1", Limits::rows(10), &|| false).unwrap_err();
     assert_eq!(e.code, ErrorCode::InvalidQuery);
     assert!(s.is_open());
     let e = connect(&p, Some(&Secret::new("falsch-Zq9")), &|| false)
@@ -443,7 +438,7 @@ fn a_big_result_is_cut_at_the_limit_and_stays_usable() {
     let mut s = open(&pg());
     let started = Instant::now();
     let r = s
-        .execute(
+        .query(
             "SELECT g, md5(g::text) FROM generate_series(1, 2000000) g",
             Limits::rows(MAX_ROWS),
             &|| false,
@@ -453,4 +448,124 @@ fn a_big_result_is_cut_at_the_limit_and_stays_usable() {
     assert!(r.truncated);
     assert!(started.elapsed() < Duration::from_secs(60));
     assert_eq!(rows(&run(&mut s, "SELECT 1")), json!([[1]]));
+}
+
+/// Runs `sql` into a store and says when the first rows could be read.
+fn into_store(
+    s: &mut Box<dyn Session>,
+    store: &ResultStore,
+    sql: &str,
+) -> (
+    schema_commander_lib::db::value::Outcome,
+    Option<u64>,
+    Option<Duration>,
+    bool,
+) {
+    let started = Instant::now();
+    let first = parking_lot::Mutex::new(None);
+    let report = |p: Progress| {
+        if matches!(p, Progress::Rows(n) if n > 0) {
+            first.lock().get_or_insert(started.elapsed());
+        }
+    };
+    let mut sink = StoreSink::new(store, &report);
+    let outcome = s
+        .execute(sql, Limits::rows(0), &mut sink, &|| false)
+        .unwrap_or_else(|e| panic!("{sql}: {e}"));
+    sink.finish();
+    assert!(sink.error.is_none());
+    let id = sink.result_id();
+    let full = sink.full;
+    let first = *first.lock();
+    (outcome, id, first, full)
+}
+
+fn window(store: &ResultStore, id: u64, from: u64, count: u64) -> Value {
+    serde_json::from_str(&store.window(id, from, count).unwrap()).unwrap()
+}
+
+#[test]
+#[ignore]
+fn millions_of_rows_stream_into_the_store() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = ResultStore::new(dir.path());
+    let mut s = open(&pg());
+    let started = Instant::now();
+    let (outcome, id, first, full) = into_store(
+        &mut s,
+        &store,
+        "SELECT g, md5(g::text), g * 1.5, now(), NULL::text, g % 2 = 0 FROM generate_series(1, 3000000) g",
+    );
+    let total = started.elapsed();
+    let id = id.unwrap();
+    assert!(!full && !outcome.truncated);
+    assert_eq!(outcome.rows, 3_000_000);
+    assert_eq!(store.rows(id).unwrap(), 3_000_000);
+    assert!(store.on_disk(id).unwrap());
+    // the first rows are readable long before the last ones arrived
+    let first = first.unwrap();
+    eprintln!("3 million rows: first rows after {first:?}, all after {total:?}");
+    assert!(first < Duration::from_secs(1), "{first:?}");
+    assert!(first < total / 4, "{first:?} of {total:?}");
+    // any window, also the very end
+    assert_eq!(window(&store, id, 0, 1)[0][0], json!(1));
+    assert_eq!(window(&store, id, 1_499_999, 1)[0][0], json!(1_500_000));
+    let last = window(&store, id, 2_999_990, 100);
+    assert_eq!(last.as_array().unwrap().len(), 10);
+    assert_eq!(last[9][0], json!(3_000_000));
+    assert_eq!(last[9][2], json!("4500000.0"));
+    assert_eq!(last[9][4], json!(null));
+    store.free(id);
+    assert!(
+        std::fs::read_dir(
+            dir.path()
+                .join("results")
+                .join(std::process::id().to_string())
+        )
+        .unwrap()
+        .next()
+        .is_none()
+    );
+}
+
+#[test]
+#[ignore]
+fn a_result_cut_at_a_limit_frees_the_connection_at_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let limits = StoreLimits {
+        max_rows: 1000,
+        ..StoreLimits::default()
+    };
+    for (p, sql, keeps) in [
+        (pg(), "SELECT g FROM generate_series(1, 50000000) g", true),
+        (
+            my(),
+            "SELECT a.ordinal_position FROM information_schema.columns a, information_schema.columns b, \
+             information_schema.columns c",
+            true,
+        ),
+        // SQL Server cannot be told to stop: the connection goes instead of reading 50 million rows
+        (
+            ms(),
+            "SELECT a.object_id FROM sys.all_columns a, sys.all_columns b, sys.all_columns c",
+            false,
+        ),
+    ] {
+        let store = ResultStore::with_limits(dir.path(), limits);
+        let mut s = open(&p);
+        let started = Instant::now();
+        let (outcome, id, _, full) = into_store(&mut s, &store, sql);
+        assert!(full && outcome.truncated, "{:?}", p.kind);
+        assert_eq!(store.rows(id.unwrap()).unwrap(), 1000, "{:?}", p.kind);
+        assert_eq!(s.is_open(), keeps, "{:?}", p.kind);
+        if keeps {
+            assert_eq!(rows(&run(&mut s, "SELECT 1")), json!([[1]]), "{:?}", p.kind);
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "{:?}: {:?}",
+            p.kind,
+            started.elapsed()
+        );
+    }
 }

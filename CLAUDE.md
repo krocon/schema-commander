@@ -17,11 +17,12 @@
   Profilen, Ordnern, Farbmarken und Passwörtern im Schlüsselbund (Prompt 003); **Abfrage-Tabs** mit eigener
   Verbindung, laufender Sicherung des Textes, Wiederherstellung nach Neustart und `.sql`-Dateien (Prompt 004);
   **Ausführen** von Auswahl, Anweisung oder ganzem Skript je Dialekt, mit Ergebnis-Reitern, Meldungen,
-  Abbruch auf dem Server und Zeitlimit (Prompt 005);
+  Abbruch auf dem Server und Zeitlimit (Prompt 005); **große Ergebnisse** bleiben in Rust (Speicher, darüber
+  Datei), das Gitter holt nur den sichtbaren Ausschnitt (Prompt 006);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Schema-Baum, Bearbeiten, Export. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–005),
+  erledigt: 001–006),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -63,7 +64,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/errors/             AppError + toAppError (spiegelt src-tauri/src/error.rs)
   app/core/session/            SessionApi: session.json, Texte der Tabs, .sql lesen/schreiben
   app/core/settings/           Settings (Modell, mergeSettings), SettingsService (tauri-plugin-store)
-  app/core/sql/                QueryApi (run, cancel) + DTOs (QueryResult, Cell, ColKind) – spiegelt db/value.rs
+  app/core/sql/                QueryApi (run mit Ereignissen, window, free, cancel) + DTOs (ResultRef, RunEvent, Cell, ColKind) – spiegelt db/value.rs
   app/core/theme/              Farbschemata: tokens.ts (Katalog), themes/*.json, theme-logic.ts (rein),
                                ThemeService (Root: Auswahl, Vorschau, eigene Schemata), ThemeApi (themes.json),
                                contrast-pairs.json
@@ -74,7 +75,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                sql-split.ts (rein: Skripte je Dialekt zerlegen, Katalog sql-split.cases.json)
   app/features/palette/        Befehlspalette (CommandPalette, palette-logic.ts rein: unscharfe Suche)
   app/features/shortcuts/      Kürzel-Editor und -Übersicht (ShortcutDialog, shortcut-logic.ts)
-  app/features/results/        ResultGrid (GuiExpert Table), result-model.ts (rein: Spalten, Breiten, Modell)
+  app/features/results/        ResultGrid (GuiExpert Table), result-model.ts (rein: Spalten, Breiten,
+                               WindowAreaModel mit Seiten-Cache)
   app/features/tabs/           TabsStore (Root: Tabs, Sicherung, Dateien), QueryTab (Tab mit Ausführung, kein
                                Injectable), QueryPane (Editor + Ergebnis eines Tabs), TabBar,
                                tab-logic.ts (rein: Titel, Ids, Reihenfolge), run-state.ts (Läufe, Meldungen,
@@ -91,6 +93,7 @@ src-tauri/                     Rust
   src/menu.rs                  macOS-Menü ohne Cmd+W (das volle Menü: Prompt 018)
   src/db/mod.rs                Profile, DbKind, TlsMode, Session-Trait, Laufzeit, Fehler in Worten
   src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
+  src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink (rein, getestet)
   src/db/value.rs              Cell, ColKind, QueryResult (verlustfrei über die Brücke)
   src/db/manager.rs            ConnectionManager: Sitzungen, Schlüsselbund-Regeln, Abbruch
   src/db/profiles.rs           connections.json (nie ein Geheimnis); db/secrets.rs: Secret, Schlüsselbund

@@ -42,13 +42,13 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | A20 | Eigenes macOS-Menü ohne „Fenster schließen“ | `Cmd+W` gehört den Tabs (Design 004 E12) |
 | A21 | SQL wird im Frontend zerlegt (`sql-split.ts`, je Dialekt, mit Katalog); Rust führt fertige Anweisungen aus | Design 005 E1–E4 |
 | A22 | Abbruch und Zeitlimit beenden die Anweisung auf dem Server über eine zweite Verbindung; die Sitzung bleibt (außer SQL Server) | Design 005 E6–E7 |
+| A23 | Ergebnisse leben in Rust (`results.rs`: Zeilen als JSON + Offsets, 32 MB im Speicher, darüber Datei im Cache); das Gitter holt Fenster über ein eigenes `AreaModel`; es wird immer zu Ende gelesen, kein Server-Cursor | Design 006 E1–E7 |
 | A10 | Oberflächentexte vorerst deutsch in den Komponenten | übernommene Galerie ist deutsch; Kataloge de/en kommen mit dem Prompt „Einstellungen und Sprache“ |
 
 ## Offene Architekturfragen (entscheidet der jeweilige Prompt)
 
 - **Treiber**: entschieden und umgesetzt (Design 003); Oracle, DuckDB und weitere mit Prompt 035.
-- **Große Ergebnisse**: Rust streamt in einen Spool (Datei/Speicher), das Frontend holt Fenster von Zeilen über ein
-  eigenes `AreaModel` der GuiExpert Table (wie die Log-Ansicht von log-commander).
+- **Große Ergebnisse**: entschieden und umgesetzt (Design 006).
 - **Vervollständigung**: Schema-Metadaten in Rust zwischenspeichern; der Editor braucht dafür eine Schnittstelle für
   Vorschläge von außen (Erweiterung in editlicious).
 

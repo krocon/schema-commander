@@ -29,6 +29,7 @@ describe('run state', () => {
 
   it('says what a statement did', () => {
     expect(outcomeText(done('a'))).toBe('2 Zeilen');
+    expect(outcomeText(done('a', { rows: 1_234_567 }))).toBe('1\u202f234\u202f567 Zeilen');
     expect(outcomeText(done('a', { rows: 1, truncated: true }))).toBe('1 Zeile (abgeschnitten)');
     expect(outcomeText(done('a', { rows: null, rowsAffected: 1 }))).toBe('1 Zeile geändert');
     expect(outcomeText({ ...pending('a'), kind: 'failed', message: 'boom' })).toBe('boom');
@@ -41,6 +42,19 @@ describe('run state', () => {
     expect(stateOf({ ...pending('a'), kind: 'skipped' }).kind).toBe('cancelled');
     // a result that was not kept says so instead of showing nothing
     expect(stateOf(done('a'))).toMatchObject({ kind: 'failed' });
+    expect(stateOf(done('a', { result: { resultId: 3, columns: [] } }))).toMatchObject({
+      kind: 'done',
+      rows: 2,
+      result: { resultId: 3 },
+    });
+    expect(stateOf(done('a', { rows: null, rowsAffected: 4 }))).toMatchObject({
+      kind: 'done',
+      result: null,
+      rowsAffected: 4,
+    });
+    expect(
+      stateOf({ ...pending('a'), kind: 'running', result: { resultId: 3, columns: [] }, rows: 9 }),
+    ).toMatchObject({ kind: 'running', rows: 9 });
   });
 
   it('shortens a statement to its first line that is no comment', () => {

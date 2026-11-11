@@ -1,7 +1,7 @@
 //! SQL Server over `tiberius` (prompt 003, after log-commander's prompt 019). A statement runs as a batch
 //! (`simple_query`); the first result set with columns is the result.
 
-use super::value::{Budget, Cell, ColKind, Column, QueryResult, text};
+use super::value::{Cell, ColKind, Column, Outcome, RowSink, text};
 use super::{Limits, Profile, Session, Stop, TlsMode, block, clean, closed, keeps_connection};
 use crate::error::{AppError, AppResult, ErrorCode};
 use futures_util::StreamExt;
@@ -188,15 +188,14 @@ impl Ms {
     async fn batch(
         conn: &mut Conn,
         sql: String,
-        max_rows: usize,
-    ) -> Result<(Vec<Column>, Vec<Vec<Cell>>, bool, Option<u64>), tiberius::error::Error> {
+        sink: &mut dyn RowSink,
+    ) -> Result<(Vec<Column>, u64, bool, Option<u64>), tiberius::error::Error> {
         let mut stream = conn.simple_query(sql).await?;
         let mut cols: Vec<Column> = Vec::new();
-        let mut rows: Vec<Vec<Cell>> = Vec::new();
+        let mut rows: u64 = 0;
         let mut current: Vec<Column> = Vec::new();
         let mut affected: Option<u64> = None;
         let mut truncated = false;
-        let mut budget = Budget::default();
         // 0 = before the first result set with columns, 1 = in it, 2 = behind it
         let mut state = 0u8;
         while let Some(item) = stream.next().await {
@@ -209,6 +208,7 @@ impl Ms {
                     }
                     if state == 0 && !count_only && !current.is_empty() {
                         cols = current.clone();
+                        sink.start(&cols);
                         state = 1;
                     }
                 }
@@ -219,8 +219,8 @@ impl Ms {
                         }
                         continue;
                     }
-                    // everything is read to its end: the connection must see the end of the batch
-                    if state != 1 || truncated {
+                    // other result sets are read and dropped: the connection must see the end of the batch
+                    if state != 1 {
                         continue;
                     }
                     let cells: Vec<Cell> = row
@@ -228,9 +228,12 @@ impl Ms {
                         .zip(cols.iter())
                         .map(|((_, data), c)| cell(data, &c.type_name))
                         .collect();
-                    let room = budget.add(&cells);
-                    rows.push(cells);
-                    truncated = rows.len() >= max_rows || !room;
+                    rows += 1;
+                    if !sink.row(cells) {
+                        // no more rows are wanted; `execute` drops the connection instead of reading on
+                        truncated = true;
+                        break;
+                    }
                 }
             }
         }
@@ -240,19 +243,19 @@ impl Ms {
     async fn run(
         conn: &mut Conn,
         sql: &str,
-        max_rows: usize,
+        sink: &mut dyn RowSink,
         profile: &Profile,
-    ) -> AppResult<QueryResult> {
+    ) -> AppResult<Outcome> {
         let started = Instant::now();
-        let first = Self::batch(conn, with_rowcount(sql), max_rows).await;
+        let first = Self::batch(conn, with_rowcount(sql), sink).await;
         let (columns, rows, truncated, affected) = match first {
-            Err(e) if must_be_alone(&e) => Self::batch(conn, sql.to_string(), max_rows)
+            Err(e) if must_be_alone(&e) => Self::batch(conn, sql.to_string(), sink)
                 .await
                 .map_err(|e| ms_error(profile, &e))?,
             other => other.map_err(|e| ms_error(profile, &e))?,
         };
         let has_result = !columns.is_empty();
-        Ok(QueryResult {
+        Ok(Outcome {
             columns,
             rows,
             truncated,
@@ -263,26 +266,29 @@ impl Ms {
 }
 
 impl Session for Ms {
-    fn execute(&mut self, sql: &str, limits: Limits, stop: Stop) -> AppResult<QueryResult> {
+    fn execute(
+        &mut self,
+        sql: &str,
+        limits: Limits,
+        sink: &mut dyn RowSink,
+        stop: Stop,
+    ) -> AppResult<Outcome> {
         let profile = self.profile.clone();
         let conn = self.conn.as_mut().ok_or_else(closed)?;
         // tiberius cannot send the attention signal: a stopped statement costs the connection
-        let r = block(
-            limits.timeout,
-            stop,
-            Self::run(conn, sql, limits.max_rows, &profile),
-        );
+        let r = block(limits.timeout, stop, Self::run(conn, sql, sink, &profile));
         let lost = r.as_ref().is_err_and(|e| {
             !keeps_connection(e.code) || matches!(e.code, ErrorCode::Cancelled | ErrorCode::Timeout)
         });
-        if lost {
+        // rows left unread would have to be read to their end first: the connection goes instead
+        if lost || r.as_ref().is_ok_and(|o| o.truncated) {
             self.conn = None;
         }
         r
     }
 
     fn server_version(&mut self, stop: Stop) -> AppResult<String> {
-        let r = self.execute("SELECT @@VERSION", Limits::rows(1), stop)?;
+        let r = self.query("SELECT @@VERSION", Limits::rows(1), stop)?;
         Ok(match r.rows.first().and_then(|row| row.first()) {
             // the first line names product and version
             Some(Cell::Text(v)) => v.lines().next().unwrap_or("SQL Server").trim().to_string(),

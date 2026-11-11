@@ -87,7 +87,7 @@ Prompts) · **Stufe** = meine Empfehlung: **1** Grundlage (ohne das ist es kein 
 
 | Id | Feature | Vorbild | Umfang | Stufe | Freigabe |
 |---|---|---|---|---|---|
-| D1 | **Große Ergebnisse**: Rust streamt vom Server, das Gitter lädt beim Scrollen nach; Millionen Zeilen ohne Einfrieren; Abbruch jederzeit; Speichergrenze mit Auslagern auf die Platte. *Unser deutlichster Vorteil gegenüber allen anderen.* | – (DataGrip blättert seitenweise) | L | 1 | ☑ [006](../prompts/006-grosse-ergebnisse.md) |
+| D1 | **Große Ergebnisse**: Rust streamt vom Server, das Gitter lädt beim Scrollen nach; Millionen Zeilen ohne Einfrieren; Abbruch jederzeit; Speichergrenze mit Auslagern auf die Platte. *Unser deutlichster Vorteil gegenüber allen anderen.* | – (DataGrip blättert seitenweise) | L | 1 | ☑ [006](../prompts/done/006-grosse-ergebnisse.md) |
 | D2 | **Zellen richtig zeigen**: `NULL` sichtbar und von leerem Text unterscheidbar, Zahlen rechts, Datum/Zeit lesbar, Boolean, JSON gekürzt, BLOB als Größe; Typ im Spaltenkopf | TablePlus, DataGrip | M | 1 | ☑ [007](../prompts/007-zell-darstellung.md) |
 | D3 | **Wert-Ansicht**: Seitenfeld für die aktuelle Zelle – langer Text und **JSON formatiert in editlicious**, Bild, Hex für Binärdaten | DBeaver | M | 2 | ☑ [026](../prompts/026-wert-ansicht.md) |
 | D4 | **Zeile als Formular** (eine Zeile, Felder untereinander) für breite Tabellen | DBeaver, DbGate | S–M | 3 | ☑ [040](../prompts/040-zeilen-formular.md) |

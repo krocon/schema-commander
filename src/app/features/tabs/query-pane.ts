@@ -11,6 +11,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
+import { ResultRef } from '../../core/sql/query.models';
 import { DEFAULT_SETTINGS } from '../../core/settings/settings.models';
 import { SettingsService } from '../../core/settings/settings.service';
 import { SplitterComponent } from '../../shared/splitter';
@@ -124,18 +125,21 @@ const EDITOR_MIN = 120;
           @switch (state().kind) {
             @case ('done') {
               @if (result(); as r) {
-                @if (r.rowsAffected === null) {
-                  <app-result-grid [result]="r" />
-                } @else {
-                  <p class="message">{{ status() }}</p>
-                }
+                <app-result-grid [result]="r" [rows]="rows()" [fetch]="fetch" />
+              } @else {
+                <p class="message">{{ status() }}</p>
               }
             }
             @case ('failed') {
               <p class="message error" role="alert">{{ errorMessage() }}</p>
             }
             @case ('running') {
-              <p class="message">Läuft …</p>
+              <!-- rows are shown as soon as there are some, while the rest is still read -->
+              @if (result(); as r) {
+                <app-result-grid [result]="r" [rows]="rows()" [fetch]="fetch" />
+              } @else {
+                <p class="message">Läuft …</p>
+              }
             }
             @case ('cancelled') {
               <p class="message">Abgebrochen.</p>
@@ -272,10 +276,21 @@ export class QueryPane implements OnInit, OnDestroy {
   });
   protected readonly time = clock;
   protected readonly outcome = outcomeText;
-  protected readonly result = computed(() => {
+  /** The result to show: of a finished statement, or of one that still reads. */
+  protected readonly result = computed<ResultRef | null>(
+    () => {
+      const s = this.state();
+      return s.kind === 'done' || s.kind === 'running' ? s.result : null;
+    },
+    // a row count that grows must not look like a new result (the grid would start over)
+    { equal: (a, b) => a?.resultId === b?.resultId },
+  );
+  protected readonly rows = computed(() => {
     const s = this.state();
-    return s.kind === 'done' ? s.result : null;
+    return s.kind === 'done' || s.kind === 'running' ? s.rows : 0;
   });
+  protected readonly fetch = (resultId: number, from: number, count: number) =>
+    this.tab().window(resultId, from, count);
   protected readonly errorMessage = computed(() => {
     const s = this.state();
     return s.kind === 'failed' ? s.message : '';

@@ -143,7 +143,7 @@ describe('QueryTab', () => {
   });
 
   it('shows the messages when no statement of a script has rows', async () => {
-    api.result = { ...api.result, columns: [], rows: [], rowsAffected: 3 };
+    api.rowsAffected = 3;
     await tab.runAll(['update a set n = 1', 'delete from b']);
     expect(tab.shown()).toBe('messages');
     expect(tab.log().map((l) => l.text)).toEqual(['3 Zeilen geändert', '3 Zeilen geändert']);
@@ -159,6 +159,9 @@ describe('QueryTab', () => {
     tab.shown.set(runs.length - 1);
     expect(tab.state()).toMatchObject({ kind: 'failed' });
     expect(tab.log().length).toBe(MAX_KEPT_RESULTS + 2);
+    // what is not kept does not stay in the store either
+    expect(api.results.size).toBe(MAX_KEPT_RESULTS);
+    expect(api.freed.length).toBe(2);
   });
 
   it('sends the time limit of the settings and names a timeout', async () => {
@@ -174,15 +177,64 @@ describe('QueryTab', () => {
     expect(store.state('demo').kind).toBe('open');
   });
 
-  it('describes changed rows and cut off results', () => {
-    const base = api.result;
-    expect(
-      statusText({ kind: 'done', sql: '', result: { ...base, rows: [], rowsAffected: 1 } }),
-    ).toBe('1 Zeile geändert · 3 ms');
-    expect(statusText({ kind: 'done', sql: '', result: { ...base, truncated: true } })).toBe(
-      '2 Zeilen (abgeschnitten) · 3 ms',
-    );
+  it('describes changed rows and cut off results', async () => {
+    api.rowsAffected = 1;
+    await tab.run('update t set a = 1');
+    expect(statusText(tab.state())).toBe('1 Zeile geändert · 3 ms');
+    expect(tab.state()).toMatchObject({ kind: 'done', result: null });
+    api.rowsAffected = null;
+    api.truncated = true;
+    await tab.run('select 1');
+    expect(statusText(tab.state())).toBe('2 Zeilen (abgeschnitten) · 3 ms');
     expect(statusText({ kind: 'idle' })).toBe('Bereit');
+  });
+
+  it('keeps the rows in the store of the backend and reads windows of them', async () => {
+    await tab.run('select 1');
+    const state = tab.state();
+    expect(state).toMatchObject({ kind: 'done', rows: 2, result: { resultId: 1 } });
+    expect(await tab.window(1, 0, 10)).toEqual([
+      [1, 'Ada'],
+      [2, null],
+    ]);
+    // the next run replaces the result: the old one leaves the store
+    await tab.run('select 2');
+    expect(api.freed).toEqual([1]);
+    expect([...api.results.keys()]).toEqual([2]);
+    tab.dispose();
+    expect(api.freed).toEqual([1, 2]);
+    expect(tab.runs()).toEqual([]);
+  });
+
+  it('shows rows while the statement still reads', async () => {
+    let finish: () => void = () => undefined;
+    const seen: unknown[] = [];
+    const real = api.run.bind(api);
+    api.run = (connection, sql, timeoutMs, onEvent) => {
+      onEvent?.({ kind: 'started', resultId: 9, columns: api.columns });
+      onEvent?.({ kind: 'rows', rows: 5000 });
+      seen.push(tab.state());
+      return new Promise((resolve) => {
+        finish = () => resolve(real(connection, sql, timeoutMs));
+      });
+    };
+    const run = tab.run('select * from big');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(seen[0]).toMatchObject({ kind: 'running', rows: 5000, result: { resultId: 9 } });
+    expect(runStatus(tab.runs(), 1500)).toBe('Läuft … 1,50 s · 5\u202f000 Zeilen gelesen');
+    finish();
+    await run;
+    expect(tab.state().kind).toBe('done');
+  });
+
+  it('forgets the rows of a statement that fails after it started', async () => {
+    api.run = (_c, _s, _t, onEvent) => {
+      onEvent?.({ kind: 'started', resultId: 7, columns: api.columns });
+      return Promise.reject({ code: 'connection_failed', message: 'broken pipe' });
+    };
+    await tab.run('select * from big');
+    expect(tab.runs()[0]).toMatchObject({ kind: 'failed', result: null, rows: null });
   });
 
   it('remembers what it is', () => {

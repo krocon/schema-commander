@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::sync::OnceLock;
 use std::time::Duration;
-use value::QueryResult;
+use value::{Outcome, QueryResult, RowSink, VecSink};
 
 /// Connecting at most.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
@@ -137,7 +137,7 @@ impl Profile {
 /// How far a statement may go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {
-    /// Rows read at most; more are cut off.
+    /// Rows kept at most by [`Session::query`]; `execute` leaves that to its sink.
     pub max_rows: usize,
     /// Time at most; `None` = as long as it takes.
     pub timeout: Option<Duration>,
@@ -160,10 +160,30 @@ pub type Stop<'a> = &'a (dyn Fn() -> bool + Sync);
 
 /// An open connection.
 pub trait Session: Send {
-    /// Runs one statement within its [`Limits`]. A statement that is stopped or runs out of time is
+    /// Runs one statement within its [`Limits`]; its rows go into `sink` as they arrive. A statement that is stopped or runs out of time is
     /// cancelled on the server where the driver can (PostgreSQL, MySQL, SQLite): the session stays usable.
     /// Where it cannot, or after a broken connection, the session is closed: [`Session::is_open`].
-    fn execute(&mut self, sql: &str, limits: Limits, stop: Stop) -> AppResult<QueryResult>;
+    fn execute(
+        &mut self,
+        sql: &str,
+        limits: Limits,
+        sink: &mut dyn RowSink,
+        stop: Stop,
+    ) -> AppResult<Outcome>;
+
+    /// Runs one statement and keeps at most `limits.max_rows` rows in memory: for the app's own small
+    /// questions (version, ids, metadata) and for tests.
+    fn query(&mut self, sql: &str, limits: Limits, stop: Stop) -> AppResult<QueryResult> {
+        let mut sink = VecSink::new(limits.max_rows);
+        let outcome = self.execute(sql, limits, &mut sink, stop)?;
+        Ok(QueryResult {
+            columns: outcome.columns,
+            rows: sink.rows,
+            truncated: outcome.truncated,
+            rows_affected: outcome.rows_affected,
+            elapsed_ms: outcome.elapsed_ms,
+        })
+    }
     /// Product and version as the server names itself.
     fn server_version(&mut self, stop: Stop) -> AppResult<String>;
     fn is_open(&self) -> bool;

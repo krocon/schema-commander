@@ -35,13 +35,33 @@ export type Cell =
   | { readonly bytes: number; readonly hex: string }
   | { readonly unreadable: string };
 
-/** Mirrors `QueryResult`. */
-export interface QueryResult {
+/** A result in the store of the backend (prompt 006): its rows are asked for in windows. */
+export interface ResultRef {
+  readonly resultId: number;
   readonly columns: readonly QueryColumn[];
-  readonly rows: readonly (readonly Cell[])[];
-  /** The result was cut off at the row or memory limit of the backend. */
+}
+
+/** Mirrors `RunEvent` in src-tauri/src/commands.rs: what a running statement reports. */
+export type RunEvent =
+  | {
+      readonly kind: 'started';
+      readonly resultId: number;
+      readonly columns: readonly QueryColumn[];
+    }
+  | { readonly kind: 'rows'; readonly rows: number };
+
+/** Mirrors `RunOutcome`: how a statement ended. */
+export interface RunOutcome {
+  /** Where the rows are; `null` for a statement without a result. */
+  readonly resultId: number | null;
+  readonly columns: readonly QueryColumn[];
+  readonly rows: number;
+  /** More rows existed than the store takes. */
   readonly truncated: boolean;
   /** Rows changed by a statement without a result; `null` for a statement with one. */
   readonly rowsAffected: number | null;
   readonly elapsedMs: number;
 }
+
+/** A window of rows as it crosses the bridge. */
+export type RowWindow = readonly (readonly Cell[])[];

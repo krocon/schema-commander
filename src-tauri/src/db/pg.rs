@@ -4,7 +4,7 @@
 //! what the extended protocol refuses. A statement that returns no row does not say its columns there; for
 //! those a `prepare` (describe only, nothing runs) fetches the header.
 
-use super::value::{Budget, Cell, ColKind, Column, QueryResult, pg_numeric, text, text_bytes};
+use super::value::{Cell, ColKind, Column, Outcome, RowSink, pg_numeric, text, text_bytes};
 use super::{
     Ended, Limits, Profile, Session, Stop, TlsMode, block, block_cancelling, closed,
     keeps_connection, sqlx_error,
@@ -69,7 +69,7 @@ pub fn connect(
     };
     // without the id the statement can still be stopped: the connection is dropped then
     pg.backend = pg
-        .execute("SELECT pg_backend_pid()", Limits::rows(1), stop)
+        .query("SELECT pg_backend_pid()", Limits::rows(1), stop)
         .ok()
         .and_then(|r| match r.rows.first().and_then(|row| row.first()) {
             Some(Cell::I64(pid)) => i32::try_from(*pid).ok(),
@@ -200,19 +200,34 @@ impl Pg {
         }
     }
 
+    /// After a statement was cut short: asks until the connection answers a statement of ours again. The
+    /// first answers may still be the end of the old one.
+    async fn settle(conn: &mut PgConnection) -> AppResult<()> {
+        let mut last = None;
+        for _ in 0..5 {
+            match conn.execute("SELECT 1").await {
+                Ok(_) => return Ok(()),
+                Err(e) => last = Some(e),
+            }
+        }
+        Err(crate::error::AppError::new(
+            crate::error::ErrorCode::ConnectionFailed,
+            last.map(|e| e.to_string()).unwrap_or_default(),
+        ))
+    }
+
     async fn run(
         conn: &mut PgConnection,
         sql: &str,
-        max_rows: usize,
+        sink: &mut dyn RowSink,
         profile: &Profile,
-    ) -> AppResult<QueryResult> {
+    ) -> AppResult<Outcome> {
         let fail = |e: sqlx_core::error::Error| sqlx_error(profile, &e);
         let started = Instant::now();
         let mut columns: Vec<Column> = Vec::new();
-        let mut rows: Vec<Vec<Cell>> = Vec::new();
+        let mut rows: u64 = 0;
         let mut affected: u64 = 0;
         let mut truncated = false;
-        let mut budget = Budget::default();
         {
             let mut stream =
                 sqlx_core::raw_sql::raw_sql(AssertSqlSafe(sql.to_string())).fetch_many(&mut *conn);
@@ -220,30 +235,31 @@ impl Pg {
                 match item.map_err(fail)? {
                     Either::Left(done) => affected += done.rows_affected(),
                     Either::Right(row) => {
-                        // the rest is read and dropped: the connection must see the end of the result
-                        if truncated {
-                            continue;
-                        }
                         if columns.is_empty() {
                             columns = row
                                 .columns()
                                 .iter()
                                 .map(|c| column(c.name(), c.type_info()))
                                 .collect();
+                            sink.start(&columns);
                         }
                         let cells: Vec<Cell> = columns
                             .iter()
                             .enumerate()
                             .map(|(i, c)| cell(&row, i, c.kind, &c.type_name))
                             .collect();
-                        let room = budget.add(&cells);
-                        rows.push(cells);
-                        truncated = rows.len() >= max_rows || !room;
+                        rows += 1;
+                        if !sink.row(cells) {
+                            // no more rows are wanted: the rest stays unread, `execute` cancels the
+                            // statement on the server
+                            truncated = true;
+                            break;
+                        }
                     }
                 }
             }
         }
-        if rows.is_empty() {
+        if rows == 0 {
             // The header of a result without rows: describe only, nothing runs. A statement that cannot be
             // prepared (several statements, utility commands) simply has none.
             let describe = SqlSafeStr::into_sql_str(AssertSqlSafe(sql.to_string()));
@@ -253,13 +269,15 @@ impl Pg {
                     .iter()
                     .map(|c| column(c.name(), c.type_info()))
                     .collect();
+                if !columns.is_empty() {
+                    sink.start(&columns);
+                }
             }
         }
         let has_result = !columns.is_empty();
-        Ok(QueryResult {
+        Ok(Outcome {
             columns,
             rows,
-            // one row too many was read to know; the cut is at the limit
             truncated,
             rows_affected: (!has_result).then_some(affected),
             elapsed_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
@@ -268,12 +286,33 @@ impl Pg {
 }
 
 impl Session for Pg {
-    fn execute(&mut self, sql: &str, limits: Limits, stop: Stop) -> AppResult<QueryResult> {
+    fn execute(
+        &mut self,
+        sql: &str,
+        limits: Limits,
+        sink: &mut dyn RowSink,
+        stop: Stop,
+    ) -> AppResult<Outcome> {
         let profile = self.profile.clone();
         let conn = self.conn.as_mut().ok_or_else(closed)?;
         let cancel = Self::cancel(self.options.clone(), self.backend);
-        let run = Self::run(conn, sql, limits.max_rows, &profile);
+        let run = Self::run(conn, sql, sink, &profile);
         let (r, ended) = block_cancelling(limits.timeout, stop, run, cancel);
+        if r.as_ref().is_ok_and(|o| o.truncated) {
+            // Rows were left unread: end the statement on the server, so the connection is free at once.
+            // Its „cancelled“ answer is still on the wire: it is read here, not by the next statement.
+            let cancel = Self::cancel(self.options.clone(), self.backend);
+            let settled = match self.conn.as_mut() {
+                Some(conn) => block(Some(super::CANCEL_GRACE * 2), &|| false, async {
+                    cancel.await;
+                    Self::settle(conn).await
+                }),
+                None => Ok(()),
+            };
+            if settled.is_err() {
+                self.conn = None;
+            }
+        }
         if ended == Ended::Abandoned || r.as_ref().is_err_and(|e| !keeps_connection(e.code)) {
             // broken, or still running after the cancel request: the connection is in an unknown state
             self.conn = None;
@@ -282,7 +321,7 @@ impl Session for Pg {
     }
 
     fn server_version(&mut self, stop: Stop) -> AppResult<String> {
-        let r = self.execute("SELECT version()", Limits::rows(1), stop)?;
+        let r = self.query("SELECT version()", Limits::rows(1), stop)?;
         Ok(match r.rows.first().and_then(|row| row.first()) {
             Some(Cell::Text(v)) => v.clone(),
             _ => "PostgreSQL".to_string(),

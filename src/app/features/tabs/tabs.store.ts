@@ -175,9 +175,10 @@ export class TabsStore {
     const index = tabs.findIndex((t) => t.id === id);
     if (index < 0) return;
     const tab = tabs[index];
-    tab.cancel();
     this.cancelBackup(id);
     const text = (await tab.text().catch(() => null)) ?? (await this.startText(tab));
+    // its statement stops and its results leave the store
+    tab.dispose();
     this.closed.update((c) => [{ meta: tab.meta(), text, index }, ...c].slice(0, MAX_CLOSED));
     const rest = tabs.filter((t) => t.id !== id);
     if (this.activeId() === id) {
