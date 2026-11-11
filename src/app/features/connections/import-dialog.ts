@@ -10,14 +10,12 @@ import {
   viewChild,
 } from '@angular/core';
 import { FileDialogApi } from '../../core/backend/file-dialog-api';
-import {
-  DB_KINDS,
-  ImportItem,
-  ImportSource,
-  whereLabel,
-} from '../../core/connections/connection.models';
+import { ImportItem, ImportSource, whereLabel } from '../../core/connections/connection.models';
 import { ConnectionsStore } from '../../core/connections/connections.store';
 import { describeError } from '../../core/errors/app-error';
+import { COMMON_TEXTS } from '../../core/i18n/common-texts';
+import { kindName } from './connection-logic';
+import { IMPORT_TEXTS } from './import-texts';
 import {
   IMPORT_SOURCES,
   Tick,
@@ -43,23 +41,28 @@ import {
     >
       <form (submit)="$event.preventDefault(); run()">
         <header>
-          <h2 id="import-title">Verbindungen importieren</h2>
-          <button type="button" class="close" aria-label="Schließen" (click)="closed.emit()">
+          <h2 id="import-title">{{ t.title }}</h2>
+          <button
+            type="button"
+            class="close"
+            [attr.aria-label]="common.close"
+            (click)="closed.emit()"
+          >
             ×
           </button>
         </header>
         <div class="source">
-          <label for="import-source">Quelle</label>
+          <label for="import-source">{{ t.source }}</label>
           <select id="import-source" #src (change)="setSource(src.value)">
             @for (s of sources; track s.id) {
               <option [value]="s.id" [selected]="s.id === source()">{{ s.label }}</option>
             }
           </select>
           @if (info().file !== 'none') {
-            <button type="button" (click)="chooseFile()">Datei wählen …</button>
+            <button type="button" (click)="chooseFile()">{{ t.chooseFile }}</button>
           }
           @if (info().file !== 'pick') {
-            <button type="button" [disabled]="busy()" (click)="load(null)">Lesen</button>
+            <button type="button" [disabled]="busy()" (click)="load(null)">{{ t.read }}</button>
           }
         </div>
         @if (info().hint) {
@@ -72,7 +75,7 @@ import {
           <p class="problem" role="alert">{{ p }}</p>
         }
         @if (items(); as list) {
-          <ul class="list" aria-label="Gefundene Verbindungen">
+          <ul class="list" [attr.aria-label]="t.found">
             @for (item of list; track item.index; let i = $index) {
               <li [class.broken]="item.problem !== null">
                 <label class="take">
@@ -89,11 +92,7 @@ import {
                   <span class="tag">SSH</span>
                 }
                 @if (item.nameTaken) {
-                  <span
-                    class="tag"
-                    title="Der Name ist vergeben; die neue Verbindung bekommt eine Nummer"
-                    >Name vergeben</span
-                  >
+                  <span class="tag" [title]="t.nameTakenHint">{{ t.nameTaken }}</span>
                 }
                 @if (item.hasPassword && item.problem === null) {
                   <label class="pw">
@@ -103,7 +102,7 @@ import {
                       [disabled]="!ticks()[i]?.take"
                       (change)="toggle(i, 'withPassword')"
                     />
-                    Passwort übernehmen
+                    {{ t.takePassword }}
                   </label>
                 }
                 @if (item.problem; as why) {
@@ -116,17 +115,17 @@ import {
         }
         @if (done(); as n) {
           <p class="ok" role="status">
-            {{ n === 1 ? '1 Verbindung übernommen.' : n + ' Verbindungen übernommen.' }}
+            {{ t.imported(n) }}
           </p>
         }
         <footer>
           <button type="button" [disabled]="busy()" (click)="exportOwn()">
-            Eigene Verbindungen exportieren …
+            {{ t.exportOwn }}
           </button>
           <span class="spacer"></span>
-          <button type="button" (click)="closed.emit()">Schließen</button>
+          <button type="button" (click)="closed.emit()">{{ common.close }}</button>
           <button type="submit" class="primary" [disabled]="busy() || picks().length === 0">
-            Importieren
+            {{ t.run }}
           </button>
         </footer>
       </form>
@@ -259,6 +258,8 @@ export class ImportDialog {
   private readonly files = inject(FileDialogApi);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
+  protected readonly t = IMPORT_TEXTS;
+  protected readonly common = COMMON_TEXTS;
   protected readonly sources = IMPORT_SOURCES;
   protected readonly source = signal<ImportSource>('pgpass');
   protected readonly info = computed(
@@ -283,7 +284,7 @@ export class ImportDialog {
   }
 
   protected kind(item: ImportItem): string {
-    return DB_KINDS.find((k) => k.kind === item.profile.kind)?.label ?? item.profile.kind;
+    return kindName(item.profile.kind);
   }
 
   protected where(item: ImportItem): string {
@@ -307,8 +308,8 @@ export class ImportDialog {
   }
 
   protected async chooseFile(): Promise<void> {
-    const path = await this.files.openFile('Datei mit Verbindungen wählen', [
-      { name: 'Alle Dateien', extensions: ['*'] },
+    const path = await this.files.openFile(this.t.chooseFileTitle, [
+      { name: this.t.allFiles, extensions: ['*'] },
     ]);
     if (path !== null) await this.load(path);
   }
@@ -359,7 +360,7 @@ export class ImportDialog {
   }
 
   protected async exportOwn(): Promise<void> {
-    const path = await this.files.saveFile('Verbindungen exportieren', 'verbindungen.json', [
+    const path = await this.files.saveFile(this.t.exportTitle, this.t.exportFileName, [
       { name: 'JSON', extensions: ['json'] },
     ]);
     if (path === null) return;

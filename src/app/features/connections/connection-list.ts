@@ -1,8 +1,9 @@
 import { Component, computed, inject, output, signal } from '@angular/core';
 import { ActionService } from '../../core/actions/action.service';
-import { DEMO_ID, Profile, kindLabel, whereLabel } from '../../core/connections/connection.models';
+import { DEMO_ID, Profile, whereLabel } from '../../core/connections/connection.models';
 import { ConnectionsStore } from '../../core/connections/connections.store';
-import { groupProfiles } from './connection-logic';
+import { groupProfiles, kindName } from './connection-logic';
+import { CONNECTION_TEXTS } from './connection-texts';
 
 /**
  * The connections in the sidebar (prompt 003): by folder, each with its colour and state. A click makes a
@@ -12,11 +13,11 @@ import { groupProfiles } from './connection-logic';
   selector: 'app-connection-list',
   template: `
     <div class="head">
-      <h2 id="connections-title">Verbindungen</h2>
+      <h2 id="connections-title">{{ t.title }}</h2>
       <button
         type="button"
-        aria-label="Neue Verbindung"
-        [title]="'Neue Verbindung' + actions.hint('NEW_CONNECTION')"
+        [attr.aria-label]="t.newConnection"
+        [title]="t.newConnection + actions.hint('NEW_CONNECTION')"
         (click)="actions.run('NEW_CONNECTION')"
       >
         +
@@ -27,8 +28,8 @@ import { groupProfiles } from './connection-logic';
         #filterInput
         type="search"
         class="filter"
-        aria-label="Verbindungen filtern"
-        placeholder="Filter"
+        [attr.aria-label]="t.filterLabel"
+        [placeholder]="t.filter"
         autocomplete="off"
         spellcheck="false"
         [value]="filter()"
@@ -42,7 +43,7 @@ import { groupProfiles } from './connection-logic';
       @if (group.folder) {
         <h3>{{ group.folder }}</h3>
       }
-      <ul [attr.aria-label]="group.folder || 'Verbindungen'">
+      <ul [attr.aria-label]="group.folder || t.title">
         @for (p of group.profiles; track p.id) {
           @let state = store.state(p.id);
           <li [class]="'conn-' + p.color" [class.active]="p.id === store.activeId()">
@@ -60,13 +61,13 @@ import { groupProfiles } from './connection-logic';
               <span class="state">
                 @switch (state.kind) {
                   @case ('open') {
-                    verbunden
+                    {{ t.stateOpen }}
                   }
                   @case ('connecting') {
-                    verbindet …
+                    {{ t.stateConnecting }}
                   }
                   @case ('failed') {
-                    Fehler
+                    {{ t.stateFailed }}
                   }
                 }
               </span>
@@ -75,8 +76,8 @@ import { groupProfiles } from './connection-logic';
               <button
                 type="button"
                 class="tool"
-                [attr.aria-label]="p.name + ' trennen'"
-                title="Trennen"
+                [attr.aria-label]="t.disconnectName(p.name)"
+                [title]="t.disconnect"
                 (click)="store.disconnect(p.id)"
               >
                 ⏏
@@ -85,8 +86,8 @@ import { groupProfiles } from './connection-logic';
               <button
                 type="button"
                 class="tool"
-                [attr.aria-label]="p.name + ' verbinden'"
-                title="Verbinden"
+                [attr.aria-label]="t.connectName(p.name)"
+                [title]="t.connect"
                 [disabled]="state.kind === 'connecting'"
                 (click)="connect(p.id)"
               >
@@ -97,8 +98,8 @@ import { groupProfiles } from './connection-logic';
               <button
                 type="button"
                 class="tool"
-                [attr.aria-label]="p.name + ' bearbeiten'"
-                title="Bearbeiten"
+                [attr.aria-label]="t.editName(p.name)"
+                [title]="t.edit"
                 (click)="edit.emit(p)"
               >
                 ✎
@@ -112,7 +113,7 @@ import { groupProfiles } from './connection-logic';
       </ul>
     }
     @if (groups().length === 0) {
-      <p class="note" role="status">Keine Verbindung passt zum Filter.</p>
+      <p class="note" role="status">{{ t.noMatch }}</p>
     }
   `,
   styles: `
@@ -213,6 +214,7 @@ import { groupProfiles } from './connection-logic';
 export class ConnectionList {
   protected readonly store = inject(ConnectionsStore);
   protected readonly actions = inject(ActionService);
+  protected readonly t = CONNECTION_TEXTS;
 
   /** Asks for the dialog of a profile. */
   readonly edit = output<Profile>();
@@ -224,7 +226,7 @@ export class ConnectionList {
   protected title(p: Profile): string {
     const state = this.store.state(p.id);
     const version = state.kind === 'open' ? `\n${state.serverVersion}` : '';
-    return `${kindLabel(p.kind)} · ${whereLabel(p)}${version}`;
+    return `${kindName(p.kind)} · ${whereLabel(p)}${version}`;
   }
 
   protected connect(id: string): void {

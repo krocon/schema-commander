@@ -23,7 +23,10 @@ import {
 } from '../../core/connections/connection.models';
 import { ConnectionsStore } from '../../core/connections/connections.store';
 import { describeError } from '../../core/errors/app-error';
+import { COMMON_TEXTS } from '../../core/i18n/common-texts';
+import { CONNECTION_DIALOG_TEXTS } from './connection-dialog-texts';
 import {
+  kindName,
   portPlaceholder,
   portText,
   profileProblems,
@@ -35,7 +38,7 @@ import {
 const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
 /**
- * The dialog of a connection (prompt 003): its settings, „Testen“ and „Speichern“. The password field is
+ * The dialog of a connection (prompt 003): its settings, testing and saving. The password field is
  * write-only: a stored password is never shown or sent back; an empty field leaves it as it is.
  */
 @Component({
@@ -50,9 +53,9 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
       <form (submit)="$event.preventDefault(); save(true)">
         <header>
           <h2 id="connection-title">
-            {{ draft().id ? 'Verbindung bearbeiten' : 'Neue Verbindung' }}
+            {{ draft().id ? t.titleEdit : t.titleNew }}
           </h2>
-          <button type="button" aria-label="Schließen" (click)="cancel()">×</button>
+          <button type="button" [attr.aria-label]="common.close" (click)="cancel()">×</button>
         </header>
         @if (!draft().id) {
           <div class="from-url">
@@ -61,26 +64,28 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
               type="text"
               autocomplete="off"
               spellcheck="false"
-              aria-label="Verbindungs-URL einfügen"
-              placeholder="URL einfügen: postgres://…, mysql://…, jdbc:…, Server=…;, Pfad einer SQLite-Datei"
+              [attr.aria-label]="t.urlLabel"
+              [placeholder]="t.urlPlaceholder"
               (paste)="pasteUrl($event)"
               (keydown.enter)="$event.preventDefault(); fromUrl(url.value)"
             />
-            <button type="button" (click)="fromUrl(url.value)">Übernehmen</button>
+            <button type="button" (click)="fromUrl(url.value)">{{ t.apply }}</button>
           </div>
           @if (urlProblem(); as p) {
             <p class="message problem" role="alert">{{ p }}</p>
           }
         }
         <div class="fields">
-          <label for="conn-kind">Datenbank</label>
+          <label for="conn-kind">{{ t.database }}</label>
           <select id="conn-kind" #kind (change)="setKind(kind.value)">
             @for (k of kinds; track k.kind) {
-              <option [value]="k.kind" [selected]="k.kind === draft().kind">{{ k.label }}</option>
+              <option [value]="k.kind" [selected]="k.kind === draft().kind">
+                {{ kindName(k.kind) }}
+              </option>
             }
           </select>
 
-          <label for="conn-name">Name</label>
+          <label for="conn-name">{{ common.name }}</label>
           <input
             #name
             id="conn-name"
@@ -95,7 +100,7 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
           />
 
           @if (draft().kind === 'sqlite') {
-            <label for="conn-database">Datei</label>
+            <label for="conn-database">{{ t.file }}</label>
             <span class="row">
               <input
                 #file
@@ -108,10 +113,10 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                 [attr.aria-invalid]="!!shown('database')"
                 (input)="patch({ database: file.value })"
               />
-              <button type="button" (click)="chooseFile()">Wählen …</button>
+              <button type="button" (click)="chooseFile()">{{ t.choose }}</button>
             </span>
           } @else {
-            <label for="conn-host">Host</label>
+            <label for="conn-host">{{ t.host }}</label>
             <span class="row">
               <input
                 #host
@@ -125,7 +130,7 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                 [attr.aria-invalid]="!!shown('host')"
                 (input)="setHost(host.value)"
               />
-              <label for="conn-port" class="inline">Port</label>
+              <label for="conn-port" class="inline">{{ t.port }}</label>
               <input
                 #port
                 id="conn-port"
@@ -141,7 +146,7 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
               />
             </span>
 
-            <label for="conn-database">Datenbank</label>
+            <label for="conn-database">{{ t.database }}</label>
             <input
               #database
               id="conn-database"
@@ -149,12 +154,12 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
               autocomplete="off"
               autocapitalize="off"
               spellcheck="false"
-              placeholder="(Vorgabe des Servers)"
+              [placeholder]="t.serverDefault"
               [value]="draft().database"
               (input)="patch({ database: database.value })"
             />
 
-            <label for="conn-user">Benutzer</label>
+            <label for="conn-user">{{ t.user }}</label>
             <input
               #user
               id="conn-user"
@@ -168,7 +173,7 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
               (input)="patch({ user: user.value })"
             />
 
-            <label for="conn-password">Passwort</label>
+            <label for="conn-password">{{ t.password }}</label>
             <span class="row">
               <input
                 #password
@@ -177,7 +182,7 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                 autocomplete="off"
                 autocapitalize="off"
                 spellcheck="false"
-                [placeholder]="draft().id ? '(unverändert)' : ''"
+                [placeholder]="draft().id ? t.unchanged : ''"
               />
               <label class="check"
                 ><input
@@ -186,75 +191,75 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                   [checked]="draft().savePassword"
                   (change)="patch({ savePassword: remember.checked })"
                 />
-                im Schlüsselbund merken</label
+                {{ t.rememberInKeychain }}</label
               >
             </span>
 
-            <label for="conn-tls">Verschlüsselung</label>
+            <label for="conn-tls">{{ t.encryption }}</label>
             <select id="conn-tls" #tls (change)="setTls(tls.value)">
               <option value="verify" [selected]="draft().tls === 'verify'">
-                TLS, Zertifikat und Hostname werden geprüft
+                {{ t.tlsVerify }}
               </option>
               <option value="verify-ca" [selected]="draft().tls === 'verify-ca'">
-                TLS, nur das Zertifikat wird geprüft
+                {{ t.tlsVerifyCa }}
               </option>
               <option value="require" [selected]="draft().tls === 'require'">
-                TLS erforderlich – nichts wird geprüft
+                {{ t.tlsRequire }}
               </option>
               <option value="prefer" [selected]="draft().tls === 'prefer'">
-                TLS bevorzugt – nichts wird geprüft
+                {{ t.tlsPrefer }}
               </option>
               <option value="off" [selected]="draft().tls === 'off'">
-                keine (nur für Server auf diesem Rechner)
+                {{ t.tlsOff }}
               </option>
             </select>
             @if (draft().tls === 'verify-ca' || draft().tls === 'verify') {
-              <label for="conn-ca">CA-Datei</label>
+              <label for="conn-ca">{{ t.caFile }}</label>
               <span class="row">
                 <input
                   #ca
                   id="conn-ca"
                   type="text"
                   spellcheck="false"
-                  placeholder="(nur die Zertifikate des Systems)"
-                  title="Gilt zusätzlich zu den Zertifikaten des Systems, nicht an ihrer Stelle"
+                  [placeholder]="t.caPlaceholder"
+                  [title]="t.caHint"
                   [value]="draft().caFile"
                   (input)="patch({ caFile: ca.value })"
                 />
-                <button type="button" (click)="choosePem('caFile')">Wählen …</button>
+                <button type="button" (click)="choosePem('caFile')">{{ t.choose }}</button>
               </span>
             }
             @if (draft().tls !== 'off' && draft().kind !== 'sqlserver') {
-              <label for="conn-cert">Client-Zertifikat</label>
+              <label for="conn-cert">{{ t.clientCert }}</label>
               <span class="row">
                 <input
                   #cert
                   id="conn-cert"
                   type="text"
                   spellcheck="false"
-                  placeholder="(keines)"
+                  [placeholder]="t.clientCertNone"
                   [value]="draft().clientCert"
                   (input)="patch({ clientCert: cert.value })"
                 />
-                <button type="button" (click)="choosePem('clientCert')">Wählen …</button>
+                <button type="button" (click)="choosePem('clientCert')">{{ t.choose }}</button>
               </span>
-              <label for="conn-key">Client-Schlüssel</label>
+              <label for="conn-key">{{ t.clientKey }}</label>
               <span class="row">
                 <input
                   #key
                   id="conn-key"
                   type="text"
                   spellcheck="false"
-                  placeholder="(keiner)"
+                  [placeholder]="t.clientKeyNone"
                   [value]="draft().clientKey"
                   [class.invalid]="shown('clientKey')"
                   (input)="patch({ clientKey: key.value })"
                 />
-                <button type="button" (click)="choosePem('clientKey')">Wählen …</button>
+                <button type="button" (click)="choosePem('clientKey')">{{ t.choose }}</button>
               </span>
             }
 
-            <span id="conn-ssh-label">SSH-Tunnel</span>
+            <span id="conn-ssh-label">{{ t.sshTunnel }}</span>
             <label class="check"
               ><input
                 #viaSsh
@@ -263,21 +268,21 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                 [checked]="!!draft().ssh"
                 (change)="setSsh(viaSsh.checked)"
               />
-              über einen Sprungserver verbinden</label
+              {{ t.viaJumpHost }}</label
             >
             @if (draft().ssh; as ssh) {
               @if (sshHosts().length > 0) {
-                <label for="conn-ssh-alias">aus ~/.ssh/config</label>
+                <label for="conn-ssh-alias">{{ t.fromSshConfig }}</label>
                 <select id="conn-ssh-alias" #alias (change)="useSshHost(alias.value)">
-                  <option value="">(nichts übernehmen)</option>
+                  <option value="">{{ t.sshTakeNothing }}</option>
                   @for (h of sshHosts(); track h.alias) {
                     <option [value]="h.alias" [disabled]="h.proxy">
-                      {{ h.alias }}{{ h.proxy ? ' (ProxyJump: nicht unterstützt)' : '' }}
+                      {{ h.proxy ? t.sshProxyJump(h.alias) : h.alias }}
                     </option>
                   }
                 </select>
               }
-              <label for="conn-ssh-host">SSH-Host</label>
+              <label for="conn-ssh-host">{{ t.sshHost }}</label>
               <span class="row">
                 <input
                   #sshHost
@@ -290,7 +295,7 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                   [class.invalid]="shown('sshHost')"
                   (input)="patchSsh({ host: sshHost.value })"
                 />
-                <label for="conn-ssh-port" class="inline">Port</label>
+                <label for="conn-ssh-port" class="inline">{{ t.port }}</label>
                 <input
                   #sshPort
                   id="conn-ssh-port"
@@ -303,7 +308,7 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                   (input)="setSshPort(sshPort.value)"
                 />
               </span>
-              <label for="conn-ssh-user">SSH-Benutzer</label>
+              <label for="conn-ssh-user">{{ t.sshUser }}</label>
               <input
                 #sshUser
                 id="conn-ssh-user"
@@ -315,68 +320,70 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                 [class.invalid]="shown('sshUser')"
                 (input)="patchSsh({ user: sshUser.value })"
               />
-              <label for="conn-ssh-auth">SSH-Anmeldung</label>
+              <label for="conn-ssh-auth">{{ t.sshAuth }}</label>
               <select id="conn-ssh-auth" #sshAuth (change)="setSshAuth(sshAuth.value)">
-                <option value="agent" [selected]="ssh.auth === 'agent'">SSH-Agent</option>
-                <option value="key" [selected]="ssh.auth === 'key'">Schlüsseldatei</option>
-                <option value="password" [selected]="ssh.auth === 'password'">Passwort</option>
+                <option value="agent" [selected]="ssh.auth === 'agent'">{{ t.sshAgent }}</option>
+                <option value="key" [selected]="ssh.auth === 'key'">{{ t.keyFile }}</option>
+                <option value="password" [selected]="ssh.auth === 'password'">
+                  {{ t.password }}
+                </option>
               </select>
               @if (ssh.auth === 'key') {
-                <label for="conn-ssh-key">Schlüsseldatei</label>
+                <label for="conn-ssh-key">{{ t.keyFile }}</label>
                 <span class="row">
                   <input
                     #sshKey
                     id="conn-ssh-key"
                     type="text"
                     spellcheck="false"
-                    placeholder="(die üblichen in ~/.ssh)"
+                    [placeholder]="t.sshKeyPlaceholder"
                     [value]="ssh.keyFile"
                     (input)="patchSsh({ keyFile: sshKey.value })"
                   />
-                  <button type="button" (click)="chooseSshKey()">Wählen …</button>
+                  <button type="button" (click)="chooseSshKey()">{{ t.choose }}</button>
                 </span>
               }
               @if (ssh.auth !== 'agent') {
                 <label for="conn-ssh-secret">{{
-                  ssh.auth === 'key' ? 'Passphrase' : 'SSH-Passwort'
+                  ssh.auth === 'key' ? t.passphrase : t.sshPassword
                 }}</label>
                 <input
                   #sshSecret
                   id="conn-ssh-secret"
                   type="password"
                   autocomplete="off"
-                  placeholder="(nur zum Testen; beim Verbinden wird gefragt)"
+                  [placeholder]="t.sshSecretPlaceholder"
                 />
               }
             }
           }
 
-          <label for="conn-folder">Ordner</label>
+          <label for="conn-folder">{{ t.folder }}</label>
           <input
             #folder
             id="conn-folder"
             type="text"
             autocomplete="off"
             spellcheck="false"
-            placeholder="(keiner)"
+            [placeholder]="t.folderNone"
             [value]="draft().folder"
             (input)="patch({ folder: folder.value })"
           />
 
-          <label for="conn-protection">Schutz</label>
+          <label for="conn-protection">{{ t.protection }}</label>
           <select id="conn-protection" #protection (change)="setProtection(protection.value)">
             <option value="free" [selected]="draft().protection === 'free'">
-              frei – nur Zerstörendes fragt nach
+              {{ t.protectionFree }}
             </option>
             <option value="ask" [selected]="draft().protection === 'ask'">
-              nachfragen – alles, was nicht liest, braucht eine Bestätigung
+              {{ t.protectionAsk }}
             </option>
             <option value="readonly" [selected]="draft().protection === 'readonly'">
-              nur lesen – nichts anderes läuft
+              {{ t.protectionReadonly }}
             </option>
           </select>
 
-          <label for="conn-label">Kennzeichen</label>
+          <label for="conn-label">{{ t.mark }}</label>
           <input
             #mark
             id="conn-label"
@@ -384,12 +391,12 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
             maxlength="12"
             autocomplete="off"
             spellcheck="false"
-            placeholder="z. B. PROD"
+            [placeholder]="t.markPlaceholder"
             [value]="draft().label"
             (input)="patch({ label: mark.value })"
           />
 
-          <span id="conn-color-label">Farbe</span>
+          <span id="conn-color-label">{{ t.color }}</span>
           <span class="colors" role="radiogroup" aria-labelledby="conn-color-label">
             @for (c of colors; track c) {
               <label [class]="'swatch conn-' + c" [class.on]="draft().color === c">
@@ -397,7 +404,7 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                   type="radio"
                   name="conn-color"
                   [checked]="draft().color === c"
-                  [attr.aria-label]="'Farbe ' + c"
+                  [attr.aria-label]="t.colorN(c)"
                   (change)="patch({ color: c })"
                 />
               </label>
@@ -409,20 +416,19 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
         }
         @if (tlsWarning()) {
           <p class="message warn" role="note">
-            Ohne Verschlüsselung gehen Passwort und Daten lesbar über das Netz.
+            {{ t.warnPlain }}
           </p>
         }
         @if (uncheckedTls()) {
           <p class="message warn" role="note">
-            Diese Einstellung prüft das Zertifikat nicht: Wer sich als der Server ausgibt, wird
-            nicht erkannt.
+            {{ t.warnUnchecked }}
           </p>
         }
         @if (unknownKey(); as k) {
           <p class="message warn" role="alert">
-            Der SSH-Server zeigt einen unbekannten Schlüssel:
+            {{ t.unknownKey }}
             <code>{{ k.keyType }} {{ k.fingerprint }}</code>
-            <button type="button" (click)="test(k.fingerprint)">Vertrauen und erneut testen</button>
+            <button type="button" (click)="test(k.fingerprint)">{{ t.trustAndRetest }}</button>
           </p>
         }
         @if (result(); as r) {
@@ -432,18 +438,20 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
         }
         <footer>
           <button type="button" [disabled]="busy()" (click)="test()">
-            {{ busy() === 'test' ? 'Teste …' : 'Testen' }}
+            {{ busy() === 'test' ? t.testing : t.test }}
           </button>
           @if (draft().id) {
             <button type="button" class="danger" [disabled]="!!busy()" (click)="remove()">
-              {{ confirmDelete() ? 'Wirklich löschen?' : 'Löschen' }}
+              {{ confirmDelete() ? t.reallyDelete : common.delete }}
             </button>
           }
           <span class="spacer"></span>
-          <button type="button" (click)="cancel()">Abbrechen</button>
-          <button type="button" [disabled]="!!busy()" (click)="save(false)">Speichern</button>
+          <button type="button" (click)="cancel()">{{ common.cancel }}</button>
+          <button type="button" [disabled]="!!busy()" (click)="save(false)">
+            {{ common.save }}
+          </button>
           <button type="submit" class="primary" [disabled]="!!busy()">
-            Speichern und verbinden
+            {{ t.saveAndConnect }}
           </button>
         </footer>
       </form>
@@ -461,6 +469,9 @@ export class ConnectionDialog implements OnInit {
   readonly profile = input.required<Profile>();
   readonly closed = output<void>();
 
+  protected readonly t = CONNECTION_DIALOG_TEXTS;
+  protected readonly common = COMMON_TEXTS;
+  protected readonly kindName = kindName;
   protected readonly kinds = DB_KINDS;
   protected readonly colors = COLORS;
   protected readonly draft = signal<Profile>(null as unknown as Profile);
@@ -608,24 +619,24 @@ export class ConnectionDialog implements OnInit {
   }
 
   protected async choosePem(field: 'caFile' | 'clientCert' | 'clientKey'): Promise<void> {
-    const path = await this.files.openFile('Datei wählen', [
+    const path = await this.files.openFile(this.t.chooseFileTitle, [
       { name: 'PEM', extensions: ['pem', 'crt', 'cer', 'key'] },
-      { name: 'Alle Dateien', extensions: ['*'] },
+      { name: this.t.allFiles, extensions: ['*'] },
     ]);
     if (path !== null) this.patch({ [field]: path });
   }
 
   protected async chooseSshKey(): Promise<void> {
-    const path = await this.files.openFile('Schlüsseldatei wählen', [
-      { name: 'Alle Dateien', extensions: ['*'] },
+    const path = await this.files.openFile(this.t.chooseKeyFileTitle, [
+      { name: this.t.allFiles, extensions: ['*'] },
     ]);
     if (path !== null) this.patchSsh({ keyFile: path });
   }
 
   protected async chooseFile(): Promise<void> {
-    const path = await this.files.openFile('SQLite-Datei wählen', [
+    const path = await this.files.openFile(this.t.chooseSqliteTitle, [
       { name: 'SQLite', extensions: ['db', 'sqlite', 'sqlite3', 'db3'] },
-      { name: 'Alle Dateien', extensions: ['*'] },
+      { name: this.t.allFiles, extensions: ['*'] },
     ]);
     if (path !== null) this.patch({ database: path });
   }
@@ -643,7 +654,7 @@ export class ConnectionDialog implements OnInit {
         secret,
         trustFingerprint: trust,
       });
-      this.result.set({ ok: true, text: `Verbindung steht: ${version}` });
+      this.result.set({ ok: true, text: this.t.connectionWorks(version) });
     } catch (e) {
       const error = toAppError(e);
       if (error.code === 'host_key_unknown') this.unknownKey.set(shownHostKey(error.message));

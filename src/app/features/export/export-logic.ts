@@ -1,21 +1,34 @@
 import { ExportFormat, ExportSpec, Exported } from '../../core/backend/export-api';
 import { DbKind } from '../../core/connections/connection.models';
+import { locale } from '../../core/i18n/i18n';
+import { EXPORT_TEXTS } from './export-texts';
 
-/** The formats in the order of the dialog. */
-export const EXPORT_FORMATS: readonly {
-  id: ExportFormat;
-  label: string;
-  extension: string;
-}[] = [
-  { id: 'csv', label: 'CSV', extension: 'csv' },
-  { id: 'tsv', label: 'TSV (Tabulator)', extension: 'tsv' },
-  { id: 'xlsx', label: 'Excel (.xlsx)', extension: 'xlsx' },
-  { id: 'json', label: 'JSON', extension: 'json' },
-  { id: 'ndjson', label: 'NDJSON (ein Objekt je Zeile)', extension: 'ndjson' },
-  { id: 'insert', label: 'INSERT-Skript', extension: 'sql' },
-  { id: 'markdown', label: 'Markdown-Tabelle', extension: 'md' },
-  { id: 'html', label: 'HTML-Tabelle', extension: 'html' },
+const FORMAT_EXTENSIONS: readonly (readonly [ExportFormat, string])[] = [
+  ['csv', 'csv'],
+  ['tsv', 'tsv'],
+  ['xlsx', 'xlsx'],
+  ['json', 'json'],
+  ['ndjson', 'ndjson'],
+  ['insert', 'sql'],
+  ['markdown', 'md'],
+  ['html', 'html'],
 ];
+
+/**
+ * The formats in the order of the dialog. `label` is read from the catalog whenever it is asked for, so
+ * it follows the language.
+ */
+export const EXPORT_FORMATS: readonly {
+  readonly id: ExportFormat;
+  readonly label: string;
+  readonly extension: string;
+}[] = FORMAT_EXTENSIONS.map(([id, extension]) => ({
+  id,
+  extension,
+  get label() {
+    return EXPORT_TEXTS.formats[id];
+  },
+}));
 
 export const isExportFormat = (id: unknown): id is ExportFormat =>
   EXPORT_FORMATS.some((f) => f.id === id);
@@ -136,21 +149,22 @@ export function sizeLabel(bytes: number): string {
     value /= 1024;
     unit++;
   }
-  return `${value < 10 ? value.toFixed(1).replace('.', ',') : Math.round(value)} ${units[unit]}`;
+  const short = new Intl.NumberFormat(locale(), {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+  return `${value < 10 ? short.format(value) : Math.round(value)} ${units[unit]}`;
 }
 
 /** What the status line says while a file is written. */
 export function progressMessage(name: string, rows: number): string {
-  return `Export nach ${name}: ${count(rows)} Zeilen …`;
+  return EXPORT_TEXTS.progress(name, count(rows));
 }
 
 /** What the status line says when a file is there. */
 export function doneMessage(name: string, done: Exported): string {
-  const rows = done.rows === 1 ? '1 Zeile' : `${count(done.rows)} Zeilen`;
-  let text = `${rows} nach ${name} exportiert (${sizeLabel(done.bytes)})`;
-  if (done.truncated) text += ' – mehr Zeilen nimmt Excel nicht, der Rest fehlt';
-  if (done.cutCells > 0) {
-    text += ` – ${count(done.cutCells)} ${done.cutCells === 1 ? 'Zelle' : 'Zellen'} gekürzt`;
-  }
+  let text = EXPORT_TEXTS.done(name, done.rows, count(done.rows), sizeLabel(done.bytes));
+  if (done.truncated) text += EXPORT_TEXTS.truncated;
+  if (done.cutCells > 0) text += EXPORT_TEXTS.cutCells(done.cutCells, count(done.cutCells));
   return text;
 }
