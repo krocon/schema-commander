@@ -21,7 +21,25 @@
 | E12 | Native Teile | macOS: `set_language` baut die Menüleiste mit den Wörtern der Sprache neu (`menu.rs`). Datei-Dialoge zeigt das System in seiner Sprache; ihre Titel kommen aus den Katalogen. Windows/Linux haben noch kein Menü (018) | – |
 | E13 | Systemsprache | `language: 'system'` (Vorgabe): Deutsch, wenn die erste bevorzugte Sprache des Systems Deutsch ist, sonst Englisch | wie fnf |
 
+## Geprüft
+
+- `catalogs.spec.ts` (jeder Katalog in beiden Sprachen, gleiche Signaturen, übersetzt), `check-texts.test.mjs`,
+  `settings-logic.spec.ts` (Schema gegen `mergeSettings`, Suche, Export/Import, ältere und defekte Dateien),
+  `settings-dialog.spec.ts` (Tastatur, Suche, Zurücksetzen, Sprachwechsel im offenen Dialog, Datei).
+- Im Browser (`pnpm start`, ohne Backend): Dialog geöffnet, Sprache Englisch ↔ Deutsch umgeschaltet – Dialog,
+  Werkzeugleiste, Statuszeile und Befehlspalette wechseln sofort; der Editor bekommt `ui-language`, `font-size`,
+  `line-numbers`, `tab-width`.
+- Die Umstellung der Texte haben drei Agenten parallel gemacht (je ein Worktree, getrennte Ordner); ich habe ihre
+  Zweige eingemischt, den Katalogtest und `pnpm check` darüber laufen lassen und das Englische im Browser
+  stichprobenhaft gelesen – nicht jeden einzelnen englischen Text.
+
 ## Nicht umgesetzt, nicht geprüft
+
+- **Schon geschriebene Meldungen** wechseln die Sprache nicht: Einträge im Meldungsprotokoll eines Tabs, der
+  Status eines Exports, das Ergebnis eines Verbindungstests bleiben in der Sprache, in der sie entstanden.
+- Die Namen der beiden Grundschemata stehen in `dark.json`/`light.json` weiter deutsch (das Skript
+  `check-contrast.mjs` schreibt sie); angezeigt werden sie übersetzt.
+- `kindLabel`/`DB_KINDS[].label` in `connection.models.ts` werden nicht mehr gelesen und können weg.
 
 - **Texte aus Rust**: Die Detailtexte, die das Backend selbst schreibt (`AppError.message`, z. B. bei ungültigen
   Profilen, Import, Sitzung), sind weiter deutsch und werden an den übersetzten Text des Codes angehängt. Sie

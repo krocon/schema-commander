@@ -15,7 +15,7 @@ export const GUARD_DE: Translation<typeof GUARD_EN> = {
   },
   titleDangerous: (n) =>
     n === 1
-      ? 'Diese Anweisung zerstört Daten oder ändern Rechte'
+      ? 'Diese Anweisung zerstört Daten oder ändert Rechte'
       : `${n} Anweisungen zerstören Daten oder ändern Rechte`,
   titleChanging: (n) =>
     n === 1 ? 'Diese Anweisung ändert die Datenbank' : `${n} Anweisungen ändern die Datenbank`,

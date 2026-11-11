@@ -30,11 +30,12 @@
   Client-Zertifikat (Prompt 014); **Verbindung aus URL** und **Import** aus DBeaver, DataGrip, `.pgpass`,
   `pg_service.conf`, `.my.cnf`, Umgebung; eigener Export (Prompt 015); **Arbeitsbereich**: zwei Tab-Gruppen
   (neben- oder übereinander), Ergebnis unten/rechts/aus/maximiert, Seitenleiste mit Ansichten Datenbank und
-  Verlauf, Zen, Gruppen und Cursor in der Sitzung (Prompt 016);
+  Verlauf, Zen, Gruppen und Cursor in der Sitzung (Prompt 016); **Sprache** Englisch/Deutsch zur Laufzeit
+  (Text-Kataloge) und **Einstellungsdialog** mit Suche, Zurücksetzen, Export/Import (Prompt 017);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–016),
+  erledigt: 001–017),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -52,6 +53,7 @@
 | Farbschemata | `pnpm contrast` (WCAG AA aller Schemata), `pnpm contrast --write-base` (dark/light.json aus `styles.css`) |
 | Version | `pnpm version:check`, `pnpm version:set X.Y.Z` (Quelle `package.json`) |
 | Treiber gegen echte Server | `sh scripts/db-test-servers.sh up` (Docker: PostgreSQL, MySQL, MariaDB, SQL Server auf 127.0.0.1), `pnpm rust:test:db`, danach `sh scripts/db-test-servers.sh down` |
+| Texte | `pnpm texts` (kein Text im Template, kein Deutsch außerhalb von `*.de.ts`) |
 | Alles prüfen | `pnpm check` |
 | Produktions-Build unter CSP | `pnpm build && pnpm preview:csp` → http://localhost:1461 (ohne Backend; prüft Editor-Worker, WebAssembly, Styles) |
 | Debug-Build ohne Paket | `pnpm tauri build --debug --no-bundle` → `src-tauri/target/debug/schema-commander` |
@@ -75,7 +77,9 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                ExportApi (export_result, export_query, cancel_job, reveal_export)
   app/core/connections/        Profile (Modell), ConnectionsApi, ConnectionsStore (Root: Profile, Zustände, aktive
                                Verbindung, Passwortabfrage)
-  app/core/errors/             AppError + toAppError (spiegelt src-tauri/src/error.rs)
+  app/core/errors/             AppError + toAppError (spiegelt src-tauri/src/error.rs), error-texts (Text je Code)
+  app/core/i18n/               i18n.ts (translatable, phrasebook, language, locale), common-texts,
+                               catalogs.spec.ts (jeder Katalog vollständig in beiden Sprachen)
   app/core/history/            HistoryApi (history_*) + DTOs – spiegelt history.rs
   app/core/schema/             SchemaApi (meta_*) + DTOs (SchemaInfo, ObjectInfo, TableInfo) – spiegelt db/meta.rs
   app/core/session/            SessionApi: session.json, Texte der Tabs, .sql lesen/schreiben
@@ -96,6 +100,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/palette/        Befehlspalette (CommandPalette, palette-logic.ts rein: unscharfe Suche)
   app/features/schema/         SchemaTree (virtuelle Liste, APG-Baum), SchemaStore (Root: Zustand je Verbindung),
                                SchemaActions, schema-logic.ts (rein: Zeilen, Filter, Tasten, Vorlagen)
+  app/features/settings/       SettingsDialog (Gruppen, Suche, Zurücksetzen, Export/Import), settings-logic.ts
+                               (rein: Schema des Dialogs, Suche, Datei)
   app/features/shortcuts/      Kürzel-Editor und -Übersicht (ShortcutDialog, shortcut-logic.ts)
   app/features/results/        ResultGrid (GuiExpert Table), result-model.ts (rein: Spalten, Breiten,
                                WindowAreaModel mit Seiten-Cache), cell-format.ts (rein: Zelle → Text + Klasse,
@@ -166,6 +172,9 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   `Session::ask` mit gebundenen Parametern.
 - **Schutz**: Was SQL ausführt, ruft im Backend `ConnectionManager::admit`; das Fenster fragt nur, entscheidet nie.
 - **Zustand in Signals**, Stores je Instanz ohne `providedIn`, Globales in Root-Services; veraltete Antworten verwerfen.
+- **Texte nur in Katalogen**: `*-texts.ts` (Englisch, Quelle) + `*-texts.de.ts` über `translatable()`; nie beim
+  Laden eines Moduls in Konstanten kopieren (die Sprache wechselt zur Laufzeit); neue Kataloge in
+  `core/i18n/catalogs.spec.ts` eintragen. Die Specs laufen deutsch (`src/testing/setup.ts`).
 - **Farben nur als Tokens**; jeder Token in dark und light, im Katalog und in den Kontrastpaaren.
 - **Sicherheit**: schmale Commands statt breiter Plugins, strikte CSP, Geheimnisse nur im Schlüsselbund, SQL und
   Ergebnisse nie loggen, eigene Werte immer als gebundene Parameter.

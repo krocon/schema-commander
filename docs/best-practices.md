@@ -136,7 +136,15 @@ Unsere Ergänzungen und Abweichungen:
 
 - Neue Abhängigkeiten (npm oder crates) nur mit Begründung in der Tabelle in [`architecture.md`](architecture.md).
   Reines Rust ohne Systembibliotheken bevorzugen (kein OpenSSL: rustls mit `ring`).
-- Oberflächentexte sind zurzeit deutsch und stehen in den Komponenten. Mit dem Prompt „Einstellungen und Sprache“
-  wandern sie in Kataloge (Englisch als Quelle, Deutsch als Übersetzung, wie in files-and-folders).
+- **Texte stehen in Katalogen** (Prompt 017): je Feature `*-texts.ts` (Englisch, die Quelle) und `*-texts.de.ts`
+  (Deutsch, typgeprüft gegen das Englische), gebaut mit `translatable()` aus `core/i18n/i18n.ts`. Kein Text im
+  Template, kein deutscher Text außerhalb von `*.de.ts` – `pnpm texts` prüft das.
+- **Texte nie beim Laden eines Moduls kopieren** (`const X = TEXTS.y`, Tabellen mit `label: TEXTS.y`): Die Sprache
+  wechselt zur Laufzeit. Gelesen wird im Template, in `computed`s oder in Funktionen; Tabellen halten Schlüssel,
+  Getter oder Funktionen. Zahlen und Datum über `locale()`.
+- **Fehler** zeigt das Fenster über `errorText`/`describeError` (Text zum Code); die Meldung eines
+  Datenbankservers bleibt unübersetzt.
+- Ein neuer Katalog wird in `core/i18n/catalogs.spec.ts` importiert (Vollständigkeit beider Sprachen); die Specs
+  der App laufen deutsch (`src/testing/setup.ts`).
 - Pro Prompt ein Branch `feat/<slug>`, Commits nach jeder grünen Phase (Conventional Commits). Push, Release und
   alles Zerstörende (`reset --hard`, Force-Push) nur auf ausdrückliche Anweisung.
