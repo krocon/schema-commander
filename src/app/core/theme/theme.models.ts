@@ -63,6 +63,13 @@ export function isBaseTheme(id: string): boolean {
 
 const THEME_ID = /^[a-z0-9-]{1,64}$/;
 
+/** Own schemes carry this prefix (`ID_PREFIX` in themes.rs): they never shadow a built-in one. */
+export const USER_PREFIX = 'user-';
+
+export function isUserTheme(id: string): boolean {
+  return id.startsWith(USER_PREFIX);
+}
+
 /**
  * The stored selection, forgiving: a broken value falls back to the default.
  */
@@ -83,4 +90,12 @@ export function sanitizeSelection(saved: unknown): ThemeSelection {
 export function selectedId(selection: ThemeSelection, systemDark: boolean): string {
   if (selection.mode === 'fixed') return selection.theme;
   return systemDark ? selection.dark : selection.light;
+}
+
+/** A scheme handed to the scheme editor (design 001). */
+export interface ThemeEditRequest {
+  /** As stored: only the tokens that differ from the base. A new scheme has the id `''`. */
+  readonly theme: Theme;
+  /** Tokens an import left out, to tell the user. */
+  readonly dropped: readonly string[];
 }

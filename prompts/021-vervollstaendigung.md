@@ -2,7 +2,7 @@
 
 > **Slug:** `vervollstaendigung` · **Feature:** C3 · **Braucht:** 008, E3 (editlicious: Vorschläge von außen),
 > besser auch E5 · **Umfang:** L
-> Lies zuerst `prompts/000-arbeitsweise.md`, `prompts/editlicious/E3-vervollstaendigung-von-aussen.md`. Vorbild:
+> Lies zuerst `prompts/000-arbeitsweise.md`, `prompts/done/editlicious/E3-vervollstaendigung-von-aussen.md`. Vorbild:
 > DataGrip (der Maßstab), pgcli (einfach und treffsicher).
 
 ## Ziel

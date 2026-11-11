@@ -30,6 +30,10 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | A7 | Demo-Datenbank (SQLite im Speicher, `rusqlite` gebündelt) als Walking Skeleton | der ganze Weg Editor → Rust → Gitter steht, ohne dass ein Server nötig ist; wird durch die Verbindungsschicht ersetzt |
 | A8 | Ergebnis als Zeilen-Arrays (`rows: Cell[][]`), Spalten über den Index als `property` | kompakt über die Brücke; die GuiExpert Table liest `row["0"]` |
 | A9 | Fehler als `AppError { code, message }`, eine Stelle für `invoke()` (`call.ts`) | wie in allen Vorgängern |
+| A11 | Editor mit `scheme="none"`, alle Farben aus unseren Tokens (`EDITOR_COLORS`) | folgt jedem Schema, auch eigenen; keine zweite Farbwelt (Design 001 E1) |
+| A12 | Eigene Farbschemata in `themes.json` über ein eigenes Rust-Modul statt `tauri-plugin-store` | Grenzen und Prüfung im Backend, defekte Datei reißt die Einstellungen nicht mit (Design 001 E3) |
+| A13 | Pfade kommen nur aus nativen Dialogen (`FileDialogApi`), Lesen und Schreiben nur über eigene Commands | kein Dateizugriff aus dem Frontend; `tauri-plugin-fs` (von `-dialog` mitgezogen) ist nicht registriert |
+| A14 | `inlineCritical: false` im Produktions-Build | Angulars Nachladen des Stylesheets braucht ein Inline-Skript, das eine strikte CSP ohne Nonce blockiert; lokal bringt das Inlining nichts |
 | A10 | Oberflächentexte vorerst deutsch in den Komponenten | übernommene Galerie ist deutsch; Kataloge de/en kommen mit dem Prompt „Einstellungen und Sprache“ |
 
 ## Offene Architekturfragen (entscheidet der jeweilige Prompt)
@@ -51,6 +55,8 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | `tauri-plugin-window-state` | Fensterposition und -größe | wie log-commander |
 | `@guiexpert/table`, `@guiexpert/angular-table` | Ergebnisgitter (später Baum, Listen) | Vorgabe; virtuelles Scrollen in beide Richtungen |
 | `editlicious-editor` | SQL-Editor | Vorgabe; große Texte, SQL-Grammatik, 13 Schemata |
+| `tauri-plugin-dialog`, `@tauri-apps/plugin-dialog` | native Öffnen-/Speichern-Dialoge (Schema-Import/-Export, später SQL-Dateien, Export) | wie log-commander; nur `dialog:allow-open`, `dialog:allow-save` |
+| `tempfile` (dev) | Dateitests in Rust | Standard |
 | `rusqlite` (bundled) | Demo-Datenbank, später SQLite-Dateien | keine Systembibliothek |
 | `serde`, `serde_json` | DTOs | Standard |
 | Dev: `vitest`, `jsdom`, `eslint`, `angular-eslint`, `typescript-eslint`, `prettier` | Tests, Lint, Format | wie die Vorgänger |

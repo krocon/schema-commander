@@ -38,8 +38,10 @@ describe('result model', () => {
 
   it('builds a table model with one column per result column', () => {
     const model = resultModel(RESULT);
-    expect(model.getColumnCount()).toBe(3);
+    // one more for the row numbers
+    expect(model.getColumnCount()).toBe(4);
     expect(model.getBodyModel().getRowCount()).toBe(3);
-    expect(model.getBodyModel().getValueAt(0, 1)).toBe('Ada Lovelace');
+    expect(model.getBodyModel().getValueAt(0, 2)).toBe('Ada Lovelace');
+    expect(model.getBodyModel().getRowHeight(0)).toBe(22);
   });
 });

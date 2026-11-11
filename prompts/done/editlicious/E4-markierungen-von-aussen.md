@@ -1,7 +1,7 @@
 # Prompt E4 (editlicious): Markierungen von außen
 
 > **Repo:** `../editlicious` · **Gebraucht von:** Schema Commander 022, 012 · **Umfang:** M
-> Lies `prompts/editlicious/README.md` hier; in editlicious die Wort-Marker und die Übersichtsleiste als Bestand.
+> Lies `prompts/done/editlicious/README.md` hier; in editlicious die Wort-Marker und die Übersichtsleiste als Bestand.
 
 ## Ziel
 

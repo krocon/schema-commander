@@ -1,7 +1,7 @@
 # Prompt E1 (editlicious): Farben von außen
 
 > **Repo:** `../editlicious` · **Gebraucht von:** Schema Commander 001 · **Umfang:** S–M
-> Lies `prompts/editlicious/README.md` hier und in editlicious `CLAUDE.md`, `prompts/000-arbeitsweise.md`,
+> Lies `prompts/done/editlicious/README.md` hier und in editlicious `CLAUDE.md`, `prompts/000-arbeitsweise.md`,
 > `scripts/host-theme.mjs`, `src/styles.css`, `packages/editlicious-editor/README.md` („Styling“).
 
 ## Ziel

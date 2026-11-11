@@ -1,6 +1,6 @@
 # Design 001: Farbschemata fertig machen
 
-> **Status:** Entwurf, wartet auf Freigabe 🛑 · **Datum:** 11.11.2026 · **Branch:** `feat/theme`
+> **Status:** umgesetzt (freigegeben und abgeschlossen am 11.11.2026) · **Branch:** `feat/theme`
 > Auftrag: [001-theme.md](001-theme.md) · Feature G5 · Voraussetzung E1 ist erfüllt (`editlicious-editor` 1.2.0).
 
 ## Kurzfassung der Entscheidungen
@@ -182,9 +182,28 @@ Zellen (031), Import von Schemata anderer Werkzeuge (VS Code, fnf).
 
 - [x] Vorbereitung: Branch `feat/theme`, `editlicious-editor` 1.2.0, `pnpm check` grün (Commit `df20c06`)
 - [x] Phase 1: dieses Dokument
-- [ ] 🛑 Freigabe
-- [ ] Phase 2: Rust (`themes.rs`, Commands, Dialog-Plugin)
-- [ ] Phase 3: Frontend (Editor-Zuordnung, `ThemeApi`, Galerie, Live-Editor, Tabellen-Brücke)
-- [ ] Phase 4: Ende-zu-Ende
-- [ ] Phase 5: Doku (`docs/themes.md`, `architecture.md`, README, Index)
-- [ ] Phase 6: Abschlussprüfung und Bericht
+- [x] 🛑 Freigabe (Marc, 11.11.2026)
+- [x] Phase 2: Rust (`themes.rs`, Commands, Dialog-Plugin)
+- [x] Phase 3: Frontend (Editor-Zuordnung, `ThemeApi`, Galerie, Live-Editor, Tabellen-Brücke)
+- [x] Phase 4: Ende-zu-Ende – im Browser mit nachgestelltem Backend (Galerie, Schema-Editor, Speichern, Tabelle) und
+      der Produktions-Build unter der CSP; **das native Fenster wurde nicht von Hand durchgeklickt**
+- [x] Phase 5: Doku
+- [x] Phase 6: `pnpm check` grün, Debug-Build gebaut
+
+## Abweichungen vom Entwurf und Befunde
+
+- **Schema-Editor als Seitenfeld** am rechten Rand (modal, ohne Abdunkeln) statt als mittiger Dialog: so bleibt die
+  App sichtbar, während sich ihre Farben ändern.
+- **Tabelle** – beide Lücken lagen an der Benutzung, nicht an der Tabelle: `defaultRowHeights` wirkt nur, wenn die
+  Optionen auch an `TableFactory.createTableModel({ tableOptions })` gehen; Zellen sind in der Tabelle von Haus aus
+  zentriert (`ge-table-text-align-left` setzen) und haben die Zeilenhöhe 2.5 (für 30-px-Zeilen), die
+  `ge-table-theme.css` jetzt an unsere Zeilenhöhen bindet. Kein Vorschlag fürs Mono-Repo nötig. Dazugekommen:
+  Zeilennummern.
+- **Kritisches CSS** (`inlineCritical`) ist abgeschaltet: Angular lädt sonst das volle Stylesheet über ein
+  Inline-Skript nach, das eine strikte CSP ohne Nonce blockiert – dann fehlen helle Schemata und Grundstile. In
+  Tauri fällt das nicht auf (Tauri versieht Inline-Skripte mit Nonces), im Browser unter derselben CSP schon. Für
+  eine lokale App bringt das Inlining nichts.
+- **`pnpm preview:csp`** (neu) liefert den Produktions-Build mit der CSP aus `tauri.conf.json` aus.
+- `tauri-plugin-dialog` zieht `tauri-plugin-fs` als Abhängigkeit mit; es ist **nicht registriert** und hat keine
+  Capability – das Frontend kann weiterhin keine Dateien lesen.
+- Nicht umgesetzt (wie geplant): Kürzel/Menü (002, 018), Übersetzung (017).

@@ -10,10 +10,13 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { SettingsService } from '../../core/settings/settings.service';
-import { Theme } from '../../core/theme/theme.models';
+import { FileDialogApi } from '../../core/backend/file-dialog-api';
+import { errorText } from '../../core/errors/app-error';
+import { DARK, LIGHT } from '../../core/theme/builtin-themes';
+import { Theme, isUserTheme } from '../../core/theme/theme.models';
 import { ThemeService } from '../../core/theme/theme.service';
 import { CardBox, PickerCard, moveInGrid, pickerSections } from './theme-picker-logic';
+import { copyName, importDraft, themeOf as storedTheme } from './theme-editor-logic';
 import { ThemeThumb } from './theme-thumb';
 
 /** Cards per row assumed when there is no layout (tests). */
@@ -128,6 +131,31 @@ const FALLBACK_COLUMNS = 4;
           </label>
         </div>
       }
+      @if (theme.notice(); as notice) {
+        <p class="note" role="note">Eigene Schemata: {{ notice }}</p>
+      }
+      @if (error(); as message) {
+        <p class="note problem" role="alert">{{ message }}</p>
+      }
+      <div class="actions">
+        <button
+          type="button"
+          title="Legt eine Kopie des gewählten Schemas an und öffnet sie zum Bearbeiten"
+          [disabled]="current() === null"
+          (click)="createFromCurrent()"
+        >
+          Neu aus gewähltem …
+        </button>
+        <button
+          type="button"
+          title="Nur eigene Schemata lassen sich bearbeiten"
+          [disabled]="!currentIsOwn()"
+          (click)="editCurrent()"
+        >
+          Bearbeiten …
+        </button>
+        <button type="button" (click)="importFile()">Importieren …</button>
+      </div>
       <footer>
         <span class="hint"
           >Pfeiltasten zeigen ein Schema sofort, Enter behält es, Esc kehrt zurück.</span
@@ -257,6 +285,18 @@ const FALLBACK_COLUMNS = 4;
       gap: 6px;
       font-size: 12px;
     }
+    .actions {
+      display: flex;
+      gap: 8px;
+      padding: 8px 14px;
+      border-top: 1px solid var(--border);
+    }
+    .actions button {
+      border-color: var(--border);
+    }
+    .problem {
+      color: var(--error-fg);
+    }
     .primary {
       background: var(--accent);
       color: var(--accent-text);
@@ -265,7 +305,7 @@ const FALLBACK_COLUMNS = 4;
 })
 export class ThemePickerComponent implements OnInit {
   protected readonly theme = inject(ThemeService);
-  private readonly settings = inject(SettingsService);
+  private readonly files = inject(FileDialogApi);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private readonly grid = viewChild.required<ElementRef<HTMLElement>>('grid');
   private readonly filterInput = viewChild.required<ElementRef<HTMLInputElement>>('filterInput');
@@ -286,7 +326,9 @@ export class ThemePickerComponent implements OnInit {
   private readonly hovered = signal<string | null>(null);
   private done = false;
 
-  private readonly themes = computed(() => this.theme.catalog()?.themes ?? []);
+  protected readonly error = signal<string | null>(null);
+  protected readonly currentIsOwn = computed(() => isUserTheme(this.current() ?? ''));
+  private readonly themes = computed(() => (this.theme.catalog() ? this.theme.themes() : []));
   protected readonly sections = computed(() => pickerSections(this.themes(), this.filter()));
   protected readonly visible = computed<PickerCard[]>(() =>
     this.sections().flatMap((s) => [...s.cards]),
@@ -386,6 +428,48 @@ export class ThemePickerComponent implements OnInit {
     this.theme.preview.set(null);
     if (id === 'system') this.theme.followSystem(this.pair());
     else this.theme.select(id);
+    this.dialog().nativeElement.close();
+  }
+
+  /** A copy of the chosen scheme (of the one on screen for „System folgen“), opened in the editor. */
+  protected createFromCurrent(): void {
+    const id = this.current();
+    const source = id === 'system' ? this.draftOf('system') : id ? this.theme.find(id) : null;
+    if (!source) return;
+    const names = new Set(this.themes().map((t) => t.name));
+    this.edit({ ...source, id: '', name: copyName(source.name, names) }, []);
+  }
+
+  protected editCurrent(): void {
+    const own = this.theme.find(this.current() ?? '');
+    if (own && isUserTheme(own.id)) this.edit(own, []);
+  }
+
+  /** A scheme file chosen in the native dialog, checked and opened in the editor (stored only on save). */
+  protected async importFile(): Promise<void> {
+    this.error.set(null);
+    try {
+      const path = await this.files.openFile('Farbschema importieren', [
+        { name: 'Farbschema', extensions: ['json'] },
+      ]);
+      if (path === null) return;
+      const raw = await this.theme.importFile(path);
+      const names = new Set(this.themes().map((t) => t.name));
+      const { draft, dropped } = importDraft(raw, LIGHT, DARK, names);
+      if (!draft) {
+        this.error.set('Die Datei ist kein Farbschema.');
+        return;
+      }
+      this.edit(storedTheme(draft, '', LIGHT, DARK), dropped);
+    } catch (e) {
+      this.error.set(errorText(e));
+    }
+  }
+
+  /** Hands a scheme to the editor and leaves; the editor takes over the preview. */
+  private edit(theme: Theme, dropped: readonly string[]): void {
+    this.done = true;
+    this.theme.editing.set({ theme, dropped });
     this.dialog().nativeElement.close();
   }
 

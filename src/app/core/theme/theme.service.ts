@@ -1,11 +1,14 @@
 import { DestroyRef, Injectable, computed, effect, inject, signal } from '@angular/core';
 import { WindowApi } from '../backend/window-api';
+import { ThemeApi } from './theme-api';
 import { SettingsService } from '../settings/settings.service';
 import {
   BUILT_IN_DARK,
   Theme,
+  ThemeEditRequest,
   ThemeSelection,
   isBaseTheme,
+  isUserTheme,
   sanitizeSelection,
   selectedId,
 } from './theme.models';
@@ -37,6 +40,7 @@ const BASE_STUB: Readonly<Record<'dark' | 'light', Theme>> = {
 export class ThemeService {
   private readonly settingsService = inject(SettingsService);
   private readonly api = inject(WindowApi);
+  private readonly themeApi = inject(ThemeApi);
 
   readonly selection = computed<ThemeSelection>(() =>
     sanitizeSelection(this.settingsService.settings().themeSelection),
@@ -47,8 +51,21 @@ export class ThemeService {
   readonly preview = signal<Theme | null>(null);
   /** The built-in schemes, once loaded (`loadCatalog`). */
   readonly catalog = signal<ThemeCatalog | null>(null);
-  /** The picker dialog (toolbar, menu, `Cmd/Ctrl+Alt+T`). */
+  /** The picker dialog (toolbar). */
   readonly pickerOpen = signal(false);
+  /** The scheme editor is open with this scheme (design 001). */
+  readonly editing = signal<ThemeEditRequest | null>(null);
+  /** The user's own schemes (design 001), stored in `themes.json`. */
+  readonly userThemes = signal<readonly Theme[]>([]);
+  /** The own schemes are read (or could not be). */
+  readonly userLoaded = signal(false);
+  /** What reading the own schemes had to say (broken file, ignored entries). */
+  readonly notice = signal<string | null>(null);
+  /** Built-in and own schemes, once the built-in ones are loaded. */
+  readonly themes = computed<readonly Theme[]>(() => [
+    ...(this.catalog()?.themes ?? []),
+    ...this.userThemes(),
+  ]);
 
   readonly activeId = computed(() => selectedId(this.selection(), this.systemDark()));
 
@@ -56,9 +73,12 @@ export class ThemeService {
   readonly active = computed<Theme | null>(() => {
     const id = this.activeId();
     const catalog = this.catalog();
-    const dark = BUILT_IN_DARK[id] ?? this.systemDark();
+    const own = isUserTheme(id) ? this.userThemes().find((t) => t.id === id) : undefined;
+    const dark = BUILT_IN_DARK[id] ?? own?.dark ?? this.systemDark();
+    // an own scheme that is not read yet: wait, do not flash the base
+    if (isUserTheme(id) && !own && !this.userLoaded()) return null;
     if (catalog) {
-      return catalog.themes.find((t) => t.id === id) ?? this.base(dark);
+      return own ?? catalog.themes.find((t) => t.id === id) ?? this.base(dark);
     }
     return isBaseTheme(id) || this.failed() ? this.base(dark) : null;
   });
@@ -88,7 +108,7 @@ export class ThemeService {
       }
       this.apply(theme);
       // The window stays hidden until the stored scheme is on (no flash of the default scheme).
-      if (this.settingsService.loaded()) this.applyWindowChrome(theme);
+      if (this.settingsService.loaded() && this.userLoaded()) this.applyWindowChrome(theme);
     });
   }
 
@@ -112,7 +132,55 @@ export class ThemeService {
   }
 
   find(id: string): Theme | undefined {
-    return this.catalog()?.themes.find((t) => t.id === id);
+    return this.themes().find((t) => t.id === id);
+  }
+
+  /** Reads the own schemes (once, at start). Never rejects: without them the built-in ones remain. */
+  async loadUserThemes(): Promise<void> {
+    try {
+      const loaded = await this.themeApi.load();
+      this.userThemes.set(loaded.themes.filter((t) => isUserTheme(t.id)));
+      this.notice.set(loaded.notice);
+    } catch (e) {
+      // no backend (browser, tests without a fake): no own schemes
+      console.warn('own colour schemes could not be loaded', e);
+    }
+    this.userLoaded.set(true);
+  }
+
+  /** Stores an own scheme (new or changed) and returns when it is on disk; rejects with an `AppError`. */
+  async saveUserTheme(theme: Theme): Promise<void> {
+    const others = this.userThemes().filter((t) => t.id !== theme.id);
+    const next = [...others, theme].sort((a, b) => a.name.localeCompare(b.name));
+    await this.themeApi.save(next);
+    this.userThemes.set(next);
+  }
+
+  /** Writes one scheme to a file the user chose; rejects with an `AppError`. */
+  exportTheme(path: string, theme: Theme): Promise<void> {
+    return this.themeApi.exportFile(path, theme);
+  }
+
+  /** The JSON of a file the user chose, unchecked; rejects with an `AppError`. */
+  importFile(path: string): Promise<unknown> {
+    return this.themeApi.importFile(path);
+  }
+
+  /** Removes an own scheme; a selection that used it goes back to the base of its brightness. */
+  async deleteUserTheme(id: string): Promise<void> {
+    const gone = this.userThemes().find((t) => t.id === id);
+    if (!gone) return;
+    const next = this.userThemes().filter((t) => t.id !== id);
+    await this.themeApi.save(next);
+    this.userThemes.set(next);
+    const s = this.selection();
+    const base = gone.dark ? 'dark' : 'light';
+    this.setSelection({
+      mode: s.mode,
+      theme: s.theme === id ? base : s.theme,
+      light: s.light === id ? 'light' : s.light,
+      dark: s.dark === id ? 'dark' : s.dark,
+    });
   }
 
   /** A fixed scheme. */

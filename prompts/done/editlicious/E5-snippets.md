@@ -1,7 +1,7 @@
 # Prompt E5 (editlicious): Textbausteine mit Platzhaltern
 
 > **Repo:** `../editlicious` · **Gebraucht von:** Schema Commander 024 (und E3 für `insertText`) · **Umfang:** M
-> Lies `prompts/editlicious/README.md` hier.
+> Lies `prompts/done/editlicious/README.md` hier.
 
 ## Ziel
 

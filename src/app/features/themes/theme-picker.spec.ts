@@ -1,7 +1,11 @@
 import { TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { FakeFileDialogApi, FakeThemeApi } from '../../../testing/fake-apis';
+import { ThemeApi } from '../../core/theme/theme-api';
+import { FileDialogApi } from '../../core/backend/file-dialog-api';
 import { WindowApi } from '../../core/backend/window-api';
 import { SettingsService } from '../../core/settings/settings.service';
+import { Theme } from '../../core/theme/theme.models';
 import { ThemeService } from '../../core/theme/theme.service';
 import { ThemePickerComponent } from './theme-picker';
 
@@ -24,11 +28,16 @@ describe('ThemePickerComponent', () => {
     };
   });
 
-  async function open() {
+  async function open(stored: Theme[] = []) {
+    const themeApi = new FakeThemeApi();
+    themeApi.stored = stored;
+    const dialogs = new FakeFileDialogApi();
     TestBed.configureTestingModule({
       imports: [ThemePickerComponent],
       providers: [
         { provide: WindowApi, useValue: { setWindowChrome: vi.fn(() => Promise.resolve()) } },
+        { provide: ThemeApi, useValue: themeApi },
+        { provide: FileDialogApi, useValue: dialogs },
       ],
     });
     const theme = TestBed.inject(ThemeService);
@@ -39,13 +48,14 @@ describe('ThemePickerComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     await theme.loadCatalog();
+    await theme.loadUserThemes();
     fixture.detectChanges();
     const el = fixture.nativeElement as HTMLElement;
     const key = (target: Element, k: string) => {
       target.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
       fixture.detectChanges();
     };
-    return { fixture, theme, settings, el, closed, key };
+    return { fixture, theme, settings, el, closed, key, themeApi, dialogs };
   }
 
   it('shows all schemes, „System folgen“ chosen, and filters with a count', async () => {
@@ -104,5 +114,77 @@ describe('ThemePickerComponent', () => {
     expect(theme.preview()?.id).toBe('amber');
     el.querySelector<HTMLButtonElement>('button.primary')!.click();
     expect(settings.settings().themeSelection).toMatchObject({ mode: 'system', dark: 'amber' });
+  });
+
+  const OWN: Theme = {
+    id: 'user-gruen',
+    name: 'Grün',
+    dark: true,
+    tokens: { '--bg-app': '#001100' },
+  };
+  const button = (el: HTMLElement, text: string) =>
+    [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) =>
+      b.textContent?.includes(text),
+    )!;
+
+  it('lists own schemes in a group of their own and edits only those', async () => {
+    const { el, theme, fixture, closed } = await open([OWN]);
+    expect(el.querySelector('[role="group"][aria-label="Eigene"] .card')?.textContent).toContain(
+      'Grün',
+    );
+    expect(el.querySelector('.count')?.textContent).toContain('18 von 18');
+    expect(button(el, 'Bearbeiten').disabled).toBe(true);
+    el.querySelector<HTMLElement>('[data-id="user-gruen"]')!.click();
+    fixture.detectChanges();
+    expect(button(el, 'Bearbeiten').disabled).toBe(false);
+    button(el, 'Bearbeiten').click();
+    expect(theme.editing()).toEqual({ theme: OWN, dropped: [] });
+    expect(closed).toHaveBeenCalled();
+  });
+
+  it('makes a new scheme from the chosen one', async () => {
+    const { el, theme, fixture } = await open();
+    el.querySelector<HTMLElement>('[data-id="one-dark"]')!.click();
+    fixture.detectChanges();
+    button(el, 'Neu aus gewähltem').click();
+    const request = theme.editing();
+    expect(request?.theme.id).toBe('');
+    expect(request?.theme.name).toBe('One Dark (Kopie)');
+    expect(request?.theme.tokens['--bg-app']).toBe('#282c34');
+  });
+
+  it('imports a file into the editor and says when it is no scheme', async () => {
+    const { el, theme, themeApi, dialogs, fixture } = await open();
+    dialogs.path = '/x/a.json';
+    themeApi.files.set('/x/a.json', {
+      name: 'Fremd',
+      dark: false,
+      tokens: { '--bg-app': '#fff', '--nope': '1' },
+    });
+    button(el, 'Importieren').click();
+    await fixture.whenStable();
+    expect(theme.editing()?.theme).toEqual({
+      id: '',
+      name: 'Fremd',
+      dark: false,
+      tokens: { '--bg-app': '#fff' },
+    });
+    expect(theme.editing()?.dropped).toEqual(['--nope']);
+  });
+
+  it('shows why an import failed', async () => {
+    const { el, theme, themeApi, dialogs, fixture } = await open();
+    dialogs.path = '/x/b.json';
+    themeApi.files.set('/x/b.json', { hello: 1 });
+    button(el, 'Importieren').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(el.querySelector('[role="alert"]')?.textContent).toContain('kein Farbschema');
+    dialogs.path = '/x/gone.json';
+    button(el, 'Importieren').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(el.querySelector('[role="alert"]')?.textContent).toContain('nicht gefunden');
+    expect(theme.editing()).toBeNull();
   });
 });

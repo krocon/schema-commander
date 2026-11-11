@@ -13,7 +13,7 @@ Herkunft: [`docs/feature-analysis.md`](../docs/feature-analysis.md) (Ids A1–H4
 freigegeben). **Die Nummern sind die Ausführungsreihenfolge**: Jeder Prompt braucht nur Prompts mit kleinerer Nummer
 (Spalte „Braucht“). Innerhalb einer Stufe kann vorgezogen werden, was seine Abhängigkeiten erfüllt.
 
-**Erweiterungen an editlicious** (E1–E5) sind eigene Prompts unter [`editlicious/`](editlicious/README.md) und
+**Erweiterungen an editlicious** (E1–E5) sind eigene Prompts unter [`done/editlicious/`](done/editlicious/README.md) und
 wurden im Repo `../editlicious` umgesetzt (dort Prompts 026–030) und sind seit `editlicious-editor` **1.2.0**
 verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README.md` und `editlicious-editor.d.ts`.
 
@@ -21,7 +21,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 |---|---|---|---|---|---|
 | 000 | [Gemeinsame Arbeitsweise](000-arbeitsweise.md) | – | – | – | – |
 | | **Stufe 1 – daraus wird ein benutzbares SQL-Tool** | | | | |
-| 001 | [Farbschemata fertig machen](001-theme.md) | G5 | E1 (editlicious: Farben von außen) | S–M | offen |
+| 001 | [Farbschemata fertig machen](done/001-theme.md) ([Design](done/001-theme.design.md)) | G5 | E1 (editlicious: Farben von außen) | S–M | ✅ 11.11.2026 |
 | 002 | [Aktionssystem, Tastatur, Befehlspalette](002-aktionen-tastatur.md) | G1 | – | M | offen |
 | 003 | [Verbindungen und Schlüsselbund](003-verbindungen.md) | A1, A2 | 002 | L | offen |
 | 004 | [Abfrage-Tabs](004-abfrage-tabs.md) | C1 | 002, 003 | M | offen |
@@ -77,8 +77,8 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 
 | Nr. | Prompt | Gebraucht von | Status |
 |---|---|---|---|
-| E1 | [Farben von außen](editlicious/E1-farben-von-aussen.md) | 001 | ✅ editlicious 026, in `editlicious-editor` 1.2.0 |
-| E2 | [Auswahl und Bereiche abfragen](editlicious/E2-auswahl-abfragen.md) | 005, 023 | ✅ editlicious 027, in `editlicious-editor` 1.2.0 |
-| E3 | [Vervollständigung von außen](editlicious/E3-vervollstaendigung-von-aussen.md) | 021 | ✅ editlicious 028, in `editlicious-editor` 1.2.0 |
-| E4 | [Markierungen von außen](editlicious/E4-markierungen-von-aussen.md) | 022 | ✅ editlicious 029, in `editlicious-editor` 1.2.0 |
-| E5 | [Textbausteine mit Platzhaltern](editlicious/E5-snippets.md) | 024 | ✅ editlicious 030, in `editlicious-editor` 1.2.0 |
+| E1 | [Farben von außen](done/editlicious/E1-farben-von-aussen.md) | 001 | ✅ editlicious 026, in `editlicious-editor` 1.2.0 |
+| E2 | [Auswahl und Bereiche abfragen](done/editlicious/E2-auswahl-abfragen.md) | 005, 023 | ✅ editlicious 027, in `editlicious-editor` 1.2.0 |
+| E3 | [Vervollständigung von außen](done/editlicious/E3-vervollstaendigung-von-aussen.md) | 021 | ✅ editlicious 028, in `editlicious-editor` 1.2.0 |
+| E4 | [Markierungen von außen](done/editlicious/E4-markierungen-von-aussen.md) | 022 | ✅ editlicious 029, in `editlicious-editor` 1.2.0 |
+| E5 | [Textbausteine mit Platzhaltern](done/editlicious/E5-snippets.md) | 024 | ✅ editlicious 030, in `editlicious-editor` 1.2.0 |

@@ -1,8 +1,11 @@
 import { TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { FakeThemeApi } from '../../../testing/fake-apis';
+import { ThemeApi } from './theme-api';
 import { WindowApi } from '../backend/window-api';
 import { SettingsService } from '../settings/settings.service';
 import { BUILT_IN_THEMES } from './builtin-themes';
+import { Theme } from './theme.models';
 import { ThemeService } from './theme.service';
 
 /** A controllable `prefers-color-scheme: dark`. */
@@ -26,17 +29,24 @@ const scheme = (id: string) => BUILT_IN_THEMES.find((t) => t.id === id)!;
 
 describe('ThemeService', () => {
   let chrome: ReturnType<typeof vi.fn>;
+  let themeApi: FakeThemeApi;
   let setSystem: (dark: boolean) => void;
 
-  async function create(dark = true) {
+  async function create(dark = true, stored: Theme[] = []) {
     setSystem = fakeMedia(dark);
     chrome = vi.fn(() => Promise.resolve());
+    themeApi = new FakeThemeApi();
+    themeApi.stored = stored;
     TestBed.configureTestingModule({
-      providers: [{ provide: WindowApi, useValue: { setWindowChrome: chrome } }],
+      providers: [
+        { provide: WindowApi, useValue: { setWindowChrome: chrome } },
+        { provide: ThemeApi, useValue: themeApi },
+      ],
     });
     const settings = TestBed.inject(SettingsService);
     const theme = TestBed.inject(ThemeService);
     await theme.loadCatalog();
+    await theme.loadUserThemes();
     TestBed.tick();
     return { settings, theme };
   }
@@ -119,5 +129,87 @@ describe('ThemeService', () => {
     theme.followSystem({ dark: 'one-dark' });
     TestBed.tick();
     expect(chrome).toHaveBeenLastCalledWith(scheme('one-dark').tokens['--bg-app'], null);
+  });
+
+  const OWN: Theme = {
+    id: 'user-gruen',
+    name: 'Grün',
+    dark: false,
+    tokens: { '--bg-app': '#eeffee', '--text': 'red; x: url(y)', '--ge-table-bg': '#000000' },
+  };
+
+  it('applies an own scheme: catalog tokens with safe values only', async () => {
+    const { theme } = await create(true, [OWN]);
+    theme.select('user-gruen');
+    TestBed.tick();
+    expect(theme.active()?.id).toBe('user-gruen');
+    expect(root().dataset['theme']).toBe('light');
+    expect(inline('--bg-app')).toBe('#eeffee');
+    expect(inline('--text')).toBe('');
+    expect(inline('--ge-table-bg')).toBe('');
+    expect(theme.themes().length).toBe(18);
+  });
+
+  it('ignores stored schemes without the user prefix', async () => {
+    const { theme } = await create(true, [{ ...OWN, id: 'dark' }]);
+    expect(theme.userThemes()).toEqual([]);
+    expect(theme.find('dark')?.name).not.toBe('Grün');
+  });
+
+  it('waits for the own schemes before it shows the window', async () => {
+    setSystem = fakeMedia(true);
+    chrome = vi.fn(() => Promise.resolve());
+    themeApi = new FakeThemeApi();
+    themeApi.stored = [OWN];
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: WindowApi, useValue: { setWindowChrome: chrome } },
+        { provide: ThemeApi, useValue: themeApi },
+      ],
+    });
+    const settings = TestBed.inject(SettingsService);
+    const theme = TestBed.inject(ThemeService);
+    await settings.load();
+    settings.update({
+      themeSelection: { mode: 'fixed', theme: 'user-gruen', light: 'light', dark: 'dark' },
+    });
+    await theme.loadCatalog();
+    TestBed.tick();
+    // the scheme is one of the user's own and not read yet: nothing on screen, window still hidden
+    expect(theme.active()).toBeNull();
+    expect(chrome).not.toHaveBeenCalled();
+    await theme.loadUserThemes();
+    TestBed.tick();
+    expect(theme.active()?.id).toBe('user-gruen');
+    expect(chrome).toHaveBeenCalledTimes(1);
+  });
+
+  it('stores, replaces and deletes own schemes; a deleted one leaves the selection', async () => {
+    const { theme } = await create(true, [OWN]);
+    await theme.saveUserTheme({ ...OWN, id: 'user-a', name: 'A' });
+    await theme.saveUserTheme({ ...OWN, name: 'Grün neu' });
+    expect(themeApi.stored.map((t) => t.name)).toEqual(['A', 'Grün neu']);
+    theme.followSystem({ light: 'user-gruen' });
+    theme.select('user-gruen');
+    TestBed.tick();
+    await theme.deleteUserTheme('user-gruen');
+    TestBed.tick();
+    expect(themeApi.stored.map((t) => t.id)).toEqual(['user-a']);
+    expect(theme.selection()).toMatchObject({ theme: 'light', light: 'light' });
+    expect(theme.active()?.id).toBe('light');
+  });
+
+  it('keeps the old schemes when saving fails', async () => {
+    const { theme } = await create(true, [OWN]);
+    themeApi.failSave = { code: 'io', message: 'disk' };
+    await expect(theme.saveUserTheme({ ...OWN, name: 'X' })).rejects.toBeTruthy();
+    expect(theme.userThemes()).toEqual([OWN]);
+  });
+
+  it('falls back to the base when the chosen own scheme is gone', async () => {
+    const { theme } = await create(false, []);
+    theme.select('user-weg');
+    TestBed.tick();
+    expect(theme.active()?.id).toBe('light');
   });
 });

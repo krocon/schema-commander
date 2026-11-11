@@ -1,7 +1,7 @@
 # Prompt E3 (editlicious): Vervollständigung von außen
 
 > **Repo:** `../editlicious` · **Gebraucht von:** Schema Commander 021 · **Umfang:** M–L
-> Lies `prompts/editlicious/README.md` hier; in editlicious `docs/completion.md` (Wort-Vervollständigung heute).
+> Lies `prompts/done/editlicious/README.md` hier; in editlicious `docs/completion.md` (Wort-Vervollständigung heute).
 
 ## Ziel
 

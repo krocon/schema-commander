@@ -9,7 +9,7 @@ die Erweiterungen aus Sicht des Verbrauchers.
 
 **Ausführen:** neue Sitzung im Repo `../editlicious` (nicht hier):
 „Lies `prompts/000-arbeitsweise.md` (die von editlicious) und führe
-`../schema-commander/prompts/editlicious/E1-farben-von-aussen.md` aus.“ Es gelten die Regeln, Phasen und Checks von
+`../schema-commander/prompts/done/editlicious/E1-farben-von-aussen.md` aus.“ Es gelten die Regeln, Phasen und Checks von
 editlicious (`CLAUDE.md` dort); das Design-Dokument entsteht dort unter `prompts/`. Nach der Veröffentlichung hier
 `editlicious-editor` in `package.json` anheben.
 

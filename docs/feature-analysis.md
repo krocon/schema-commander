@@ -124,7 +124,7 @@ Prompts) · **Stufe** = meine Empfehlung: **1** Grundlage (ohne das ist es kein 
 | G2 | **Arbeitsbereich**: Tab-Leiste, geteilte Ansicht (zwei Abfragen nebeneinander), Sitzung nach Neustart wiederherstellen | DataGrip, TablePlus | M | 2 | ☑ [016](../prompts/016-arbeitsbereich.md) |
 | G3 | **Einstellungen und Sprache**: Dialog, Deutsch/Englisch zur Laufzeit (Text-Kataloge wie in fnf) | fnf | M | 2 | ☑ [017](../prompts/017-einstellungen-sprache.md) |
 | G4 | **Menüleiste** (nativ) und **Kontextmenüs** aus einem Menümodell | fnf | S–M | 2 | ☑ [018](../prompts/018-menues.md) |
-| G5 | **Farbschemata fertig machen**: Editor folgt allen 17 Schemata (seine Farben aus unseren Tokens), Live-Editor für eigene Schemata, Import/Export – wie in fnf | fnf | S–M | 2 | ☑ [001](../prompts/001-theme.md) |
+| G5 | **Farbschemata fertig machen**: Editor folgt allen 17 Schemata (seine Farben aus unseren Tokens), Live-Editor für eigene Schemata, Import/Export – wie in fnf | fnf | S–M | 2 | ☑ [001](../prompts/done/001-theme.md) |
 | G6 | **Release**: Pakete je System, Signierung, Auto-Update, Lizenzhinweise, About | fnf | M | 2 | ☑ [034](../prompts/034-release.md) |
 
 ### H – Verwaltung und Extras
@@ -176,11 +176,11 @@ Vorschau · D5 Filter · D10 Fremdschlüssel folgen · C10 Transaktionen · B2 S
 | editlicious-editor | Snippets mit Platzhaltern | C7 |
 | GuiExpert Table | im Skeleton aufgefallen: Zeilenhöhe aus `defaultRowHeights` und Ausrichtung der Zellen prüfen | D2 |
 
-Für editlicious gibt es dazu eigene Prompts (E1–E5, `prompts/editlicious/`). Die Punkte der GuiExpert Table werden
+Für editlicious gibt es dazu eigene Prompts (E1–E5, `prompts/done/editlicious/`). Die Punkte der GuiExpert Table werden
 in den Design-Dokumenten geprüft und als Vorschläge fürs Mono-Repo formuliert.
 
 ## 6. Prompts
 
 Alle Features sind freigegeben; die Prompts 001–049 liegen in `prompts/`, die Erweiterungen an editlicious als
-E1–E5 in `prompts/editlicious/` (Index: [`prompts/README.md`](../prompts/README.md)). A1 und A2 teilen sich
+E1–E5 in `prompts/done/editlicious/` (Index: [`prompts/README.md`](../prompts/README.md)). A1 und A2 teilen sich
 Prompt 003. Prompt 001 ist auf Marcs Wunsch das Farbschema (G5).

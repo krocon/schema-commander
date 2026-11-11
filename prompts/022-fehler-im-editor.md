@@ -2,7 +2,7 @@
 
 > **Slug:** `fehler-im-editor` · **Feature:** C4 · **Braucht:** 005, E4 (editlicious: Markierungen von außen) ·
 > **Umfang:** M
-> Lies zuerst `prompts/000-arbeitsweise.md`, `prompts/editlicious/E4-markierungen-von-aussen.md`. Vorbild: pgAdmin,
+> Lies zuerst `prompts/000-arbeitsweise.md`, `prompts/done/editlicious/E4-markierungen-von-aussen.md`. Vorbild: pgAdmin,
 > DataGrip.
 
 ## Ziel

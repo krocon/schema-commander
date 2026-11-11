@@ -26,6 +26,7 @@
     "rust:lint": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml",
     "contrast": "node scripts/check-contrast.mjs",
+    "preview:csp": "node scripts/csp-preview.mjs",
     "version:check": "node scripts/version.mjs check",
     "version:set": "node scripts/version.mjs set",
     "scripts:test": "node --test \"scripts/*.test.mjs\"",
