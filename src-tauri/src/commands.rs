@@ -58,14 +58,19 @@ pub fn close_connection(manager: State<'_, ConnectionManager>, id: String) {
     manager.close(&id);
 }
 
-/// Runs one statement on an open connection. `async`: off the main thread, the window stays responsive.
+/// Runs one statement on an open connection, for at most `timeout_ms` (none or 0 = as long as it takes).
+/// `async`: off the main thread, the window stays responsive.
 #[tauri::command(async)]
 pub fn run_query(
     manager: State<'_, ConnectionManager>,
     id: String,
     sql: String,
+    timeout_ms: Option<u64>,
 ) -> AppResult<QueryResult> {
-    manager.run(&id, &sql)
+    let timeout = timeout_ms
+        .filter(|ms| *ms > 0)
+        .map(std::time::Duration::from_millis);
+    manager.run(&id, &sql, timeout)
 }
 
 /// Stops the statement that runs on a connection.

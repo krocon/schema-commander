@@ -5,27 +5,47 @@ import { TabMeta } from '../../core/session/session-api';
 import { QueryApi } from '../../core/sql/query-api';
 import { QueryResult } from '../../core/sql/query.models';
 import { EdCaret } from '../editor/editlicious';
-import { RunState } from './run-state';
+import {
+  LogEntry,
+  MAX_KEPT_RESULTS,
+  MAX_LOG,
+  RunState,
+  StatementRun,
+  firstLine,
+  outcomeText,
+  pending,
+  stateOf,
+} from './run-state';
 
 /** What a tab needs of its editor; the pane of the tab registers it. */
 export interface TabEditor {
   getText(): Promise<string>;
   setText(text: string): Promise<void>;
   focus(): void;
-  /** Runs the statement under the caret. */
+  /** Runs the selection if there is one, else the statement under the caret. */
   runCurrent(): Promise<void>;
+  /** Runs the whole script. */
+  runScript(): Promise<void>;
 }
 
 /** The services a tab works with (handed in by the `TabsStore`, tabs are no injectables). */
 export interface TabServices {
   readonly api: QueryApi;
   readonly connections: ConnectionsStore;
+  /** How statements run right now (from the settings). */
+  readonly options: () => RunOptions;
+}
+
+export interface RunOptions {
+  /** Leave out the rest of a script after an error. */
+  readonly stopOnError: boolean;
+  /** Time at most per statement, 0 = as long as it takes. */
+  readonly timeoutMs: number;
 }
 
 /**
- * A query tab (prompt 004): its title, connection, the outcome of its last statement and its editor. One
- * instance per tab, addressed by id. A statement started while another runs wins; the answer of the older
- * one is dropped.
+ * A query tab (prompts 004, 005): its title, connection, editor, the statements of its last run with their
+ * results, and its messages. One instance per tab, addressed by id.
  */
 export class QueryTab {
   readonly id: string;
@@ -37,7 +57,19 @@ export class QueryTab {
   readonly filePath = signal<string | null>(null);
   readonly encoding = signal<string | null>(null);
 
-  readonly state = signal<RunState>({ kind: 'idle' });
+  /** The statements of the last run (one statement, a selection or a script) and how they went. */
+  readonly runs = signal<readonly StatementRun[]>([]);
+  /** What the result area shows: a statement of the run, or the messages. */
+  readonly shown = signal<number | 'messages'>(0);
+  /** What the tab ran so far, the newest last. */
+  readonly log = signal<readonly LogEntry[]>([]);
+  /** How long the run takes so far (ticks while it runs). */
+  readonly elapsedMs = signal(0);
+  /** The outcome of the statement shown. */
+  readonly state = computed<RunState>(() => {
+    const shown = this.shown();
+    return stateOf(this.runs()[shown === 'messages' ? 0 : shown]);
+  });
   readonly caret = signal<EdCaret | null>(null);
   /** The tab was shown once: its editor exists (tabs restored at the start are built when first looked at). */
   readonly mounted = signal(false);
@@ -46,11 +78,14 @@ export class QueryTab {
   /** Characters of the text, as far as the editor told (for the pace of the backup). */
   readonly chars = signal(0);
 
-  readonly running = computed(() => this.state().kind === 'running');
+  readonly running = computed(() =>
+    this.runs().some((r) => r.kind === 'running' || r.kind === 'pending'),
+  );
 
   private editor: TabEditor | null = null;
   private runId = 0;
   private runningOn: string | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     meta: TabMeta,
@@ -98,43 +133,95 @@ export class QueryTab {
     void this.editor?.runCurrent();
   }
 
-  /** Runs a statement on the tab's connection, opening it first when it is closed. */
-  async run(sql: string): Promise<void> {
+  runScript(): void {
+    void this.editor?.runScript();
+  }
+
+  /** Runs one statement. */
+  run(sql: string): Promise<void> {
+    return this.runAll([sql]);
+  }
+
+  /**
+   * Runs statements one after the other on the tab's connection, opening it first when it is closed. After
+   * an error the rest is left out, unless the setting says to go on. A run started while another runs takes
+   * its place: the older one is stopped and its answers are dropped.
+   */
+  async runAll(statements: readonly string[]): Promise<void> {
+    const sqls = statements.filter((s) => s.trim() !== '');
+    if (sqls.length === 0) return;
     const { connections } = this.services;
+    if (this.running()) this.cancel();
     const id = ++this.runId;
-    const connection = this.connectionId();
     const latest = () => id === this.runId;
-    this.state.set({ kind: 'running', sql });
-    this.runningOn = connection;
-    try {
-      if (!(await connections.connect(connection))) {
-        if (latest()) {
-          const state = connections.state(connection);
-          this.state.set(
-            state.kind === 'failed'
-              ? { kind: 'failed', sql, message: state.message }
-              : // the password dialog was dismissed
-                { kind: 'cancelled', sql },
-          );
-        }
-        return;
-      }
-      const result = await this.runOnce(connection, sql);
-      if (latest()) this.state.set({ kind: 'done', sql, result });
-    } catch (e) {
-      const error = toAppError(e);
-      // cancelled, timed out or broken: the backend dropped the connection
-      if (error.code !== 'invalid_query' && error.code !== 'permission_denied') {
-        connections.markClosed(connection);
-      }
+    const connection = this.connectionId();
+    const options = this.services.options();
+    this.runs.set(sqls.map(pending));
+    this.shown.set(0);
+    this.startTimer();
+    const set = (index: number, change: Partial<StatementRun>) => {
       if (!latest()) return;
-      this.state.set(
-        error.code === 'cancelled'
-          ? { kind: 'cancelled', sql }
-          : { kind: 'failed', sql, message: describeError(error) },
-      );
+      this.runs.update((all) => all.map((r, i) => (i === index ? { ...r, ...change } : r)));
+    };
+    let kept = 0;
+    let stop: 'failed' | 'cancelled' | null = null;
+    try {
+      for (let index = 0; index < sqls.length && latest(); index++) {
+        const sql = sqls[index];
+        if (stop !== null) {
+          set(index, { kind: stop === 'cancelled' ? 'cancelled' : 'skipped' });
+          continue;
+        }
+        set(index, { kind: 'running' });
+        this.runningOn = connection;
+        const started = Date.now();
+        try {
+          if (!(await connections.connect(connection))) {
+            const state = connections.state(connection);
+            // no message: the password dialog was dismissed
+            const message = state.kind === 'failed' ? state.message : null;
+            set(index, { kind: message ? 'failed' : 'cancelled', message, elapsedMs: 0 });
+            if (latest()) this.note(index, started);
+            stop = message ? 'failed' : 'cancelled';
+            continue;
+          }
+          const result = await this.runOnce(connection, sql, options.timeoutMs);
+          const hasRows = result.rowsAffected === null;
+          const keep = !hasRows || kept < MAX_KEPT_RESULTS;
+          if (hasRows && keep) kept++;
+          set(index, {
+            kind: 'done',
+            result: keep ? result : null,
+            rows: hasRows ? result.rows.length : null,
+            rowsAffected: result.rowsAffected,
+            truncated: result.truncated,
+            elapsedMs: result.elapsedMs,
+          });
+        } catch (e) {
+          const error = toAppError(e);
+          const elapsedMs = Date.now() - started;
+          // the backend says whether the session survived; a lost one is opened again by the next run
+          if (
+            !['invalid_query', 'permission_denied', 'cancelled', 'timeout'].includes(error.code)
+          ) {
+            connections.markClosed(connection);
+          }
+          if (error.code === 'cancelled') {
+            set(index, { kind: 'cancelled', elapsedMs });
+            stop = 'cancelled';
+          } else {
+            set(index, { kind: 'failed', message: describeError(error), elapsedMs });
+            if (options.stopOnError) stop = 'failed';
+          }
+        }
+        if (latest()) this.note(index, started);
+      }
     } finally {
-      if (latest()) this.runningOn = null;
+      if (latest()) {
+        this.runningOn = null;
+        this.stopTimer();
+        this.showFirstOfInterest();
+      }
     }
   }
 
@@ -146,15 +233,53 @@ export class QueryTab {
   }
 
   /** The connection was open in the store but the backend lost it: open it again, once. */
-  private async runOnce(connection: string, sql: string): Promise<QueryResult> {
+  private async runOnce(connection: string, sql: string, timeoutMs: number): Promise<QueryResult> {
     const { api, connections } = this.services;
     try {
-      return await api.run(connection, sql);
+      return await api.run(connection, sql, timeoutMs);
     } catch (e) {
       if (toAppError(e).code !== 'not_connected') throw e;
       connections.markClosed(connection);
       if (!(await connections.connect(connection))) throw e;
-      return api.run(connection, sql);
+      return api.run(connection, sql, timeoutMs);
     }
+  }
+
+  /** Writes the outcome of a statement into the messages. */
+  private note(index: number, started: number): void {
+    const run = this.runs()[index];
+    if (!run) return;
+    const kind = run.kind === 'done' ? 'ok' : run.kind === 'failed' ? 'error' : 'cancelled';
+    const entry: LogEntry = {
+      at: started,
+      kind,
+      sql: firstLine(run.sql),
+      text: outcomeText(run),
+      elapsedMs: run.elapsedMs,
+    };
+    this.log.update((all) => [...all, entry].slice(-MAX_LOG));
+  }
+
+  /** After a run: the first error, else the first result with rows, else the messages of a script. */
+  private showFirstOfInterest(): void {
+    const runs = this.runs();
+    const failed = runs.findIndex((r) => r.kind === 'failed');
+    const rows = runs.findIndex((r) => r.kind === 'done' && r.rowsAffected === null);
+    if (runs.length === 1) this.shown.set(0);
+    else if (failed >= 0) this.shown.set(failed);
+    else if (rows >= 0) this.shown.set(rows);
+    else this.shown.set('messages');
+  }
+
+  private startTimer(): void {
+    this.stopTimer();
+    const started = Date.now();
+    this.elapsedMs.set(0);
+    this.timer = setInterval(() => this.elapsedMs.set(Date.now() - started), 100);
+  }
+
+  private stopTimer(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
   }
 }

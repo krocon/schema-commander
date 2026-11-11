@@ -3,6 +3,7 @@ import { FileDialogApi } from '../../core/backend/file-dialog-api';
 import { ConnectionsStore } from '../../core/connections/connections.store';
 import { describeError, toAppError } from '../../core/errors/app-error';
 import { SESSION_VERSION, SessionApi, TabMeta } from '../../core/session/session-api';
+import { SettingsService } from '../../core/settings/settings.service';
 import { QueryApi } from '../../core/sql/query-api';
 import { QueryTab } from './query-tab';
 import {
@@ -41,7 +42,15 @@ export class TabsStore {
   private readonly api = inject(SessionApi);
   private readonly files = inject(FileDialogApi);
   private readonly connections = inject(ConnectionsStore);
-  private readonly services = { api: inject(QueryApi), connections: this.connections };
+  private readonly settings = inject(SettingsService);
+  private readonly services = {
+    api: inject(QueryApi),
+    connections: this.connections,
+    options: () => {
+      const s = this.settings.settings();
+      return { stopOnError: s.stopOnError, timeoutMs: s.statementTimeoutSec * 1000 };
+    },
+  };
 
   readonly tabs = signal<readonly QueryTab[]>([]);
   readonly activeId = signal<string | null>(null);

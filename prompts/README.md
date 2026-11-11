@@ -25,7 +25,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 | 002 | [Aktionssystem, Tastatur, Befehlspalette](done/002-aktionen-tastatur.md) ([Design](done/002-aktionen-tastatur.design.md)) | G1 | – | M | ✅ 11.11.2026 |
 | 003 | [Verbindungen und Schlüsselbund](done/003-verbindungen.md) ([Design](done/003-verbindungen.design.md)) | A1, A2 | 002 | L | ✅ 11.11.2026 |
 | 004 | [Abfrage-Tabs](done/004-abfrage-tabs.md) ([Design](done/004-abfrage-tabs.design.md)) | C1 | 002, 003 | M | ✅ 11.11.2026 |
-| 005 | [Anweisungen ausführen](005-ausfuehren.md) | C2 | 003, 004, E2 (editlicious: Auswahl abfragen) | M | offen |
+| 005 | [Anweisungen ausführen](done/005-ausfuehren.md) ([Design](done/005-ausfuehren.design.md)) | C2 | 003, 004, E2 (editlicious: Auswahl abfragen) | M | ✅ 11.11.2026 |
 | 006 | [Große Ergebnisse](006-grosse-ergebnisse.md) | D1 | 005 | L | offen |
 | 007 | [Zellen richtig zeigen](007-zell-darstellung.md) | D2 | 003, 006 | M | offen |
 | 008 | [Schema-Baum](008-schema-baum.md) | B1 | 002, 003 | L | offen |

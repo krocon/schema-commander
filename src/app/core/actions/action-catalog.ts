@@ -36,10 +36,17 @@ export const ACTIONS = [
   // Abfrage
   {
     id: 'RUN_STATEMENT',
-    label: 'Anweisung unter dem Cursor ausführen',
+    label: 'Auswahl oder Anweisung unter dem Cursor ausführen',
     group: 'Abfrage',
     scope: 'global',
   },
+  {
+    id: 'RUN_SCRIPT',
+    label: 'Ganzes Skript ausführen',
+    group: 'Abfrage',
+    scope: 'global',
+  },
+  { id: 'SHOW_MESSAGES', label: 'Meldungen zeigen', group: 'Abfrage', scope: 'global' },
   { id: 'CANCEL_QUERY', label: 'Laufende Anweisung abbrechen', group: 'Abfrage', scope: 'global' },
   // Tabs
   { id: 'NEW_TAB', label: 'Neuer Tab', group: 'Tabs', scope: 'global' },

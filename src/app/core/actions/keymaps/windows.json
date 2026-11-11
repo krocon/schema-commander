@@ -1,5 +1,6 @@
 {
   "RUN_STATEMENT": ["Mod+Enter"],
+  "RUN_SCRIPT": ["Mod+Shift+Enter"],
   "CANCEL_QUERY": ["Mod+."],
   "NEW_TAB": ["Mod+T"],
   "CLOSE_TAB": ["Mod+W"],

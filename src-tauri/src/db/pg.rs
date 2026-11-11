@@ -5,7 +5,10 @@
 //! those a `prepare` (describe only, nothing runs) fetches the header.
 
 use super::value::{Budget, Cell, ColKind, Column, QueryResult, pg_numeric, text, text_bytes};
-use super::{Profile, Session, Stop, TlsMode, block, closed, keeps_connection, sqlx_error};
+use super::{
+    Ended, Limits, Profile, Session, Stop, TlsMode, block, block_cancelling, closed,
+    keeps_connection, sqlx_error,
+};
 use crate::error::AppResult;
 use futures_util::StreamExt;
 use sqlx_core::Either;
@@ -25,6 +28,9 @@ use std::time::Instant;
 
 pub struct Pg {
     conn: Option<PgConnection>,
+    /// To ask the server to cancel a statement: a second connection and the id of this one's backend.
+    options: PgConnectOptions,
+    backend: Option<i32>,
     /// For the error texts (never holds the password).
     profile: Profile,
 }
@@ -55,10 +61,21 @@ pub fn connect(
             .await
             .map_err(|e| sqlx_error(profile, &e))
     })?;
-    Ok(Pg {
+    let mut pg = Pg {
         conn: Some(conn),
+        options,
+        backend: None,
         profile: profile.clone(),
-    })
+    };
+    // without the id the statement can still be stopped: the connection is dropped then
+    pg.backend = pg
+        .execute("SELECT pg_backend_pid()", Limits::rows(1), stop)
+        .ok()
+        .and_then(|r| match r.rows.first().and_then(|row| row.first()) {
+            Some(Cell::I64(pid)) => i32::try_from(*pid).ok(),
+            _ => None,
+        });
+    Ok(pg)
 }
 
 fn kind(type_name: &str) -> ColKind {
@@ -172,6 +189,17 @@ fn cell(row: &PgRow, i: usize, kind: ColKind, type_name: &str) -> Cell {
 }
 
 impl Pg {
+    /// Asks the server to cancel what this connection runs, over a second connection.
+    async fn cancel(options: PgConnectOptions, backend: Option<i32>) {
+        let Some(pid) = backend else { return };
+        if let Ok(mut side) = PgConnection::connect_with(&options).await {
+            let _ = side
+                .execute(AssertSqlSafe(format!("SELECT pg_cancel_backend({pid})")))
+                .await;
+            let _ = side.close().await;
+        }
+    }
+
     async fn run(
         conn: &mut PgConnection,
         sql: &str,
@@ -240,19 +268,21 @@ impl Pg {
 }
 
 impl Session for Pg {
-    fn execute(&mut self, sql: &str, max_rows: usize, stop: Stop) -> AppResult<QueryResult> {
+    fn execute(&mut self, sql: &str, limits: Limits, stop: Stop) -> AppResult<QueryResult> {
         let profile = self.profile.clone();
         let conn = self.conn.as_mut().ok_or_else(closed)?;
-        let r = block(None, stop, Self::run(conn, sql, max_rows, &profile));
-        if r.as_ref().is_err_and(|e| !keeps_connection(e.code)) {
-            // cancelled or broken in the middle: the connection is in an unknown state
+        let cancel = Self::cancel(self.options.clone(), self.backend);
+        let run = Self::run(conn, sql, limits.max_rows, &profile);
+        let (r, ended) = block_cancelling(limits.timeout, stop, run, cancel);
+        if ended == Ended::Abandoned || r.as_ref().is_err_and(|e| !keeps_connection(e.code)) {
+            // broken, or still running after the cancel request: the connection is in an unknown state
             self.conn = None;
         }
         r
     }
 
     fn server_version(&mut self, stop: Stop) -> AppResult<String> {
-        let r = self.execute("SELECT version()", 1, stop)?;
+        let r = self.execute("SELECT version()", Limits::rows(1), stop)?;
         Ok(match r.rows.first().and_then(|row| row.first()) {
             Some(Cell::Text(v)) => v.clone(),
             _ => "PostgreSQL".to_string(),

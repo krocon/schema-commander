@@ -3,7 +3,7 @@
 
 use schema_commander_lib::db::secrets::Secret;
 use schema_commander_lib::db::value::{ColKind, MAX_ROWS, QueryResult};
-use schema_commander_lib::db::{DbKind, Profile, Session, TlsMode, connect};
+use schema_commander_lib::db::{DbKind, Limits, Profile, Session, TlsMode, connect};
 use schema_commander_lib::error::ErrorCode;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -46,7 +46,7 @@ fn open(p: &Profile) -> Box<dyn Session> {
 }
 
 fn run(s: &mut Box<dyn Session>, sql: &str) -> QueryResult {
-    s.execute(sql, MAX_ROWS, &|| false)
+    s.execute(sql, Limits::rows(MAX_ROWS), &|| false)
         .unwrap_or_else(|e| panic!("{sql}: {e}"))
 }
 
@@ -143,7 +143,9 @@ fn postgres_changes_empty_results_limits_and_errors() {
     assert_eq!(none.rows_affected, None);
     assert!(none.rows.is_empty());
     let cut = s
-        .execute("SELECT * FROM sc_t ORDER BY id", 100, &|| false)
+        .execute("SELECT * FROM sc_t ORDER BY id", Limits::rows(100), &|| {
+            false
+        })
         .unwrap();
     assert_eq!(cut.rows.len(), 100);
     assert!(cut.truncated);
@@ -152,12 +154,14 @@ fn postgres_changes_empty_results_limits_and_errors() {
         rows(&run(&mut s, "SELECT count(*) FROM sc_t")),
         json!([[500]])
     );
-    let e = s.execute("SELEC 1", 10, &|| false).unwrap_err();
+    let e = s
+        .execute("SELEC 1", Limits::rows(10), &|| false)
+        .unwrap_err();
     assert_eq!(e.code, ErrorCode::InvalidQuery);
     assert!(e.message.contains("syntax error"), "{}", e.message);
     assert!(s.is_open());
     let e = s
-        .execute("SELECT * FROM gibt_es_nicht", 10, &|| false)
+        .execute("SELECT * FROM gibt_es_nicht", Limits::rows(10), &|| false)
         .unwrap_err();
     assert_eq!(e.code, ErrorCode::InvalidQuery);
     // what the extended protocol refuses runs too: several statements, the last result counts
@@ -191,6 +195,10 @@ fn postgres_refuses_a_wrong_password_and_an_unknown_database() {
     assert_eq!(e.code, ErrorCode::ConnectionFailed);
 }
 
+/// A statement that keeps MySQL busy for minutes.
+const MYSQL_LONG: &str = "SELECT COUNT(*) FROM information_schema.columns a, \
+                          information_schema.columns b, information_schema.columns c";
+
 /// Stops `sql` after a moment and says how long the stop took.
 fn stop_after_start(p: &Profile, sql: &str) -> (ErrorCode, Duration, bool) {
     let mut s = open(p);
@@ -202,7 +210,7 @@ fn stop_after_start(p: &Profile, sql: &str) -> (ErrorCode, Duration, bool) {
         Instant::now()
     });
     let e = s
-        .execute(sql, 10, &|| stop.load(Ordering::Relaxed))
+        .execute(sql, Limits::rows(10), &|| stop.load(Ordering::Relaxed))
         .unwrap_err();
     let asked = stopper.join().unwrap();
     (e.code, asked.elapsed(), s.is_open())
@@ -211,18 +219,73 @@ fn stop_after_start(p: &Profile, sql: &str) -> (ErrorCode, Duration, bool) {
 #[test]
 #[ignore]
 fn a_long_statement_stops_within_a_second_on_every_server() {
-    for (p, sql) in [
-        (pg(), "SELECT pg_sleep(60)"),
-        (my(), "SELECT SLEEP(60)"),
-        (maria(), "SELECT SLEEP(60)"),
-        (ms(), "WAITFOR DELAY '00:01:00'"),
+    for (p, sql, keeps) in [
+        (pg(), "SELECT pg_sleep(60)", true),
+        // not SLEEP(): MySQL ends a killed SLEEP() without an error, as if it were done
+        (my(), MYSQL_LONG, true),
+        (maria(), MYSQL_LONG, true),
+        // tiberius cannot send the attention signal: the connection is dropped
+        (ms(), "WAITFOR DELAY '00:01:00'", false),
     ] {
         let (code, took, open) = stop_after_start(&p, sql);
         assert_eq!(code, ErrorCode::Cancelled, "{:?}", p.kind);
         assert!(took < Duration::from_secs(1), "{:?}: {took:?}", p.kind);
-        // the connection was dropped: its state is unknown
-        assert!(!open, "{:?}", p.kind);
+        assert_eq!(open, keeps, "{:?}", p.kind);
     }
+}
+
+#[test]
+#[ignore]
+fn a_cancelled_session_goes_on_with_its_state() {
+    // the statement is cancelled on the server: session variables and temporary tables survive
+    let mut s = open(&pg());
+    run(&mut s, "CREATE TEMP TABLE sc_keep (n int)");
+    run(&mut s, "INSERT INTO sc_keep VALUES (7)");
+    let e = s
+        .execute("SELECT pg_sleep(60)", Limits::rows(1), &|| true)
+        .unwrap_err();
+    assert_eq!(e.code, ErrorCode::Cancelled);
+    assert!(s.is_open());
+    assert_eq!(rows(&run(&mut s, "SELECT n FROM sc_keep")), json!([[7]]));
+
+    for p in [my(), maria()] {
+        let mut s = open(&p);
+        run(&mut s, "SET @sc_keep = 7");
+        // MySQL ends a killed SLEEP() without an error (it returns 1); a real query is interrupted
+        let r = s.execute(
+            "SELECT COUNT(*) FROM information_schema.columns a, information_schema.columns b, \
+             information_schema.columns c",
+            Limits::rows(1),
+            &|| true,
+        );
+        assert_eq!(r.unwrap_err().code, ErrorCode::Cancelled, "{:?}", p.port);
+        assert!(s.is_open());
+        assert_eq!(rows(&run(&mut s, "SELECT @sc_keep")), json!([[7]]));
+    }
+}
+
+#[test]
+#[ignore]
+fn a_time_limit_ends_a_statement_and_keeps_the_session() {
+    let limits = Limits {
+        max_rows: 1,
+        timeout: Some(Duration::from_millis(300)),
+    };
+    let mut s = open(&pg());
+    let started = Instant::now();
+    let e = s
+        .execute("SELECT pg_sleep(60)", limits, &|| false)
+        .unwrap_err();
+    assert_eq!(e.code, ErrorCode::Timeout);
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(s.is_open());
+    assert_eq!(rows(&run(&mut s, "SELECT 1")), json!([[1]]));
+    let mut s = open(&ms());
+    let e = s
+        .execute("WAITFOR DELAY '00:01:00'", limits, &|| false)
+        .unwrap_err();
+    assert_eq!(e.code, ErrorCode::Timeout);
+    assert!(!s.is_open());
 }
 
 fn mysql_family(p: &Profile, product: &str) {
@@ -279,7 +342,9 @@ fn mysql_family(p: &Profile, product: &str) {
     assert_eq!(changed.rows_affected, Some(2));
     // statements the prepared protocol does not know
     run(&mut s, "USE shop");
-    let e = s.execute("SELEC 1", 10, &|| false).unwrap_err();
+    let e = s
+        .execute("SELEC 1", Limits::rows(10), &|| false)
+        .unwrap_err();
     assert_eq!(e.code, ErrorCode::InvalidQuery);
     assert!(s.is_open());
     run(&mut s, "DROP TABLE sc_t");
@@ -361,7 +426,9 @@ fn sqlserver_types_changes_and_errors() {
     run(&mut s, "CREATE OR ALTER VIEW sc_v AS SELECT 1 AS one");
     assert_eq!(rows(&run(&mut s, "SELECT one FROM sc_v")), json!([[1]]));
     run(&mut s, "DROP VIEW sc_v");
-    let e = s.execute("SELEC 1", 10, &|| false).unwrap_err();
+    let e = s
+        .execute("SELEC 1", Limits::rows(10), &|| false)
+        .unwrap_err();
     assert_eq!(e.code, ErrorCode::InvalidQuery);
     assert!(s.is_open());
     let e = connect(&p, Some(&Secret::new("falsch-Zq9")), &|| false)
@@ -378,7 +445,7 @@ fn a_big_result_is_cut_at_the_limit_and_stays_usable() {
     let r = s
         .execute(
             "SELECT g, md5(g::text) FROM generate_series(1, 2000000) g",
-            MAX_ROWS,
+            Limits::rows(MAX_ROWS),
             &|| false,
         )
         .unwrap();

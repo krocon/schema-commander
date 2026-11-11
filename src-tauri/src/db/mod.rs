@@ -134,14 +134,36 @@ impl Profile {
     }
 }
 
+/// How far a statement may go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    /// Rows read at most; more are cut off.
+    pub max_rows: usize,
+    /// Time at most; `None` = as long as it takes.
+    pub timeout: Option<Duration>,
+}
+
+impl Limits {
+    pub fn rows(max_rows: usize) -> Self {
+        Self {
+            max_rows,
+            timeout: None,
+        }
+    }
+}
+
+/// How long a statement gets to end after the server was asked to cancel it; then the connection is dropped.
+pub const CANCEL_GRACE: Duration = Duration::from_secs(3);
+
 /// `true` when the work is stopped (cancelled, tab closed): requests end with [`cancelled`].
 pub type Stop<'a> = &'a (dyn Fn() -> bool + Sync);
 
 /// An open connection.
 pub trait Session: Send {
-    /// Runs one statement and reads at most `max_rows` rows. After an error that leaves the connection in
-    /// an unknown state (cancelled, timed out, broken) the session is closed: [`Session::is_open`].
-    fn execute(&mut self, sql: &str, max_rows: usize, stop: Stop) -> AppResult<QueryResult>;
+    /// Runs one statement within its [`Limits`]. A statement that is stopped or runs out of time is
+    /// cancelled on the server where the driver can (PostgreSQL, MySQL, SQLite): the session stays usable.
+    /// Where it cannot, or after a broken connection, the session is closed: [`Session::is_open`].
+    fn execute(&mut self, sql: &str, limits: Limits, stop: Stop) -> AppResult<QueryResult>;
     /// Product and version as the server names itself.
     fn server_version(&mut self, stop: Stop) -> AppResult<String>;
     fn is_open(&self) -> bool;
@@ -216,6 +238,63 @@ pub fn block<T>(
     })
 }
 
+/// Why [`block_cancelling`] ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ended {
+    /// The work ended by itself (with a result or an error of its own), also after a cancel request.
+    Done,
+    /// The work did not end within [`CANCEL_GRACE`] after the cancel request: it was dropped, and whatever it
+    /// held (a connection) is in an unknown state.
+    Abandoned,
+}
+
+/// Runs `f` until it ends. When the work is stopped or its time is up, `cancel` asks the server to end it and
+/// `f` gets [`CANCEL_GRACE`] to return (usually with the server's „cancelled“ error); only then it is dropped.
+pub fn block_cancelling<T>(
+    timeout: Option<Duration>,
+    stop: Stop,
+    f: impl Future<Output = AppResult<T>>,
+    cancel: impl Future<Output = ()>,
+) -> (AppResult<T>, Ended) {
+    runtime().block_on(async move {
+        tokio::pin!(f);
+        let started = std::time::Instant::now();
+        let reason = loop {
+            tokio::select! {
+                r = &mut f => return (r, Ended::Done),
+                _ = tokio::time::sleep(Duration::from_millis(50)) => {
+                    if stop() {
+                        break cancelled();
+                    }
+                    if timeout.is_some_and(|t| started.elapsed() >= t) {
+                        break AppError::new(
+                            ErrorCode::Timeout,
+                            format!("no answer within {} s", timeout.unwrap_or_default().as_secs()),
+                        );
+                    }
+                }
+            }
+        };
+        let give_up = async {
+            // the request itself must not hang either
+            let _ = tokio::time::timeout(Duration::from_secs(5), cancel).await;
+            tokio::time::sleep(CANCEL_GRACE).await;
+        };
+        tokio::select! {
+            r = &mut f => {
+                // the statement ended: with the server's own „cancelled“, or it was just done in time
+                let r = match r {
+                    Ok(v) => Ok(v),
+                    Err(e) if e.code == ErrorCode::Cancelled => Err(reason),
+                    Err(e) => Err(e),
+                };
+                (r, Ended::Done)
+            }
+            _ = give_up => (Err(reason), Ended::Abandoned),
+        }
+    })
+}
+
 /// Makes sure rustls has its process-wide provider (ring) before any TLS connection: tiberius asks for the
 /// installed one and would otherwise take aws-lc-rs.
 pub fn install_crypto() {
@@ -243,11 +322,16 @@ fn is_tls(text: &str) -> bool {
     t.contains("certificate") || t.contains("tls") || t.contains("ssl") || t.contains("handshake")
 }
 
-/// Whether an error leaves the connection usable: only what the server answered to the statement.
+/// Whether an error leaves the connection usable: what the server answered to the statement, including
+/// „cancelled“ – when the statement really ended ([`Ended::Done`]).
 pub fn keeps_connection(code: ErrorCode) -> bool {
     matches!(
         code,
-        ErrorCode::InvalidQuery | ErrorCode::PermissionDenied | ErrorCode::NotFound
+        ErrorCode::InvalidQuery
+            | ErrorCode::PermissionDenied
+            | ErrorCode::NotFound
+            | ErrorCode::Cancelled
+            | ErrorCode::Timeout
     )
 }
 
@@ -268,7 +352,8 @@ pub fn sqlx_error(profile: &Profile, e: &sqlx_core::error::Error) -> AppError {
                 AppError::new(ErrorCode::NotFound, message)
             } else if code == "42501" || has("command denied") || has("permission denied") {
                 AppError::new(ErrorCode::PermissionDenied, message)
-            } else if code == "57014" {
+            // 57014: query_canceled (PostgreSQL); 70100 / 1317: query execution was interrupted (MySQL)
+            } else if code == "57014" || code == "70100" || has("query execution was interrupted") {
                 AppError::new(ErrorCode::Cancelled, message)
             } else if code.is_empty() {
                 AppError::new(ErrorCode::InvalidQuery, message)
@@ -364,6 +449,54 @@ mod tests {
         let e = block(None, &|| true, never).unwrap_err();
         assert_eq!(e.code, ErrorCode::Cancelled);
         assert_eq!(block(None, &|| false, async { Ok(7) }).unwrap(), 7);
+    }
+
+    #[test]
+    fn asks_to_cancel_and_waits_for_the_work_to_end() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        // the work ends once it was asked to: the session would be kept
+        let asked = Arc::new(AtomicBool::new(false));
+        let flag = asked.clone();
+        let work = async move {
+            while !flag.load(Ordering::Relaxed) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            Err::<(), _>(AppError::new(
+                ErrorCode::Cancelled,
+                "server says: cancelled",
+            ))
+        };
+        let set = asked.clone();
+        let (r, ended) = block_cancelling(None, &|| true, work, async move {
+            set.store(true, Ordering::Relaxed);
+        });
+        assert_eq!(r.unwrap_err().code, ErrorCode::Cancelled);
+        assert_eq!(ended, Ended::Done);
+
+        // a timeout is reported as such, also when the server answers with „cancelled“
+        let asked = Arc::new(AtomicBool::new(false));
+        let flag = asked.clone();
+        let work = async move {
+            while !flag.load(Ordering::Relaxed) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            Err::<(), _>(AppError::new(ErrorCode::Cancelled, "cancelled"))
+        };
+        let set = asked.clone();
+        let (r, ended) = block_cancelling(
+            Some(Duration::from_millis(60)),
+            &|| false,
+            work,
+            async move { set.store(true, Ordering::Relaxed) },
+        );
+        assert_eq!(r.unwrap_err().code, ErrorCode::Timeout);
+        assert_eq!(ended, Ended::Done);
+
+        // work that ends by itself is not touched
+        let (r, ended) = block_cancelling(None, &|| false, async { Ok(7) }, async {});
+        assert_eq!(r.unwrap(), 7);
+        assert_eq!(ended, Ended::Done);
     }
 
     #[test]

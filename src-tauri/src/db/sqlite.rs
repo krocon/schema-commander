@@ -2,7 +2,7 @@
 //! and the demo database in memory the app ships with.
 
 use super::value::{Budget, Cell, ColKind, Column, QueryResult, text, text_bytes};
-use super::{DbKind, Profile, Session, Stop};
+use super::{DbKind, Limits, Profile, Session, Stop};
 use crate::error::{AppError, AppResult, ErrorCode};
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OpenFlags};
@@ -151,7 +151,7 @@ fn cell(value: ValueRef<'_>) -> Cell {
 }
 
 impl Session for Lite {
-    fn execute(&mut self, sql: &str, max_rows: usize, stop: Stop) -> AppResult<QueryResult> {
+    fn execute(&mut self, sql: &str, limits: Limits, stop: Stop) -> AppResult<QueryResult> {
         let sql = sql.trim();
         if sql.is_empty() {
             return Err(AppError::new(ErrorCode::InvalidQuery, "empty statement"));
@@ -165,11 +165,16 @@ impl Session for Lite {
         let interrupt = self.conn.get_interrupt_handle();
         let done = AtomicBool::new(false);
         let stopped = AtomicBool::new(false);
+        let timed_out = AtomicBool::new(false);
         let conn = &self.conn;
         let result = std::thread::scope(|scope| {
             scope.spawn(|| {
                 while !done.load(Ordering::Relaxed) {
-                    if stop() {
+                    let late = limits.timeout.is_some_and(|t| started.elapsed() >= t);
+                    if late {
+                        timed_out.store(true, Ordering::Relaxed);
+                    }
+                    if late || stop() {
                         stopped.store(true, Ordering::Relaxed);
                         // again and again: an interrupt before the statement has started is lost
                         interrupt.interrupt();
@@ -179,10 +184,16 @@ impl Session for Lite {
                     }
                 }
             });
-            let result = Self::run(conn, sql, max_rows, &elapsed);
+            let result = Self::run(conn, sql, limits.max_rows, &elapsed);
             done.store(true, Ordering::Relaxed);
             result
         });
+        if timed_out.load(Ordering::Relaxed) && result.is_err() {
+            return Err(AppError::new(
+                ErrorCode::Timeout,
+                "the statement took too long",
+            ));
+        }
         if stopped.load(Ordering::Relaxed) && result.is_err() {
             return Err(super::cancelled());
         }
@@ -268,7 +279,7 @@ mod tests {
     }
 
     fn run(db: &mut Lite, sql: &str) -> AppResult<QueryResult> {
-        db.execute(sql, MAX_ROWS, &|| false)
+        db.execute(sql, Limits::rows(MAX_ROWS), &|| false)
     }
 
     fn json_rows(r: &QueryResult) -> serde_json::Value {
@@ -305,7 +316,9 @@ mod tests {
     #[test]
     fn cuts_off_at_the_row_limit() {
         let mut db = demo();
-        let r = db.execute("SELECT * FROM orders", 100, &|| false).unwrap();
+        let r = db
+            .execute("SELECT * FROM orders", Limits::rows(100), &|| false)
+            .unwrap();
         assert_eq!(r.rows.len(), 100);
         assert!(r.truncated);
         let all = run(&mut db, "SELECT * FROM orders").unwrap();
@@ -344,8 +357,15 @@ mod tests {
         let mut db = demo();
         let endless = "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n) \
                        SELECT count(*) FROM n";
-        let e = db.execute(endless, 10, &|| true).unwrap_err();
+        let e = db.execute(endless, Limits::rows(10), &|| true).unwrap_err();
         assert_eq!(e.code, ErrorCode::Cancelled);
+        assert_eq!(run(&mut db, "SELECT 1").unwrap().rows.len(), 1);
+        let limits = Limits {
+            max_rows: 10,
+            timeout: Some(std::time::Duration::from_millis(80)),
+        };
+        let e = db.execute(endless, limits, &|| false).unwrap_err();
+        assert_eq!(e.code, ErrorCode::Timeout);
         assert_eq!(run(&mut db, "SELECT 1").unwrap().rows.len(), 1);
     }
 

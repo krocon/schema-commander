@@ -4,7 +4,7 @@
 use super::profiles::{self, LoadedProfiles};
 use super::secrets::{self, Secret, SecretKind, SecretStore};
 use super::value::{MAX_ROWS, QueryResult};
-use super::{Profile, Session, connect, sqlite};
+use super::{Limits, Profile, Session, connect, sqlite};
 use crate::error::{AppError, AppResult, ErrorCode};
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -231,11 +231,20 @@ impl ConnectionManager {
     }
 
     /// Runs one statement on an open connection. One at a time per connection: a second call waits.
-    pub fn run(&self, id: &str, sql: &str) -> AppResult<QueryResult> {
+    pub fn run(
+        &self,
+        id: &str,
+        sql: &str,
+        timeout: Option<std::time::Duration>,
+    ) -> AppResult<QueryResult> {
         let open = self.opened(id)?;
         let mut session = open.session.lock();
         open.stop.store(false, Ordering::Relaxed);
-        let result = session.execute(sql, MAX_ROWS, &|| open.stop.load(Ordering::Relaxed));
+        let limits = Limits {
+            max_rows: MAX_ROWS,
+            timeout,
+        };
+        let result = session.execute(sql, limits, &|| open.stop.load(Ordering::Relaxed));
         let lost = !session.is_open();
         drop(session);
         if lost {
@@ -292,13 +301,13 @@ mod tests {
         let (m, _) = manager(dir.path());
         assert_eq!(m.list().profiles[0].id, "demo");
         assert_eq!(
-            m.run("demo", "SELECT 1").unwrap_err().code,
+            m.run("demo", "SELECT 1", None).unwrap_err().code,
             ErrorCode::NotConnected
         );
         let info = m.open("demo", None).unwrap();
         assert!(info.server_version.starts_with("SQLite"));
         assert_eq!(
-            m.run("demo", "SELECT count(*) FROM orders")
+            m.run("demo", "SELECT count(*) FROM orders", None)
                 .unwrap()
                 .rows
                 .len(),
@@ -389,7 +398,7 @@ mod tests {
         let runner = m.clone();
         let endless = "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n) \
                        SELECT count(*) FROM n";
-        let handle = std::thread::spawn(move || runner.run("demo", endless));
+        let handle = std::thread::spawn(move || runner.run("demo", endless, None));
         // the statement runs until it is stopped; the stop flag is cleared when it starts
         let started = std::time::Instant::now();
         loop {
@@ -408,6 +417,6 @@ mod tests {
             ErrorCode::Cancelled
         );
         // SQLite survives a stop: the connection is still open
-        assert_eq!(m.run("demo", "SELECT 1").unwrap().rows.len(), 1);
+        assert_eq!(m.run("demo", "SELECT 1", None).unwrap().rows.len(), 1);
     }
 }
