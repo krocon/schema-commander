@@ -3,6 +3,14 @@ import { TABS_DE } from './tabs-texts.de';
 
 /** Texts of the query tabs: pane, runs, transactions, files (prompts 004, 005, 013). English is the source. */
 export const TABS_EN = {
+  errorCode: 'Code',
+  errorDetail: 'Detail',
+  errorHint: 'Hint',
+  errorContext: 'Context',
+  errorObject: 'Object',
+  errorGoTo: 'Go to the place',
+  errorCopy: 'Copy the message',
+  errorShowTable: (table: string) => `Details of ${table}`,
   // the pane of a tab
   editorLabel: (title: string) => `SQL editor: ${title}`,
   loadingText: 'Loading the text …',

@@ -30,9 +30,30 @@ export type ErrorCode =
   | 'backend_unavailable'
   | 'unknown';
 
+/** Mirrors `ErrorDetails`: what a database said about a failed statement beyond its message (prompt 022). */
+export interface ErrorDetails {
+  /** `SQLSTATE` or the number of the error. */
+  readonly sqlstate?: string;
+  readonly detail?: string;
+  readonly hint?: string;
+  /** Where in the statement, in characters from 1. */
+  readonly position?: number;
+  /** The line of the statement, from 1. */
+  readonly line?: number;
+  /** The text the database stumbled over. */
+  readonly near?: string;
+  readonly context?: string;
+  readonly schema?: string;
+  readonly table?: string;
+  readonly column?: string;
+  readonly constraint?: string;
+}
+
 export interface AppError {
   code: ErrorCode;
   message: string;
+  /** Absent for errors of the app itself. */
+  details?: ErrorDetails;
 }
 
 const CODES: ReadonlySet<string> = new Set<ErrorCode>([
@@ -64,14 +85,44 @@ const CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'unknown',
 ]);
 
+const TEXT_DETAILS = [
+  'sqlstate',
+  'detail',
+  'hint',
+  'near',
+  'context',
+  'schema',
+  'table',
+  'column',
+  'constraint',
+] as const;
+
+/** The details of an error as far as they are what they must be; `null` when nothing is left. */
+function readDetails(raw: unknown): ErrorDetails | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const out: Record<string, string | number> = {};
+  for (const key of TEXT_DETAILS) {
+    const value = o[key];
+    if (typeof value === 'string' && value !== '') out[key] = value.slice(0, 20_000);
+  }
+  for (const key of ['position', 'line'] as const) {
+    const value = o[key];
+    if (typeof value === 'number' && Number.isInteger(value) && value > 0) out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? (out as ErrorDetails) : null;
+}
+
 /** Whatever a command rejected with, as an `AppError`. */
 export function toAppError(e: unknown): AppError {
   if (e && typeof e === 'object') {
     const o = e as Record<string, unknown>;
     if (typeof o['code'] === 'string' && typeof o['message'] === 'string') {
+      const details = readDetails(o['details']);
       return {
         code: CODES.has(o['code']) ? (o['code'] as ErrorCode) : 'unknown',
         message: o['message'],
+        ...(details ? { details } : {}),
       };
     }
     if (e instanceof Error) return { code: 'unknown', message: e.message };

@@ -3,6 +3,8 @@ import { EDITOR_DE } from './editor-texts.de';
 
 /** Texts of the SQL editor. English is the source. */
 export const EDITOR_EN = {
+  running: (n: number, of: number) =>
+    of > 1 ? `Running: statement ${n} of ${of}` : 'This statement is running',
   label: 'SQL editor',
   loadFailed: 'The editor could not be loaded.',
   loading: 'Loading the editor …',

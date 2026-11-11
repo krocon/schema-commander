@@ -1,4 +1,5 @@
 /** The outcome of statements in a tab (prompts 004 and 005). */
+import { ErrorDetails } from '../../core/errors/app-error';
 import { locale } from '../../core/i18n/i18n';
 import { ResultRef } from '../../core/sql/query.models';
 import { TABS_TEXTS } from './tabs-texts';
@@ -24,7 +25,13 @@ export type RunState =
       readonly elapsedMs: number;
     }
   | { readonly kind: 'cancelled'; readonly sql: string }
-  | { readonly kind: 'failed'; readonly sql: string; readonly message: string };
+  | {
+      readonly kind: 'failed';
+      readonly sql: string;
+      readonly message: string;
+      /** What the database said beyond the message (prompt 022); `null` for errors of the app. */
+      readonly details: ErrorDetails | null;
+    };
 
 /** One statement of a run (a single statement, a selection or a whole script). */
 export interface StatementRun {
@@ -37,6 +44,8 @@ export interface StatementRun {
   readonly rowsAffected: number | null;
   readonly truncated: boolean;
   readonly message: string | null;
+  /** What the database said about a failure beyond its message. */
+  readonly details?: ErrorDetails | null;
   readonly elapsedMs: number | null;
 }
 
@@ -76,7 +85,12 @@ export function stateOf(run: StatementRun | undefined): RunState {
     case 'pending':
       return { kind: 'running', sql: run.sql, result: run.result, rows: run.rows ?? 0 };
     case 'failed':
-      return { kind: 'failed', sql: run.sql, message: run.message ?? '' };
+      return {
+        kind: 'failed',
+        sql: run.sql,
+        message: run.message ?? '',
+        details: run.details ?? null,
+      };
     case 'cancelled':
     case 'skipped':
       return { kind: 'cancelled', sql: run.sql };
@@ -95,6 +109,7 @@ export function stateOf(run: StatementRun | undefined): RunState {
             kind: 'failed',
             sql: run.sql,
             message: TABS_TEXTS.resultNotKept(run.rows ?? 0, MAX_KEPT_RESULTS),
+            details: null,
           };
   }
 }
@@ -194,4 +209,34 @@ export function clock(at: number): string {
   const d = new Date(at);
   const two = (n: number) => String(n).padStart(2, '0');
   return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
+}
+
+/** The object an error names: `schema.table.column`, and the constraint that was violated. */
+export function errorObjectText(details: ErrorDetails): string {
+  const name = [details.schema, details.table, details.column].filter(Boolean).join('.');
+  return [name, details.constraint].filter(Boolean).join(' · ');
+}
+
+/** An error as text to copy: the message, what the database added, and the statement. */
+export function errorReport(
+  message: string,
+  details: ErrorDetails | null,
+  sql: string,
+  t: Pick<
+    typeof TABS_TEXTS,
+    'errorCode' | 'errorDetail' | 'errorHint' | 'errorContext' | 'errorObject'
+  >,
+): string {
+  const lines = [message];
+  const add = (label: string, value: string | undefined) => {
+    if (value) lines.push(`${label}: ${value}`);
+  };
+  if (details) {
+    add(t.errorCode, details.sqlstate);
+    add(t.errorDetail, details.detail);
+    add(t.errorHint, details.hint);
+    add(t.errorContext, details.context);
+    add(t.errorObject, errorObjectText(details));
+  }
+  return `${lines.join('\n')}\n\n${sql}`;
 }

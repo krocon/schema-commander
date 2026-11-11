@@ -445,30 +445,78 @@ pub fn keeps_connection(code: ErrorCode) -> bool {
 
 /// Errors of sqlx (PostgreSQL, MySQL) with a code the frontend can act on; they never hold the password.
 pub fn sqlx_error(profile: &Profile, e: &sqlx_core::error::Error) -> AppError {
+    match e {
+        // what the database said about the statement goes along (prompt 022)
+        sqlx_core::error::Error::Database(d) => {
+            sqlx_database_error(d.as_ref()).with(database_details(d.as_ref()))
+        }
+        other => sqlx_other_error(profile, other),
+    }
+}
+
+/// What PostgreSQL or MySQL told about a failed statement (prompt 022).
+fn database_details(d: &dyn sqlx_core::error::DatabaseError) -> crate::error::ErrorDetails {
+    use crate::error::ErrorDetails;
+    let text = |t: Option<&str>| t.map(clean).filter(|t| !t.is_empty());
+    if let Some(pg) = d.try_downcast_ref::<sqlx_postgres::PgDatabaseError>() {
+        return ErrorDetails {
+            sqlstate: Some(pg.code().to_string()),
+            detail: text(pg.detail()),
+            hint: text(pg.hint()),
+            position: match pg.position() {
+                Some(sqlx_postgres::PgErrorPosition::Original(p)) => u32::try_from(p).ok(),
+                _ => None,
+            },
+            context: text(pg.r#where()),
+            schema: text(pg.schema()),
+            table: text(pg.table()),
+            column: text(pg.column()),
+            constraint: text(pg.constraint()),
+            ..Default::default()
+        };
+    }
+    if let Some(my) = d.try_downcast_ref::<sqlx_mysql::MySqlDatabaseError>() {
+        let (near, line) = crate::error::mysql_near(my.message());
+        return ErrorDetails {
+            sqlstate: Some(match my.code() {
+                Some(state) => format!("{} / {state}", my.number()),
+                None => my.number().to_string(),
+            }),
+            near,
+            line,
+            ..Default::default()
+        };
+    }
+    ErrorDetails::default()
+}
+
+fn sqlx_database_error(d: &dyn sqlx_core::error::DatabaseError) -> AppError {
+    let code = d.code().map(|c| c.to_string()).unwrap_or_default();
+    let message = clean(d.message());
+    let lower = message.to_lowercase();
+    let has = |w: &str| lower.contains(w);
+    // 28xxx: invalid authorization (PostgreSQL); 1045/1698: access denied for user (MySQL)
+    if code.starts_with("28") || has("access denied for user") {
+        AppError::new(ErrorCode::AuthFailed, message)
+    } else if code == "3D000" || has("unknown database") {
+        AppError::new(ErrorCode::NotFound, message)
+    } else if code == "42501" || has("command denied") || has("permission denied") {
+        AppError::new(ErrorCode::PermissionDenied, message)
+    // 57014: query_canceled (PostgreSQL); 70100 / 1317: query execution was interrupted (MySQL)
+    } else if code == "57014" || code == "70100" || has("query execution was interrupted") {
+        AppError::new(ErrorCode::Cancelled, message)
+    } else if code.is_empty() {
+        AppError::new(ErrorCode::InvalidQuery, message)
+    } else {
+        AppError::new(ErrorCode::InvalidQuery, format!("{message} ({code})"))
+    }
+}
+
+fn sqlx_other_error(profile: &Profile, e: &sqlx_core::error::Error) -> AppError {
     use sqlx_core::error::Error as E;
     let on = profile.where_label();
     match e {
-        E::Database(d) => {
-            let code = d.code().map(|c| c.to_string()).unwrap_or_default();
-            let message = clean(d.message());
-            let lower = message.to_lowercase();
-            let has = |w: &str| lower.contains(w);
-            // 28xxx: invalid authorization (PostgreSQL); 1045/1698: access denied for user (MySQL)
-            if code.starts_with("28") || has("access denied for user") {
-                AppError::new(ErrorCode::AuthFailed, message)
-            } else if code == "3D000" || has("unknown database") {
-                AppError::new(ErrorCode::NotFound, message)
-            } else if code == "42501" || has("command denied") || has("permission denied") {
-                AppError::new(ErrorCode::PermissionDenied, message)
-            // 57014: query_canceled (PostgreSQL); 70100 / 1317: query execution was interrupted (MySQL)
-            } else if code == "57014" || code == "70100" || has("query execution was interrupted") {
-                AppError::new(ErrorCode::Cancelled, message)
-            } else if code.is_empty() {
-                AppError::new(ErrorCode::InvalidQuery, message)
-            } else {
-                AppError::new(ErrorCode::InvalidQuery, format!("{message} ({code})"))
-            }
-        }
+        E::Database(d) => sqlx_database_error(d.as_ref()),
         E::Tls(t) => AppError::new(
             ErrorCode::TlsFailed,
             format!("{on}: {}", clean(&t.to_string())),

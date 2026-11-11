@@ -84,7 +84,7 @@ Unsere Ergänzungen und Abweichungen:
   Main-Thread und frieren das Fenster ein. Ausnahme: reine Fenster-/Menü-Commands (`set_window_chrome`).
 - **Blockierendes nie auf dem Async-Runtime-Thread** (`spawn_blocking` oder eigene Worker). Lange Arbeit meldet
   Fortschritt über `tauri::ipc::Channel` und ist abbrechbar.
-- **Fehler** immer als `AppError { code: snake_case, message }` (`error.rs` ↔ `core/errors/app-error.ts`, von Hand
+- **Fehler** immer als `AppError { code: snake_case, message, details? }` (`details`: was die Datenbank zum Fehler sagt) (`error.rs` ↔ `core/errors/app-error.ts`, von Hand
   synchron, mit Test auf beiden Seiten). Kein `unwrap()`/`expect()` außerhalb von Tests und `run()`.
 - **DTO-Vertrag** Rust ↔ TypeScript von Hand synchron (`#[serde(rename_all = "camelCase")]`); jede Änderung auf beiden
   Seiten plus Test.

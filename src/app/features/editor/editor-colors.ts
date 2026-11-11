@@ -30,6 +30,8 @@ export const EDITOR_COLORS: Readonly<Record<string, string>> = {
   '--ed-mark-warning': 'var(--warn-fg)',
   '--ed-mark-info': 'var(--accent)',
   '--ed-mark-hint': 'var(--text-dim)',
+  // the statement that runs (prompt 022)
+  '--ed-mark-running': 'var(--ok)',
   '--syn-comment': 'var(--sql-comment)',
   '--syn-string': 'var(--sql-string)',
   '--syn-keyword': 'var(--sql-keyword)',

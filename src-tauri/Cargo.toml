@@ -19,7 +19,7 @@ tauri-build = { version = "2", features = [] }
 # Walking skeleton: an in-memory demo database, so editor → Rust → result grid works without a
 # server. Bundled (no system library), as in log-commander. The real drivers come with the
 # connection prompt (prompts/README.md).
-rusqlite = { version = "0.41", features = ["bundled", "column_decltype"] }
+rusqlite = { version = "0.41", features = ["bundled", "column_decltype", "modern_sqlite"] }
 # Drivers (prompt 003, the set log-commander proved in its prompt 019): pure Rust, TLS over rustls with the
 # roots of the OS. The sqlx sub-crates instead of the `sqlx` facade: the facade names `sqlx-sqlite`
 # (another libsqlite3-sys) even when unused, and two `links = "sqlite3"` cannot share a build with rusqlite.

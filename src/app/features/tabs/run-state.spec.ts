@@ -1,4 +1,13 @@
-import { clock, firstLine, outcomeText, pending, runStatus, stateOf } from './run-state';
+import {
+  clock,
+  firstLine,
+  outcomeText,
+  pending,
+  runStatus,
+  stateOf,
+  errorObjectText,
+  errorReport,
+} from './run-state';
 
 const done = (sql: string, over = {}) => ({
   ...pending(sql),
@@ -65,5 +74,37 @@ describe('run state', () => {
 
   it('formats a time of day', () => {
     expect(clock(new Date(2024, 0, 1, 9, 5, 7).getTime())).toBe('09:05:07');
+  });
+
+  it('writes an error as text to copy, with what the database added', () => {
+    const t = {
+      errorCode: 'Code',
+      errorDetail: 'Detail',
+      errorHint: 'Hinweis',
+      errorContext: 'Kontext',
+      errorObject: 'Objekt',
+    };
+    const details = {
+      sqlstate: '23503',
+      detail: 'Key (parent_id)=(7) is not present in table "parent".',
+      schema: 'shop',
+      table: 'child',
+      constraint: 'child_fk',
+    };
+    expect(errorObjectText(details)).toBe('shop.child · child_fk');
+    expect(errorObjectText({ column: 'a' })).toBe('a');
+    expect(
+      errorReport('violates foreign key (23503)', details, 'INSERT INTO child VALUES (7)', t),
+    ).toBe(
+      [
+        'violates foreign key (23503)',
+        'Code: 23503',
+        'Detail: Key (parent_id)=(7) is not present in table "parent".',
+        'Objekt: shop.child · child_fk',
+        '',
+        'INSERT INTO child VALUES (7)',
+      ].join('\n'),
+    );
+    expect(errorReport('boom', null, 'SELECT 1', t)).toBe('boom\n\nSELECT 1');
   });
 });

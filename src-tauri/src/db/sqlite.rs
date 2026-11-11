@@ -83,6 +83,25 @@ pub struct Lite {
 }
 
 fn invalid(e: rusqlite::Error) -> AppError {
+    // SQLite says where in the text it stopped, in bytes (prompt 022)
+    if let rusqlite::Error::SqlInputError {
+        error,
+        msg,
+        sql,
+        offset,
+    } = &e
+    {
+        let position = usize::try_from(*offset)
+            .ok()
+            .and_then(|o| crate::error::char_position(sql, o));
+        return AppError::new(ErrorCode::InvalidQuery, msg.clone()).with(
+            crate::error::ErrorDetails {
+                sqlstate: Some(error.extended_code.to_string()),
+                position,
+                ..Default::default()
+            },
+        );
+    }
     AppError::new(ErrorCode::InvalidQuery, e.to_string())
 }
 
@@ -457,5 +476,27 @@ mod tests {
         let mut db = demo();
         let e = run(&mut db, "SELECT load_extension('/tmp/x')").unwrap_err();
         assert_eq!(e.code, ErrorCode::InvalidQuery);
+    }
+
+    #[test]
+    fn says_where_in_the_statement_it_failed_in_characters() {
+        let mut db = open(&demo_profile()).unwrap();
+        let fail = |db: &mut Lite, sql: &str| run(db, sql).unwrap_err();
+        // a typo of a keyword: SQLite reads `FORM` as an alias and stops at the word behind it. Umlauts and
+        // an emoji before it count as one character each.
+        let e = fail(&mut db, "SELECT 'ä😀' FORM customers");
+        assert_eq!(e.code, ErrorCode::InvalidQuery);
+        let d = e.details.expect("details");
+        assert_eq!(d.position, Some(18));
+        assert!(d.sqlstate.is_some());
+        assert!(e.message.contains("syntax error"), "{}", e.message);
+        // an unknown column: SQLite names the place too
+        db.execute_batch_for_tests("CREATE TABLE e_people (id INTEGER, name TEXT);");
+        let e = fail(&mut db, "SELECT 1,\n  nmae FROM e_people");
+        assert!(e.message.contains("nmae"), "{}", e.message);
+        assert_eq!(e.details.and_then(|d| d.position), Some(13));
+        // an unknown table has no place
+        let e = fail(&mut db, "SELECT * FROM nope");
+        assert!(e.message.contains("nope"));
     }
 }

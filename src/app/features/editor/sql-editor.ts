@@ -14,6 +14,8 @@ import {
 } from '@angular/core';
 import { language } from '../../core/i18n/i18n';
 import { SettingsService } from '../../core/settings/settings.service';
+import { ErrorDetails } from '../../core/errors/app-error';
+import { Place, errorRange, placeOf } from '../../core/errors/error-position';
 import { ThemeService } from '../../core/theme/theme.service';
 import { CompletionService, LINES_AFTER, LINES_BEFORE } from '../completion/completion.service';
 import { EDITOR_COLORS } from './editor-colors';
@@ -21,11 +23,16 @@ import { EDITOR_TEXTS } from './editor-texts';
 import {
   CompletionContext,
   EdCaret,
+  Marker,
   EdChange,
   EditliciousEditorElement,
   loadEditlicious,
 } from './editlicious';
 import { Dialect, offsetOf, positionOf, splitForRun, statementAt } from './sql-split';
+
+/** The owners of the marks the app sets in the text (prompt 022). */
+const ERROR_MARKS = 'sql-error';
+const RUNNING_MARKS = 'sql-running';
 
 /**
  * The SQL editor: `<editlicious-editor>` with the SQL grammar, coloured by the app's tokens.
@@ -116,6 +123,10 @@ export class SqlEditor implements OnInit {
   private readonly editor = viewChild<ElementRef<EditliciousEditorElement>>('editor');
   /** The last caret the editor reported; `null` = still at the start. */
   private lastCaret: EdCaret | null = null;
+  /** The statements of the run started last and where each stands in the text. */
+  private lastRun: { statements: readonly string[]; places: Place[] } | null = null;
+  private errorMarks: Marker[] = [];
+  private runningAsked = 0;
   private seeded = false;
   /** The start text is in the editor: changes from here on are the user's. */
   private seededDone = false;
@@ -190,8 +201,12 @@ export class SqlEditor implements OnInit {
     const dialect = this.dialect();
     const selection = await editor.getSelection();
     if (selection.text.trim() !== '') {
-      const statements = splitForRun(selection.text, dialect).map((s) => s.text);
-      if (statements.length > 0) this.run.emit(statements);
+      const parts = splitForRun(selection.text, dialect);
+      // each statement starts somewhere inside the selection, which starts somewhere in the text
+      this.emitRun(
+        parts.map((s) => s.text),
+        parts.map((s) => placeOf(selection.text, selection.start, s.start)),
+      );
       return;
     }
     const script = await editor.getValue();
@@ -201,7 +216,107 @@ export class SqlEditor implements OnInit {
       offsetOf(script, caret?.line ?? 1, caret?.ch ?? 1),
       dialect,
     );
-    if (statement) this.run.emit([statement.text]);
+    if (statement) this.emitRun([statement.text], [positionOf(script, statement.start)]);
+  }
+
+  /** Starts a run and remembers where each of its statements stands (for the marks of prompt 022). */
+  private emitRun(statements: string[], places: Place[]): void {
+    if (statements.length === 0) return;
+    this.lastRun = { statements, places };
+    this.run.emit(statements);
+  }
+
+  /** Where a statement of a run stands: as remembered, else found by its text. */
+  private async placeOfStatement(
+    statements: readonly string[],
+    index: number,
+  ): Promise<Place | null> {
+    const known = this.lastRun;
+    if (known?.statements === statements && known.places[index]) return known.places[index];
+    // a run the editor did not start (open a table, the history): the text says where
+    const editor = this.editor()?.nativeElement;
+    const sql = statements[index];
+    if (!editor || !sql) return null;
+    const script = await editor.getValue();
+    const at = script.indexOf(sql);
+    return at < 0 ? null : positionOf(script, at);
+  }
+
+  clearMarks(): void {
+    this.errorMarks = [];
+    const editor = this.editor()?.nativeElement;
+    void editor?.clearMarkers(ERROR_MARKS);
+    void editor?.clearMarkers(RUNNING_MARKS);
+  }
+
+  /** Tints the statement that runs and puts a sign beside it; `null` ends that. */
+  async markRunning(statements: readonly string[], index: number | null): Promise<void> {
+    const editor = this.editor()?.nativeElement;
+    if (!editor) return;
+    const mine = ++this.runningAsked;
+    if (index === null) {
+      await editor.clearMarkers(RUNNING_MARKS);
+      return;
+    }
+    const start = await this.placeOfStatement(statements, index);
+    // a later call has decided already
+    if (mine !== this.runningAsked) return;
+    if (!start) {
+      await editor.clearMarkers(RUNNING_MARKS);
+      return;
+    }
+    const sql = statements[index];
+    await editor.setMarkers(RUNNING_MARKS, [
+      {
+        start,
+        end: placeOf(sql, start, sql.length),
+        severity: 'running',
+        lineBackground: true,
+        gutter: '▶',
+        message: this.t.running(index + 1, statements.length),
+      },
+    ]);
+  }
+
+  /**
+   * Underlines where a statement failed – the place the database named, else the whole statement – with
+   * the message as its tooltip. The mark follows the text and goes when its place is edited.
+   */
+  async markError(
+    statements: readonly string[],
+    index: number,
+    message: string,
+    details: ErrorDetails | null,
+    jump: boolean,
+  ): Promise<void> {
+    const editor = this.editor()?.nativeElement;
+    const start = await this.placeOfStatement(statements, index);
+    if (!editor || !start) return;
+    const range = errorRange(statements[index], start, details);
+    const marks = [
+      ...this.errorMarks,
+      {
+        start: range.start,
+        end: range.end,
+        severity: 'error',
+        message,
+        gutter: '!',
+        onEdit: 'remove' as const,
+      },
+    ];
+    this.errorMarks = marks;
+    await editor.setMarkers(ERROR_MARKS, marks);
+    if (jump) await editor.goTo(range.start.line, range.start.ch);
+  }
+
+  /** The caret goes to the first place that is still marked as an error. */
+  async goToError(): Promise<void> {
+    const editor = this.editor()?.nativeElement;
+    if (!editor) return;
+    const [first] = await editor.getMarkers(ERROR_MARKS);
+    if (!first) return;
+    await editor.goTo(first.start.line, first.start.ch);
+    editor.focus();
   }
 
   /**
@@ -234,8 +349,12 @@ export class SqlEditor implements OnInit {
   async runScript(): Promise<void> {
     const editor = this.editor()?.nativeElement;
     if (!editor) return;
-    const statements = splitForRun(await editor.getValue(), this.dialect()).map((s) => s.text);
-    if (statements.length > 0) this.run.emit(statements);
+    const script = await editor.getValue();
+    const parts = splitForRun(script, this.dialect());
+    this.emitRun(
+      parts.map((s) => s.text),
+      parts.map((s) => positionOf(script, s.start)),
+    );
   }
 
   protected onChange(event: Event): void {

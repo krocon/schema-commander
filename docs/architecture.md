@@ -57,6 +57,7 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | A37 | Objekt-Details als Listen aus Schlüsseln und Text (`db/details.rs`), gezeichnet vom Ergebnisgitter mit Zeilen im Speicher; DDL vom Server, für Tabellen von PostgreSQL und SQL Server aus dem Katalog zusammengesetzt und per Rundreise gegen echte Server geprüft | Design 019 E2–E6, E9 |
 | A38 | Namensindex je Verbindung im Backend (`db/names.rs`): einmal aus dem Katalog gelesen, im Speicher durchsucht (Wortanfänge, Tippfehler, Rangfolge), Spalten erst auf Nachfrage; eine Palette für Befehle und Sprünge | Design 020 E1–E7 |
 | A39 | Vervollständigung: Kontext aus Tokenizer + Regeln im Frontend (Fallkatalog je Dialekt), Namen aus dem Namensindex und dem Katalog im Backend; gelesen wird nur die Anweisung um den Cursor | Design 021 E1–E3, E7 |
+| A40 | `AppError` trägt strukturierte Details der Datenbank (Code, Detail, Hinweis, Position in Zeichen, Zeile, Objekt); die Umrechnung auf Zeile/Spalte des Editors ist eine reine Funktion mit Katalog; Markierungen je Besitzer (`sql-error`, `sql-running`) | Design 022 E1–E7 |
 | A34 | Texte in typisierten Katalogen (Englisch Quelle, Deutsch typgeprüft), Sprache als Signal, Wechsel zur Laufzeit; `pnpm texts` hält Texte aus Templates und Deutsch aus dem Code. Ersetzt A10 | Design 017 E1–E6 |
 | A35 | Einstellungen bleiben ein flaches, je Wert geprüftes Objekt; der Dialog hat ein eigenes Schema, ein Test hält beide zusammen. Keine Formularschicht: jede Änderung wirkt sofort | Design 017 E8, E9 |
 
