@@ -82,6 +82,47 @@ pub fn check(p: &Profile) -> AppResult<()> {
         }
         return Ok(());
     }
+    for (what, text) in [
+        ("CA file", &p.ca_file),
+        ("client certificate", &p.client_cert),
+        ("client key", &p.client_key),
+    ] {
+        if !plain(text, 1024) {
+            return Err(invalid(format!("{what}: too long or control characters")));
+        }
+    }
+    if p.client_cert.trim().is_empty() != p.client_key.trim().is_empty() {
+        return Err(invalid(
+            "a client certificate needs its key, and the other way round",
+        ));
+    }
+    if !p.client_cert.trim().is_empty() && p.kind == DbKind::Sqlserver {
+        return Err(invalid(
+            "client certificates are not supported for SQL Server",
+        ));
+    }
+    if (!p.ca_file.trim().is_empty() || !p.client_cert.trim().is_empty())
+        && matches!(p.tls, crate::db::TlsMode::Off)
+    {
+        return Err(invalid("certificates are given, but TLS is off"));
+    }
+    if let Some(ssh) = &p.ssh {
+        if !host_ok(&ssh.host) {
+            return Err(invalid("SSH: the host is missing or not a host name"));
+        }
+        if ssh.user.trim().is_empty() || !plain(&ssh.user, 64) || !plain(&ssh.key_file, 1024) {
+            return Err(invalid(
+                "SSH: the user is missing, or a field is not allowed",
+            ));
+        }
+        // The driver talks to the local end of the tunnel: the name in the certificate cannot be the
+        // one it connects to.
+        if p.tls == crate::db::TlsMode::Verify {
+            return Err(invalid(
+                "through an SSH tunnel the host name of the certificate cannot be checked: choose \"certificate only\"",
+            ));
+        }
+    }
     if !host_ok(&p.host) {
         return Err(invalid("the host is missing or not a host name"));
     }
@@ -239,6 +280,10 @@ mod tests {
             save_password: true,
             protection: crate::db::guard::Protection::Free,
             label: String::new(),
+            ca_file: String::new(),
+            client_cert: String::new(),
+            client_key: String::new(),
+            ssh: None,
         }
     }
 

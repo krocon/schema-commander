@@ -47,9 +47,20 @@ pub fn connect(
         .username(profile.user.trim())
         .application_name("Schema Commander")
         .ssl_mode(match profile.tls {
-            TlsMode::Verify => PgSslMode::VerifyFull,
             TlsMode::Off => PgSslMode::Disable,
+            TlsMode::Prefer => PgSslMode::Prefer,
+            TlsMode::Require => PgSslMode::Require,
+            TlsMode::VerifyCa => PgSslMode::VerifyCa,
+            TlsMode::Verify => PgSslMode::VerifyFull,
         });
+    if !profile.ca_file.trim().is_empty() {
+        options = options.ssl_root_cert(profile.ca_file.trim());
+    }
+    if !profile.client_cert.trim().is_empty() {
+        options = options
+            .ssl_client_cert(profile.client_cert.trim())
+            .ssl_client_key(profile.client_key.trim());
+    }
     if !profile.database.trim().is_empty() {
         options = options.database(profile.database.trim());
     }

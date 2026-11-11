@@ -65,6 +65,7 @@ pub fn run() {
             commands::close_connection,
             commands::run_query,
             commands::cancel_query,
+            commands::ssh_config_hosts,
             commands::end_transaction,
             commands::tx_state,
             commands::close_session,

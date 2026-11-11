@@ -43,9 +43,20 @@ pub fn connect(
         .username(profile.user.trim())
         .charset("utf8mb4")
         .ssl_mode(match profile.tls {
-            TlsMode::Verify => MySqlSslMode::VerifyIdentity,
             TlsMode::Off => MySqlSslMode::Disabled,
+            TlsMode::Prefer => MySqlSslMode::Preferred,
+            TlsMode::Require => MySqlSslMode::Required,
+            TlsMode::VerifyCa => MySqlSslMode::VerifyCa,
+            TlsMode::Verify => MySqlSslMode::VerifyIdentity,
         });
+    if !profile.ca_file.trim().is_empty() {
+        options = options.ssl_ca(profile.ca_file.trim());
+    }
+    if !profile.client_cert.trim().is_empty() {
+        options = options
+            .ssl_client_cert(profile.client_cert.trim())
+            .ssl_client_key(profile.client_key.trim());
+    }
     if !profile.database.trim().is_empty() {
         options = options.database(profile.database.trim());
     }
