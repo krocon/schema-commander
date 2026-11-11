@@ -4,12 +4,15 @@
 pub mod commands;
 pub mod demo_db;
 pub mod error;
+pub mod themes;
 
 /// The window starts hidden and is shown with the first colour scheme; at the latest then.
 const SHOW_FALLBACK: std::time::Duration = std::time::Duration::from_secs(1);
 
 pub fn run() {
     tauri::Builder::default()
+        // Native file dialogs: the only way a path gets into a command (design 001 E4).
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         // The window starts hidden until its colour scheme is on: restoring "visible" would show it
         // before that.
@@ -34,6 +37,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::run_demo_query,
             commands::set_window_chrome,
+            commands::load_themes,
+            commands::save_themes,
+            commands::import_theme,
+            commands::export_theme,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Schema Commander");

@@ -2,7 +2,7 @@
 
 > **Slug:** `snippets-gespeicherte-abfragen` · **Feature:** C7 · **Braucht:** 004, E5 (editlicious: Snippets) ·
 > **Umfang:** M
-> Lies zuerst `prompts/000-arbeitsweise.md`, `prompts/editlicious/E5-snippets.md`. Vorbild: TablePlus (Favoriten mit
+> Lies zuerst `prompts/000-arbeitsweise.md`, `prompts/done/editlicious/E5-snippets.md`. Vorbild: TablePlus (Favoriten mit
 > Kürzel), SSMS (Snippets), Beekeeper Studio (Saved Queries).
 
 ## Ziel

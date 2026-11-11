@@ -16,7 +16,7 @@ Import/Export und saubere Tabellen-Farben.
    Farben des Editors kommen aus unseren Tokens (`--bg-app`, `--bg-gutter`, `--text`, `--sql-*`, `--row-selected`,
    `--hit-*`, `--accent`). Im Design klären, welche `--ed-*`/`--syn-*`-Variablen `<editlicious-editor>` von außen
    annimmt (`../editlicious/src/styles.css`, `scripts/host-theme.mjs`, `packages/editlicious-editor/README.md`
-   „Styling“). Was fehlt, bringt **Prompt E1** (`prompts/editlicious/E1-farben-von-aussen.md`, im Repo editlicious
+   „Styling“). Was fehlt, bringt **Prompt E1** (`prompts/done/editlicious/E1-farben-von-aussen.md`, im Repo editlicious
    auszuführen); hier wird es nicht umgangen. Bis E1 veröffentlicht ist, bleibt die Zuordnung nach Helligkeit.
 2. **Eigene Schemata**: Live-Editor nach fnf (Token-Liste nach Gruppen aus `core/theme/tokens.ts`, Farbwähler +
    Texteingabe, Vorschau sofort, Kontrast-Hinweis je Paar aus `contrast-pairs.json`). Speichern als JSON im

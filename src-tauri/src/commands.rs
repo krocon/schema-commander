@@ -2,6 +2,8 @@
 
 use crate::demo_db::{DemoDb, MAX_ROWS, QueryResult};
 use crate::error::{AppError, AppResult, ErrorCode};
+use crate::themes::{self, LoadedThemes, ThemesFile, UserTheme};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
 
@@ -71,6 +73,37 @@ pub fn show_main(app: &AppHandle) {
     {
         let _ = window.show();
     }
+}
+
+/// `themes.json` in the app's config folder.
+fn themes_path(app: &AppHandle) -> AppResult<PathBuf> {
+    app.path()
+        .app_config_dir()
+        .map(|dir| dir.join(themes::FILE_NAME))
+        .map_err(|e| AppError::new(ErrorCode::Io, e.to_string()))
+}
+
+/// The user's own colour schemes (design 001). Never fails: a broken file gives none and a notice.
+#[tauri::command(async)]
+pub fn load_themes(app: AppHandle) -> AppResult<LoadedThemes> {
+    Ok(themes::load(&themes_path(&app)?))
+}
+
+#[tauri::command(async)]
+pub fn save_themes(app: AppHandle, file: ThemesFile) -> AppResult<()> {
+    themes::save(&themes_path(&app)?, &file)
+}
+
+/// Reads a scheme file the user chose in the native dialog; the frontend checks its content.
+#[tauri::command(async)]
+pub fn import_theme(path: String) -> AppResult<serde_json::Value> {
+    themes::import(Path::new(&path))
+}
+
+/// Writes one scheme to the path the user chose in the native dialog.
+#[tauri::command(async)]
+pub fn export_theme(path: String, theme: UserTheme) -> AppResult<()> {
+    themes::export(Path::new(&path), &theme)
 }
 
 #[cfg(test)]

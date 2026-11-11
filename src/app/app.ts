@@ -17,6 +17,7 @@ import { EdCaret } from './features/editor/editlicious';
 import { SqlEditor } from './features/editor/sql-editor';
 import { ResultGrid } from './features/results/result-grid';
 import { QuerySession, statusText } from './features/shell/query-session';
+import { ThemeEditor } from './features/themes/theme-editor';
 import { ThemePickerComponent } from './features/themes/theme-picker';
 import { SplitterComponent } from './shared/splitter';
 
@@ -46,7 +47,7 @@ SELECT * FROM orders;
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ResultGrid, SplitterComponent, SqlEditor, ThemePickerComponent],
+  imports: [ResultGrid, SplitterComponent, SqlEditor, ThemeEditor, ThemePickerComponent],
   template: `
     <header class="toolbar" role="toolbar" aria-label="Werkzeugleiste">
       <button
@@ -159,6 +160,11 @@ SELECT * FROM orders;
         <app-theme-picker (closed)="theme.pickerOpen.set(false)" />
       }
     }
+    @if (theme.editing(); as request) {
+      @defer (on immediate) {
+        <app-theme-editor [request]="request" (closed)="theme.editing.set(null)" />
+      }
+    }
   `,
   styleUrl: './app.css',
 })
@@ -230,7 +236,8 @@ export class App implements OnInit, OnDestroy {
   }
 
   async ngOnInit(): Promise<void> {
-    await this.settings.load();
+    // both before the window shows: the stored scheme may be one of the user's own (design 001 E7)
+    await Promise.all([this.settings.load(), this.theme.loadUserThemes()]);
   }
 
   ngOnDestroy(): void {

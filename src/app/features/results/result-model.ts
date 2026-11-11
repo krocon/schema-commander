@@ -1,5 +1,27 @@
-import { ColumnDef, Size, TableFactory, TableModelIf, TrueFn } from '@guiexpert/table';
+import {
+  ColumnDef,
+  Size,
+  TableFactory,
+  TableModelIf,
+  TableOptions,
+  TableOptionsIf,
+  TrueFn,
+} from '@guiexpert/table';
 import { Cell, QueryResult } from '../../core/sql/query.models';
+
+/** Row heights in px; the line height of the cells follows them in `ge-table-theme.css`. */
+export const HEADER_ROW_HEIGHT = 26;
+export const BODY_ROW_HEIGHT = 22;
+
+/**
+ * The options of the result grid. The factory needs them too when it builds the model: the row heights
+ * only act there.
+ */
+export const RESULT_OPTIONS: TableOptionsIf = {
+  ...new TableOptions(),
+  hoverColumnVisible: false,
+  defaultRowHeights: { header: HEADER_ROW_HEIGHT, body: BODY_ROW_HEIGHT, footer: 0 },
+};
 
 const CHAR_PX = 8;
 const MIN_WIDTH = 60;
@@ -44,11 +66,15 @@ export function resultModel(result: QueryResult): TableModelIf {
       headerLabel: column.name,
       width: new Size(widths[c], 'px'),
       sortable: TrueFn,
-      bodyClasses: isNumeric(result, c) ? ['sc-num'] : [],
+      // the table centres cells by default
+      headerClasses: ['ge-table-text-align-left'],
+      bodyClasses: isNumeric(result, c) ? ['sc-num'] : ['ge-table-text-align-left'],
     }),
   );
   return TableFactory.createTableModel({
     rows: result.rows as unknown[] as never[],
     columnDefs,
+    tableOptions: RESULT_OPTIONS,
+    rowNumbersVisible: true,
   });
 }

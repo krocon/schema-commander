@@ -1,7 +1,7 @@
 # Prompt E2 (editlicious): Auswahl und Bereiche abfragen
 
 > **Repo:** `../editlicious` · **Gebraucht von:** Schema Commander 005, 023 · **Umfang:** S
-> Lies `prompts/editlicious/README.md` hier; in editlicious `packages/editlicious-editor/editlicious-editor.d.ts`.
+> Lies `prompts/done/editlicious/README.md` hier; in editlicious `packages/editlicious-editor/editlicious-editor.d.ts`.
 
 ## Ziel
 

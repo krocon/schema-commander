@@ -17,7 +17,9 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
 
 - SQL editor with syntax highlighting; <kbd>Ctrl/⌘</kbd>+<kbd>Enter</kbd> runs the statement under the caret
 - Result grid with virtual scrolling, sortable and resizable columns
-- 17 colour schemes (dark, light, One Dark, Solarized Light, Matrix, Amber …), fixed or following the system
+- 17 colour schemes (dark, light, One Dark, Solarized Light, Matrix, Amber …), fixed or following the system –
+  and your own: a live editor for every colour with contrast hints, import and export
+- Editor and grid follow every scheme
 - Layout, colour scheme and window position survive a restart
 
 ## Development

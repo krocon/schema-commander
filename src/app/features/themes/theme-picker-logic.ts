@@ -1,6 +1,6 @@
 import { toHex } from '../../core/theme/color';
 import { completeTokens, resolveColor } from '../../core/theme/theme-logic';
-import { Theme } from '../../core/theme/theme.models';
+import { Theme, isUserTheme } from '../../core/theme/theme.models';
 
 /** A card of the picker: `system` = follow the system, otherwise a scheme id. */
 export interface PickerCard {
@@ -10,7 +10,7 @@ export interface PickerCard {
 }
 
 export interface PickerSection {
-  readonly key: 'system' | 'dark' | 'light';
+  readonly key: 'system' | 'user' | 'dark' | 'light';
   readonly label: string;
   readonly cards: readonly PickerCard[];
 }
@@ -29,14 +29,27 @@ export function matchesFilter(card: PickerCard, filter: string): boolean {
     .every((w) => hay.includes(w));
 }
 
-/** „System folgen“ first, then the dark and the light schemes, each filtered; empty sections are left out. */
+/**
+ * „System folgen“ first, then the user's own schemes, the dark and the light built-in ones, each filtered;
+ * empty sections are left out.
+ */
 export function pickerSections(themes: readonly Theme[], filter: string): PickerSection[] {
   const card = (t: Theme): PickerCard => ({ id: t.id, name: t.name, dark: t.dark });
   const keep = (cards: PickerCard[]) => cards.filter((c) => matchesFilter(c, filter));
+  const own = (t: Theme) => isUserTheme(t.id);
   return [
     { key: 'system' as const, label: 'System folgen', cards: keep([SYSTEM_CARD]) },
-    { key: 'dark' as const, label: 'Dunkel', cards: keep(themes.filter((t) => t.dark).map(card)) },
-    { key: 'light' as const, label: 'Hell', cards: keep(themes.filter((t) => !t.dark).map(card)) },
+    { key: 'user' as const, label: 'Eigene', cards: keep(themes.filter(own).map(card)) },
+    {
+      key: 'dark' as const,
+      label: 'Dunkel',
+      cards: keep(themes.filter((t) => t.dark && !own(t)).map(card)),
+    },
+    {
+      key: 'light' as const,
+      label: 'Hell',
+      cards: keep(themes.filter((t) => !t.dark && !own(t)).map(card)),
+    },
   ].filter((s) => s.cards.length > 0);
 }
 

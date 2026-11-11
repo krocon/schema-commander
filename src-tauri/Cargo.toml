@@ -23,10 +23,15 @@ rusqlite = { version = "0.41", features = ["bundled", "column_decltype"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
+# Native open/save dialogs (import and export of colour schemes, later SQL files and exports).
+tauri-plugin-dialog = "2"
 # Settings (colour scheme, layout) as one JSON file in the app's config folder.
 tauri-plugin-store = "2"
 # Window position and size over a restart.
 tauri-plugin-window-state = "2"
+
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 lto = "thin"

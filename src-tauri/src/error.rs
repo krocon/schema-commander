@@ -10,6 +10,11 @@ pub enum ErrorCode {
     InvalidQuery,
     /// A value of a command is not what it must be (e.g. a colour that is not `#rrggbb`).
     Unsupported,
+    /// A colour scheme (file) that breaks a rule: shape, bounds, values (design 001).
+    InvalidTheme,
+    /// A file is larger than a command reads.
+    TooLarge,
+    NotFound,
     Io,
 }
 

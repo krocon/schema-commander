@@ -15,7 +15,7 @@ Ausführen, wie man es erwartet: **Anweisung unter dem Cursor**, **Auswahl**, **
    verschachtelte Kommentare), MySQL (`DELIMITER`, Backticks, `#`-Kommentar), SQL Server (`GO`, `[…]`), SQLite
    (`BEGIN … END` in Triggern). Testkatalog als `.cases.json`.
 2. **Auswahl ausführen**: editlicious liefert die Auswahl heute nicht als Text (`ed-caret` nennt nur Längen). Das
-   bringt **Prompt E2** (`prompts/editlicious/E2-auswahl-abfragen.md`); hier wird nur die neue Methode benutzt.
+   bringt **Prompt E2** (`prompts/done/editlicious/E2-auswahl-abfragen.md`); hier wird nur die neue Methode benutzt.
 3. **Ausführung als Job in Rust**: Skript = Liste von Anweisungen, nacheinander auf der Sitzung des Tabs;
    Ereignisse über einen `Channel` (gestartet, Spalten, Fortschritt, fertig, Fehler, Meldung/NOTICE). Einstellung
    „bei Fehler anhalten / weiterlaufen“.

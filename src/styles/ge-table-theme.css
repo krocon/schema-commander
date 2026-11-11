@@ -30,6 +30,31 @@
   --ge-table-row-odd-bg: transparent;
   --ge-table-row-even-bg: transparent;
 
+  --ge-table-body-west-horizontal-border: var(--border);
+  --ge-table-body-center-horizontal-border: var(--border);
+  --ge-table-body-east-horizontal-border: var(--border);
+  --ge-table-body-west-vertical-border: var(--border);
+  --ge-table-body-center-vertical-border: var(--border);
+  --ge-table-body-east-vertical-border: var(--border);
+
+  --ge-table-row-number-bg: var(--bg-gutter);
+  --ge-table-row-number-color: var(--text-dim);
+
+  --ge-table-body-west-selected-range-bg: var(--row-selected);
+  --ge-table-body-center-selected-range-bg: var(--row-selected);
+  --ge-table-body-east-selected-range-bg: var(--row-selected);
+  --ge-table-body-west-selected-range-text: var(--text);
+  --ge-table-body-center-selected-range-text: var(--text);
+  --ge-table-body-east-selected-range-text: var(--text);
+
+  --ge-table-column-resize-handle-border: var(--border);
+  --ge-table-color-col-resize-handle-hover-bg: var(--accent);
+  --ge-table-dragged-col-div-bg: var(--bg-hover);
+  --ge-table-color-dragged-col-div-bg: var(--bg-hover);
+  --ge-table-drop-zone-bg: var(--row-selected);
+  --ge-table-color-drop-zone-bg: var(--row-selected);
+  --ge-table-color-drop-zone: var(--accent);
+
   --ge-table-hover-row-bg: var(--bg-hover);
   --ge-table-focus-border: var(--accent);
   --ge-table-focus-outline-color: var(--accent);
@@ -50,9 +75,30 @@
   font-size: 12px;
 }
 
+/*
+ * The table's own line height is 2.5 (made for 30 px rows): ours follows the row heights of
+ * features/results/result-model.ts (HEADER_ROW_HEIGHT, BODY_ROW_HEIGHT).
+ */
+.ge-table .ge-table-col-div {
+  line-height: 22px;
+}
+
+.ge-table .ge-table-header .ge-table-col-div {
+  line-height: 26px;
+  font-family: var(--font-ui);
+  font-weight: 600;
+}
+
+.ge-table .ge-table-col-div.ge-table-text-align-left .ge-table-label {
+  padding-inline: 8px;
+}
+
 /* numbers of a result are right-aligned (features/results/result-model.ts) */
 .ge-table .ge-table-col-div.sc-num {
-  justify-content: flex-end;
-  text-align: right;
+  text-align: end;
   color: var(--sql-number);
+}
+
+.ge-table .ge-table-col-div.sc-num .ge-table-label {
+  padding-inline: 8px;
 }

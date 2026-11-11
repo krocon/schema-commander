@@ -1,12 +1,15 @@
 # Prompts für editlicious
 
+> **Stand 11.11.2026: E1–E5 sind umgesetzt** (editlicious Prompts 026–030) und in `editlicious-editor` 1.2.0
+> veröffentlicht. Die Dateien hier bleiben als Referenz, was Schema Commander vom Editor braucht.
+
 Schema Commander nutzt `<editlicious-editor>` als SQL-Editor. Wo dem Editor etwas fehlt, wird es **in editlicious
 ergänzt und als neue Version von `editlicious-editor` veröffentlicht**, nicht hier umgangen. Diese Prompts beschreiben
 die Erweiterungen aus Sicht des Verbrauchers.
 
 **Ausführen:** neue Sitzung im Repo `../editlicious` (nicht hier):
 „Lies `prompts/000-arbeitsweise.md` (die von editlicious) und führe
-`../schema-commander/prompts/editlicious/E1-farben-von-aussen.md` aus.“ Es gelten die Regeln, Phasen und Checks von
+`../schema-commander/prompts/done/editlicious/E1-farben-von-aussen.md` aus.“ Es gelten die Regeln, Phasen und Checks von
 editlicious (`CLAUDE.md` dort); das Design-Dokument entsteht dort unter `prompts/`. Nach der Veröffentlichung hier
 `editlicious-editor` in `package.json` anheben.
 

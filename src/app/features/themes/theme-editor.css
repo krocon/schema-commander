@@ -1,0 +1,172 @@
+/* A panel at the right edge: the app stays visible while its colours change. */
+dialog {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(460px, calc(100vw - 32px));
+  height: 100vh;
+  max-height: 100vh;
+  margin: 0;
+  padding: 0;
+  background: var(--bg-panel);
+  color: var(--text);
+  border: 0;
+  border-left: 1px solid var(--border);
+}
+
+dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+dialog::backdrop {
+  background: transparent;
+}
+
+header,
+footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+}
+
+header {
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+
+footer {
+  border-top: 1px solid var(--border);
+}
+
+h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+h3 {
+  margin: 12px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.head {
+  flex: none;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 10px 14px;
+  font-size: 12px;
+}
+
+fieldset {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+legend {
+  float: left;
+  margin-right: 14px;
+  padding: 0;
+}
+
+.tokens {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 14px 10px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px 128px 26px 46px;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.row.changed .label {
+  font-weight: 600;
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+input[type='color'] {
+  width: 30px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: none;
+}
+
+.row input[type='text'] {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.row button {
+  padding: 0 4px;
+}
+
+.contrast {
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.contrast.weak {
+  color: var(--warn-fg);
+  font-weight: 600;
+}
+
+.note,
+.summary,
+.problem,
+.none {
+  flex: none;
+  margin: 0;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.summary {
+  border-top: 1px solid var(--border);
+}
+
+.problem {
+  grid-column: 1 / -1;
+  color: var(--error-fg);
+}
+
+.head .problem {
+  padding: 0;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.danger {
+  color: var(--danger);
+}

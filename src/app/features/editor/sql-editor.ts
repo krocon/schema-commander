@@ -13,11 +13,12 @@ import {
   viewChild,
 } from '@angular/core';
 import { ThemeService } from '../../core/theme/theme.service';
-import { EdCaret, EditliciousEditorElement, editorScheme, loadEditlicious } from './editlicious';
+import { EDITOR_COLORS } from './editor-colors';
+import { EdCaret, EditliciousEditorElement, loadEditlicious } from './editlicious';
 import { offsetOf, statementAt } from './sql-split';
 
 /**
- * The SQL editor: `<editlicious-editor>` with the SQL grammar, its scheme following the app's.
+ * The SQL editor: `<editlicious-editor>` with the SQL grammar, coloured by the app's tokens.
  * `Mod+Enter` asks to run the statement under the caret (`run`).
  */
 @Component({
@@ -29,7 +30,9 @@ import { offsetOf, statementAt } from './sql-split';
       <editlicious-editor
         #editor
         language="SQL"
-        [attr.scheme]="scheme()"
+        scheme="none"
+        [attr.color-scheme]="dark() ? 'dark' : 'light'"
+        [style]="colors"
         [attr.aria-label]="label()"
         (keydown)="onKey($event)"
         (ed-caret)="onCaret($event)"
@@ -71,12 +74,12 @@ export class SqlEditor implements OnInit {
   readonly caret = output<EdCaret>();
 
   protected readonly state = signal<'loading' | 'ready' | 'failed'>('loading');
-  protected readonly scheme = computed(() => {
-    const applied = this.theme.applied();
-    return editorScheme(applied?.id ?? '', applied?.dark ?? this.theme.systemDark());
-  });
+  /** All colours of the editor come from our tokens (design 001 E1). */
+  protected readonly colors = EDITOR_COLORS;
+  protected readonly dark = computed(() => this.theme.applied()?.dark ?? this.theme.systemDark());
   private readonly editor = viewChild<ElementRef<EditliciousEditorElement>>('editor');
-  private lastCaret: EdCaret = { line: 1, ch: 1, selChars: 0, selLines: 0, carets: 1 };
+  /** The last caret the editor reported; `null` = still at the start. */
+  private lastCaret: EdCaret | null = null;
   private seeded = false;
 
   constructor() {
@@ -105,7 +108,10 @@ export class SqlEditor implements OnInit {
     const editor = this.editor()?.nativeElement;
     if (!editor) return;
     const script = await editor.getValue();
-    const statement = statementAt(script, offsetOf(script, this.lastCaret.line, this.lastCaret.ch));
+    const statement = statementAt(
+      script,
+      offsetOf(script, this.lastCaret?.line ?? 1, this.lastCaret?.ch ?? 1),
+    );
     if (statement) this.run.emit(statement.text);
   }
 
