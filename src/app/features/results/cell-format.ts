@@ -8,6 +8,11 @@ export interface CellFormat {
   readonly groupDigits: boolean;
   /** What stands for NULL (a setting, prompt 017); missing = `NULL`. */
   readonly nullText?: string;
+  /**
+   * The rows are a list of the app, not data of the user (object details, prompt 019): a missing value and
+   * an empty text are simply nothing, without the signs a result needs to tell them apart.
+   */
+  readonly plain?: boolean;
 }
 
 export const PLAIN_FORMAT: CellFormat = { groupDigits: false };
@@ -91,6 +96,7 @@ const isNumberKind = (kind: ColKind) => kind === 'int' || kind === 'float' || ki
  * have signs of their own, numbers keep every digit, text is one line without invisible characters.
  */
 export function showCell(cell: Cell, kind: ColKind, format: CellFormat = PLAIN_FORMAT): ShownCell {
+  if (format.plain && (cell === null || cell === '')) return { text: '', cls: '' };
   if (cell === null) {
     const text = format.nullText;
     return text === undefined || text === NULL.text ? NULL : { text, cls: 'sc-null' };

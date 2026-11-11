@@ -1016,6 +1016,11 @@ fn structure(d: &ObjectDetails) -> Vec<Section> {
         .filter(|s| s.id != "stats")
         .cloned()
         .map(|mut s| {
+            // when an object was made is no part of its structure
+            if s.id == "properties" {
+                s.rows
+                    .retain(|row| !matches!(row[0].as_deref(), Some("created") | Some("modified")));
+            }
             if let Some(i) = s.columns.iter().position(|c| c == "size") {
                 s.columns.remove(i);
                 for row in &mut s.rows {

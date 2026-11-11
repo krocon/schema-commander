@@ -113,4 +113,11 @@ describe('typeLabel', () => {
     // the empty text keeps its own sign
     expect(showCell('', 'text', { groupDigits: false, nullText: '' }).cls).toBe('sc-empty');
   });
+
+  it('shows nothing for missing and empty values of a list of the app', () => {
+    const plain = { groupDigits: false, plain: true };
+    expect(showCell(null, 'text', plain)).toEqual({ text: '', cls: '' });
+    expect(showCell('', 'text', plain)).toEqual({ text: '', cls: '' });
+    expect(showCell('pk', 'text', plain)).toEqual({ text: 'pk', cls: '' });
+  });
 });

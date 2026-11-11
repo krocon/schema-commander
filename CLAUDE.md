@@ -33,10 +33,12 @@
   Verlauf, Zen, Gruppen und Cursor in der Sitzung (Prompt 016); **Sprache** Englisch/Deutsch zur Laufzeit
   (Text-Kataloge) und **Einstellungsdialog** mit Suche, Zurücksetzen, Export/Import (Prompt 017);
   **Menüleiste** (macOS nativ, sonst im Fenster) und **Kontextmenüs** aus einem Menümodell (Prompt 018);
+  **Objekt-Details** (Spalten, Indizes, Constraints, Beziehungen, Rechte, Statistik) und **DDL** je Objekt
+  (Prompt 019);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–018),
+  erledigt: 001–019),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -92,6 +94,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                contrast-pairs.json
   app/features/connections/    Verbindungsliste (Seitenleiste), Verbindungsdialog, Passwortabfrage,
                                connection-logic.ts (rein: Gruppen, Prüfung, Vorschläge)
+  app/features/details/        DetailsDialog (Listen als Gitter, Filter, Beziehungen, DDL), ObjectDetailsService
+                               (Root: Objekt auf dem Schirm, Weg zurück), details-logic.ts (rein)
   app/features/editor/         SqlEditor (<editlicious-editor scheme="none">), editlicious.ts (Laden),
                                editor-colors.ts (Farben des Editors aus unseren Tokens),
                                sql-split.ts (rein: Skripte je Dialekt zerlegen, Katalog sql-split.cases.json)
@@ -138,6 +142,7 @@ src-tauri/                     Rust
   src/copy.rs                  Auswahl eines Ergebnisses als Text: Zeilenbereiche, Spalten, Abbruch, Grenze (rein)
   src/db/import.rs             Verbindungs-URLs und fremde Dateien lesen (rein, Katalog), eigener Export
   src/db/guard.rs              Anweisungen einstufen (lesend/schreibend/DDL/gefährlich), Schutzstufen (rein, Katalog)
+  src/db/details.rs            Objekt-Details als Listen + DDL je Datenbank (Katalog, gebundene Parameter)
   src/db/meta.rs               Metadaten aus dem Systemkatalog (gebundene Parameter), quote() je Dialekt
   src/db/value.rs              Cell, ColKind, QueryResult (verlustfrei über die Brücke)
   src/db/manager.rs            ConnectionManager: Sitzungen, Schlüsselbund-Regeln, Abbruch

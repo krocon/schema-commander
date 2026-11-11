@@ -123,6 +123,7 @@ export class ResultGrid implements OnDestroy {
 
   private format(): CellFormat {
     const s = this.settings.settings();
+    if (this.local()) return { groupDigits: false, plain: true };
     return { groupDigits: s.groupDigits, nullText: s.nullText };
   }
 
