@@ -1,7 +1,8 @@
 /** Pure logic of the query tabs (prompt 004): titles, ids, order. */
+import { TABS_EN, TABS_TEXTS } from './tabs-texts';
+import { TABS_DE } from './tabs-texts.de';
 
 export const MAX_TITLE = 40;
-const UNTITLED = 'Abfrage';
 
 /** `tab-<n>`: the smallest number not taken. */
 export function newTabId(taken: ReadonlySet<string>): string {
@@ -11,13 +12,19 @@ export function newTabId(taken: ReadonlySet<string>): string {
   }
 }
 
-/** `Abfrage`, `Abfrage 2` …: the first one no open tab has. */
+/** `Query`, `Query 2` … in the current language: the first one no open tab has. */
 export function untitled(taken: ReadonlySet<string>): string {
-  if (!taken.has(UNTITLED)) return UNTITLED;
+  const name = TABS_TEXTS.untitled;
+  if (!taken.has(name)) return name;
   for (let n = 2; ; n++) {
-    const title = `${UNTITLED} ${n}`;
+    const title = `${name} ${n}`;
     if (!taken.has(title)) return title;
   }
+}
+
+/** Whether a title is the name of an untitled tab – in any language: a tab keeps the title it got. */
+export function isUntitled(title: string): boolean {
+  return [TABS_EN.untitled, TABS_DE.untitled].some((name) => title.startsWith(name));
 }
 
 /** Looked at for a title: more would only cost time in a huge script. */
@@ -93,12 +100,12 @@ export function backupDelay(chars: number): number {
 
 const ENCODINGS: Readonly<Record<string, string>> = {
   'utf-8': 'UTF-8',
-  'utf-8-bom': 'UTF-8 mit BOM',
   'utf-16le': 'UTF-16 LE',
   'utf-16be': 'UTF-16 BE',
   'windows-1252': 'Windows-1252',
 };
 
 export function encodingLabel(encoding: string | null): string {
+  if (encoding === 'utf-8-bom') return TABS_TEXTS.utf8WithBom;
   return encoding ? (ENCODINGS[encoding] ?? encoding) : '';
 }

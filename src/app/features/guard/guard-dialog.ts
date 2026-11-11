@@ -9,20 +9,22 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { COMMON_TEXTS } from '../../core/i18n/common-texts';
 import {
-  CLASS_LABELS,
   GuardAnswer,
   GuardRequest,
-  PROTECTION_LABELS,
+  classLabel,
   guardTitle,
   nameMatches,
   needsName,
+  protectionLabel,
   shortSql,
 } from './guard-logic';
+import { GUARD_TEXTS } from './guard-texts';
 
 /**
  * The question before guarded statements run: which connection, which database, which statements. What
- * destroys on a protected connection needs the name of the connection typed. Escape and "Abbrechen" say no;
+ * destroys on a protected connection needs the name of the connection typed. Escape and "Cancel" say no;
  * the focus starts where a no is nearest.
  */
 @Component({
@@ -49,21 +51,18 @@ import {
           @for (s of request().statements; track $index) {
             <li>
               <span class="class" [class.dangerous]="s.verdict.class === 'dangerous'">{{
-                labels[s.verdict.class]
+                label(s.verdict.class)
               }}</span>
               <pre>{{ short(s.sql) }}</pre>
             </li>
           }
         </ol>
         @if (request().total > request().statements.length) {
-          <p class="note">
-            Der Lauf hat {{ request().total }} Anweisungen; die übrigen laufen ohne Rückfrage.
-          </p>
+          <p class="note">{{ t.others(request().total) }}</p>
         }
         @if (named()) {
           <label for="guard-name"
-            >Zum Bestätigen den Namen der Verbindung eingeben:
-            <strong>{{ request().connection.name }}</strong></label
+            >{{ t.typeName }} <strong>{{ request().connection.name }}</strong></label
           >
           <input
             #name
@@ -76,8 +75,8 @@ import {
           />
         }
         <footer>
-          <button #cancel type="button" (click)="answered.emit(null)">Abbrechen</button>
-          <button type="submit" class="danger" [disabled]="!ready()">Ausführen</button>
+          <button #cancel type="button" (click)="answered.emit(null)">{{ common.cancel }}</button>
+          <button type="submit" class="danger" [disabled]="!ready()">{{ t.run }}</button>
         </footer>
       </form>
     </dialog>
@@ -187,12 +186,14 @@ export class GuardDialog {
   private readonly cancel = viewChild.required<ElementRef<HTMLButtonElement>>('cancel');
   private readonly nameField = viewChild<ElementRef<HTMLInputElement>>('name');
 
-  protected readonly labels = CLASS_LABELS;
+  protected readonly t = GUARD_TEXTS;
+  protected readonly common = COMMON_TEXTS;
+  protected readonly label = classLabel;
   protected readonly short = (sql: string) => shortSql(sql);
   protected readonly typed = signal('');
   protected readonly title = computed(() => guardTitle(this.request()));
-  protected readonly protection = computed(
-    () => PROTECTION_LABELS[this.request().connection.protection],
+  protected readonly protection = computed(() =>
+    protectionLabel(this.request().connection.protection),
   );
   protected readonly named = computed(() => needsName(this.request().statements));
   protected readonly ready = computed(
@@ -202,7 +203,7 @@ export class GuardDialog {
   constructor() {
     afterNextRender(() => {
       this.dialog().nativeElement.showModal();
-      // a habitual Enter must not run anything: the name field takes the focus, else "Abbrechen"
+      // a habitual Enter must not run anything: the name field takes the focus, else "Cancel"
       (this.nameField() ?? this.cancel()).nativeElement.focus();
     });
   }

@@ -5,6 +5,7 @@ import { HistoryApi, HistoryEntry } from '../../core/history/history-api';
 import { TabsStore } from '../tabs/tabs.store';
 import { oneLine, whenLabel } from './history-logic';
 import { HistoryService } from './history.service';
+import { HISTORY_TEXTS } from './history-texts';
 
 const PANEL_ENTRIES = 100;
 const SEARCH_DELAY_MS = 200;
@@ -20,8 +21,8 @@ const SEARCH_DELAY_MS = 200;
     <input
       type="search"
       class="search"
-      aria-label="Verlauf durchsuchen"
-      placeholder="Verlauf durchsuchen"
+      [attr.aria-label]="t.panelSearch"
+      [placeholder]="t.panelSearch"
       autocomplete="off"
       spellcheck="false"
       [value]="text()"
@@ -31,13 +32,13 @@ const SEARCH_DELAY_MS = 200;
     @if (problem(); as p) {
       <p class="message" role="alert">{{ p }}</p>
     } @else if (entries().length === 0) {
-      <p class="message">{{ loading() ? 'Verlauf wird gelesen …' : 'Keine Einträge.' }}</p>
+      <p class="message">{{ loading() ? t.reading : t.noEntries }}</p>
     }
     <ul
       #list
       class="list"
       role="listbox"
-      aria-label="Zuletzt ausgeführt"
+      [attr.aria-label]="t.recent"
       tabindex="0"
       [attr.aria-activedescendant]="selected() ? 'hp-' + selected()!.id : null"
       (keydown)="onKey($event)"
@@ -59,7 +60,7 @@ const SEARCH_DELAY_MS = 200;
       }
     </ul>
     <button type="button" class="all" (click)="actions.run('OPEN_HISTORY')">
-      Ganzer Verlauf …{{ actions.hint('OPEN_HISTORY') }}
+      {{ t.whole }}{{ actions.hint('OPEN_HISTORY') }}
     </button>
   `,
   styles: `
@@ -127,6 +128,7 @@ const SEARCH_DELAY_MS = 200;
   `,
 })
 export class HistoryPanel {
+  protected readonly t = HISTORY_TEXTS;
   private readonly api = inject(HistoryApi);
   private readonly history = inject(HistoryService);
   private readonly tabs = inject(TabsStore);

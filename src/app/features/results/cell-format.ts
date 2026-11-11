@@ -1,4 +1,5 @@
 /* eslint-disable no-control-regex -- control characters are what this file is about */
+import { locale } from '../../core/i18n/i18n';
 import { Cell, ColKind } from '../../core/sql/query.models';
 
 /** How cells are shown; nothing of it reaches the clipboard or an export. */
@@ -74,7 +75,11 @@ export function byteSize(bytes: number): string {
     value /= 1024;
     unit++;
   }
-  return `${value < 10 ? value.toFixed(1).replace('.', ',') : Math.round(value)} ${units[unit]}`;
+  const shown =
+    value < 10
+      ? value.toLocaleString(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+      : Math.round(value);
+  return `${shown} ${units[unit]}`;
 }
 
 const isNumberKind = (kind: ColKind) => kind === 'int' || kind === 'float' || kind === 'decimal';

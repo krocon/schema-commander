@@ -14,6 +14,7 @@ import {
 } from '@angular/core';
 import { ThemeService } from '../../core/theme/theme.service';
 import { EDITOR_COLORS } from './editor-colors';
+import { EDITOR_TEXTS } from './editor-texts';
 import { EdCaret, EdChange, EditliciousEditorElement, loadEditlicious } from './editlicious';
 import { Dialect, offsetOf, splitForRun, statementAt } from './sql-split';
 
@@ -33,15 +34,15 @@ import { Dialect, offsetOf, splitForRun, statementAt } from './sql-split';
         scheme="none"
         [attr.color-scheme]="dark() ? 'dark' : 'light'"
         [style]="colors"
-        [attr.aria-label]="label()"
+        [attr.aria-label]="label() || t.label"
         [attr.readonly]="readonly() ? '' : null"
         (ed-caret)="onCaret($event)"
         (ed-change)="onChange($event)"
       />
     } @else if (state() === 'failed') {
-      <p class="message error" role="alert">Der Editor konnte nicht geladen werden.</p>
+      <p class="message error" role="alert">{{ t.loadFailed }}</p>
     } @else {
-      <p class="message">Editor wird geladen …</p>
+      <p class="message">{{ t.loading }}</p>
     }
   `,
   styles: `
@@ -65,11 +66,13 @@ import { Dialect, offsetOf, splitForRun, statementAt } from './sql-split';
   `,
 })
 export class SqlEditor implements OnInit {
+  protected readonly t = EDITOR_TEXTS;
   private readonly theme = inject(ThemeService);
 
   /** Text the editor starts with. */
   readonly initialValue = input('');
-  readonly label = input('SQL-Editor');
+  /** The accessible name; empty = "SQL editor" in the current language. */
+  readonly label = input('');
   /** Shows text that cannot be changed (the preview of the history). */
   readonly readonly = input(false);
   /** The rules statements are split by. */
