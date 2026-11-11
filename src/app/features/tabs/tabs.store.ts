@@ -1,3 +1,4 @@
+import { HistoryService, RanStatement } from '../history/history.service';
 import { SchemaStore } from '../schema/schema.store';
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FileDialogApi } from '../../core/backend/file-dialog-api';
@@ -45,9 +46,11 @@ export class TabsStore {
   private readonly connections = inject(ConnectionsStore);
   private readonly settings = inject(SettingsService);
   private readonly schema = inject(SchemaStore);
+  private readonly history = inject(HistoryService);
   private readonly services = {
     api: inject(QueryApi),
     connections: this.connections,
+    record: (ran: RanStatement) => this.history.record(ran),
     ran: (connection: string, statements: readonly string[]) =>
       this.schema.ran(connection, statements),
     options: () => {

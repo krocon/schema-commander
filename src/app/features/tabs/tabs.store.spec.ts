@@ -1,3 +1,4 @@
+import { HistoryApi } from '../../core/history/history-api';
 import { SchemaApi } from '../../core/schema/schema-api';
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -6,6 +7,7 @@ import {
   FakeConnectionsApi,
   FakeFileDialogApi,
   FakeQueryApi,
+  FakeHistoryApi,
   FakeSchemaApi,
   FakeSessionApi,
 } from '../../../testing/fake-apis';
@@ -70,6 +72,7 @@ describe('TabsStore', () => {
         { provide: ConnectionsApi, useValue: connections },
         { provide: QueryApi, useValue: query },
         { provide: SchemaApi, useValue: new FakeSchemaApi() },
+        { provide: HistoryApi, useValue: new FakeHistoryApi() },
       ],
     });
   });

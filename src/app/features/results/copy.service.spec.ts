@@ -1,3 +1,4 @@
+import { HistoryApi } from '../../core/history/history-api';
 import { TestBed } from '@angular/core/testing';
 import { ClipboardApi } from '../../core/backend/clipboard-api';
 import { FileDialogApi } from '../../core/backend/file-dialog-api';
@@ -14,6 +15,7 @@ import {
   FakeConnectionsApi,
   FakeFileDialogApi,
   FakeQueryApi,
+  FakeHistoryApi,
   FakeSchemaApi,
   FakeSessionApi,
 } from '../../../testing/fake-apis';
@@ -39,6 +41,7 @@ describe('CopyService', () => {
         { provide: ConnectionsApi, useValue: connections },
         { provide: QueryApi, useValue: query },
         { provide: SchemaApi, useValue: new FakeSchemaApi() },
+        { provide: HistoryApi, useValue: new FakeHistoryApi() },
         { provide: ClipboardApi, useValue: clipboard },
       ],
     });

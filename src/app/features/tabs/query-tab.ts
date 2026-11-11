@@ -1,3 +1,4 @@
+import type { RanStatement } from '../history/history.service';
 import { computed, signal } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
 import { describeError, toAppError } from '../../core/errors/app-error';
@@ -36,6 +37,8 @@ export interface TabServices {
   readonly connections: ConnectionsStore;
   /** How statements run right now (from the settings). */
   readonly options: () => RunOptions;
+  /** A statement ended, one way or the other (the history notes it). */
+  readonly record?: (ran: RanStatement) => void;
   /** Statements ended well on a connection (the schema tree reads again after DDL). */
   readonly ran?: (connection: string, statements: readonly string[]) => void;
 }
@@ -87,6 +90,8 @@ export class QueryTab {
   );
 
   private editor: TabEditor | null = null;
+  /** Who wrote the statements of the run that is on. */
+  private origin: 'user' | 'app' = 'user';
   private runId = 0;
   private runningOn: string | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -148,9 +153,9 @@ export class QueryTab {
     void this.editor?.runScript();
   }
 
-  /** Runs one statement. */
-  run(sql: string): Promise<void> {
-    return this.runAll([sql]);
+  /** Runs one statement; `origin` says whether the user wrote it or the app (for the history). */
+  run(sql: string, origin: 'user' | 'app' = 'user'): Promise<void> {
+    return this.runAll([sql], origin);
   }
 
   /**
@@ -158,7 +163,8 @@ export class QueryTab {
    * an error the rest is left out, unless the setting says to go on. A run started while another runs takes
    * its place: the older one is stopped and its answers are dropped.
    */
-  async runAll(statements: readonly string[]): Promise<void> {
+  async runAll(statements: readonly string[], origin: 'user' | 'app' = 'user'): Promise<void> {
+    this.origin = origin;
     const sqls = statements.filter((s) => s.trim() !== '');
     if (sqls.length === 0) return;
     const { connections } = this.services;
@@ -311,6 +317,25 @@ export class QueryTab {
       elapsedMs: run.elapsedMs,
     };
     this.log.update((all) => [...all, entry].slice(-MAX_LOG));
+    if (run.kind === 'done' || run.kind === 'failed' || run.kind === 'cancelled') {
+      this.services.record?.({
+        at: started,
+        connectionId: this.connectionId(),
+        sql: run.sql,
+        elapsedMs: run.elapsedMs ?? 0,
+        rows: run.rowsAffected ?? run.rows,
+        outcome: run.kind === 'done' ? 'ok' : run.kind,
+        message: run.kind === 'failed' ? run.message : null,
+        tab: this.id,
+        origin: this.origin,
+      });
+    }
+  }
+
+  /** Replaces the text of the editor (recall from the history). */
+  async setText(text: string): Promise<void> {
+    await this.editor?.setText(text);
+    this.editor?.focus();
   }
 
   /** After a run: the first error, else the first result with rows, else the messages of a script. */

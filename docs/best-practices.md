@@ -105,7 +105,9 @@ Unsere Ergänzungen und Abweichungen:
   In Rust ist ein Geheimnis ein `db::secrets::Secret` (kein `Serialize`, `Debug` zeigt `***`); im Frontend geht ein
   Passwort nur vom Eingabefeld zur Fassade, wird nie in einem Signal oder Store gehalten und das Feld danach geleert.
   Fehlertexte dürfen nie ein Passwort enthalten (Tests prüfen das).
-- **SQL des Nutzers ist Nutzerdaten**: Anweisungen und Ergebnisse nie loggen. Werte, die die App selbst in SQL
+- **SQL des Nutzers ist Nutzerdaten**: Anweisungen und Ergebnisse nie loggen. Dauerhaft liegen Anweisungstexte nur
+  an zwei Stellen, beide in der Hand des Nutzers: in den Sicherungen seiner Tabs und im **Verlauf**
+  (`history.sqlite`, abschaltbar, endgültig löschbar) – nie Ergebnisse, nie Parameterwerte. Werte, die die App selbst in SQL
   einsetzt (Filter, Bearbeiten im Gitter), immer als gebundene Parameter, Bezeichner über die Quoting-Funktion des
   Dialekts, nie per String-Verkettung.
 - **Zerstörendes braucht eine Bestätigung im Backend-Vertrag** (z. B. `UPDATE`/`DELETE` ohne `WHERE`, alles auf einer
