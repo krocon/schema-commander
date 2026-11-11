@@ -4,8 +4,15 @@ import {
   defaultPort,
   isLocalHost,
 } from '../../core/connections/connection.models';
+import { CONNECTION_DIALOG_TEXTS } from './connection-dialog-texts';
+import { CONNECTION_TEXTS } from './connection-texts';
 
 /** Pure logic of the connection list and dialog (prompt 003). */
+
+/** The name of a database as the list and the dialogs show it. */
+export function kindName(kind: DbKind): string {
+  return CONNECTION_TEXTS.kinds[kind] ?? kind;
+}
 
 export interface ProfileGroup {
   /** `''` = the top level. */
@@ -50,12 +57,12 @@ export function stageOf(code: string): string {
   switch (code) {
     case 'host_key_changed':
     case 'ssh_secret_required':
-      return 'SSH-Tunnel: ';
+      return CONNECTION_DIALOG_TEXTS.stageSsh;
     case 'tls_failed':
-      return 'TLS: ';
+      return CONNECTION_DIALOG_TEXTS.stageTls;
     case 'auth_failed':
     case 'secret_required':
-      return 'Anmeldung: ';
+      return CONNECTION_DIALOG_TEXTS.stageAuth;
     default:
       return '';
   }
@@ -63,44 +70,42 @@ export function stageOf(code: string): string {
 
 /** What is wrong with a profile, by field; empty = it can be stored. Mirrors `profiles::check` in Rust. */
 export function profileProblems(p: Profile): Partial<Record<Field, string>> {
+  const t = CONNECTION_DIALOG_TEXTS;
   const out: Partial<Record<Field, string>> = {};
   // eslint-disable-next-line no-control-regex
   const control = /[\u0000-\u001f\u007f-\u009f]/;
-  if (!p.name.trim()) out.name = 'Bitte einen Namen eingeben.';
-  else if ([...p.name].length > 100 || control.test(p.name))
-    out.name = 'Der Name ist nicht erlaubt.';
+  if (!p.name.trim()) out.name = t.nameMissing;
+  else if ([...p.name].length > 100 || control.test(p.name)) out.name = t.nameInvalid;
   if (!Number.isInteger(p.port) || p.port < 0 || p.port > 65535) {
-    out.port = 'Der Port liegt zwischen 1 und 65535.';
+    out.port = t.portRange;
   }
   if (p.kind === 'sqlite') {
-    if (!p.database.trim()) out.database = 'Bitte eine Datei wählen.';
+    if (!p.database.trim()) out.database = t.fileMissing;
     return out;
   }
   const host = p.host.trim();
-  if (!host) out.host = 'Bitte einen Host eingeben.';
+  if (!host) out.host = t.hostMissing;
   else if (!/^[A-Za-z0-9._:[\]%-]{1,253}$/.test(host)) {
-    out.host = 'Nur der Name oder die Adresse des Rechners, ohne Leerzeichen, Pfad oder Benutzer.';
+    out.host = t.hostInvalid;
   }
-  if (!p.user.trim()) out.user = 'Bitte einen Benutzer eingeben.';
+  if (!p.user.trim()) out.user = t.userMissing;
   if (!p.clientCert.trim() !== !p.clientKey.trim()) {
-    out.clientKey = 'Client-Zertifikat und Client-Schlüssel gehören zusammen.';
+    out.clientKey = t.certPair;
   }
   if (p.caFile.trim() && p.tls !== 'verify-ca' && p.tls !== 'verify') {
-    out.tls =
-      'Eine CA-Datei wirkt nur, wenn das Zertifikat geprüft wird: einen prüfenden Modus wählen.';
+    out.tls = t.caNeedsVerify;
   }
   if (p.ssh) {
     const sshHost = p.ssh.host.trim();
     if (!sshHost || !/^[A-Za-z0-9._:[\]%-]{1,253}$/.test(sshHost)) {
-      out.sshHost = 'Bitte den Namen oder die Adresse des SSH-Servers eingeben.';
+      out.sshHost = t.sshHostMissing;
     }
     if (!Number.isInteger(p.ssh.port) || p.ssh.port < 0 || p.ssh.port > 65535) {
-      out.sshPort = 'Der SSH-Port liegt zwischen 1 und 65535.';
+      out.sshPort = t.sshPortRange;
     }
-    if (!p.ssh.user.trim()) out.sshUser = 'Bitte den SSH-Benutzer eingeben.';
+    if (!p.ssh.user.trim()) out.sshUser = t.sshUserMissing;
     if (p.tls === 'verify') {
-      out.tls =
-        'Durch einen SSH-Tunnel lässt sich der Hostname des Zertifikats nicht prüfen: „nur das Zertifikat“ wählen.';
+      out.tls = t.tlsThroughSsh;
     }
   }
   return out;

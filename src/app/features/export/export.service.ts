@@ -3,6 +3,7 @@ import { ExportApi, ExportSpec } from '../../core/backend/export-api';
 import { describeError, toAppError } from '../../core/errors/app-error';
 import { QueryColumn } from '../../core/sql/query.models';
 import { baseName, doneMessage, progressMessage } from './export-logic';
+import { EXPORT_TEXTS } from './export-texts';
 
 /** What to export. */
 export type ExportSource =
@@ -76,11 +77,11 @@ export class ExportService {
         error.code === 'cancelled'
           ? {
               state: 'cancelled',
-              message: `Export nach ${name} abgebrochen; keine Datei geschrieben.`,
+              message: EXPORT_TEXTS.cancelled(name),
             }
           : {
               state: 'failed',
-              message: `Export nach ${name} gescheitert: ${describeError(error)}`,
+              message: EXPORT_TEXTS.failed(name, describeError(error)),
             },
       );
     }
