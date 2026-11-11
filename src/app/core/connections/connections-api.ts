@@ -4,8 +4,12 @@ import {
   ConnectionInfo,
   LoadedProfiles,
   Profile,
+  ImportPick,
+  ImportPreview,
+  ImportSource,
   SshCredentials,
   SshHost,
+  UrlDraft,
 } from './connection.models';
 
 /**
@@ -32,6 +36,21 @@ export abstract class ConnectionsApi {
   abstract open(id: string, password: string | null, ssh?: SshCredentials): Promise<ConnectionInfo>;
   /** The hosts of `~/.ssh/config`, to fill in a jump host. */
   abstract sshHosts(): Promise<SshHost[]>;
+  /** A connection from a pasted URL, JDBC URL, ADO string or SQLite path; rejects with `invalid_profile`. */
+  abstract parseUrl(text: string): Promise<UrlDraft>;
+  /**
+   * The connections another tool keeps. `path`: a file from the open dialog; without one the usual place of
+   * the source is read. Rejects with `not_found`, `too_large`, `invalid_profile` (not such a file).
+   */
+  abstract importPreview(source: ImportSource, path: string | null): Promise<ImportPreview>;
+  /** Stores the picked connections of a source and resolves with them. */
+  abstract importConnections(
+    source: ImportSource,
+    path: string | null,
+    picks: readonly ImportPick[],
+  ): Promise<Profile[]>;
+  /** Writes the stored profiles to a file (from the save dialog) – without secrets. */
+  abstract exportConnections(path: string): Promise<void>;
   abstract close(id: string): Promise<void>;
 }
 
@@ -69,6 +88,26 @@ export class TauriConnectionsApi extends ConnectionsApi {
 
   sshHosts(): Promise<SshHost[]> {
     return call('ssh_config_hosts');
+  }
+
+  parseUrl(text: string): Promise<UrlDraft> {
+    return call('parse_connection_url', { text });
+  }
+
+  importPreview(source: ImportSource, path: string | null): Promise<ImportPreview> {
+    return call('import_preview', { source, path });
+  }
+
+  importConnections(
+    source: ImportSource,
+    path: string | null,
+    picks: readonly ImportPick[],
+  ): Promise<Profile[]> {
+    return call('import_connections', { source, path, picks });
+  }
+
+  exportConnections(path: string): Promise<void> {
+    return call('export_connections', { path });
   }
 
   close(id: string): Promise<void> {

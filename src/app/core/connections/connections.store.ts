@@ -1,7 +1,17 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { AppError, describeError, toAppError } from '../errors/app-error';
 import { SettingsService } from '../settings/settings.service';
-import { DEMO_ID, Profile, SshCredentials, SshHost, usesPassword } from './connection.models';
+import {
+  DEMO_ID,
+  ImportPick,
+  ImportPreview,
+  ImportSource,
+  Profile,
+  SshCredentials,
+  SshHost,
+  UrlDraft,
+  usesPassword,
+} from './connection.models';
 import { ConnectionsApi } from './connections-api';
 
 export type ConnectionState =
@@ -202,6 +212,30 @@ export class ConnectionsStore {
 
   sshHosts(): Promise<SshHost[]> {
     return this.api.sshHosts();
+  }
+
+  parseUrl(text: string): Promise<UrlDraft> {
+    return this.api.parseUrl(text);
+  }
+
+  importPreview(source: ImportSource, path: string | null): Promise<ImportPreview> {
+    return this.api.importPreview(source, path);
+  }
+
+  /** Stores the picked connections of a source; they join the list. */
+  async importConnections(
+    source: ImportSource,
+    path: string | null,
+    picks: readonly ImportPick[],
+  ): Promise<Profile[]> {
+    const stored = await this.api.importConnections(source, path, picks);
+    const ids = new Set(stored.map((p) => p.id));
+    this.profiles.update((all) => [...all.filter((p) => !ids.has(p.id)), ...stored]);
+    return stored;
+  }
+
+  exportConnections(path: string): Promise<void> {
+    return this.api.exportConnections(path);
   }
 
   /** The password dialog answers (`null` = cancelled). */

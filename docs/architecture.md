@@ -51,6 +51,7 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | A29 | Schutz der Verbindungen im Backend: `guard::classify` (eigener Scanner, im Zweifel schreibend), `admit` an jedem Ausführ-Command, Bestätigung als einmaliges Token, `readonly` zusätzlich auf dem Server | Design 012 E1–E6 |
 | A30 | Jeder Tab hat eine eigene Sitzung (ersetzt „eine je Profil“ aus A15); die der Verbindung gehört der App (Baum, Export). Den Transaktionszustand sagt der Server nach jedem Lauf | Design 013 E1–E5 |
 | A31 | SSH-Tunnel in Rust (`ssh/`, `russh`): Listener auf `127.0.0.1` mit Zufallsport, der nur angekündigte Verbindungen annimmt; Host-Schlüssel gegen `known_hosts`, unbekannt = Fingerabdruck bestätigen, geändert = Ablehnung. `trust.rs` und `ssh_config.rs` sind aus log-commander übernommen | Design 014 E1–E5 |
+| A32 | Fremde Verbindungsdateien liest nur Rust (`db/import.rs`): begrenzt, ohne XML-Parser, ohne Ausführen; Klartext-Passwörter gehen auf Wunsch direkt in den Schlüsselbund und nie über die Brücke | Design 015 E1, E4, E5 |
 | A10 | Oberflächentexte vorerst deutsch in den Komponenten | übernommene Galerie ist deutsch; Kataloge de/en kommen mit dem Prompt „Einstellungen und Sprache“ |
 
 ## Offene Architekturfragen (entscheidet der jeweilige Prompt)

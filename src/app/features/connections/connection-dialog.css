@@ -136,3 +136,15 @@ h2 {
 footer button:not(.primary) {
   border-color: var(--border);
 }
+
+/* a connection URL fills the form (prompt 015) */
+.from-url {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.from-url input {
+  flex: 1;
+  min-width: 0;
+}

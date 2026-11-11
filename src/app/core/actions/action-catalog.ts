@@ -172,6 +172,12 @@ export const ACTIONS = [
   // Verbindung
   { id: 'NEW_CONNECTION', label: 'Neue Verbindung …', group: 'Verbindung', scope: 'global' },
   {
+    id: 'IMPORT_CONNECTIONS',
+    label: 'Verbindungen importieren oder exportieren …',
+    group: 'Verbindung',
+    scope: 'global',
+  },
+  {
     id: 'EDIT_CONNECTION',
     label: 'Aktive Verbindung bearbeiten …',
     group: 'Verbindung',
