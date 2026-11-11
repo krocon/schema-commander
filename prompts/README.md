@@ -27,7 +27,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 | 004 | [Abfrage-Tabs](done/004-abfrage-tabs.md) ([Design](done/004-abfrage-tabs.design.md)) | C1 | 002, 003 | M | ✅ 11.11.2026 |
 | 005 | [Anweisungen ausführen](done/005-ausfuehren.md) ([Design](done/005-ausfuehren.design.md)) | C2 | 003, 004, E2 (editlicious: Auswahl abfragen) | M | ✅ 11.11.2026 |
 | 006 | [Große Ergebnisse](done/006-grosse-ergebnisse.md) ([Design](done/006-grosse-ergebnisse.design.md)) | D1 | 005 | L | ✅ 11.11.2026 |
-| 007 | [Zellen richtig zeigen](007-zell-darstellung.md) | D2 | 003, 006 | M | offen |
+| 007 | [Zellen richtig zeigen](done/007-zell-darstellung.md) ([Design](done/007-zell-darstellung.design.md)) | D2 | 003, 006 | M | ✅ 11.11.2026 |
 | 008 | [Schema-Baum](008-schema-baum.md) | B1 | 002, 003 | L | offen |
 | 009 | [Kopieren als …](009-kopieren-als.md) | D6 | 007 | S–M | offen |
 | 010 | [Abfrage-Verlauf](010-verlauf.md) | C6 | 005 | M | offen |

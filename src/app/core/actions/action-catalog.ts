@@ -47,6 +47,12 @@ export const ACTIONS = [
     scope: 'global',
   },
   { id: 'SHOW_MESSAGES', label: 'Meldungen zeigen', group: 'Abfrage', scope: 'global' },
+  {
+    id: 'TOGGLE_DIGIT_GROUPING',
+    label: 'Ergebnis: Tausendertrennung ein/aus',
+    group: 'Abfrage',
+    scope: 'global',
+  },
   { id: 'CANCEL_QUERY', label: 'Laufende Anweisung abbrechen', group: 'Abfrage', scope: 'global' },
   // Tabs
   { id: 'NEW_TAB', label: 'Neuer Tab', group: 'Tabs', scope: 'global' },

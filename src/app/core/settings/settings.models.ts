@@ -16,6 +16,8 @@ export interface Settings {
   readonly stopOnError: boolean;
   /** Time at most per statement in seconds; 0 = as long as it takes. */
   readonly statementTimeoutSec: number;
+  /** Show numbers in the result with their digits in groups of three (prompt 007); never when copying. */
+  readonly groupDigits: boolean;
   /** Ids of the actions run from the command palette, the latest first. */
   readonly recentActions: readonly string[];
 }
@@ -38,6 +40,7 @@ export const DEFAULT_SETTINGS: Settings = {
   activeConnection: 'demo',
   stopOnError: true,
   statementTimeoutSec: 0,
+  groupDigits: false,
 };
 
 function size(value: unknown, fallback: number): number {
@@ -61,6 +64,8 @@ export function mergeSettings(saved: unknown): Settings {
     recentActions: recent(s['recentActions']),
     stopOnError:
       typeof s['stopOnError'] === 'boolean' ? s['stopOnError'] : DEFAULT_SETTINGS.stopOnError,
+    groupDigits:
+      typeof s['groupDigits'] === 'boolean' ? s['groupDigits'] : DEFAULT_SETTINGS.groupDigits,
     statementTimeoutSec: Math.min(86_400, size(s['statementTimeoutSec'], 0)),
     activeConnection:
       typeof s['activeConnection'] === 'string' && /^[a-z0-9-]{1,64}$/.test(s['activeConnection'])
