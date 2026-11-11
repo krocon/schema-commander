@@ -118,6 +118,53 @@ describe('RelationsService', () => {
     expect([...relations.links(tab, copier.current()!.result.columns)]).toEqual([1]);
   });
 
+  it('keeps the keys of tables apart whose names join to the same text (review 030)', async () => {
+    schema.relationsOf['a.b.c'] = { outgoing: [], incoming: [] };
+    const tab = await orders();
+    tab.tableView.set({ schema: 'a.b', table: 'c', spec: EMPTY_SPEC });
+    await relations.ensure(tab);
+    tab.tableView.set({ schema: 'a', table: 'b.c', spec: EMPTY_SPEC });
+    await relations.ensure(tab);
+    expect(schema.calls.filter((c) => c.startsWith('relations'))).toHaveLength(2);
+  });
+
+  it('frees the result of a look also when its rows cannot be read, and counts one at a time', async () => {
+    const tab = await orders([0, 0]);
+    await relations.referencedBy(tab);
+    let open!: () => void;
+    const gate = new Promise<void>((r) => (open = r));
+    const run = query.run.bind(query);
+    let running = 0;
+    let most = 0;
+    query.run = async (...args: Parameters<typeof run>) => {
+      most = Math.max(most, ++running);
+      await gate;
+      running--;
+      return run(...args);
+    };
+    relations.countAll();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(most).toBe(1);
+    // closing the list ends the counting: the second key is never asked
+    relations.close();
+    open();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(most).toBe(1);
+    expect(query.tableQueries.filter((q) => q.query.count)).toHaveLength(1);
+    query.run = run;
+    // a look whose rows cannot be read leaves no result behind
+    const freed = query.freed.length;
+    const shown = copier.current()!.result.resultId;
+    const window = query.window.bind(query);
+    query.window = (id: number, from: number, count: number) =>
+      id === shown ? window(id, from, count) : Promise.reject({ code: 'io', message: 'gone' });
+    tab.grid = grid([0, 1]);
+    await relations.follow(tab, 'peek').catch(() => undefined);
+    expect(query.freed.length).toBeGreaterThan(freed);
+    expect(relations.dialog()).toBeNull();
+  });
+
   it('follows a cell forward in the tab: the target filtered by the key, bound by the backend', async () => {
     const tab = await orders([0, 1]);
     await relations.follow(tab, 'here');

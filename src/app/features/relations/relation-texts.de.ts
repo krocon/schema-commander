@@ -9,6 +9,7 @@ export const RELATION_DE: Translation<typeof RELATION_EN> = {
   noKeys: (table) => `${table} hat keinen Fremdschlüssel.`,
   noIncoming: (table) => `Keine Tabelle verweist auf ${table}.`,
   nullKey: 'Der Schlüssel ist hier NULL: Er verweist auf nichts.',
+  longKey: 'Der Schlüssel ist ein sehr langer Text: Von hier lässt er sich nicht verfolgen.',
   cut: (n) =>
     `Zu viele Zeilen markiert: Nur die ersten ${n} verschiedenen Schlüssel werden verfolgt.`,
   path: 'Pfad',

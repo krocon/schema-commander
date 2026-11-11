@@ -35,6 +35,7 @@ export const MAX_SOURCE_ROWS = 20_000;
 /** Rows a look at the relatives shows. */
 export const PEEK_ROWS = 5;
 const WINDOW = 1000;
+const FOCUS_AFTER_MS = 200;
 /** Keys read from the catalog count as current this long. */
 export const RELATIONS_FRESH_MS = 60_000;
 const TIMEOUT_MS = 30_000;
@@ -109,7 +110,8 @@ export class RelationsService {
   }
 
   private static id(p: { connection: string; schema: string; table: string }): string {
-    return `${p.connection}|${p.schema}.${p.table}`;
+    // not joined with a sign a name may hold: `a.b` + `c` is another table than `a` + `b.c`
+    return JSON.stringify([p.connection, p.schema, p.table]);
   }
 
   /** The user's own relations of a connection. */
@@ -268,7 +270,12 @@ export class RelationsService {
     source?: { rows: RowWindow; columns: readonly QueryColumn[]; cut?: boolean },
   ): Promise<void> {
     const view = item.view;
-    if (!view) return this.say(this.t.nullKey);
+    if (!view) {
+      const values = source
+        ? relatedView(item.key, item.direction, source.rows, source.columns).values
+        : null;
+      return this.say(values && values.long > 0 ? this.t.longKey : this.t.nullKey);
+    }
     const connection = tab.connectionId();
     const title = view.table;
     if (source) {
@@ -286,8 +293,11 @@ export class RelationsService {
         });
         let rows: RowWindow = [];
         if (out.resultId !== null) {
-          rows = await this.api.window(out.resultId, 0, PEEK_ROWS + 1);
-          void this.api.free([out.resultId]).catch(() => undefined);
+          try {
+            rows = await this.api.window(out.resultId, 0, PEEK_ROWS + 1);
+          } finally {
+            void this.api.free([out.resultId]).catch(() => undefined);
+          }
         }
         this.dialog.set({
           kind: 'peek',
@@ -316,7 +326,8 @@ export class RelationsService {
           : navPush(EMPTY_NAV, { view: from, title: from.table });
       tab.nav.set(navPush(nav, { view, title }));
       await tab.openTable(view);
-      setTimeout(() => tab.grid?.focusGrid());
+      // the grid shows the new rows a moment later: then it gets the keyboard back
+      setTimeout(() => tab.grid?.focusGrid(), FOCUS_AFTER_MS);
     } catch (e) {
       this.say(describeError(e));
     }
@@ -368,9 +379,12 @@ export class RelationsService {
       });
       let n: number | null = null;
       if (out.resultId !== null) {
-        const cell = (await this.api.window(out.resultId, 0, 1))[0]?.[0];
-        void this.api.free([out.resultId]).catch(() => undefined);
-        n = typeof cell === 'number' || typeof cell === 'string' ? Number(cell) : null;
+        try {
+          const cell = (await this.api.window(out.resultId, 0, 1))[0]?.[0];
+          n = typeof cell === 'number' || typeof cell === 'string' ? Number(cell) : null;
+        } finally {
+          void this.api.free([out.resultId]).catch(() => undefined);
+        }
       }
       set(n !== null && Number.isFinite(n) ? n : 'failed');
     } catch {
@@ -378,13 +392,18 @@ export class RelationsService {
     }
   }
 
-  /** Counts for every item of the list that leads somewhere. */
-  countAll(): void {
+  /**
+   * Counts for every item of the list that leads somewhere – one after the other (they share the session
+   * of the connection), and no further once the list is closed.
+   */
+  async countAll(): Promise<void> {
     const d = this.dialog();
     if (d?.kind !== 'list') return;
-    d.items.forEach((item, i) => {
-      if (item.view && item.count === null) void this.count(i);
-    });
+    for (let i = 0; i < d.items.length; i++) {
+      const now = this.dialog();
+      if (now?.kind !== 'list' || now.tab !== d.tab || now.items.length !== d.items.length) return;
+      if (now.items[i].view && now.items[i].count === null) await this.count(i);
+    }
   }
 
   close(): void {
@@ -409,7 +428,7 @@ export class RelationsService {
     if (nav === tab.nav()) return;
     tab.nav.set(nav);
     await tab.openTable(nav.entries[nav.index].view);
-    setTimeout(() => tab.grid?.focusGrid());
+    setTimeout(() => tab.grid?.focusGrid(), FOCUS_AFTER_MS);
   }
 
   back(tab: QueryTab): Promise<void> {

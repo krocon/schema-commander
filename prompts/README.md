@@ -51,7 +51,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 | 027 | [Sortieren und Filtern](done/027-sortieren-filtern.md) ([Design](done/027-sortieren-filtern.design.md)) | D5 | 006, 007, 008 | M | ✅ 11.11.2026 |
 | 028 | [Auswahl auswerten](done/028-auswahl-auswerten.md) ([Design](done/028-auswahl-auswerten.design.md)) | D7 | 007 | S | ✅ 11.11.2026 |
 | 029 | [Spalten verwalten und im Ergebnis suchen](done/029-spalten-suche.md) ([Design](done/029-spalten-suche.design.md)) | D8 | 006, 007 | S–M | ✅ 11.11.2026 |
-| 030 | [Fremdschlüsseln folgen](030-fremdschluessel-folgen.md) | D10 | 008, 027 | M | offen |
+| 030 | [Fremdschlüsseln folgen](done/030-fremdschluessel-folgen.md) ([Design](done/030-fremdschluessel-folgen.design.md)) | D10 | 008, 027 | M | ✅ 11.11.2026 |
 | 031 | [Daten bearbeiten mit Änderungsvorschau](031-daten-bearbeiten.md) | E1 | 007, 012, 013, 027 | L | ✅ editlicious 026, in `editlicious-editor` 1.2.0 |
 | 032 | [Zeilen einfügen, duplizieren, löschen, Block einfügen](032-zeilen-bearbeiten.md) | E2 | 031 | M | ✅ editlicious 027, in `editlicious-editor` 1.2.0 |
 | 033 | [Import aus CSV und JSON](033-import.md) | F2 | 008, 011 | M–L | offen |

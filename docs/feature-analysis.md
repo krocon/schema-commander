@@ -96,7 +96,7 @@ Prompts) · **Stufe** = meine Empfehlung: **1** Grundlage (ohne das ist es kein 
 | D7 | **Auswahl auswerten**: Anzahl, Summe, Mittel, Min, Max der markierten Zellen in der Statuszeile | DataGrip, Excel | S | 2 | ☑ [028](../prompts/done/028-auswahl-auswerten.md) |
 | D8 | **Spalten**: fixieren, ausblenden, verschieben, Breite merken; **Suchen im Ergebnis** mit Treffer-Sprung | DBeaver | S–M | 2 | ☑ [029](../prompts/done/029-spalten-suche.md) |
 | D9 | **Mehrere Ergebnisse** als Unter-Tabs; Ergebnis **anpinnen**, damit die nächste Ausführung es nicht ersetzt; **zwei Ergebnisse vergleichen** (Unterschiede farbig) | DataGrip | M | 3 | ☑ [041](../prompts/041-ergebnisse-vergleichen.md) |
-| D10 | **Fremdschlüssel folgen**: von einer Zelle zur referenzierten Zeile springen; Zeilen anzeigen, die auf diese Zeile zeigen | DataGrip, DbGate | M | 2 | ☑ [030](../prompts/030-fremdschluessel-folgen.md) |
+| D10 | **Fremdschlüssel folgen**: von einer Zelle zur referenzierten Zeile springen; Zeilen anzeigen, die auf diese Zeile zeigen | DataGrip, DbGate | M | 2 | ☑ [030](../prompts/done/030-fremdschluessel-folgen.md) |
 | D11 | **Diagramm aus dem Ergebnis** (Linie, Balken, Zeitreihe); Tokens `--chart-1…8` gibt es schon | Azure Data Studio, DBeaver | M | 3 | ☑ [042](../prompts/042-diagramme.md) |
 
 ### E – Daten und Struktur bearbeiten

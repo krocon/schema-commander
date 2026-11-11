@@ -13,6 +13,11 @@ import { DEFAULT_LIMIT, EMPTY_SPEC, TableView } from '../filter/filter-logic';
 export const MAX_KEY_ROWS = 1000;
 /** Values of all key rows together at most (`MAX_KEY_VALUES`). */
 export const MAX_KEY_VALUES = 2000;
+/**
+ * Characters of a text that can be a key. The rows of a result carry long texts cut (at 1000 characters):
+ * a text that long may not be the whole value, so it is no key to follow.
+ */
+export const MAX_KEY_CHARS = 999;
 /** Relations a user may define per connection. */
 export const MAX_VIRTUAL = 500;
 
@@ -97,6 +102,8 @@ export interface KeyValues {
   readonly nulls: number;
   /** More different keys than a statement takes: only the first are in `keys`. */
   readonly cut: boolean;
+  /** Rows left out because a part of their key is a text too long to be sure it is whole. */
+  readonly long: number;
 }
 
 /**
@@ -112,17 +119,22 @@ export function keyValues(
 ): KeyValues {
   const at = from.map((name) => columnIndex(columns, name));
   if (at.length === 0 || at.length !== to.length || at.some((i) => i < 0)) {
-    return { keys: null, nulls: 0, cut: false };
+    return { keys: null, nulls: 0, cut: false, long: 0 };
   }
   const max = Math.min(MAX_KEY_ROWS, Math.floor(MAX_KEY_VALUES / at.length));
   const seen = new Set<string>();
   const out: string[][] = [];
   let nulls = 0;
+  let long = 0;
   let cut = false;
   for (const row of rows) {
     const values = at.map((i) => keyText(row[i]));
     if (values.some((v) => v === null)) {
       nulls++;
+      continue;
+    }
+    if (values.some((v) => [...(v as string)].length > MAX_KEY_CHARS)) {
+      long++;
       continue;
     }
     const id = JSON.stringify(values);
@@ -145,6 +157,7 @@ export function keyValues(
     },
     nulls,
     cut,
+    long,
   };
 }
 

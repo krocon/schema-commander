@@ -90,6 +90,19 @@ describe('relation-logic', () => {
     });
   });
 
+  it('takes no text as a key that the window may have cut (review 030)', () => {
+    // rows of a result carry long texts cut: such a value is not the key, so it is not followed
+    const long = `${'x'.repeat(1000)}…`;
+    const values = keyValues(
+      [[long], ['short'], ['y'.repeat(999)]],
+      [col('code', 'text', 'text')],
+      ['code'],
+      ['code'],
+    );
+    expect(values.keys?.rows.map((r) => r[0].length)).toEqual([5, 999]);
+    expect(values).toMatchObject({ long: 1, nulls: 0 });
+  });
+
   it('cuts a key at what a statement takes and says so', () => {
     const rows = Array.from({ length: MAX_KEY_ROWS + 5 }, (_, i) => [i]);
     const many = keyValues(rows, [col('id')], ['id'], ['id']);

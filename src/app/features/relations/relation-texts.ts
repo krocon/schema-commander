@@ -9,6 +9,7 @@ export const RELATION_EN = {
   noKeys: (table: string) => `${table} has no foreign key.`,
   noIncoming: (table: string) => `No table points to ${table}.`,
   nullKey: 'The key is NULL here: it points to nothing.',
+  longKey: 'The key is a very long text: it cannot be followed from here.',
   cut: (n: number) => `Too many rows marked: only the first ${n} different keys are followed.`,
   path: 'Path',
   back: 'Back',

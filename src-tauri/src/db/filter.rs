@@ -120,6 +120,10 @@ pub const MAX_KEY_ROWS: usize = 1000;
 pub const MAX_KEY_VALUES: usize = 2000;
 /// Columns of a key at most.
 pub const MAX_KEY_COLUMNS: usize = 16;
+/// Bytes of one key value at most: a key is short; anything longer is no value to follow.
+pub const MAX_KEY_VALUE_BYTES: usize = 4096;
+/// Values a statement binds at most, keys and conditions together (`MAX_BINDS` of the manager).
+pub const MAX_PARAMS: usize = 2000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -554,6 +558,14 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
         if keys.rows.iter().any(|row| row.len() != width) {
             return Err(invalid("a key row does not fit its columns"));
         }
+        if keys
+            .rows
+            .iter()
+            .flatten()
+            .any(|v| v.len() > MAX_KEY_VALUE_BYTES)
+        {
+            return Err(invalid("a key value is too long"));
+        }
     }
     match (kind, q.limit, q.count) {
         (_, _, true) => b.text(&format!("SELECT COUNT(*)\nFROM {table}")),
@@ -636,6 +648,10 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
     }
     if let (Some(n), false) = (q.limit, kind == DbKind::Sqlserver || q.count) {
         b.text(&format!("\nLIMIT {n}"));
+    }
+    // refused here, before the statement is shown anywhere, not later by the driver
+    if b.params.len() > MAX_PARAMS {
+        return Err(invalid("too many values in one statement"));
     }
     Ok(Built {
         sql: b.sql,
@@ -917,6 +933,24 @@ mod tests {
                 ..keys(&three, &[])
             }),
             no
+        );
+        // review 030: a value longer than any key is refused, and so is a statement whose keys and
+        // conditions together bind more than a driver takes
+        assert_eq!(
+            refused(keys(&one, &[&[&"x".repeat(MAX_KEY_VALUE_BYTES + 1)]])),
+            no
+        );
+        let mut q = query(vec![cond("state", Op::Eq, &["open"])]);
+        let pair = [("a", ValueKind::Text, ""), ("b", ValueKind::Text, "")];
+        q.keys = Some(KeySet {
+            rows: (0..1000).map(|i| vec![i.to_string(); 2]).collect(),
+            ..keys(&pair, &[])
+        });
+        assert_eq!(build(DbKind::Postgres, &q).unwrap_err().code, no);
+        q.conditions.clear();
+        assert_eq!(
+            build(DbKind::Postgres, &q).unwrap().params.len(),
+            MAX_PARAMS
         );
         // a column name is quoted like any other; a type that is none is not written
         let mut q = query(vec![]);
