@@ -102,6 +102,7 @@ describe('conditions of a table view', () => {
         whereSql: null,
         order: [],
         limit: 1000,
+        keys: null,
       },
     );
   });

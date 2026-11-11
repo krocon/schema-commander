@@ -48,6 +48,7 @@ import {
   ObjectInfo,
   SchemaInfo,
   TableInfo,
+  TableRelations,
 } from '../app/core/schema/schema.models';
 import {
   BoundValue,
@@ -309,7 +310,11 @@ export class FakeQueryApi extends QueryApi {
       (where ? ` WHERE ${where}` : '') +
       (query.whereSql ? ` AND (${query.whereSql})` : '') +
       (order ? ` ORDER BY ${order}` : '');
-    const values = query.conditions.flatMap((c) => c.values);
+    // the values of a key come first, as in the statement of the backend
+    const values = [
+      ...(query.keys?.rows.flat() ?? []),
+      ...query.conditions.flatMap((c) => c.values),
+    ];
     const table = `${query.schema ? `${query.schema}.` : ''}${query.table}`;
     let n = 0;
     return Promise.resolve({
@@ -776,6 +781,17 @@ export class FakeSchemaApi extends SchemaApi {
 
   table(_id: string, schema: string, table: string): Promise<TableInfo> {
     return this.answer(`table ${schema}.${table}`, this.tableInfo);
+  }
+
+  /** The keys of tables by `schema.table` (prompt 030). */
+  relationsOf: Record<string, TableRelations> = {};
+
+  relations(_connectionId: string, schema: string, table: string): Promise<TableRelations> {
+    this.calls.push(`relations ${schema}.${table}`);
+    if (this.fail) return Promise.reject(this.fail);
+    return Promise.resolve(
+      this.relationsOf[`${schema}.${table}`] ?? { outgoing: [], incoming: [] },
+    );
   }
 
   search(_id: string, text: string): Promise<Found[]> {

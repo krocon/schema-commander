@@ -3,6 +3,7 @@ import {
   FilterCondition,
   FilterOp,
   FilterOrder,
+  KeySet,
   QueryColumn,
   TableQuery,
   ViewSpec,
@@ -29,6 +30,11 @@ export interface TableSpec {
   readonly whereSql: string;
   readonly order: readonly FilterOrder[];
   readonly limit: number | null;
+  /**
+   * Only the rows with one of these keys (prompt 030: the rows a foreign key points to, or those that
+   * point to a row). Part of where the user came from, not of what is remembered for the table.
+   */
+  readonly keys?: KeySet | null;
 }
 
 /** Rows a table view reads unless told otherwise. */
@@ -53,12 +59,18 @@ export function queryOf(view: TableView): TableQuery {
     whereSql: s.whereSql.trim() === '' ? null : s.whereSql.trim(),
     order: s.order,
     limit: s.limit,
+    keys: s.keys ?? null,
   };
 }
 
 /** Something narrows or orders the view (the limit alone does not). */
 export function isFiltered(spec: TableSpec): boolean {
-  return spec.conditions.length > 0 || spec.whereSql.trim() !== '' || spec.order.length > 0;
+  return (
+    spec.conditions.length > 0 ||
+    spec.whereSql.trim() !== '' ||
+    spec.order.length > 0 ||
+    !!spec.keys
+  );
 }
 
 /** The operators, in the order of the list; how many values each wants (`many`: a list). */
@@ -262,7 +274,9 @@ export function remember(
   spec: TableSpec,
 ): Record<string, TableSpec> {
   const rest = Object.entries(all).filter(([k]) => k !== key);
-  const kept = isFiltered(spec) ? [[key, spec] as [string, TableSpec], ...rest] : rest;
+  // the keys a view was reached with are where the user came from: not remembered for the table
+  const own: TableSpec = { ...spec, keys: null };
+  const kept = isFiltered(own) ? [[key, own] as [string, TableSpec], ...rest] : rest;
   return Object.fromEntries(kept.slice(0, MAX_REMEMBERED));
 }
 

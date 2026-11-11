@@ -105,10 +105,16 @@ export class WindowAreaModel extends AreaModel {
   private map: readonly number[] | null = null;
   /** The cells a search found, and the one it stands on (prompt 029). */
   private hits: HitMarks | null = null;
+  private links: ReadonlySet<number> | null = null;
 
   /** Which result column each grid column shows (the caller builds a new table model). */
   setShown(shown: readonly number[] | null): void {
     this.map = shown;
+  }
+
+  /** The columns of the result whose cells lead to another table (prompt 030; the caller repaints). */
+  setLinks(links: ReadonlySet<number> | null): void {
+    this.links = links;
   }
 
   /** The hits to mark from now on (the caller repaints). */
@@ -182,6 +188,8 @@ export class WindowAreaModel extends AreaModel {
     if (col === 0) return [];
     const cls = this.shown(row, col)?.cls;
     const out: string[] = cls ? [cls] : [];
+    // a cell of a foreign key that holds a value is a link
+    if (this.links?.has(this.resultColumn(col)) && cls !== 'sc-null') out.push('sc-fk');
     const mark = this.hits?.at(row, this.resultColumn(col));
     if (mark) out.push(mark === 'current' ? 'sc-hit-current' : 'sc-hit');
     return out;

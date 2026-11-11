@@ -35,6 +35,10 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   written into the SQL), sort by a click on a column head, add a condition from the cell under the cursor
   (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>E</kbd>); the filter of a table is remembered. Any other
   result is filtered and sorted in the backend's store without running the query again
+- Follow foreign keys in a table: <kbd>F4</kbd> on `customer_id = 42` shows the customer (in the tab, in a new
+  one, or as a quick look with <kbd>Shift</kbd>+<kbd>F4</kbd>); <kbd>Alt</kbd>+<kbd>F7</kbd> lists the tables
+  that point to the row, with counts. Several marked rows at once, composite keys, a path with back and forward
+  (<kbd>Alt</kbd>+<kbd>←/→</kbd>), and relations of your own where the database defines none
 - Wide results: keep columns at the left, hide them, move them (drag, or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>←/→</kbd>),
   fit widths; the column list (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>C</kbd>) finds one of 500
   columns by name. The layout is remembered per table

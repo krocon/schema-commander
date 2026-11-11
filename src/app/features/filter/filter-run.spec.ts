@@ -67,6 +67,7 @@ describe('sorting and filtering in a tab', () => {
         whereSql: null,
         order: [],
         limit: 1000,
+        keys: null,
       },
     });
     expect(api.statements.at(-1)?.sql).toBe('SELECT * FROM shop.orders WHERE name eq ?');

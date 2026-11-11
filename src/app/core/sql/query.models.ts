@@ -104,6 +104,20 @@ export interface TableQuery {
   readonly order: readonly FilterOrder[];
   /** Rows at most; `null` = all. */
   readonly limit: number | null;
+  /** Only rows with one of these keys (prompt 030); joined to the conditions with AND. */
+  readonly keys?: KeySet | null;
+  /** Count the rows instead of reading them. */
+  readonly count?: boolean;
+}
+
+/** Mirrors `KeySet` in src-tauri/src/db/filter.rs: values of a key, row by row – the backend binds them. */
+export interface KeySet {
+  readonly columns: readonly {
+    readonly column: string;
+    readonly kind: 'number' | 'bool' | 'text';
+    readonly typeName: string;
+  }[];
+  readonly rows: readonly (readonly string[])[];
 }
 
 /** Mirrors `Built`: the statement of a table view with placeholders, its values, and a readable form. */

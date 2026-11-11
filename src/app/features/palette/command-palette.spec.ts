@@ -111,7 +111,7 @@ describe('CommandPalette', () => {
     type('in den editor');
     key('Enter');
     expect(closed).not.toHaveBeenCalled();
-    type('zzzz');
+    type('qqqq');
     expect(el.querySelector('.status')?.textContent).toContain('Kein Befehl');
   });
 

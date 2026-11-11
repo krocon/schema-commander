@@ -62,6 +62,22 @@ const COPY_AS: MenuDef = {
   ],
 };
 
+/** From a row to its relatives (prompt 030). */
+const RELATIONS: MenuDef = {
+  sub: () => T.relations,
+  items: [
+    'FK_FOLLOW',
+    'FK_FOLLOW_TAB',
+    'FK_PEEK',
+    'FK_REFERENCED_BY',
+    '-',
+    'NAV_BACK',
+    'NAV_FORWARD',
+    '-',
+    'FK_DEFINE',
+  ],
+};
+
 /** The columns of a result (prompt 029). */
 const RESULT_COLUMNS: MenuDef = {
   sub: () => T.resultColumns,
@@ -251,6 +267,7 @@ export const MENU_BAR: readonly TopMenu[] = [
       'SHOW_MESSAGES',
       '-',
       FILTER_CELL,
+      RELATIONS,
       RESULT_FIND,
       RESULT_COLUMNS,
       'SUMMARIZE_COLUMN',
@@ -340,6 +357,7 @@ export const RESULT_MENU: readonly MenuDef[] = [
   'SAVE_CELL_VALUE',
   'TOGGLE_VALUE_PANEL',
   FILTER_CELL,
+  RELATIONS,
   RESULT_FIND,
   RESULT_COLUMNS,
   'SUMMARIZE_COLUMN',

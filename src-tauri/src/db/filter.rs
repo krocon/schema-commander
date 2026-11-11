@@ -105,6 +105,45 @@ pub struct TableQuery {
     /// Rows at most; `None` = all.
     #[serde(default)]
     pub limit: Option<u64>,
+    /// Only rows with one of these keys (prompt 030: the rows a foreign key points to, or those that
+    /// point to a row). Joined to the other conditions with `AND`.
+    #[serde(default)]
+    pub keys: Option<KeySet>,
+    /// Count the rows instead of reading them: `SELECT COUNT(*)`, without order and limit.
+    #[serde(default)]
+    pub count: bool,
+}
+
+/// Rows of a key at most; more are refused (the window says so before it asks).
+pub const MAX_KEY_ROWS: usize = 1000;
+/// Values of all key rows together at most (SQL Server takes 2100 parameters in a statement).
+pub const MAX_KEY_VALUES: usize = 2000;
+/// Columns of a key at most.
+pub const MAX_KEY_COLUMNS: usize = 16;
+/// Bytes of one key value at most: a key is short; anything longer is no value to follow.
+pub const MAX_KEY_VALUE_BYTES: usize = 4096;
+/// Values a statement binds at most, keys and conditions together (`MAX_BINDS` of the manager).
+pub const MAX_PARAMS: usize = 2000;
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyColumn {
+    pub column: String,
+    #[serde(default)]
+    pub kind: ValueKind,
+    /// As in [`Condition`]: PostgreSQL casts the value to it.
+    #[serde(default)]
+    pub type_name: String,
+}
+
+/// Values of a key, row by row: one column gives `IN (…)`, several give
+/// `(a = … AND b = …) OR (…)`. Every value is bound. A key never holds NULL (NULL references nothing):
+/// the window leaves such rows out.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeySet {
+    pub columns: Vec<KeyColumn>,
+    pub rows: Vec<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -297,6 +336,45 @@ impl Builder {
         }
     }
 
+    /// The rows with one of the keys: `IN` for one column, a bracket of `(a = … AND b = …)` joined with
+    /// `OR` for several. The caller has checked the sizes.
+    fn keys(&mut self, keys: &KeySet) -> AppResult<()> {
+        if let [only] = keys.columns.as_slice() {
+            let column = name(&only.column, self.kind)?;
+            self.text(&format!("{column} IN ("));
+            for (i, row) in keys.rows.iter().enumerate() {
+                if i > 0 {
+                    self.text(", ");
+                }
+                self.value(&row[0], only.kind, &only.type_name);
+            }
+            self.text(")");
+            return Ok(());
+        }
+        let names = keys
+            .columns
+            .iter()
+            .map(|c| name(&c.column, self.kind))
+            .collect::<AppResult<Vec<_>>>()?;
+        self.text("(");
+        for (i, row) in keys.rows.iter().enumerate() {
+            if i > 0 {
+                self.text("\n   OR ");
+            }
+            self.text("(");
+            for (c, value) in row.iter().enumerate() {
+                if c > 0 {
+                    self.text(" AND ");
+                }
+                self.text(&format!("{} = ", names[c]));
+                self.value(value, keys.columns[c].kind, &keys.columns[c].type_name);
+            }
+            self.text(")");
+        }
+        self.text(")");
+        Ok(())
+    }
+
     fn condition(&mut self, c: &Condition) -> AppResult<()> {
         let column = name(&c.column, self.kind)?;
         let need = |n: usize| -> AppResult<()> {
@@ -466,8 +544,32 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
         display: String::new(),
         params: Vec::new(),
     };
-    match (kind, q.limit) {
-        (DbKind::Sqlserver, Some(n)) => b.text(&format!("SELECT TOP ({n}) *\nFROM {table}")),
+    if let Some(keys) = &q.keys {
+        let width = keys.columns.len();
+        if width == 0 || width > MAX_KEY_COLUMNS {
+            return Err(invalid("a key has one to sixteen columns"));
+        }
+        if keys.rows.is_empty() {
+            return Err(invalid("a key without values"));
+        }
+        if keys.rows.len() > MAX_KEY_ROWS || keys.rows.len() * width > MAX_KEY_VALUES {
+            return Err(invalid("too many key values"));
+        }
+        if keys.rows.iter().any(|row| row.len() != width) {
+            return Err(invalid("a key row does not fit its columns"));
+        }
+        if keys
+            .rows
+            .iter()
+            .flatten()
+            .any(|v| v.len() > MAX_KEY_VALUE_BYTES)
+        {
+            return Err(invalid("a key value is too long"));
+        }
+    }
+    match (kind, q.limit, q.count) {
+        (_, _, true) => b.text(&format!("SELECT COUNT(*)\nFROM {table}")),
+        (DbKind::Sqlserver, Some(n), false) => b.text(&format!("SELECT TOP ({n}) *\nFROM {table}")),
         _ => b.text(&format!("SELECT *\nFROM {table}")),
     }
     let free = q
@@ -478,29 +580,41 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
     if let Some(free) = free {
         check_where(free, kind)?;
     }
-    if !q.conditions.is_empty() || free.is_some() {
+    if q.keys.is_some() || !q.conditions.is_empty() || free.is_some() {
         b.text("\nWHERE ");
-        let grouped = free.is_some() && q.conditions.len() > 1 && q.any;
-        if grouped {
-            b.text("(");
+        let mut first = true;
+        if let Some(keys) = &q.keys {
+            b.keys(keys)?;
+            first = false;
         }
-        for (i, c) in q.conditions.iter().enumerate() {
-            if i > 0 {
-                b.text(if q.any { "\n   OR " } else { "\n  AND " });
+        if !q.conditions.is_empty() {
+            if !first {
+                b.text("\n  AND ");
             }
-            b.condition(c)?;
-        }
-        if grouped {
-            b.text(")");
+            // conditions joined with OR stand in a bracket beside anything joined to them with AND
+            let grouped = (free.is_some() || !first) && q.conditions.len() > 1 && q.any;
+            if grouped {
+                b.text("(");
+            }
+            for (i, c) in q.conditions.iter().enumerate() {
+                if i > 0 {
+                    b.text(if q.any { "\n   OR " } else { "\n  AND " });
+                }
+                b.condition(c)?;
+            }
+            if grouped {
+                b.text(")");
+            }
+            first = false;
         }
         if let Some(free) = free {
-            if !q.conditions.is_empty() {
+            if !first {
                 b.text("\n  AND ");
             }
             b.text(&format!("({free})"));
         }
     }
-    if !q.order.is_empty() {
+    if !q.order.is_empty() && !q.count {
         b.text("\nORDER BY ");
         for (i, o) in q.order.iter().enumerate() {
             if i > 0 {
@@ -532,8 +646,12 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
             }
         }
     }
-    if let (Some(n), false) = (q.limit, kind == DbKind::Sqlserver) {
+    if let (Some(n), false) = (q.limit, kind == DbKind::Sqlserver || q.count) {
         b.text(&format!("\nLIMIT {n}"));
+    }
+    // refused here, before the statement is shown anywhere, not later by the driver
+    if b.params.len() > MAX_PARAMS {
+        return Err(invalid("too many values in one statement"));
     }
     Ok(Built {
         sql: b.sql,
@@ -698,6 +816,179 @@ mod tests {
                 ErrorCode::Unsupported,
                 "{bad}"
             );
+        }
+    }
+
+    fn keys(columns: &[(&str, ValueKind, &str)], rows: &[&[&str]]) -> KeySet {
+        KeySet {
+            columns: columns
+                .iter()
+                .map(|(column, kind, type_name)| KeyColumn {
+                    column: (*column).into(),
+                    kind: *kind,
+                    type_name: (*type_name).into(),
+                })
+                .collect(),
+            rows: rows
+                .iter()
+                .map(|row| row.iter().map(|v| (*v).to_owned()).collect())
+                .collect(),
+        }
+    }
+
+    /// Prompt 030: the rows a foreign key points to – one column as a list, several as pairs.
+    #[test]
+    fn keys_become_a_list_or_pairs_with_every_value_bound() {
+        let mut q = query(vec![]);
+        q.keys = Some(keys(
+            &[("id", ValueKind::Number, "int8")],
+            &[&["7"], &["42"]],
+        ));
+        let pg = build(DbKind::Postgres, &q).unwrap();
+        assert_eq!(
+            pg.sql,
+            "SELECT *\nFROM shop.orders\nWHERE id IN (CAST($1 AS int8), CAST($2 AS int8))"
+        );
+        assert_eq!(
+            pg.params,
+            vec![Bind::Text("7".into()), Bind::Text("42".into())]
+        );
+        assert_eq!(
+            pg.display,
+            "SELECT *\nFROM shop.orders\nWHERE id IN (CAST('7' AS int8), CAST('42' AS int8))"
+        );
+        // a composite key: pair by pair, in a bracket, beside the conditions of the user
+        q.keys = Some(keys(
+            &[
+                ("warehouse", ValueKind::Number, "int4"),
+                ("item code", ValueKind::Text, ""),
+            ],
+            &[&["1", "A-7"], &["2", "B'9"]],
+        ));
+        q.conditions = vec![
+            cond("state", Op::Eq, &["open"]),
+            cond("state", Op::Eq, &["held"]),
+        ];
+        q.any = true;
+        q.limit = Some(200);
+        let my = build(DbKind::Mysql, &q).unwrap();
+        assert_eq!(
+            my.sql,
+            "SELECT *\nFROM shop.orders\nWHERE ((warehouse = ? AND `item code` = ?)\n   OR (warehouse = ? AND `item code` = ?))\n  AND (state = ?\n   OR state = ?)\nLIMIT 200"
+        );
+        assert_eq!(my.params.len(), 6);
+        assert_eq!(my.params[3], Bind::Text("B'9".into()));
+        let ms = build(DbKind::Sqlserver, &q).unwrap();
+        assert!(ms.sql.starts_with(
+            "SELECT TOP (200) *\nFROM shop.orders\nWHERE ((warehouse = @P1 AND [item code] = @P2)"
+        ));
+        // counting: the same rows, no order, no limit
+        q.count = true;
+        q.order = vec![Order {
+            column: "id".into(),
+            desc: false,
+            nulls: None,
+        }];
+        let count = build(DbKind::Sqlserver, &q).unwrap();
+        assert!(
+            count
+                .sql
+                .starts_with("SELECT COUNT(*)\nFROM shop.orders\nWHERE ((")
+        );
+        assert!(!count.sql.contains("ORDER BY") && !count.sql.contains("TOP"));
+        assert!(!build(DbKind::Postgres, &q).unwrap().sql.contains("LIMIT"));
+    }
+
+    #[test]
+    fn keys_that_do_not_fit_are_refused_and_no_key_value_stands_in_the_statement() {
+        let refused = |k: KeySet| {
+            let mut q = query(vec![]);
+            q.keys = Some(k);
+            build(DbKind::Postgres, &q).unwrap_err().code
+        };
+        let no = invalid("").code;
+        let one = [("id", ValueKind::Number, "int4")];
+        assert_eq!(refused(keys(&[], &[&["1"]])), no);
+        assert_eq!(refused(keys(&one, &[])), no);
+        assert_eq!(refused(keys(&one, &[&["1", "2"]])), no);
+        assert_eq!(refused(keys(&one, &[&[]])), no);
+        let many: Vec<Vec<String>> = (0..=MAX_KEY_ROWS).map(|i| vec![i.to_string()]).collect();
+        assert_eq!(
+            refused(KeySet {
+                rows: many,
+                ..keys(&one, &[])
+            }),
+            no
+        );
+        // three columns: 667 rows are more values than a statement takes
+        let three = [
+            ("a", ValueKind::Text, ""),
+            ("b", ValueKind::Text, ""),
+            ("c", ValueKind::Text, ""),
+        ];
+        let wide: Vec<Vec<String>> = (0..667).map(|i| vec![i.to_string(); 3]).collect();
+        assert_eq!(
+            refused(KeySet {
+                rows: wide,
+                ..keys(&three, &[])
+            }),
+            no
+        );
+        // review 030: a value longer than any key is refused, and so is a statement whose keys and
+        // conditions together bind more than a driver takes
+        assert_eq!(
+            refused(keys(&one, &[&[&"x".repeat(MAX_KEY_VALUE_BYTES + 1)]])),
+            no
+        );
+        let mut q = query(vec![cond("state", Op::Eq, &["open"])]);
+        let pair = [("a", ValueKind::Text, ""), ("b", ValueKind::Text, "")];
+        q.keys = Some(KeySet {
+            rows: (0..1000).map(|i| vec![i.to_string(); 2]).collect(),
+            ..keys(&pair, &[])
+        });
+        assert_eq!(build(DbKind::Postgres, &q).unwrap_err().code, no);
+        q.conditions.clear();
+        assert_eq!(
+            build(DbKind::Postgres, &q).unwrap().params.len(),
+            MAX_PARAMS
+        );
+        // a column name is quoted like any other; a type that is none is not written
+        let mut q = query(vec![]);
+        q.keys = Some(keys(
+            &[("id\"; DROP TABLE t; --", ValueKind::Text, "int4); DROP")],
+            &[&["1"]],
+        ));
+        let built = build(DbKind::Postgres, &q).unwrap();
+        assert_eq!(
+            built.sql,
+            "SELECT *\nFROM shop.orders\nWHERE \"id\"\"; DROP TABLE t; --\" IN ($1)"
+        );
+        for kind in ALL {
+            for evil in [
+                "'; DROP TABLE orders; --",
+                "1) OR (1=1",
+                "x' OR 'a'='a",
+                "?1",
+                "$1",
+                "@P1",
+            ] {
+                for value_kind in [ValueKind::Text, ValueKind::Number, ValueKind::Bool] {
+                    for columns in [&one[..], &three[..]] {
+                        let row: Vec<&str> = vec![evil; columns.len()];
+                        let mut q = query(vec![]);
+                        let mut set = keys(columns, &[&row]);
+                        for c in &mut set.columns {
+                            c.kind = value_kind;
+                        }
+                        q.keys = Some(set);
+                        let built = build(kind, &q).unwrap();
+                        for word in ["DROP", "OR (1", "'a'", "--"] {
+                            assert!(!built.sql.contains(word), "{kind:?} {evil}: {}", built.sql);
+                        }
+                        assert_eq!(built.params.len(), columns.len());
+                    }
+                }
+            }
         }
     }
 

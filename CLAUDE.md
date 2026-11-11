@@ -50,11 +50,13 @@
   der markierten Zellen in der Statuszeile, exakt gerechnet in Rust; Spalte zusammenfassen mit den häufigsten
   Werten (Prompt 028); **Spalten** fixieren, ausblenden, verschieben, Breiten merken (je Tabelle bzw. Tab),
   Spaltenliste mit Sprung; **Suche im Ergebnis** (Text, Wort, Regex, je Spalte) in Rust mit Treffer-Sprung,
-  Gehe zu Zeile, nächster anderer Wert / nächstes NULL (Prompt 029);
+  Gehe zu Zeile, nächster anderer Wert / nächstes NULL (Prompt 029); **Fremdschlüsseln folgen** in
+  Tabellen-Ansichten: zur referenzierten Zeile (im Tab, neuer Tab, Vorschau), „wird referenziert von“ mit
+  Anzahl, mehrere Zeilen, Pfad mit Zurück/Vor, eigene Beziehungen (Prompt 030);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–029),
+  erledigt: 001–030),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -128,6 +130,9 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                Tabelle als Tabellen-Ansicht öffnen), filter-logic.ts (rein)
   app/features/find/           ResultFind (je Tab: Suche stückweise, Treffer, Sprung; kein Injectable), FindBar
                                (Suchzeile über dem Ergebnis), ColumnsPopover (Spaltenliste)
+  app/features/relations/      RelationsService (Root: Schlüssel lesen, folgen, zählen, Vorschau, eigene
+                               Beziehungen), RelationsDialog, RelationPath (Pfad über dem Ergebnis),
+                               relation-logic.ts (rein: Schlüsselwerte, Sichten, Pfad)
   app/features/stats/          StatsService (Root: Kennzahlen der Auswahl, gedrosselt, Überholtes verworfen),
                                StatsPopover (Spalte zusammenfassen), stats-logic.ts (rein: Kennzahlen → Anzeige)
   app/features/format/         FormatService (Root: ein Job, Statuszeile), format-logic.ts (rein: Stil,
@@ -196,6 +201,7 @@ src-tauri/                     Rust
                                auch böser Werte)
   src/db/guard.rs              Anweisungen einstufen (lesend/schreibend/DDL/gefährlich), Schutzstufen (rein, Katalog)
   src/db/details.rs            Objekt-Details als Listen + DDL je Datenbank (Katalog, gebundene Parameter)
+  src/db/relations.rs          Fremdschlüssel einer Tabelle als Daten, je Datenbank (Katalog, gebundene Parameter)
   src/db/names.rs              Namensindex je Verbindung: Katalog lesen, Suche und Rangfolge (rein, Katalog als Test)
   src/db/meta.rs               Metadaten aus dem Systemkatalog (gebundene Parameter), quote() je Dialekt
   src/db/value.rs              Cell, ColKind, QueryResult (verlustfrei über die Brücke)
@@ -240,6 +246,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   Stellen des Editors zählen Spalten in **Codepunkten**, JavaScript in UTF-16: umgerechnet wird nur mit
   `core/text/places.ts` (`placeIn`, `offsetAt`).
 - **Tabellen-Ansicht**: Ihr SQL baut nur `db/filter.rs`; das Fenster setzt nie Werte oder Namen in SQL ein.
+  Auch das Folgen eines Fremdschlüssels ist eine Tabellen-Ansicht: Das Fenster nennt Tabelle und Schlüsselwerte
+  (`KeySet`), das Backend bindet sie.
   Lokales Sortieren/Filtern geschieht im Ergebnisspeicher (`derive`), nie über die Zeilen im Fenster.
 - **Spalten des Ergebnisses**: Gitterspalte ≠ Ergebnisspalte (das Layout versteckt und verschiebt). Umgerechnet
   wird nur im Gitter (`WindowAreaModel.resultColumn`, `ResultGrid.chosen/cursor`); nach außen gehen immer

@@ -958,6 +958,19 @@ pub fn meta_table(
     })
 }
 
+/// The foreign keys of a table and those that point to it (prompt 030).
+#[tauri::command(async)]
+pub fn meta_relations(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    schema: String,
+    table: String,
+) -> AppResult<crate::db::relations::Relations> {
+    manager.ask(&id, |s, kind, stop| {
+        crate::db::relations::relations(s, kind, &schema, &table, stop)
+    })
+}
+
 /// Everything about one object: its lists and its DDL (prompt 019). `detail` tells overloaded routines
 /// apart.
 #[tauri::command(async)]

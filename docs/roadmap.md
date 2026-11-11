@@ -5,7 +5,7 @@
 | 0 | Technischer Aufbau, Walking Skeleton (Editor → Rust → Gitter), Farbschemata, Best Practices | ✅ |
 | 1 | Feature-Analyse der wichtigsten SQL-Tools (`docs/feature-analysis.md`) | ✅ alle Features freigegeben |
 | 2 | Prompts 001–049 (`prompts/`) und E1–E5 für editlicious (`prompts/done/editlicious/`) | ✅ geschrieben |
-| 3 | Umsetzung Prompt für Prompt in der Reihenfolge von `prompts/README.md` | 001–029 ✅, nächster: 030; E1–E5 erledigt mit `editlicious-editor` 1.2.0; seit 1.3.0 Zeilenkommentar und Ansicht nach dem Kürzen im Editor |
+| 3 | Umsetzung Prompt für Prompt in der Reihenfolge von `prompts/README.md` | 001–030 ✅, nächster: 031; E1–E5 erledigt mit `editlicious-editor` 1.2.0; seit 1.3.0 Zeilenkommentar und Ansicht nach dem Kürzen im Editor |
 
 Bekannte Lücken des Skeletons (werden von den ersten Prompts geschlossen):
 
