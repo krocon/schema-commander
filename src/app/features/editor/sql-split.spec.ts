@@ -1,24 +1,52 @@
-import { offsetOf, splitStatements, statementAt } from './sql-split';
+import catalog from './sql-split.cases.json';
+import { Dialect, offsetOf, splitForRun, splitStatements, statementAt } from './sql-split';
+
+const DIALECTS: Dialect[] = ['postgres', 'mysql', 'sqlserver', 'sqlite'];
+
+describe('splitStatements (catalog)', () => {
+  for (const c of catalog.cases) {
+    const dialects = c.dialect === 'all' ? DIALECTS : [c.dialect as Dialect];
+    for (const dialect of dialects) {
+      it(`${dialect}: ${c.name}`, () => {
+        expect(splitStatements(c.script, dialect).map((s) => s.text)).toEqual(c.statements);
+      });
+    }
+  }
+});
 
 describe('splitStatements', () => {
-  it('splits at semicolons and drops empty parts', () => {
-    expect(splitStatements('select 1; select 2;;\n').map((s) => s.text)).toEqual([
+  it('says where each statement stands', () => {
+    const script = '  select 1 ;\n\n select 2';
+    const [a, b] = splitStatements(script, 'postgres');
+    expect(script.slice(a.start, a.end)).toBe('select 1 ');
+    expect(script[a.end]).toBe(';');
+    expect(script.slice(b.start, b.end)).toBe('select 2');
+  });
+
+  it('is quick on a big script', () => {
+    const script = "insert into t values (1, 'a;b', $$c;d$$);\n".repeat(50_000);
+    const started = performance.now();
+    expect(splitStatements(script, 'postgres').length).toBe(50_000);
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+});
+
+describe('splitForRun', () => {
+  it('sends SQL Server scripts batch by batch', () => {
+    const script =
+      'declare @n int = 1; select @n;\nGO\ncreate view v as select 1 as one\ngo 2\n-- nur ein Kommentar\nGO\nselect * from v';
+    expect(splitForRun(script, 'sqlserver').map((s) => s.text)).toEqual([
+      'declare @n int = 1; select @n;',
+      'create view v as select 1 as one',
+      'select * from v',
+    ]);
+  });
+
+  it('sends other scripts statement by statement', () => {
+    expect(splitForRun('select 1; select 2', 'postgres').map((s) => s.text)).toEqual([
       'select 1',
       'select 2',
     ]);
-  });
-
-  it('ignores semicolons in strings, quoted names and comments', () => {
-    const script = `select 'a;b', "c;d", \`e;f\` -- no; split\nfrom t /* nor; here */; select 'it''s; fine'`;
-    expect(splitStatements(script).map((s) => s.text)).toEqual([
-      `select 'a;b', "c;d", \`e;f\` -- no; split\nfrom t /* nor; here */`,
-      `select 'it''s; fine'`,
-    ]);
-  });
-
-  it('survives unterminated strings and comments', () => {
-    expect(splitStatements("select 'open; x").length).toBe(1);
-    expect(splitStatements('select 1 /* open; x').length).toBe(1);
   });
 });
 
@@ -39,6 +67,13 @@ describe('statementAt', () => {
     expect(statementAt(script, offsetOf(script, 3, 1))?.text).toBe('select 3');
     expect(statementAt('select 1;\n\n', 11)?.text).toBe('select 1');
     expect(statementAt('  ', 0)).toBeNull();
+  });
+
+  it('takes a whole function when the caret is inside its body', () => {
+    const fn =
+      'select 1;\ncreate function f() returns int as $$\nbegin\n  return 1;\nend;\n$$ language plpgsql;\nselect 2';
+    expect(statementAt(fn, offsetOf(fn, 4, 5), 'postgres')?.text).toContain('create function');
+    expect(statementAt(fn, offsetOf(fn, 4, 5), 'postgres')?.text).toContain('language plpgsql');
   });
 });
 

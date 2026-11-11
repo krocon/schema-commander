@@ -23,7 +23,7 @@ import { PasswordDialog } from './features/connections/password-dialog';
 import { CommandPalette } from './features/palette/command-palette';
 import { ShortcutDialogComponent } from './features/shortcuts/shortcut-dialog';
 import { QueryPane } from './features/tabs/query-pane';
-import { statusText } from './features/tabs/run-state';
+import { runStatus } from './features/tabs/run-state';
 import { TabBar } from './features/tabs/tab-bar';
 import { encodingLabel } from './features/tabs/tab-logic';
 import { TabsStore } from './features/tabs/tabs.store';
@@ -66,11 +66,21 @@ const SIDEBAR_MIN = 140;
       <button
         type="button"
         class="primary"
-        [title]="'Anweisung unter dem Cursor ausführen' + actions.hint('RUN_STATEMENT')"
+        [title]="
+          'Auswahl oder Anweisung unter dem Cursor ausführen' + actions.hint('RUN_STATEMENT')
+        "
         [disabled]="running()"
         (click)="actions.run('RUN_STATEMENT')"
       >
         ▶ Ausführen
+      </button>
+      <button
+        type="button"
+        [title]="'Ganzes Skript ausführen' + actions.hint('RUN_SCRIPT')"
+        [disabled]="running()"
+        (click)="actions.run('RUN_SCRIPT')"
+      >
+        ▶▶ Skript
       </button>
       @if (running()) {
         <button
@@ -228,7 +238,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly running = computed(() => this.tabs.active()?.running() ?? false);
   protected readonly status = computed(() => {
     const tab = this.tabs.active();
-    return tab ? statusText(tab.state()) : '';
+    return tab ? runStatus(tab.runs(), tab.elapsedMs()) : '';
   });
   protected readonly encoding = computed(() =>
     encodingLabel(this.tabs.active()?.encoding() ?? null),
@@ -322,6 +332,16 @@ export class App implements OnInit, OnDestroy {
         'RUN_STATEMENT',
         () => tab()?.runCurrent(),
         () => !this.running() && !!tab(),
+      ),
+      this.actions.register(
+        'RUN_SCRIPT',
+        () => tab()?.runScript(),
+        () => !this.running() && !!tab(),
+      ),
+      this.actions.register(
+        'SHOW_MESSAGES',
+        () => tab()?.shown.set('messages'),
+        () => !!tab(),
       ),
       this.actions.register(
         'CANCEL_QUERY',

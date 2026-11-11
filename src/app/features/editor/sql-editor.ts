@@ -15,11 +15,11 @@ import {
 import { ThemeService } from '../../core/theme/theme.service';
 import { EDITOR_COLORS } from './editor-colors';
 import { EdCaret, EdChange, EditliciousEditorElement, loadEditlicious } from './editlicious';
-import { offsetOf, statementAt } from './sql-split';
+import { Dialect, offsetOf, splitForRun, statementAt } from './sql-split';
 
 /**
  * The SQL editor: `<editlicious-editor>` with the SQL grammar, coloured by the app's tokens.
- * `runCurrent()` asks to run the statement under the caret (`run`); the key for it is an action (prompt 002).
+ * `runCurrent()` and `runScript()` ask to run statements (`run`); the keys for them are actions (prompt 002).
  */
 @Component({
   selector: 'app-sql-editor',
@@ -69,8 +69,10 @@ export class SqlEditor implements OnInit {
   /** Text the editor starts with. */
   readonly initialValue = input('');
   readonly label = input('SQL-Editor');
-  /** The statement to run. */
-  readonly run = output<string>();
+  /** The rules statements are split by. */
+  readonly dialect = input<Dialect>('sqlite');
+  /** The statements to run, in their order. */
+  readonly run = output<readonly string[]>();
   readonly caret = output<EdCaret>();
   /** The text changed (revision, size – never the text itself). Not sent for the start text. */
   readonly changed = output<EdChange>();
@@ -119,16 +121,36 @@ export class SqlEditor implements OnInit {
     await this.editor()?.nativeElement.setValue(text);
   }
 
-  /** Asks to run the statement under the caret. */
+  /**
+   * Asks to run the selection, when there is one, else the statement under the caret. A selection is taken
+   * as it is marked and split into its statements.
+   */
   async runCurrent(): Promise<void> {
     const editor = this.editor()?.nativeElement;
     if (!editor) return;
+    const dialect = this.dialect();
+    const selection = await editor.getSelection();
+    if (selection.text.trim() !== '') {
+      const statements = splitForRun(selection.text, dialect).map((s) => s.text);
+      if (statements.length > 0) this.run.emit(statements);
+      return;
+    }
     const script = await editor.getValue();
+    const caret = this.lastCaret;
     const statement = statementAt(
       script,
-      offsetOf(script, this.lastCaret?.line ?? 1, this.lastCaret?.ch ?? 1),
+      offsetOf(script, caret?.line ?? 1, caret?.ch ?? 1),
+      dialect,
     );
-    if (statement) this.run.emit(statement.text);
+    if (statement) this.run.emit([statement.text]);
+  }
+
+  /** Asks to run the whole script, statement by statement (SQL Server: batch by batch). */
+  async runScript(): Promise<void> {
+    const editor = this.editor()?.nativeElement;
+    if (!editor) return;
+    const statements = splitForRun(await editor.getValue(), this.dialect()).map((s) => s.text);
+    if (statements.length > 0) this.run.emit(statements);
   }
 
   protected onChange(event: Event): void {

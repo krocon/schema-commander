@@ -12,6 +12,10 @@ export interface Settings {
   readonly keymap: KeymapSetting;
   /** The connection statements run on (prompt 003); unknown ids fall back to the demo database. */
   readonly activeConnection: string;
+  /** Leave out the rest of a script after a statement failed (prompt 005). */
+  readonly stopOnError: boolean;
+  /** Time at most per statement in seconds; 0 = as long as it takes. */
+  readonly statementTimeoutSec: number;
   /** Ids of the actions run from the command palette, the latest first. */
   readonly recentActions: readonly string[];
 }
@@ -32,6 +36,8 @@ export const DEFAULT_SETTINGS: Settings = {
   keymap: { version: KEYMAP_VERSION, bindings: {} },
   recentActions: [],
   activeConnection: 'demo',
+  stopOnError: true,
+  statementTimeoutSec: 0,
 };
 
 function size(value: unknown, fallback: number): number {
@@ -53,6 +59,9 @@ export function mergeSettings(saved: unknown): Settings {
     resultHeight: size(s['resultHeight'], DEFAULT_SETTINGS.resultHeight),
     keymap: mergeKeymap(s['keymap']).keymap,
     recentActions: recent(s['recentActions']),
+    stopOnError:
+      typeof s['stopOnError'] === 'boolean' ? s['stopOnError'] : DEFAULT_SETTINGS.stopOnError,
+    statementTimeoutSec: Math.min(86_400, size(s['statementTimeoutSec'], 0)),
     activeConnection:
       typeof s['activeConnection'] === 'string' && /^[a-z0-9-]{1,64}$/.test(s['activeConnection'])
         ? s['activeConnection']

@@ -26,7 +26,7 @@ export class FakeWindowApi extends WindowApi {
 export class FakeQueryApi extends QueryApi {
   readonly statements: { connection: string; sql: string }[] = [];
   readonly cancelled: string[] = [];
-  /** Rejections for the next calls, the first one first; then `error`, then `result`. */
+  /** Outcomes of the next calls, the first one first (`null` = success); then `error`, then `result`. */
   readonly errors: unknown[] = [];
   error: unknown = null;
   result: QueryResult = {
@@ -43,9 +43,14 @@ export class FakeQueryApi extends QueryApi {
     elapsedMs: 3,
   };
 
-  run(connection: string, sql: string): Promise<QueryResult> {
+  /** The time limits the statements were sent with. */
+  readonly timeouts: number[] = [];
+
+  run(connection: string, sql: string, timeoutMs = 0): Promise<QueryResult> {
     this.statements.push({ connection, sql });
-    const next = this.errors.shift() ?? this.error;
+    this.timeouts.push(timeoutMs);
+    // `null` in `errors` = this call succeeds
+    const next = this.errors.length > 0 ? this.errors.shift() : this.error;
     return next ? Promise.reject(next) : Promise.resolve(this.result);
   }
 

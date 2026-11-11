@@ -40,6 +40,8 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | A18 | Ein Editor je Tab, gebaut beim ersten Zeigen; Text je Tab als eigene Datei, eine Weile nach der letzten Änderung gesichert; Schließen ohne Rückfrage | Design 004 E1–E7 |
 | A19 | `.sql`-Dateien behalten ihre Kodierung (`textfile.rs`, ohne Abhängigkeit); nie Schreiben mit Verlust | Design 004 E10 |
 | A20 | Eigenes macOS-Menü ohne „Fenster schließen“ | `Cmd+W` gehört den Tabs (Design 004 E12) |
+| A21 | SQL wird im Frontend zerlegt (`sql-split.ts`, je Dialekt, mit Katalog); Rust führt fertige Anweisungen aus | Design 005 E1–E4 |
+| A22 | Abbruch und Zeitlimit beenden die Anweisung auf dem Server über eine zweite Verbindung; die Sitzung bleibt (außer SQL Server) | Design 005 E6–E7 |
 | A10 | Oberflächentexte vorerst deutsch in den Komponenten | übernommene Galerie ist deutsch; Kataloge de/en kommen mit dem Prompt „Einstellungen und Sprache“ |
 
 ## Offene Architekturfragen (entscheidet der jeweilige Prompt)

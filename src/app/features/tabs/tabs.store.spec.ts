@@ -36,6 +36,7 @@ function attachEditor(tab: QueryTab, text: string) {
     },
     focus: vi.fn(),
     runCurrent: () => Promise.resolve(),
+    runScript: () => Promise.resolve(),
   };
   tab.attach(editor);
   return editor;

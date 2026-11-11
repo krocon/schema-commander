@@ -23,7 +23,8 @@ describe('shortcutGroups', () => {
     expect(ids('farbschema wählen')).toEqual(['COLOR_SCHEME']);
     expect(ids('toggle_side')).toEqual(['TOGGLE_SIDEBAR']);
     expect(ids('mod+enter')).toEqual(['RUN_STATEMENT']);
-    expect(ids('⌘↩')).toEqual(['RUN_STATEMENT']);
+    // as shown: ⌘↩ is also part of ⇧⌘↩
+    expect(ids('⌘↩')).toEqual(['RUN_STATEMENT', 'RUN_SCRIPT']);
     expect(ids('zzz')).toEqual([]);
   });
 });

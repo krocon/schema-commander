@@ -19,7 +19,10 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   passwords only in the keychain of your OS; a demo database in memory to try things out
 - Query tabs, each with its own connection and result. Nothing ever asks „save?“: every text is backed up a
   moment after you type and is there again after a restart or a crash; `.sql` files keep their encoding
-- SQL editor with syntax highlighting; <kbd>Ctrl/⌘</kbd>+<kbd>Enter</kbd> runs the statement under the caret
+- SQL editor with syntax highlighting; <kbd>Ctrl/⌘</kbd>+<kbd>Enter</kbd> runs the selection or the statement
+  under the caret, <kbd>Ctrl/⌘</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd> the whole script – split by the rules of
+  the database (dollar quoting, `DELIMITER`, `GO`), one result tab per statement, messages with timings
+- Cancel (<kbd>Ctrl/⌘</kbd>+<kbd>.</kbd>) ends a statement on the server and keeps the session; optional time limit
 - Result grid with virtual scrolling, sortable and resizable columns
 - 17 colour schemes (dark, light, One Dark, Solarized Light, Matrix, Amber …), fixed or following the system –
   and your own: a live editor for every colour with contrast hints, import and export

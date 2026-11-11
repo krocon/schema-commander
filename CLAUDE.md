@@ -16,10 +16,12 @@
   Kürzel-Editor (Prompt 002); **Verbindungen** zu PostgreSQL, MySQL/MariaDB, SQL Server und SQLite-Dateien mit
   Profilen, Ordnern, Farbmarken und Passwörtern im Schlüsselbund (Prompt 003); **Abfrage-Tabs** mit eigener
   Verbindung, laufender Sicherung des Textes, Wiederherstellung nach Neustart und `.sql`-Dateien (Prompt 004);
+  **Ausführen** von Auswahl, Anweisung oder ganzem Skript je Dialekt, mit Ergebnis-Reitern, Meldungen,
+  Abbruch auf dem Server und Zeitlimit (Prompt 005);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Schema-Baum, Bearbeiten, Export. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–004),
+  erledigt: 001–005),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -69,13 +71,14 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                connection-logic.ts (rein: Gruppen, Prüfung, Vorschläge)
   app/features/editor/         SqlEditor (<editlicious-editor scheme="none">), editlicious.ts (Laden),
                                editor-colors.ts (Farben des Editors aus unseren Tokens),
-                               sql-split.ts (rein: Anweisung unter dem Cursor)
+                               sql-split.ts (rein: Skripte je Dialekt zerlegen, Katalog sql-split.cases.json)
   app/features/palette/        Befehlspalette (CommandPalette, palette-logic.ts rein: unscharfe Suche)
   app/features/shortcuts/      Kürzel-Editor und -Übersicht (ShortcutDialog, shortcut-logic.ts)
   app/features/results/        ResultGrid (GuiExpert Table), result-model.ts (rein: Spalten, Breiten, Modell)
   app/features/tabs/           TabsStore (Root: Tabs, Sicherung, Dateien), QueryTab (Tab mit Ausführung, kein
                                Injectable), QueryPane (Editor + Ergebnis eines Tabs), TabBar,
-                               tab-logic.ts (rein: Titel, Ids, Reihenfolge), run-state.ts
+                               tab-logic.ts (rein: Titel, Ids, Reihenfolge), run-state.ts (Läufe, Meldungen,
+                               Statuszeile)
   app/features/themes/         Farbschema-Galerie (ThemePicker, ThemeThumb, theme-picker-logic.ts),
                                Schema-Editor (ThemeEditor, theme-editor-logic.ts rein: Ids, Import, Kontrast)
   app/shared/                  Splitter (+ splitter-logic.ts)
