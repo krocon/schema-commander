@@ -30,7 +30,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 | 007 | [Zellen richtig zeigen](done/007-zell-darstellung.md) ([Design](done/007-zell-darstellung.design.md)) | D2 | 003, 006 | M | ✅ 11.11.2026 |
 | 008 | [Schema-Baum](done/008-schema-baum.md) ([Design](done/008-schema-baum.design.md)) | B1 | 002, 003 | L | ✅ 11.11.2026 |
 | 009 | [Kopieren als …](done/009-kopieren-als.md) ([Design](done/009-kopieren-als.design.md)) | D6 | 007 | S–M | ✅ 11.11.2026 |
-| 010 | [Abfrage-Verlauf](010-verlauf.md) | C6 | 005 | M | offen |
+| 010 | [Abfrage-Verlauf](done/010-verlauf.md) ([Design](done/010-verlauf.design.md)) | C6 | 005 | M | ✅ 11.11.2026 |
 | 011 | [Export](011-export.md) | F1 | 005, 009 | M | offen |
 | | **Stufe 2 – macht es gut** | | | | |
 | 012 | [Schutz für Produktion](012-produktionsschutz.md) | A4 | 003, 005 | M | offen |

@@ -54,6 +54,27 @@ export const ACTIONS = [
     group: 'Abfrage',
     scope: 'global',
   },
+  // History (prompt 010)
+  { id: 'OPEN_HISTORY', label: 'Verlauf öffnen', group: 'Abfrage', scope: 'global' },
+  {
+    id: 'HISTORY_PREV',
+    label: 'Vorige Anweisung aus dem Verlauf',
+    group: 'Abfrage',
+    scope: 'global',
+  },
+  {
+    id: 'HISTORY_NEXT',
+    label: 'Nächste Anweisung aus dem Verlauf',
+    group: 'Abfrage',
+    scope: 'global',
+  },
+  {
+    id: 'TOGGLE_HISTORY_CONNECTION',
+    label: 'Verlauf für diese Verbindung ein/aus',
+    group: 'Abfrage',
+    scope: 'global',
+  },
+  { id: 'TOGGLE_HISTORY', label: 'Verlauf ein/aus', group: 'Abfrage', scope: 'global' },
   // Copying from the result (prompt 009)
   { id: 'COPY_RESULT', label: 'Ergebnis: Auswahl kopieren', group: 'Abfrage', scope: 'global' },
   { id: 'COPY_AS', label: 'Ergebnis: Kopieren als …', group: 'Abfrage', scope: 'global' },

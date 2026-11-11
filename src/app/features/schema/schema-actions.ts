@@ -102,7 +102,7 @@ export class SchemaActions {
       case 'SCHEMA_OPEN_DATA': {
         const sql = selectTemplate(kind, qualified);
         const tab = this.tabs.newTab(sql, { title: row.label, customTitle: true });
-        await tab.run(sql);
+        await tab.run(sql, 'app');
         return;
       }
       case 'SCHEMA_SELECT_TEMPLATE':

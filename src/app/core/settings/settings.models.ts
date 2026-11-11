@@ -28,6 +28,14 @@ export interface Settings {
   readonly csvDelimiter: string;
   /** The format "copy as" used last (on top of its menu); `null` = none yet. */
   readonly lastCopyFormat: string | null;
+  /** Note statements in the history (prompt 010). */
+  readonly historyEnabled: boolean;
+  /** Ids of the connections whose statements are not noted. */
+  readonly historyOff: readonly string[];
+  /** Entries the history keeps at most. */
+  readonly historyMaxEntries: number;
+  /** Days an entry is kept; 0 = any age. */
+  readonly historyMaxDays: number;
   /** Ids of the actions run from the command palette, the latest first. */
   readonly recentActions: readonly string[];
 }
@@ -56,10 +64,20 @@ export const DEFAULT_SETTINGS: Settings = {
   copyNullAs: '',
   csvDelimiter: ',',
   lastCopyFormat: null,
+  historyEnabled: true,
+  historyOff: [],
+  historyMaxEntries: 100_000,
+  historyMaxDays: 365,
 };
 
 function size(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 10_000
+    ? Math.round(value)
+    : fallback;
+}
+
+function numberOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? Math.round(value)
     : fallback;
 }
@@ -97,6 +115,23 @@ export function mergeSettings(saved: unknown): Settings {
       typeof s['lastCopyFormat'] === 'string' && /^[a-z]{1,16}$/.test(s['lastCopyFormat'])
         ? s['lastCopyFormat']
         : null,
+    historyEnabled:
+      typeof s['historyEnabled'] === 'boolean'
+        ? s['historyEnabled']
+        : DEFAULT_SETTINGS.historyEnabled,
+    historyOff: Array.isArray(s['historyOff'])
+      ? s['historyOff']
+          .filter((id): id is string => typeof id === 'string' && /^[a-z0-9-]{1,64}$/.test(id))
+          .slice(0, 500)
+      : [],
+    historyMaxEntries: Math.max(
+      100,
+      Math.min(1_000_000, numberOr(s['historyMaxEntries'], DEFAULT_SETTINGS.historyMaxEntries)),
+    ),
+    historyMaxDays: Math.min(
+      36_500,
+      numberOr(s['historyMaxDays'], DEFAULT_SETTINGS.historyMaxDays),
+    ),
     statementTimeoutSec: Math.min(86_400, size(s['statementTimeoutSec'], 0)),
     activeConnection:
       typeof s['activeConnection'] === 'string' && /^[a-z0-9-]{1,64}$/.test(s['activeConnection'])

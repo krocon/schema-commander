@@ -9,6 +9,7 @@ use crate::db::secrets::Secret;
 use crate::db::value::Column;
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::extract::{Format, Options};
+use crate::history::{self, History};
 use crate::results::{Progress, ResultStore, StoreSink};
 use crate::session::{LoadedSession, SessionDir, SessionFile};
 use crate::textfile::{self, TextFile};
@@ -232,6 +233,51 @@ pub fn copy_text(clip: State<'_, ClipState>, text: String) -> AppResult<()> {
         return Err(AppError::new(ErrorCode::TooLarge, "too much text"));
     }
     clip.put(text, None)
+}
+
+/// Notes a statement that ran in the history (prompt 010). Whether a connection is noted at all is the
+/// frontend's setting: what must not be kept is never sent.
+#[tauri::command(async)]
+pub fn history_add(
+    history: State<'_, History>,
+    entry: history::NewEntry,
+    keep: history::Keep,
+) -> AppResult<i64> {
+    history.add(&entry, keep)
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryPage {
+    #[serde(flatten)]
+    page: history::Page,
+    /// Said once: the file was broken and set aside.
+    notice: Option<String>,
+}
+
+/// The entries of the history that match, the latest first.
+#[tauri::command(async)]
+pub fn history_list(
+    history: State<'_, History>,
+    filter: history::Filter,
+) -> AppResult<HistoryPage> {
+    let page = history.list(&filter)?;
+    Ok(HistoryPage {
+        page,
+        notice: history.take_notice(),
+    })
+}
+
+/// The whole text of an entry.
+#[tauri::command(async)]
+pub fn history_text(history: State<'_, History>, id: i64) -> AppResult<String> {
+    history.text(id)
+}
+
+/// Deletes entries for good; returns how many.
+#[tauri::command(async)]
+pub fn history_delete(history: State<'_, History>, scope: history::Scope) -> AppResult<usize> {
+    history.delete(&scope)
 }
 
 /// The schemas of an open connection (prompt 008).

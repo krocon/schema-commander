@@ -21,11 +21,12 @@
   Datei), das Gitter holt nur den sichtbaren Ausschnitt (Prompt 006); **Zellen** je Art dargestellt (NULL, leer,
   Zahl, Bool, Binär), entschärft, mit Typ im Spaltenkopf und Bereichsauswahl (Prompt 007); **Schema-Baum** der aktiven Verbindung mit Filter, Aktionen am
   Knoten und Quoting je Dialekt (Prompt 008); **Kopieren als** TSV, CSV, JSON, Markdown, HTML, INSERT, IN, WHERE
-  aus dem Gitter, geschrieben von Rust (Prompt 009);
+  aus dem Gitter, geschrieben von Rust (Prompt 009); **Verlauf** aller Anweisungen mit Suche, abschaltbar und
+  endgültig löschbar (Prompt 010);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Export. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–009),
+  erledigt: 001–010),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -66,6 +67,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/connections/        Profile (Modell), ConnectionsApi, ConnectionsStore (Root: Profile, Zustände, aktive
                                Verbindung, Passwortabfrage)
   app/core/errors/             AppError + toAppError (spiegelt src-tauri/src/error.rs)
+  app/core/history/            HistoryApi (history_*) + DTOs – spiegelt history.rs
   app/core/schema/             SchemaApi (meta_*) + DTOs (SchemaInfo, ObjectInfo, TableInfo) – spiegelt db/meta.rs
   app/core/session/            SessionApi: session.json, Texte der Tabs, .sql lesen/schreiben
   app/core/settings/           Settings (Modell, mergeSettings), SettingsService (tauri-plugin-store)
@@ -78,6 +80,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/editor/         SqlEditor (<editlicious-editor scheme="none">), editlicious.ts (Laden),
                                editor-colors.ts (Farben des Editors aus unseren Tokens),
                                sql-split.ts (rein: Skripte je Dialekt zerlegen, Katalog sql-split.cases.json)
+  app/features/history/        HistoryDialog (Listbox, Vorschau), HistoryService (Root: aufzeichnen, blättern),
+                               history-logic.ts (rein)
   app/features/palette/        Befehlspalette (CommandPalette, palette-logic.ts rein: unscharfe Suche)
   app/features/schema/         SchemaTree (virtuelle Liste, APG-Baum), SchemaStore (Root: Zustand je Verbindung),
                                SchemaActions, schema-logic.ts (rein: Zeilen, Filter, Tasten, Vorlagen)
@@ -103,6 +107,7 @@ src-tauri/                     Rust
   src/db/mod.rs                Profile, DbKind, TlsMode, Session-Trait, Laufzeit, Fehler in Worten
   src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
   src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink (rein, getestet)
+  src/history.rs               Verlauf: history.sqlite, Suche, Aufbewahrung, endgültiges Löschen (rein, getestet)
   src/extract.rs               Formate (TSV, CSV, JSON, Markdown, HTML, INSERT, IN, WHERE), Literale je Dialekt (rein)
   src/copy.rs                  Auswahl eines Ergebnisses als Text: Zeilenbereiche, Spalten, Abbruch, Grenze (rein)
   src/db/meta.rs               Metadaten aus dem Systemkatalog (gebundene Parameter), quote() je Dialekt

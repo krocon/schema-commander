@@ -34,6 +34,7 @@ import { Dialect, offsetOf, splitForRun, statementAt } from './sql-split';
         [attr.color-scheme]="dark() ? 'dark' : 'light'"
         [style]="colors"
         [attr.aria-label]="label()"
+        [attr.readonly]="readonly() ? '' : null"
         (ed-caret)="onCaret($event)"
         (ed-change)="onChange($event)"
       />
@@ -69,6 +70,8 @@ export class SqlEditor implements OnInit {
   /** Text the editor starts with. */
   readonly initialValue = input('');
   readonly label = input('SQL-Editor');
+  /** Shows text that cannot be changed (the preview of the history). */
+  readonly readonly = input(false);
   /** The rules statements are split by. */
   readonly dialect = input<Dialect>('sqlite');
   /** The statements to run, in their order. */

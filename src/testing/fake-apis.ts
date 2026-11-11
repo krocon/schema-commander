@@ -10,6 +10,15 @@ import {
   CopyOptions,
   CopySelection,
 } from '../app/core/backend/clipboard-api';
+import {
+  HistoryApi,
+  HistoryEntry,
+  HistoryFilter,
+  HistoryKeep,
+  HistoryPage,
+  HistoryScope,
+  NewHistoryEntry,
+} from '../app/core/history/history-api';
 import { ConnectionsApi } from '../app/core/connections/connections-api';
 import { LoadedSession, SessionApi, SessionFile, TextFile } from '../app/core/session/session-api';
 import { QueryApi } from '../app/core/sql/query-api';
@@ -405,5 +414,68 @@ export class FakeClipboardApi extends ClipboardApi {
   cancelCopy(): Promise<void> {
     this.cancelled++;
     return Promise.resolve();
+  }
+}
+
+/** A history in memory that filters like the real one (no merging of repeats, no pruning). */
+export class FakeHistoryApi extends HistoryApi {
+  entries: (HistoryEntry & { sql: string })[] = [];
+  readonly added: { entry: NewHistoryEntry; keep: HistoryKeep }[] = [];
+  readonly filters: HistoryFilter[] = [];
+  readonly deleted: HistoryScope[] = [];
+  notice: string | null = null;
+  private nextId = 1;
+
+  add(entry: NewHistoryEntry, keep: HistoryKeep): Promise<number> {
+    this.added.push({ entry, keep });
+    const id = this.nextId++;
+    this.entries.unshift({
+      ...entry,
+      id,
+      preview: entry.sql.slice(0, 300),
+      length: entry.sql.length,
+      count: 1,
+    });
+    return Promise.resolve(id);
+  }
+
+  list(filter: HistoryFilter): Promise<HistoryPage> {
+    this.filters.push(filter);
+    const words = (filter.text ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+    const all = this.entries.filter(
+      (e) =>
+        words.every((w) => e.sql.toLowerCase().includes(w)) &&
+        (!filter.connectionId || e.connectionId === filter.connectionId) &&
+        (!filter.failedOnly || e.outcome === 'failed') &&
+        (!filter.userOnly || e.origin === 'user'),
+    );
+    const from = filter.offset ?? 0;
+    const notice = this.notice;
+    this.notice = null;
+    return Promise.resolve({
+      entries: all.slice(from, from + (filter.limit ?? 200)),
+      total: all.length,
+      notice,
+    });
+  }
+
+  text(id: number): Promise<string> {
+    const entry = this.entries.find((e) => e.id === id);
+    return entry
+      ? Promise.resolve(entry.sql)
+      : Promise.reject({ code: 'not_found', message: 'this entry is gone' });
+  }
+
+  delete(scope: HistoryScope): Promise<number> {
+    this.deleted.push(scope);
+    const before = this.entries.length;
+    this.entries = this.entries.filter((e) =>
+      scope.kind === 'all'
+        ? false
+        : scope.kind === 'connection'
+          ? e.connectionId !== scope.id
+          : e.id !== scope.id,
+    );
+    return Promise.resolve(before - this.entries.length);
   }
 }

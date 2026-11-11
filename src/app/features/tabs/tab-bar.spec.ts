@@ -1,3 +1,4 @@
+import { HistoryApi } from '../../core/history/history-api';
 import { SchemaApi } from '../../core/schema/schema-api';
 import { TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -5,6 +6,7 @@ import {
   FakeConnectionsApi,
   FakeFileDialogApi,
   FakeQueryApi,
+  FakeHistoryApi,
   FakeSchemaApi,
   FakeSessionApi,
 } from '../../../testing/fake-apis';
@@ -28,6 +30,7 @@ describe('TabBar', () => {
         { provide: ConnectionsApi, useValue: new FakeConnectionsApi() },
         { provide: QueryApi, useValue: new FakeQueryApi() },
         { provide: SchemaApi, useValue: new FakeSchemaApi() },
+        { provide: HistoryApi, useValue: new FakeHistoryApi() },
       ],
     });
     await TestBed.inject(ConnectionsStore).load();

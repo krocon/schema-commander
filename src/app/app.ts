@@ -9,6 +9,8 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { HistoryDialog } from './features/history/history-dialog';
+import { HistoryService } from './features/history/history.service';
 import { ActionId } from './core/actions/action-catalog';
 import { COPY_FORMATS, isCopyFormat, orderedFormats } from './features/results/copy-logic';
 import { CopyService } from './features/results/copy.service';
@@ -54,6 +56,7 @@ const SIDEBAR_MIN = 140;
     ConfirmDialog,
     ConnectionList,
     ContextMenu,
+    HistoryDialog,
     PasswordDialog,
     SchemaTree,
     QueryPane,
@@ -215,6 +218,11 @@ const SIDEBAR_MIN = 140;
         <app-password-dialog [request]="request" />
       }
     }
+    @if (history.open()) {
+      @defer (on immediate) {
+        <app-history-dialog (closed)="history.open.set(false)" />
+      }
+    }
     @if (paletteOpen()) {
       @defer (on immediate) {
         <app-command-palette (closed)="paletteOpen.set(false)" />
@@ -274,6 +282,7 @@ export class App implements OnInit, OnDestroy {
     return tab ? runStatus(tab.runs(), tab.elapsedMs()) : '';
   });
   protected readonly copier = inject(CopyService);
+  protected readonly history = inject(HistoryService);
   protected readonly confirm = inject(ConfirmService);
   /** The formats of "copy as", the one used last on top. */
   protected readonly copyItems = computed<MenuItem[]>(() => {
@@ -405,6 +414,38 @@ export class App implements OnInit, OnDestroy {
           () => this.schemaActions.can(id),
         ),
       ),
+      this.actions.register('OPEN_HISTORY', () => this.history.open.set(true)),
+      this.actions.register(
+        'HISTORY_PREV',
+        () => this.recall(1),
+        () => !!tab(),
+      ),
+      this.actions.register(
+        'HISTORY_NEXT',
+        () => this.recall(-1),
+        () => !!tab(),
+      ),
+      this.actions.register(
+        'TOGGLE_HISTORY_CONNECTION',
+        () => {
+          const id = tab()?.connectionId();
+          if (!id) return;
+          this.history.toggleConnection(id);
+          this.ownNotice.set(
+            this.history.enabled(id)
+              ? 'Der Verlauf merkt sich die Anweisungen dieser Verbindung wieder.'
+              : 'Der Verlauf merkt sich keine Anweisungen dieser Verbindung mehr.',
+          );
+        },
+        () => !!tab(),
+      ),
+      this.actions.register('TOGGLE_HISTORY', () => {
+        const on = !this.settings.settings().historyEnabled;
+        this.settings.update({ historyEnabled: on });
+        this.ownNotice.set(
+          on ? 'Der Verlauf ist eingeschaltet.' : 'Der Verlauf ist ausgeschaltet.',
+        );
+      }),
       this.actions.register(
         'COPY_RESULT',
         () => this.copier.copy(),
@@ -487,6 +528,23 @@ export class App implements OnInit, OnDestroy {
       }),
     ];
     return () => offs.forEach((off) => off());
+  }
+
+  /** The statement before or after the one in the editor, from the history of the tab's connection. */
+  private async recall(step: 1 | -1): Promise<void> {
+    const tab = this.tabs.active();
+    if (!tab) return;
+    const now = (await tab.text()) ?? '';
+    const text = await this.history.recalled(tab.id, tab.connectionId(), now, step);
+    if (text === null) {
+      if (now.trim() !== '') {
+        this.ownNotice.set(
+          'Der Editor ist nicht leer: Der Verlauf ersetzt keinen geschriebenen Text. Verlauf öffnen fügt ein.',
+        );
+      }
+      return;
+    }
+    await tab.setText(text);
   }
 
   protected copyAs(format: string): void {

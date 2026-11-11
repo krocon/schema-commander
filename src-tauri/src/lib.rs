@@ -6,6 +6,7 @@ pub mod copy;
 pub mod db;
 pub mod error;
 pub mod extract;
+pub mod history;
 pub mod menu;
 pub mod results;
 pub mod session;
@@ -43,6 +44,7 @@ pub fn run() {
             app.manage(session::SessionDir::new(app.path().app_data_dir()?));
             app.manage(results::ResultStore::new(&app.path().app_cache_dir()?));
             app.manage(commands::ClipState::default());
+            app.manage(history::History::new(app.path().app_data_dir()?));
             // A frontend that never applies a scheme must not leave the window hidden.
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -63,6 +65,10 @@ pub fn run() {
             commands::copy_result,
             commands::cancel_copy,
             commands::copy_text,
+            commands::history_add,
+            commands::history_list,
+            commands::history_text,
+            commands::history_delete,
             commands::meta_schemas,
             commands::meta_objects,
             commands::meta_table,

@@ -46,6 +46,7 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | A24 | Metadaten nur über `Session::ask` mit gebundenen Parametern (`db/meta.rs`); Namen quotet allein `meta::quote`, jeder Knoten bringt `quoted` mit; der Zwischenspeicher liegt im Frontend (`SchemaStore`) | Design 008 E1, E3, E7 |
 | A25 | Der Schema-Baum ist eine eigene virtuelle Liste mit den Rollen eines APG-Baums, keine GuiExpert Table | Design 008 E8 |
 | A26 | Formate zum Kopieren und Exportieren schreibt Rust (`extract.rs`); die Zwischenablage gehört Rust (`arboard`, drei schmale Commands), Zeilen gehen nie durch die WebView | Design 009 E1–E2 |
+| A27 | Verlauf in eigener SQLite-Datei (`history.rs`), Suche mit `LIKE`, Löschen mit `secure_delete` + `VACUUM`; was nicht gemerkt werden soll, verlässt das Frontend nicht | Design 010 E1–E6 |
 | A10 | Oberflächentexte vorerst deutsch in den Komponenten | übernommene Galerie ist deutsch; Kataloge de/en kommen mit dem Prompt „Einstellungen und Sprache“ |
 
 ## Offene Architekturfragen (entscheidet der jeweilige Prompt)
