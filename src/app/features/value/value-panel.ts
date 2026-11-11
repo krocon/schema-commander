@@ -88,7 +88,8 @@ interface Loaded {
             }
           </select>
         }
-        @if (showsText()) {
+        <!-- hex lines are sixteen bytes each: they are never wrapped -->
+        @if (showsText() && view$() !== 'hex') {
           <label class="wrap">
             <input
               type="checkbox"
@@ -162,7 +163,7 @@ interface Loaded {
         [attr.ui-language]="uiLanguage()"
         [attr.font-family]="settings.settings().editorFontFamily || null"
         [attr.font-size]="settings.settings().resultFontSize + 1"
-        [attr.word-wrap]="settings.settings().valueWrap ? '' : null"
+        [attr.word-wrap]="settings.settings().valueWrap && view$() !== 'hex' ? '' : null"
       />
     }
   `,

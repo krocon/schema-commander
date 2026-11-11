@@ -89,7 +89,7 @@ Prompts) · **Stufe** = meine Empfehlung: **1** Grundlage (ohne das ist es kein 
 |---|---|---|---|---|---|
 | D1 | **Große Ergebnisse**: Rust streamt vom Server, das Gitter lädt beim Scrollen nach; Millionen Zeilen ohne Einfrieren; Abbruch jederzeit; Speichergrenze mit Auslagern auf die Platte. *Unser deutlichster Vorteil gegenüber allen anderen.* | – (DataGrip blättert seitenweise) | L | 1 | ☑ [006](../prompts/done/006-grosse-ergebnisse.md) |
 | D2 | **Zellen richtig zeigen**: `NULL` sichtbar und von leerem Text unterscheidbar, Zahlen rechts, Datum/Zeit lesbar, Boolean, JSON gekürzt, BLOB als Größe; Typ im Spaltenkopf | TablePlus, DataGrip | M | 1 | ☑ [007](../prompts/done/007-zell-darstellung.md) |
-| D3 | **Wert-Ansicht**: Seitenfeld für die aktuelle Zelle – langer Text und **JSON formatiert in editlicious**, Bild, Hex für Binärdaten | DBeaver | M | 2 | ☑ [026](../prompts/026-wert-ansicht.md) |
+| D3 | **Wert-Ansicht**: Seitenfeld für die aktuelle Zelle – langer Text und **JSON formatiert in editlicious**, Bild, Hex für Binärdaten | DBeaver | M | 2 | ☑ [026](../prompts/done/026-wert-ansicht.md) |
 | D4 | **Zeile als Formular** (eine Zeile, Felder untereinander) für breite Tabellen | DBeaver, DbGate | S–M | 3 | ☑ [040](../prompts/040-zeilen-formular.md) |
 | D5 | **Sortieren und Filtern**: im geladenen Ergebnis sofort; bei Tabellen als `WHERE`/`ORDER BY` an den Server; **Schnellfilter aus der Zelle** („nur dieser Wert“, „ohne diesen Wert“) | TablePlus, HeidiSQL | M | 2 | ☑ [027](../prompts/027-sortieren-filtern.md) |
 | D6 | **Kopieren als …**: TSV (für Excel), CSV, JSON, Markdown-Tabelle, `INSERT`-Anweisungen, `IN (…)`-Liste; mit oder ohne Kopfzeile | DataGrip (Extraktoren) | S–M | 1 | ☑ [009](../prompts/done/009-kopieren-als.md) |

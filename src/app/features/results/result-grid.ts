@@ -181,7 +181,8 @@ export class ResultGrid implements OnDestroy {
   /** The cursor of the table moved (the table says so outside of Angular's turn: only an output here). */
   protected onFocus(): void {
     const cell = this.api()?.getActiveCell();
-    this.active.emit(cell ? [cell[0], cell[1]] : null);
+    // grid column 0 is the row number: it has no value of the result
+    this.active.emit(cell && cell[1] >= 1 ? [cell[0], cell[1] - 1] : null);
   }
 
   private async show(result: ResultRef): Promise<void> {
