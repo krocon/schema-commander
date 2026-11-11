@@ -26,10 +26,12 @@
   Excel, gzip) als Job mit Fortschritt und Abbruch (Prompt 011); **Schutz für Produktion**: Schutzstufen je
   Verbindung, Einstufung der Anweisungen und Bestätigung im Backend (Prompt 012); **Transaktionen**: Sitzung je
   Tab, Zustand vom Server, Auto-Commit oder manuell, Commit/Rollback, Frage beim Schließen (Prompt 013);
+  **SSH-Tunnel** (Agent, Schlüssel, Passwort; Host-Schlüssel gegen `known_hosts`) und **TLS-Modi** mit eigener CA und
+  Client-Zertifikat (Prompt 014);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–013),
+  erledigt: 001–014),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -115,6 +117,8 @@ src-tauri/                     Rust
   src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink (rein, getestet)
   src/history.rs               Verlauf: history.sqlite, Suche, Aufbewahrung, endgültiges Löschen (rein, getestet)
   src/export.rs                Dateien schreiben: FileWriter (Text, gzip, xlsx), from_store, FileSink (rein, getestet)
+  src/ssh/                     SSH-Tunnel: mod.rs (russh-Client, Anmeldung, Weiterleitung), trust.rs (known_hosts),
+                               ssh_config.rs (~/.ssh/config, nie ausgeführt) – trust/ssh_config wie in log-commander
   src/extract.rs               Formate (TSV, CSV, JSON, Markdown, HTML, INSERT, IN, WHERE), Literale je Dialekt (rein)
   src/copy.rs                  Auswahl eines Ergebnisses als Text: Zeilenbereiche, Spalten, Abbruch, Grenze (rein)
   src/db/guard.rs              Anweisungen einstufen (lesend/schreibend/DDL/gefährlich), Schutzstufen (rein, Katalog)

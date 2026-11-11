@@ -476,6 +476,7 @@ export class ConnectionDialog implements OnInit {
   ngOnInit(): void {
     this.draft.set(this.profile());
     this.tlsChosen = this.profile().id !== '';
+    if (this.profile().ssh) this.loadSshHosts();
     this.dialog().nativeElement.showModal();
   }
 
@@ -519,12 +520,15 @@ export class ConnectionDialog implements OnInit {
       // through a tunnel the host name of the certificate cannot be checked
       ...(on && this.draft().tls === 'verify' ? { tls: 'verify-ca' as const } : {}),
     });
-    if (on && this.sshHosts().length === 0) {
-      void this.store.sshHosts().then(
-        (hosts) => this.sshHosts.set(hosts),
-        () => undefined,
-      );
-    }
+    if (on) this.loadSshHosts();
+  }
+
+  private loadSshHosts(): void {
+    if (this.sshHosts().length > 0) return;
+    void this.store.sshHosts().then(
+      (hosts) => this.sshHosts.set(hosts),
+      () => undefined,
+    );
   }
 
   protected patchSsh(change: Partial<SshTarget>): void {
