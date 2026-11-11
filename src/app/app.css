@@ -117,3 +117,21 @@
   font-family: var(--font-mono);
   white-space: pre-wrap;
 }
+
+.notice {
+  position: fixed;
+  left: 50%;
+  bottom: 38px;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 80vw;
+  padding: 7px 8px 7px 14px;
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 40%);
+}

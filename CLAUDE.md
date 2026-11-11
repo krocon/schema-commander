@@ -12,10 +12,11 @@
 - **Walking Skeleton**: Fenster mit Toolbar, Seitenleiste, SQL-Editor, Ergebnisgitter, Statuszeile; eine
   Demo-Datenbank (SQLite im Speicher) in Rust; `Strg/Cmd+Enter` führt die Anweisung unter dem Cursor aus; 17
   Farbschemata umschaltbar (auch „System folgen“), **eigene Schemata** mit Live-Editor, Import und Export (Prompt 001);
-  der Editor folgt jedem Schema; Einstellungen und Fensterzustand bleiben über einen Neustart.
+  der Editor folgt jedem Schema; **Aktionssystem** mit Keymap je OS, Befehlspalette (`Mod+Shift+P`) und
+  Kürzel-Editor (Prompt 002); Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: echte Verbindungen, Schema-Baum, Tabs, Bearbeiten, Export. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001),
+  erledigt: 001, 002),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -46,6 +47,9 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   styles/ge-table-theme.css    Brücke Tokens → --ge-table-* der GuiExpert Table
   app/app.ts, app.css          Fenster: Toolbar, Seitenleiste, Editor, Ergebnis, Statuszeile, Splitter
   app/app.config.ts            Provider: *Api-Fassaden → Tauri-Implementierungen
+  app/core/actions/            Aktionen: action-catalog.ts (Ids, Namen, Bereich), keymaps/*.json (je OS),
+                               keymap.ts (Vorgabe + eigene Belegung, Reserviertes), shortcut.ts (Notation),
+                               keyboard-dispatcher.ts (der eine keydown-Handler), ActionService (Root)
   app/core/backend/            call.ts (einzige Stelle mit invoke()), WindowApi (set_window_chrome),
                                FileDialogApi (native Öffnen-/Speichern-Dialoge: einzige Quelle für Pfade)
   app/core/errors/             AppError + toAppError (spiegelt src-tauri/src/error.rs)
@@ -57,6 +61,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/editor/         SqlEditor (<editlicious-editor scheme="none">), editlicious.ts (Laden),
                                editor-colors.ts (Farben des Editors aus unseren Tokens),
                                sql-split.ts (rein: Anweisung unter dem Cursor)
+  app/features/palette/        Befehlspalette (CommandPalette, palette-logic.ts rein: unscharfe Suche)
+  app/features/shortcuts/      Kürzel-Editor und -Übersicht (ShortcutDialog, shortcut-logic.ts)
   app/features/results/        ResultGrid (GuiExpert Table), result-model.ts (rein: Spalten, Breiten, Modell)
   app/features/shell/          QuerySession (Root: letzte Anweisung und ihr Ausgang), statusText
   app/features/themes/         Farbschema-Galerie (ThemePicker, ThemeThumb, theme-picker-logic.ts),
@@ -86,6 +92,10 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
 - **Commands nie synchron** (`#[tauri::command(async)]` oder `async fn`); Blockierendes nie auf dem
   Async-Runtime-Thread; lange Arbeit mit Fortschritt und Abbruch.
 - **Reine Logik in eigenen Dateien** (Rust-Module ohne Tauri, TS ohne Angular), Tests daneben.
+- **Jede Funktion ist eine Aktion**: Id in `core/actions/action-catalog.ts`, Kürzel nur in `keymaps/*.json`,
+  Handler per `ActionService.register`. Keine eigenen `keydown`-Handler für Funktionen (Ausnahmen: Widgets nach
+  APG – Dialoge, Listen, Menüs, Splitter). Die Tasten des Editors (`Mod+C/V/X/A/Z`, `Mod+F`, `F3`,
+  `Strg+Leertaste`) sind reserviert; einfache Tasten und AltGr-Zeichen erreichen im Editor nie eine Aktion.
 - **Zustand in Signals**, Stores je Instanz ohne `providedIn`, Globales in Root-Services; veraltete Antworten verwerfen.
 - **Farben nur als Tokens**; jeder Token in dark und light, im Katalog und in den Kontrastpaaren.
 - **Sicherheit**: schmale Commands statt breiter Plugins, strikte CSP, Geheimnisse nur im Schlüsselbund, SQL und

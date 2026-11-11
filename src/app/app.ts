@@ -10,14 +10,18 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { ActionService } from './core/actions/action.service';
 import { DEFAULT_SETTINGS } from './core/settings/settings.models';
 import { SettingsService } from './core/settings/settings.service';
 import { ThemeService } from './core/theme/theme.service';
 import { EdCaret } from './features/editor/editlicious';
 import { SqlEditor } from './features/editor/sql-editor';
+import { CommandPalette } from './features/palette/command-palette';
 import { ResultGrid } from './features/results/result-grid';
 import { QuerySession, statusText } from './features/shell/query-session';
+import { ShortcutDialogComponent } from './features/shortcuts/shortcut-dialog';
 import { ThemeEditor } from './features/themes/theme-editor';
+import { copyName } from './features/themes/theme-editor-logic';
 import { ThemePickerComponent } from './features/themes/theme-picker';
 import { SplitterComponent } from './shared/splitter';
 
@@ -28,7 +32,7 @@ const EDITOR_MIN = 120;
 
 const START_SQL = `-- Schema Commander – Walking Skeleton
 -- Demo-Datenbank im Speicher (SQLite): customer, product, orders.
--- Strg/Cmd+Enter führt die Anweisung unter dem Cursor aus.
+-- Strg/Cmd+Enter führt die Anweisung unter dem Cursor aus, Strg/Cmd+Shift+P zeigt alle Befehle.
 
 SELECT c.name, c.country, count(*) AS orders, round(sum(o.quantity * p.price), 2) AS revenue
 FROM orders o
@@ -47,23 +51,32 @@ SELECT * FROM orders;
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ResultGrid, SplitterComponent, SqlEditor, ThemeEditor, ThemePickerComponent],
+  imports: [
+    CommandPalette,
+    ResultGrid,
+    ShortcutDialogComponent,
+    SplitterComponent,
+    SqlEditor,
+    ThemeEditor,
+    ThemePickerComponent,
+  ],
   template: `
     <header class="toolbar" role="toolbar" aria-label="Werkzeugleiste">
       <button
         type="button"
-        title="Seitenleiste ein-/ausblenden"
+        aria-label="Seitenleiste ein-/ausblenden"
+        [title]="'Seitenleiste ein-/ausblenden' + actions.hint('TOGGLE_SIDEBAR')"
         [attr.aria-pressed]="settings.settings().sidebarVisible"
-        (click)="toggleSidebar()"
+        (click)="actions.run('TOGGLE_SIDEBAR')"
       >
         ☰
       </button>
       <button
         type="button"
         class="primary"
-        title="Anweisung unter dem Cursor ausführen (Strg/Cmd+Enter)"
+        [title]="'Anweisung unter dem Cursor ausführen' + actions.hint('RUN_STATEMENT')"
         [disabled]="state().kind === 'running'"
-        (click)="editor()?.runCurrent()"
+        (click)="actions.run('RUN_STATEMENT')"
       >
         ▶ Ausführen
       </button>
@@ -71,16 +84,30 @@ SELECT * FROM orders;
       <span class="conn conn-3" title="Verbindung"><i></i>Demo (SQLite im Speicher)</span>
       <button
         type="button"
-        title="Farbschema wählen"
+        aria-label="Befehlspalette"
+        [title]="'Befehlspalette' + actions.hint('OPEN_PALETTE')"
+        (click)="actions.run('OPEN_PALETTE')"
+      >
+        ⌘
+      </button>
+      <button
+        type="button"
         aria-label="Farbschema wählen"
-        (click)="theme.pickerOpen.set(true)"
+        [title]="'Farbschema wählen' + actions.hint('COLOR_SCHEME')"
+        (click)="actions.run('COLOR_SCHEME')"
       >
         ◐
       </button>
     </header>
     <div #workspace class="workspace">
       @if (settings.settings().sidebarVisible) {
-        <nav id="sidebar" class="sidebar" aria-label="Datenbank" [style.width.px]="sidebarW()">
+        <nav
+          #sidebar
+          id="sidebar"
+          class="sidebar"
+          aria-label="Datenbank"
+          [style.width.px]="sidebarW()"
+        >
           <h2>Demo</h2>
           <ul>
             @for (table of demoTables; track table) {
@@ -124,7 +151,14 @@ SELECT * FROM orders;
           (sizeChange)="dragHeight.set($event)"
           (sizeCommit)="commitHeight($event)"
         />
-        <section id="results" class="results" aria-label="Ergebnis" [style.height.px]="resultH()">
+        <section
+          #results
+          id="results"
+          class="results"
+          aria-label="Ergebnis"
+          tabindex="-1"
+          [style.height.px]="resultH()"
+        >
           @switch (state().kind) {
             @case ('done') {
               @if (result(); as r) {
@@ -155,6 +189,22 @@ SELECT * FROM orders;
         <span>Zeile {{ c.line }}, Spalte {{ c.ch }}</span>
       }
     </footer>
+    @if (notice(); as message) {
+      <div class="notice" role="alert">
+        <span>{{ message }}</span>
+        <button type="button" aria-label="Meldung schließen" (click)="notice.set(null)">×</button>
+      </div>
+    }
+    @if (paletteOpen()) {
+      @defer (on immediate) {
+        <app-command-palette (closed)="paletteOpen.set(false)" />
+      }
+    }
+    @if (shortcutsOpen(); as mode) {
+      @defer (on immediate) {
+        <app-shortcut-dialog [startMode]="mode" (closed)="shortcutsOpen.set(null)" />
+      }
+    }
     @if (theme.pickerOpen()) {
       @defer (on immediate) {
         <app-theme-picker (closed)="theme.pickerOpen.set(false)" />
@@ -173,6 +223,16 @@ export class App implements OnInit, OnDestroy {
   /** Created first: it puts the colour scheme on screen and shows the window. */
   protected readonly theme = inject(ThemeService);
   protected readonly session = inject(QuerySession);
+  protected readonly actions = inject(ActionService);
+
+  protected readonly paletteOpen = signal(false);
+  /** The shortcut editor, `read` as an overview. */
+  protected readonly shortcutsOpen = signal<'edit' | 'read' | null>(null);
+  /** A message of the app itself (failed action, unreadable shortcuts). */
+  protected readonly notice = signal<string | null>(null);
+  private readonly sidebar = viewChild<ElementRef<HTMLElement>>('sidebar');
+  private readonly results = viewChild<ElementRef<HTMLElement>>('results');
+  private readonly cleanups: (() => void)[] = [];
 
   protected readonly startSql = START_SQL;
   protected readonly demoTables = ['customer', 'product', 'orders'];
@@ -237,15 +297,91 @@ export class App implements OnInit, OnDestroy {
 
   async ngOnInit(): Promise<void> {
     // both before the window shows: the stored scheme may be one of the user's own (design 001 E7)
+    this.cleanups.push(this.actions.attach(document), this.registerActions());
+    this.actions.reportError = (message) => this.notice.set(message);
+    const engine = this.actions.load();
     await Promise.all([this.settings.load(), this.theme.loadUserThemes()]);
+    await engine;
+    const notice = this.actions.startNotice();
+    if (notice) this.notice.set(notice);
   }
 
   ngOnDestroy(): void {
     this.observer?.disconnect();
+    for (const cleanup of this.cleanups) cleanup();
   }
 
-  protected toggleSidebar(): void {
-    this.settings.update({ sidebarVisible: !this.settings.settings().sidebarVisible });
+  /** The actions of the window: run, layout, dialogs, moving between its areas. */
+  private registerActions(): () => void {
+    const running = () => this.state().kind === 'running';
+    const offs = [
+      this.actions.register(
+        'RUN_STATEMENT',
+        () => this.editor()?.runCurrent(),
+        () => !running() && !!this.editor(),
+      ),
+      this.actions.registerAll({
+        TOGGLE_SIDEBAR: () =>
+          this.settings.update({ sidebarVisible: !this.settings.settings().sidebarVisible }),
+        COLOR_SCHEME: () => this.theme.pickerOpen.set(true),
+        EDIT_COLOR_SCHEME: () => this.editCurrentScheme(),
+        OPEN_PALETTE: () => this.paletteOpen.set(true),
+        OPEN_SHORTCUTS: () => this.shortcutsOpen.set('edit'),
+        SHOW_SHORTCUTS: () => this.shortcutsOpen.set('read'),
+        FOCUS_EDITOR: () => this.focusArea('editor'),
+        FOCUS_RESULT: () => this.focusArea('result'),
+        FOCUS_SIDEBAR: () => this.focusArea('sidebar'),
+        FOCUS_NEXT_AREA: () => this.focusArea(nextArea(this.areas(), this.currentArea(), 1)),
+        FOCUS_PREV_AREA: () => this.focusArea(nextArea(this.areas(), this.currentArea(), -1)),
+      }),
+    ];
+    return () => offs.forEach((off) => off());
+  }
+
+  /** A copy of the scheme on screen, opened in the scheme editor. */
+  private async editCurrentScheme(): Promise<void> {
+    await this.theme.loadCatalog();
+    const source = this.theme.active();
+    if (!source) return;
+    const names = new Set(this.theme.themes().map((t) => t.name));
+    this.theme.editing.set({
+      theme: { ...source, id: '', name: copyName(source.name, names) },
+      dropped: [],
+    });
+  }
+
+  /** The areas that can take the focus right now, in their order on screen. */
+  private areas(): Area[] {
+    return this.settings.settings().sidebarVisible
+      ? ['sidebar', 'editor', 'result']
+      : ['editor', 'result'];
+  }
+
+  private currentArea(): Area | null {
+    const active = document.activeElement;
+    if (!active) return null;
+    if (this.sidebar()?.nativeElement.contains(active)) return 'sidebar';
+    if (this.results()?.nativeElement.contains(active)) return 'result';
+    if (active.closest('app-sql-editor')) return 'editor';
+    return null;
+  }
+
+  private focusArea(area: Area): void {
+    if (area === 'editor') {
+      this.editor()?.focus();
+    } else if (area === 'sidebar') {
+      if (!this.settings.settings().sidebarVisible) {
+        this.settings.update({ sidebarVisible: true });
+        // the sidebar is drawn with the next change detection
+        setTimeout(() => this.sidebar()?.nativeElement.querySelector('button')?.focus());
+        return;
+      }
+      this.sidebar()?.nativeElement.querySelector('button')?.focus();
+    } else {
+      const host = this.results()?.nativeElement;
+      const grid = host?.querySelector<HTMLElement>('.ge-table [tabindex], .ge-table');
+      (grid ?? host)?.focus();
+    }
   }
 
   protected commitWidth(width: number): void {
@@ -257,6 +393,15 @@ export class App implements OnInit, OnDestroy {
     this.dragHeight.set(null);
     this.settings.update({ resultHeight: height });
   }
+}
+
+export type Area = 'sidebar' | 'editor' | 'result';
+
+/** The area after (`step` 1) or before (`-1`) `current`, around the ends; the first one without a current. */
+export function nextArea(areas: readonly Area[], current: Area | null, step: 1 | -1): Area {
+  const i = current === null ? -1 : areas.indexOf(current);
+  if (i < 0) return step === 1 ? areas[0] : areas[areas.length - 1];
+  return areas[(i + step + areas.length) % areas.length];
 }
 
 function clamp(value: number, min: number, max: number): number {
