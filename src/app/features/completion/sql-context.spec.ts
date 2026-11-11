@@ -47,7 +47,8 @@ describe('what the completion may offer (catalog)', () => {
         const problems: string[] = [];
         if (!c.expect.split('_or_').includes(got.expect)) problems.push(`expect ${got.expect}`);
         if (c.word !== undefined && got.word !== c.word) problems.push(`word ${got.word}`);
-        if (c.clause !== undefined && got.clause !== c.clause) problems.push(`clause ${got.clause}`);
+        if (c.clause !== undefined && got.clause !== c.clause)
+          problems.push(`clause ${got.clause}`);
         if (c.qualifier && got.qualifier.join('.') !== c.qualifier.join('.')) {
           problems.push(`qualifier ${got.qualifier.join('.')}`);
         }

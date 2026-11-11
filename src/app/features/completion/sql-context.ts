@@ -164,7 +164,10 @@ function blocksAround(tokens: readonly Token[], caret: number): Block[] {
 }
 
 /** Reads `a`, `a.b` or `a.b.c` at `i`; answers with the names and the index behind them. */
-function qualifiedName(tokens: readonly Token[], i: number): { parts: string[]; next: number } | null {
+function qualifiedName(
+  tokens: readonly Token[],
+  i: number,
+): { parts: string[]; next: number } | null {
   if (!isName(tokens[i])) return null;
   const parts = [name(tokens[i])];
   let next = i + 1;
@@ -232,15 +235,16 @@ function tablesOf(block: readonly Token[]): TableRef[] {
       continue;
     }
     if (depth !== 0) continue;
-    const starts =
-      (t.kind === 'word' && TABLE_WORDS.has(t.value)) ||
-      (listing && t.text === ',');
+    const starts = (t.kind === 'word' && TABLE_WORDS.has(t.value)) || (listing && t.text === ',');
     if (t.kind === 'word' && CLAUSES.has(t.value) && !TABLE_WORDS.has(t.value)) listing = false;
     if (!starts) continue;
     listing = t.value === 'FROM' || (listing && t.text === ',') || t.value === 'JOIN';
     let j = i + 1;
     // `INSERT INTO`, `DELETE FROM ONLY`, `JOIN LATERAL`, `TABLE IF EXISTS`
-    while (block[j]?.kind === 'word' && ['ONLY', 'LATERAL', 'IF', 'EXISTS', 'NOT'].includes(block[j].value)) {
+    while (
+      block[j]?.kind === 'word' &&
+      ['ONLY', 'LATERAL', 'IF', 'EXISTS', 'NOT'].includes(block[j].value)
+    ) {
       j++;
     }
     if (block[j]?.text === '(') {
@@ -337,12 +341,17 @@ export function analyse(sql: string, caret: number, dialect: Dialect): SqlContex
   // inside a string or a comment nothing is offered
   const inside = all.find((t) => t.start < caret && (caret < t.end || (t.open && caret <= t.end)));
   if (inside && (inside.kind === 'string' || inside.kind === 'comment')) return nothing('none');
-  if (all.some((t) => t.kind === 'number' && t.start < caret && caret <= t.end)) return nothing('none');
+  if (all.some((t) => t.kind === 'number' && t.start < caret && caret <= t.end))
+    return nothing('none');
   const tokens = all.filter((t) => t.kind !== 'comment');
   // the word begun: a word or an open quoted name that ends at the caret
   const at = tokens.findIndex((t) => t.start < caret && caret <= t.end && isName(t));
   const begun = at >= 0 && (tokens[at].end === caret || tokens[at].open) ? tokens[at] : null;
-  const word = begun ? (begun.kind === 'quoted' ? begun.value : begun.text.slice(0, caret - begun.start)) : '';
+  const word = begun
+    ? begun.kind === 'quoted'
+      ? begun.value
+      : begun.text.slice(0, caret - begun.start)
+    : '';
   const before = tokens.filter((t) => t.end <= caret && t !== begun);
   // the qualifier: names and dots right before the word
   const qualifier: string[] = [];
@@ -362,7 +371,8 @@ export function analyse(sql: string, caret: number, dialect: Dialect): SqlContex
     for (const ref of tablesOf(block.tokens)) {
       const cte = ctes.find((c) => c.name.toLowerCase() === ref.name.toLowerCase() && !ref.schema);
       const next: TableRef = cte && !ref.local ? { ...cte, alias: ref.alias } : ref;
-      if (!tables.some((t) => t.alias.toLowerCase() === next.alias.toLowerCase())) tables.push(next);
+      if (!tables.some((t) => t.alias.toLowerCase() === next.alias.toLowerCase()))
+        tables.push(next);
     }
   }
   void cteNames;
@@ -383,7 +393,13 @@ export function analyse(sql: string, caret: number, dialect: Dialect): SqlContex
         // the caret is inside these parentheses: what stands in front decides
         const opener = local[i - 1];
         const beforeOpener = local[i - 2];
-        if (isName(opener) && (beforeOpener?.value === 'INTO' || local[i - 3]?.value === 'INTO' || local[i - 4]?.value === 'INTO' || local[i - 5]?.value === 'INTO')) {
+        if (
+          isName(opener) &&
+          (beforeOpener?.value === 'INTO' ||
+            local[i - 3]?.value === 'INTO' ||
+            local[i - 4]?.value === 'INTO' ||
+            local[i - 5]?.value === 'INTO')
+        ) {
           clause = 'INSERT COLUMNS';
           clauseAt = i;
           break;
@@ -396,7 +412,11 @@ export function analyse(sql: string, caret: number, dialect: Dialect): SqlContex
         continue;
       }
       depth--;
-    } else if (depth === 0 && t.kind === 'word' && (CLAUSES.has(t.value) || JOIN_WORDS.has(t.value) || TABLE_WORDS.has(t.value))) {
+    } else if (
+      depth === 0 &&
+      t.kind === 'word' &&
+      (CLAUSES.has(t.value) || JOIN_WORDS.has(t.value) || TABLE_WORDS.has(t.value))
+    ) {
       clause = t.value;
       clauseAt = i;
       if ((t.value === 'GROUP' || t.value === 'ORDER') && local[i + 1]?.value === 'BY') {
@@ -429,8 +449,13 @@ export function analyse(sql: string, caret: number, dialect: Dialect): SqlContex
   if (prev.text === '(' && head[head.length - 2]?.value === 'AS' && clause === 'WITH') {
     return context('statement');
   }
-  if (prev.kind === 'word' && (prev.value === 'GROUP' || prev.value === 'ORDER')) return context('keyword');
-  if ((prev.value === 'DESC' || prev.value === 'DESCRIBE') && prev.kind === 'word' && head.length === 1) {
+  if (prev.kind === 'word' && (prev.value === 'GROUP' || prev.value === 'ORDER'))
+    return context('keyword');
+  if (
+    (prev.value === 'DESC' || prev.value === 'DESCRIBE') &&
+    prev.kind === 'word' &&
+    head.length === 1
+  ) {
     return context('table');
   }
   if (prev.text === ';') return context('statement');
@@ -444,14 +469,22 @@ export function analyse(sql: string, caret: number, dialect: Dialect): SqlContex
   // data definition: a type behind a new column name
   if (first && (first.value === 'CREATE' || first.value === 'ALTER')) {
     const add = ['ADD', 'COLUMN', 'MODIFY', 'TYPE'].includes(head[head.length - 2]?.value ?? '');
-    const inList = head.some((t) => t.text === '(') && isName(prev) && [',', '('].includes(head[head.length - 2]?.text ?? '');
+    const inList =
+      head.some((t) => t.text === '(') &&
+      isName(prev) &&
+      [',', '('].includes(head[head.length - 2]?.text ?? '');
     if (prev.value === 'TYPE' && prev.kind === 'word') return context('type');
     if (isName(prev) && (add || inList) && !TABLE_WORDS.has(prev.value)) return context('type');
-    if (prev.kind === 'word' && (TABLE_WORDS.has(prev.value) || prev.value === 'ON')) return context('table');
-    if (first.value === 'CREATE' && !head.some((t) => t.value === 'AS' || t.value === 'ON')) return context('keyword');
+    if (prev.kind === 'word' && (TABLE_WORDS.has(prev.value) || prev.value === 'ON'))
+      return context('table');
+    if (first.value === 'CREATE' && !head.some((t) => t.value === 'AS' || t.value === 'ON'))
+      return context('keyword');
   }
   if (clause === 'INSERT COLUMNS') return context('insertColumns');
-  if (prev.kind === 'word' && (prev.value === 'CALL' || prev.value === 'EXEC' || prev.value === 'EXECUTE')) {
+  if (
+    prev.kind === 'word' &&
+    (prev.value === 'CALL' || prev.value === 'EXEC' || prev.value === 'EXECUTE')
+  ) {
     return context('routine');
   }
   // a table is named
@@ -459,23 +492,41 @@ export function analyse(sql: string, caret: number, dialect: Dialect): SqlContex
     return context(clause === 'JOIN' ? 'join' : 'keyword');
   }
   if (TABLE_WORDS.has(clause)) {
-    if (sinceClause.length === 0) return context(first?.value === 'DROP' || clause !== 'JOIN' ? 'table' : 'join');
+    if (sinceClause.length === 0)
+      return context(first?.value === 'DROP' || clause !== 'JOIN' ? 'table' : 'join');
     const last = sinceClause[sinceClause.length - 1];
     if (last.text === ',' && clause === 'FROM') return context('table');
-    if (['ONLY', 'IF', 'EXISTS', 'LATERAL'].includes(last.value) && last.kind === 'word') return context('table');
+    if (['ONLY', 'IF', 'EXISTS', 'LATERAL'].includes(last.value) && last.kind === 'word')
+      return context('table');
     if (clause === 'UPDATE' && isName(last)) return context('keyword');
     // behind a table (and its alias): only what goes on with the statement
     return context('keyword');
   }
-  if (clause === '' && first && STATEMENT_START.has(first.value) && head.length === 1 && first.value !== 'SELECT' && first.value !== 'WITH') {
+  if (
+    clause === '' &&
+    first &&
+    STATEMENT_START.has(first.value) &&
+    head.length === 1 &&
+    first.value !== 'SELECT' &&
+    first.value !== 'WITH'
+  ) {
     return context('keyword');
   }
   if (clause === 'WITH') return context('none');
   if (clause === 'LIMIT' || clause === 'OFFSET' || clause === 'FETCH') return context('none');
   // behind a finished expression only keywords fit: `WHERE a = 1 ▮`, `SELECT a ▮`
   const operand =
-    prev.kind === 'word' || prev.kind === 'quoted' || prev.kind === 'number' || prev.kind === 'string' || prev.text === ')' || prev.text === '*';
-  const keywordish = prev.kind === 'word' && (NOT_ALIAS.has(prev.value) || CLAUSES.has(prev.value) || ['DISTINCT', 'ALL', 'CASE', 'BY', 'TOP'].includes(prev.value));
+    prev.kind === 'word' ||
+    prev.kind === 'quoted' ||
+    prev.kind === 'number' ||
+    prev.kind === 'string' ||
+    prev.text === ')' ||
+    prev.text === '*';
+  const keywordish =
+    prev.kind === 'word' &&
+    (NOT_ALIAS.has(prev.value) ||
+      CLAUSES.has(prev.value) ||
+      ['DISTINCT', 'ALL', 'CASE', 'BY', 'TOP'].includes(prev.value));
   // `SELECT TOP 5 ▮`: the number belongs to TOP
   const top = prev.kind === 'number' && head[head.length - 2]?.value === 'TOP';
   if (operand && !keywordish && !top && !begunAfterOperator(prev)) return context('keyword');

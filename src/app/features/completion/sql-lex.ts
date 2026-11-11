@@ -99,7 +99,11 @@ export function lex(sql: string, dialect: Dialect): Token[] {
       const end = close < 0 ? sql.length : close + 1;
       push('quoted', i, end, sql.slice(i + 1, close < 0 ? sql.length : close), close < 0);
       i = end;
-    } else if (c === '$' && dialect === 'postgres' && /^\$[\p{L}_]*\$/u.test(sql.slice(i, i + 64))) {
+    } else if (
+      c === '$' &&
+      dialect === 'postgres' &&
+      /^\$[\p{L}_]*\$/u.test(sql.slice(i, i + 64))
+    ) {
       const tag = /^\$[\p{L}_]*\$/u.exec(sql.slice(i, i + 64))![0];
       const close = sql.indexOf(tag, i + tag.length);
       const end = close < 0 ? sql.length : close + tag.length;
