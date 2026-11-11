@@ -50,8 +50,8 @@ Prompts) · **Stufe** = meine Empfehlung: **1** Grundlage (ohne das ist es kein 
 
 | Id | Feature | Vorbild | Umfang | Stufe | Freigabe |
 |---|---|---|---|---|---|
-| A1 | **Verbindungsprofile**: anlegen, testen, in Ordnern gruppieren, Farbmarke je Verbindung (Tokens `--conn-1…8` gibt es schon). Treiber PostgreSQL, MySQL/MariaDB, SQLite, SQL Server – reines Rust wie in log-commander (`sqlx`, `tiberius`, `rusqlite`) | TablePlus, DBeaver | L | 1 | ☑ [003](../prompts/003-verbindungen.md) |
-| A2 | **Geheimnisse nur im Schlüsselbund** des Betriebssystems, nie in Dateien; Passwort auf Wunsch jedes Mal fragen | TablePlus, DataGrip | S–M | 1 | ☑ [003](../prompts/003-verbindungen.md) |
+| A1 | **Verbindungsprofile**: anlegen, testen, in Ordnern gruppieren, Farbmarke je Verbindung (Tokens `--conn-1…8` gibt es schon). Treiber PostgreSQL, MySQL/MariaDB, SQLite, SQL Server – reines Rust wie in log-commander (`sqlx`, `tiberius`, `rusqlite`) | TablePlus, DBeaver | L | 1 | ☑ [003](../prompts/done/003-verbindungen.md) |
+| A2 | **Geheimnisse nur im Schlüsselbund** des Betriebssystems, nie in Dateien; Passwort auf Wunsch jedes Mal fragen | TablePlus, DataGrip | S–M | 1 | ☑ [003](../prompts/done/003-verbindungen.md) |
 | A3 | **SSH-Tunnel** (Schlüssel, Agent, `~/.ssh/config`) und **TLS-Optionen** (Zertifikate, Prüfmodus) – `russh` ist in fnf und log-commander erprobt | TablePlus, HeidiSQL | M | 2 | ☑ [014](../prompts/014-ssh-tls.md) |
 | A4 | **Schutz für Produktion**: Verbindung als „geschützt“ markieren → farbiger Fensterrahmen, Nur-Lesen-Modus, Rückfrage vor jeder schreibenden Anweisung, harte Rückfrage bei `UPDATE`/`DELETE` ohne `WHERE` und bei `DROP`/`TRUNCATE` | TablePlus (Safe Mode), DataGrip | M | 2 | ☑ [012](../prompts/012-produktionsschutz.md) |
 | A5 | **Verbindung aus URL einfügen** (`postgres://…`) und **Import** aus DBeaver, DataGrip, TablePlus, `.pgpass`, `~/.my.cnf` | TablePlus | S–M | 2 | ☑ [015](../prompts/015-verbindungs-import.md) |

@@ -29,11 +29,29 @@ const MAX_WIDTH = 420;
 /** Rows looked at for the column widths. */
 const SAMPLE = 200;
 
-/** A cell as text; `null` stays `null` (the renderer shows it as NULL). */
+/** A cell as text; `null` stays `null` (shown empty until prompt 007 brings a renderer for NULL). */
 export function cellText(cell: Cell): string | null {
   if (cell === null) return null;
-  if (typeof cell === 'object') return `<blob ${cell.blob} B>`;
+  if (typeof cell === 'object') {
+    if ('unreadable' in cell) return `‹${cell.unreadable}›`;
+    return `0x${cell.hex}${cell.bytes * 2 > cell.hex.length ? '…' : ''} (${cell.bytes} B)`;
+  }
   return String(cell);
+}
+
+/**
+ * The rows as the table shows them: numbers and text as they are, everything else as text. Rows are only
+ * copied when the result has cells that need it.
+ */
+export function displayRows(result: QueryResult): readonly (readonly (string | number | null)[])[] {
+  const plain = (cell: Cell) =>
+    cell === null || typeof cell === 'string' || typeof cell === 'number';
+  if (result.rows.every((row) => row.every(plain))) {
+    return result.rows as readonly (readonly (string | number | null)[])[];
+  }
+  return result.rows.map((row) =>
+    row.map((cell) => (plain(cell) ? (cell as string | number | null) : cellText(cell))),
+  );
 }
 
 /** Column widths in px from the header and the first rows. */
@@ -48,11 +66,14 @@ export function columnWidths(result: QueryResult): number[] {
   });
 }
 
-/** Numbers are right-aligned; the declared type wins over the first value. */
+/**
+ * Numbers are right-aligned: by the kind of the column, and for a column of unknown kind (an expression in
+ * SQLite) by its first value.
+ */
 export function isNumeric(result: QueryResult, c: number): boolean {
-  const decl = result.columns[c].declType?.toUpperCase() ?? '';
-  if (/INT|REAL|FLOA|DOUB|NUM|DEC/.test(decl)) return true;
-  if (decl) return false;
+  const kind = result.columns[c].kind;
+  if (kind === 'int' || kind === 'float' || kind === 'decimal') return true;
+  if (kind !== 'other') return false;
   const first = result.rows.find((row) => row[c] !== null)?.[c];
   return typeof first === 'number';
 }
@@ -72,7 +93,7 @@ export function resultModel(result: QueryResult): TableModelIf {
     }),
   );
   return TableFactory.createTableModel({
-    rows: result.rows as unknown[] as never[],
+    rows: displayRows(result) as unknown[] as never[],
     columnDefs,
     tableOptions: RESULT_OPTIONS,
     rowNumbersVisible: true,

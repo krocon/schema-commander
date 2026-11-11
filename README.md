@@ -9,12 +9,14 @@
 Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust. The SQL editor is
 [editlicious](https://krocon.de/products/editlicious/), the grids are the [GuiExpert Table](https://gui.expert).
 
-> Status: **walking skeleton**. A window with an SQL editor, a result grid and 17 colour schemes, running against an
-> in-memory demo database. Real connections, the schema tree and everything else are planned – see
+> Status: **early development**. Connections, an SQL editor, a result grid and colour schemes work; the schema
+> tree, tabs, editing and everything else are planned – see
 > [`docs/feature-analysis.md`](docs/feature-analysis.md) and [`prompts/README.md`](prompts/README.md).
 
 ## What works
 
+- Connections to PostgreSQL, MySQL/MariaDB, SQL Server and SQLite files: profiles in folders with colour tags,
+  passwords only in the keychain of your OS; a demo database in memory to try things out
 - SQL editor with syntax highlighting; <kbd>Ctrl/⌘</kbd>+<kbd>Enter</kbd> runs the statement under the caret
 - Result grid with virtual scrolling, sortable and resizable columns
 - 17 colour schemes (dark, light, One Dark, Solarized Light, Matrix, Amber …), fixed or following the system –

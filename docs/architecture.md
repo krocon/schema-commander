@@ -34,12 +34,14 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | A12 | Eigene Farbschemata in `themes.json` über ein eigenes Rust-Modul statt `tauri-plugin-store` | Grenzen und Prüfung im Backend, defekte Datei reißt die Einstellungen nicht mit (Design 001 E3) |
 | A13 | Pfade kommen nur aus nativen Dialogen (`FileDialogApi`), Lesen und Schreiben nur über eigene Commands | kein Dateizugriff aus dem Frontend; `tauri-plugin-fs` (von `-dialog` mitgezogen) ist nicht registriert |
 | A14 | `inlineCritical: false` im Produktions-Build | Angulars Nachladen des Stylesheets braucht ein Inline-Skript, das eine strikte CSP ohne Nonce blockiert; lokal bringt das Inlining nichts |
+| A15 | Treiber wie log-commander (`sqlx`-Unterkrates, `tiberius`, `rusqlite`), Anweisungen über das einfache Protokoll, eine Sitzung je Profil | Design 003 E1–E5 |
+| A16 | Zellen als JSON ohne Verlust (Ganzzahlen jenseits 2^53, Dezimal, Datum als Text; Spalte trägt die Art) | Design 003 E6 |
+| A17 | Passwörter nur im Schlüsselbund des Systems; `connections.json` kennt kein Geheimnis | Design 003 E7–E9 |
 | A10 | Oberflächentexte vorerst deutsch in den Komponenten | übernommene Galerie ist deutsch; Kataloge de/en kommen mit dem Prompt „Einstellungen und Sprache“ |
 
 ## Offene Architekturfragen (entscheidet der jeweilige Prompt)
 
-- **Treiber**: Vorschlag wie log-commander – `sqlx-postgres`, `sqlx-mysql` (reines Rust, rustls), `tiberius` für SQL
-  Server, `rusqlite` für SQLite; Oracle und DuckDB später. Ein Trait `Driver` mit gleicher Signatur je Datenbank.
+- **Treiber**: entschieden und umgesetzt (Design 003); Oracle, DuckDB und weitere mit Prompt 035.
 - **Große Ergebnisse**: Rust streamt in einen Spool (Datei/Speicher), das Frontend holt Fenster von Zeilen über ein
   eigenes `AreaModel` der GuiExpert Table (wie die Log-Ansicht von log-commander).
 - **Vervollständigung**: Schema-Metadaten in Rust zwischenspeichern; der Editor braucht dafür eine Schnittstelle für
@@ -57,6 +59,13 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | `editlicious-editor` | SQL-Editor | Vorgabe; große Texte, SQL-Grammatik, 13 Schemata |
 | `tauri-plugin-dialog`, `@tauri-apps/plugin-dialog` | native Öffnen-/Speichern-Dialoge (Schema-Import/-Export, später SQL-Dateien, Export) | wie log-commander; nur `dialog:allow-open`, `dialog:allow-save` |
 | `tempfile` (dev) | Dateitests in Rust | Standard |
-| `rusqlite` (bundled) | Demo-Datenbank, später SQLite-Dateien | keine Systembibliothek |
+| `rusqlite` (bundled) | Demo-Datenbank und SQLite-Dateien | keine Systembibliothek; ohne Erweiterungsladen gebaut (`.cargo/config.toml`) |
+| `sqlx-core`, `sqlx-postgres`, `sqlx-mysql` (=0.9.0) | PostgreSQL, MySQL/MariaDB | reines Rust; Unterkrates statt der Fassade (kein zweites SQLite); `rsa` für MySQL-8-Anmeldung ohne TLS |
+| `tiberius`, `tokio-util` | SQL Server (TDS) | reines Rust, rustls |
+| `tokio`, `futures-util` | Laufzeit der Netzwerk-Treiber (eigene, nicht Tauris) | Standard |
+| `rustls` (ring) | TLS, Wurzeln des Systems | kein OpenSSL |
+| `chrono` | Datum und Zeit aus den Treibern | von sqlx und tiberius benutzt |
+| `keyring-core` + `apple-native-`, `windows-native-`, `dbus-secret-service-keyring-store` | Passwörter im Schlüsselbund des Systems | wie log-commander und files-and-folders |
+| `zeroize`, `sha2`, `parking_lot` | Geheimnisse im Speicher löschen, Kontonamen als Hash, Sperren | klein, verbreitet |
 | `serde`, `serde_json` | DTOs | Standard |
 | Dev: `vitest`, `jsdom`, `eslint`, `angular-eslint`, `typescript-eslint`, `prettier` | Tests, Lint, Format | wie die Vorgänger |

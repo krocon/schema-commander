@@ -1,5 +1,7 @@
 {
   "RUN_STATEMENT": ["Mod+Enter"],
+  "CANCEL_QUERY": ["Mod+."],
+  "NEW_CONNECTION": ["Mod+Shift+N"],
   "TOGGLE_SIDEBAR": ["Mod+B"],
   "COLOR_SCHEME": ["Mod+Alt+T"],
   "OPEN_PALETTE": ["Mod+Shift+P", "F1"],
