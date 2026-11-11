@@ -211,7 +211,11 @@ export class WindowAreaModel extends AreaModel {
  * The header of a result column: its name and, small, its type. Built from text nodes only.
  */
 export class HeaderRenderer implements CellRendererIf {
-  constructor(private readonly column: QueryColumn) {}
+  /** `mark`: the column is a sort key – its direction and, among several, its rank (`▲2`). */
+  constructor(
+    private readonly column: QueryColumn,
+    private readonly mark = '',
+  ) {}
 
   render(cellDiv: HTMLDivElement): undefined {
     const doc = cellDiv.ownerDocument;
@@ -220,6 +224,12 @@ export class HeaderRenderer implements CellRendererIf {
     name.className = 'sc-head-name';
     name.textContent = this.column.name;
     cellDiv.appendChild(name);
+    if (this.mark) {
+      const sort = doc.createElement('span');
+      sort.className = 'sc-head-sort';
+      sort.textContent = this.mark;
+      cellDiv.appendChild(sort);
+    }
     if (type) {
       const small = doc.createElement('span');
       small.className = 'sc-head-type';
@@ -243,7 +253,13 @@ export function resultModel(
   body: WindowAreaModel,
   rows: number,
   options: TableOptionsIf,
+  /** The sort keys to mark in the heads (prompt 027). */
+  marks: readonly { column: number; desc: boolean; rank: number }[] = [],
 ): TableModelIf {
+  const markOf = (c: number) => {
+    const m = marks.find((k) => k.column === c);
+    return m ? `${m.desc ? '▼' : '▲'}${m.rank > 0 ? m.rank : ''}` : '';
+  };
   const widths = columnWidths(columns, first);
   const columnDefs = [
     ColumnDef.create({
@@ -260,11 +276,11 @@ export function resultModel(
         property: `c${c}`,
         headerLabel: column.name,
         width: new Size(widths[c], 'px'),
-        headerRenderer: new HeaderRenderer(column),
+        headerRenderer: new HeaderRenderer(column, markOf(c)),
         // the table centres cells by default; numbers move to the right by the class of the cell
         headerClasses: ['ge-table-text-align-left', 'sc-head'],
         bodyClasses: ['ge-table-text-align-left'],
-        // sorting comes with prompt 027: it cannot be done on the rows that happen to be here
+        // the table itself sorts nothing: a click on a head asks the server or the store (prompt 027)
         sortable: () => false,
         movable: false,
       }),

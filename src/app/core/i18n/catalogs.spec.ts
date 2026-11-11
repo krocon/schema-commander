@@ -14,6 +14,7 @@ import '../../features/connections/import-texts';
 import '../../features/details/details-texts';
 import '../../features/editor/editor-texts';
 import '../../features/export/export-texts';
+import '../../features/filter/filter-texts';
 import '../../features/format/format-texts';
 import '../../features/guard/guard-texts';
 import '../../features/history/history-texts';
@@ -75,6 +76,10 @@ const SAME = new Set<string>([
   'Schema',
   'TLS: ',
   'Hex',
+  'IS NOT NULL',
+  'IS NULL',
+  'LIKE',
+  'NOT LIKE',
   'Tab',
   'Text',
   'UTC',
@@ -89,7 +94,7 @@ const SAME = new Set<string>([
   '~/.pgpass (PostgreSQL)',
 ]);
 
-const CATALOG_FILES = 31;
+const CATALOG_FILES = 32;
 const SAMPLE_ARGS: unknown[] = [2, 'x', 3, 4];
 
 function walk(path: string, en: unknown, de: unknown, problems: string[], same: string[]): void {

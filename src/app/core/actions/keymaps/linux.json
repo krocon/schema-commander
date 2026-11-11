@@ -119,6 +119,15 @@
   "TOGGLE_VALUE_PANEL": [
     "Mod+K Mod+V"
   ],
+  "TOGGLE_FILTER_BAR": [
+    "Mod+Alt+F"
+  ],
+  "FILTER_CELL_EQ": [
+    "Mod+K Mod+E"
+  ],
+  "FILTER_RESET": [
+    "Mod+K Mod+R"
+  ],
   "SAVE_QUERY": [
     "Mod+Alt+S"
   ],

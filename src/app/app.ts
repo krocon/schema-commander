@@ -30,6 +30,8 @@ import { ExportDialog } from './features/export/export-dialog';
 import { ExportService } from './features/export/export.service';
 import { FormatMode } from './core/format/format-api';
 import { FormatService } from './features/format/format.service';
+import { EMPTY_SPEC, QuickFilter } from './features/filter/filter-logic';
+import { FILTER_TEXTS } from './features/filter/filter-texts';
 import { ParamDialog } from './features/params/param-dialog';
 import { ParamService } from './features/params/param.service';
 import { PARAM_TEXTS } from './features/params/param-texts';
@@ -740,7 +742,31 @@ export class App implements OnInit, OnDestroy {
       }
     };
     const canFormat = () => !!tab() && !this.formatter.running();
+    /** A condition from the cell under the cursor of a table view (prompt 027). */
+    const quick = (kind: QuickFilter) => async () => {
+      const t = tab();
+      const cell = this.values.cell();
+      if (!t?.tableView()) return this.ownNotice.set(FILTER_TEXTS.noTable);
+      if (!cell) return this.ownNotice.set(FILTER_TEXTS.noCell);
+      if (!(await t.quickFilter(kind, cell))) this.ownNotice.set(FILTER_TEXTS.notAValue);
+    };
+    const inTable = () => !!tab()?.tableView() && this.values.cell() !== null;
     const offs = [
+      this.actions.register('FILTER_CELL_EQ', quick('eq'), inTable),
+      this.actions.register('FILTER_CELL_NE', quick('ne'), inTable),
+      this.actions.register('FILTER_CELL_GT', quick('gt'), inTable),
+      this.actions.register('FILTER_CELL_LT', quick('lt'), inTable),
+      this.actions.register('FILTER_CELL_NULL', quick('null'), inTable),
+      this.actions.register(
+        'FILTER_RESET',
+        () => {
+          const t = tab();
+          const view = t?.tableView();
+          if (view) void t?.applyTable({ ...EMPTY_SPEC, limit: view.spec.limit });
+          t?.dropLocal();
+        },
+        () => !!tab()?.tableView() || !!tab()?.localView() || !!tab()?.localSpec().sort.length,
+      ),
       this.actions.register('FORMAT_SQL', format('format', false), canFormat),
       this.actions.register('FORMAT_SCRIPT', format('format', true), canFormat),
       this.actions.register('SQL_ONE_LINE', format('oneline', false), canFormat),
@@ -1022,6 +1048,11 @@ export class App implements OnInit, OnDestroy {
         OPEN_PALETTE: () => this.openPalette('commands'),
         GOTO_ANYTHING: () => this.openPalette('goto'),
         GOTO_SAVED: () => this.openPalette('goto', 'q: '),
+        TOGGLE_FILTER_BAR: () =>
+          this.settings.update({
+            filterBarVisible: !this.settings.settings().filterBarVisible,
+            resultVisible: true,
+          }),
         TOGGLE_VALUE_PANEL: () =>
           this.settings.update({
             valuePanelVisible: !this.settings.settings().valuePanelVisible,
@@ -1131,6 +1162,7 @@ export class App implements OnInit, OnDestroy {
       SIDEBAR_HISTORY: () => s().sidebarView === 'history',
       SIDEBAR_SAVED: () => s().sidebarView === 'saved',
       TOGGLE_VALUE_PANEL: () => s().valuePanelVisible,
+      TOGGLE_FILTER_BAR: () => s().filterBarVisible,
     };
     return Object.entries(checks).map(([id, on]) =>
       this.actions.registerCheck(id as ActionId, on as () => boolean),

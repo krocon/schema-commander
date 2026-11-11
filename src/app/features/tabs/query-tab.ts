@@ -1,3 +1,14 @@
+import { BuiltQuery, QueryColumn, ViewSpec } from '../../core/sql/query.models';
+import {
+  EMPTY_VIEW,
+  QuickFilter,
+  TableSpec,
+  TableView,
+  isLocal,
+  queryOf,
+  quickCondition,
+  withCondition,
+} from '../filter/filter-logic';
 import { Dialect } from '../editor/sql-split';
 import {
   BoundStatement,
@@ -103,6 +114,8 @@ export interface TabServices {
     forms(connectionId: string): readonly string[] | undefined;
     ask(request: ParamRequest): Promise<Readonly<Record<string, ParamValue>> | null>;
   };
+  /** A table view was applied on a connection (its filter is remembered for the table). */
+  readonly tableApplied?: (connection: string, view: TableView) => void;
   /** A statement ended, one way or the other (the history notes it). */
   readonly record?: (ran: RanStatement) => void;
   /** Statements ended well on a connection (the schema tree reads again after DDL). */
@@ -117,6 +130,9 @@ export interface RunOptions {
   /** Dangerous statements on unprotected connections run without a question. */
   readonly allowDangerous?: boolean;
 }
+
+/** Ids of the jobs that work out local views: far from those of exports and of the formatter. */
+let nextViewJob = 2_000_000_000;
 
 /**
  * A query tab (prompts 004, 005): its title, connection, editor, the statements of its last run with their
@@ -137,6 +153,14 @@ export class QueryTab {
   readonly paramValues = signal<Readonly<Record<string, ParamValue>>>({});
   /** The statements of the last run that had parameters: to run them again with the same values. */
   private lastStatements: readonly string[] | null = null;
+  /** The table this tab shows as a table (prompt 027); `null` = an ordinary query tab. */
+  readonly tableView = signal<TableView | null>(null);
+  /** How the result on screen is looked at locally, and the view of the store that shows it. */
+  readonly localSpec = signal<ViewSpec>(EMPTY_VIEW);
+  readonly localView = signal<{ base: number; resultId: number; rows: number } | null>(null);
+  readonly viewBusy = signal(false);
+  readonly viewProblem = signal<string | null>(null);
+  private viewJob: number | null = null;
   readonly encoding = signal<string | null>(null);
 
   /** The statements of the last run (one statement, a selection or a script) and how they went. */
@@ -297,8 +321,16 @@ export class QueryTab {
     origin: 'user' | 'app' = 'user',
     /** Use the values given last without asking, as far as they are all there (prompt 025). */
     sameValues = false,
+    /**
+     * What the driver gets instead of the statements as written: the statement of a table view with its
+     * placeholders and values (prompt 027). The statements themselves are then only what is shown.
+     */
+    prebuilt: readonly BoundStatement[] | null = null,
   ): Promise<void> {
     this.origin = origin;
+    // any other run ends the table view: the text in the editor is the user's again
+    if (!prebuilt) this.tableView.set(null);
+    this.dropLocal();
     const sqls = statements.filter((s) => s.trim() !== '');
     if (sqls.length === 0) return;
     const { connections } = this.services;
@@ -328,7 +360,7 @@ export class QueryTab {
     };
     // parameters (prompt 025): the values are asked for once, for the whole run; from here on `sent` is
     // what the driver gets – the placeholders in the text, the values apart
-    let sent: readonly BoundStatement[] | null = null;
+    let sent: readonly BoundStatement[] | null = prebuilt;
     const params =
       origin === 'user' && this.services.params?.enabled() ? this.services.params : null;
     const dialect = this.dialectOf(connection);
@@ -550,6 +582,124 @@ export class QueryTab {
         this.showFirstOfInterest();
       }
     }
+  }
+
+  /**
+   * Shows a table as a table (prompt 027): the app writes its `SELECT`. `built` is the statement for
+   * `view`, if the caller has it already (the text of a new tab is its readable form).
+   */
+  async openTable(view: TableView, built?: BuiltQuery): Promise<void> {
+    this.tableView.set(view);
+    await this.runTable(view, built ?? null);
+  }
+
+  /** Filters, orders or limits the table view anew and reads it again. */
+  async applyTable(spec: TableSpec): Promise<void> {
+    const view = this.tableView();
+    if (!view) return;
+    await this.runTable({ ...view, spec }, null);
+  }
+
+  private async runTable(view: TableView, known: BuiltQuery | null): Promise<void> {
+    const connection = this.connectionId();
+    let built = known;
+    if (!built) {
+      try {
+        built = await this.services.api.tableQuery(connection, queryOf(view));
+      } catch (e) {
+        // a condition the backend refuses: nothing runs, the view stays as it was
+        this.services.notify?.(describeError(e));
+        return;
+      }
+      // the statement is shown where statements are: in the editor, to read and to go on with
+      await this.editor?.setText(built.display);
+    }
+    this.services.tableApplied?.(connection, view);
+    const run = this.runAll([built.display], 'app', false, [
+      { sql: built.sql, params: built.params, replaced: [] },
+    ]);
+    // the run has started: from here on the tab shows this view
+    this.tableView.set(view);
+    await run;
+  }
+
+  /**
+   * Adds a condition from a cell of the table view (prompt 027). `false`: there is no table view, the
+   * cell is not one of it, or its value is none to filter by (too long, binary).
+   */
+  async quickFilter(
+    quick: QuickFilter,
+    cell: { resultId: number; row: number; col: number; column: QueryColumn },
+  ): Promise<boolean> {
+    const view = this.tableView();
+    if (!view) return false;
+    let value: string | null = null;
+    if (quick !== 'null') {
+      const part = await this.services.api.cellValue(cell.resultId, cell.row, cell.col, 0, 4096);
+      if (part.kind === 'null') value = null;
+      else if (part.kind !== 'text' || part.to < part.total) return false;
+      else value = part.text ?? '';
+    }
+    const condition = quickCondition(quick, cell.column, value);
+    if (!condition) return false;
+    await this.applyTable(withCondition(view.spec, condition));
+    return true;
+  }
+
+  /**
+   * Looks at the result on screen through a text filter and in an order (prompt 027) – in the store of
+   * the backend; the query is not run again. An empty spec shows the result as it is.
+   */
+  async setLocal(spec: ViewSpec): Promise<void> {
+    const state = this.state();
+    const base =
+      state.kind === 'done' || state.kind === 'running' ? (state.result?.resultId ?? null) : null;
+    this.localSpec.set(spec);
+    this.viewProblem.set(null);
+    const before = this.localView();
+    // what is still being worked out for an older spec is not wanted any more
+    if (this.viewJob !== null)
+      void this.services.api.cancelView(this.viewJob).catch(() => undefined);
+    this.viewJob = null;
+    if (base === null || !isLocal(spec)) {
+      this.localView.set(null);
+      this.viewBusy.set(false);
+      if (before) this.free([before.resultId]);
+      return;
+    }
+    const job = nextViewJob++;
+    this.viewJob = job;
+    this.viewBusy.set(true);
+    try {
+      const viewed = await this.services.api.resultView(job, base, spec);
+      if (this.viewJob !== job) {
+        this.free([viewed.resultId]);
+        return;
+      }
+      this.localView.set({ base, resultId: viewed.resultId, rows: viewed.rows });
+      if (before) this.free([before.resultId]);
+    } catch (e) {
+      if (this.viewJob !== job) return;
+      if (toAppError(e).code !== 'cancelled') this.viewProblem.set(describeError(e));
+    } finally {
+      if (this.viewJob === job) {
+        this.viewJob = null;
+        this.viewBusy.set(false);
+      }
+    }
+  }
+
+  /** Shows the result as it is again (another result, another run). */
+  dropLocal(): void {
+    if (this.viewJob !== null)
+      void this.services.api.cancelView(this.viewJob).catch(() => undefined);
+    this.viewJob = null;
+    const before = this.localView();
+    if (before) this.free([before.resultId]);
+    this.localView.set(null);
+    this.localSpec.set(EMPTY_VIEW);
+    this.viewBusy.set(false);
+    this.viewProblem.set(null);
   }
 
   /**

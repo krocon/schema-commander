@@ -125,7 +125,7 @@ fn text(cell: &Value) -> Option<String> {
     }
 }
 
-fn sql_text(text: &str, dialect: DbKind) -> String {
+pub fn sql_text(text: &str, dialect: DbKind) -> String {
     let mut out = String::with_capacity(text.len() + 3);
     // SQL Server reads a plain literal in the code page of the database
     if dialect == DbKind::Sqlserver && !text.is_ascii() {

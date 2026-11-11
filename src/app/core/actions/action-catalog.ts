@@ -78,6 +78,39 @@ export const ACTIONS = [
   { id: 'TOGGLE_COMMENT', label: 'Toggle line comment', group: 'Query', scope: 'global' },
   { id: 'CANCEL_FORMAT', label: 'Cancel formatting', group: 'Query', scope: 'global' },
   { id: 'SHOW_MESSAGES', label: 'Show messages', group: 'Query', scope: 'global' },
+  // Sorting and filtering (prompt 027)
+  { id: 'TOGGLE_FILTER_BAR', label: 'Result: show the filter row', group: 'View', scope: 'global' },
+  {
+    id: 'FILTER_CELL_EQ',
+    label: 'Table: filter by the value of the cell',
+    group: 'Query',
+    scope: 'global',
+  },
+  {
+    id: 'FILTER_CELL_NE',
+    label: 'Table: filter out the value of the cell',
+    group: 'Query',
+    scope: 'global',
+  },
+  {
+    id: 'FILTER_CELL_GT',
+    label: 'Table: filter greater than the cell',
+    group: 'Query',
+    scope: 'global',
+  },
+  {
+    id: 'FILTER_CELL_LT',
+    label: 'Table: filter smaller than the cell',
+    group: 'Query',
+    scope: 'global',
+  },
+  {
+    id: 'FILTER_CELL_NULL',
+    label: 'Table: filter where the column is NULL',
+    group: 'Query',
+    scope: 'global',
+  },
+  { id: 'FILTER_RESET', label: 'Result: reset filter and order', group: 'Query', scope: 'global' },
   // The value panel (prompt 026)
   {
     id: 'TOGGLE_VALUE_PANEL',

@@ -58,6 +58,77 @@ export type BoundValue =
   | { readonly kind: 'text' | 'int' | 'decimal' | 'date' | 'datetime'; readonly value: string }
   | { readonly kind: 'bool'; readonly value: boolean };
 
+/** Mirrors `Op` in src-tauri/src/db/filter.rs: how a condition of a table view compares. */
+export type FilterOp =
+  | 'eq'
+  | 'ne'
+  | 'lt'
+  | 'le'
+  | 'gt'
+  | 'ge'
+  | 'like'
+  | 'notLike'
+  | 'contains'
+  | 'in'
+  | 'between'
+  | 'isNull'
+  | 'isNotNull';
+
+/** Mirrors `Condition`: the values are what the user typed – the backend binds them. */
+export interface FilterCondition {
+  /** The name of the column as the catalog has it; the backend quotes it. */
+  readonly column: string;
+  readonly op: FilterOp;
+  readonly values: readonly string[];
+  readonly kind: 'number' | 'bool' | 'text';
+  /** The type of the column as the database names it; PostgreSQL casts the value to it. */
+  readonly typeName: string;
+}
+
+/** Mirrors `Order`. */
+export interface FilterOrder {
+  readonly column: string;
+  readonly desc: boolean;
+  readonly nulls: 'first' | 'last' | null;
+}
+
+/** Mirrors `TableQuery`: what a table view shows. */
+export interface TableQuery {
+  readonly schema: string | null;
+  readonly table: string;
+  readonly conditions: readonly FilterCondition[];
+  /** Joined with OR (else AND). */
+  readonly any: boolean;
+  /** A condition written as SQL by the user: one expression, no `;`, no comments. */
+  readonly whereSql: string | null;
+  readonly order: readonly FilterOrder[];
+  /** Rows at most; `null` = all. */
+  readonly limit: number | null;
+}
+
+/** Mirrors `Built`: the statement of a table view with placeholders, its values, and a readable form. */
+export interface BuiltQuery {
+  readonly sql: string;
+  readonly params: readonly BoundValue[];
+  /** With the values written out as literals: to read and to go on with in an editor. */
+  readonly display: string;
+}
+
+/** Mirrors `ViewSpec` in src-tauri/src/results.rs: a result seen through a text filter, in an order. */
+export interface ViewSpec {
+  /** Rows in which the text occurs (case does not matter); `''` = all. */
+  readonly text: string;
+  /** The column to look in; `null` = every column. */
+  readonly column: number | null;
+  readonly sort: readonly { readonly column: number; readonly desc: boolean }[];
+}
+
+/** Mirrors `Viewed`: a view is read, copied and freed like a result. */
+export interface ViewedResult {
+  readonly resultId: number;
+  readonly rows: number;
+}
+
 /** Mirrors `ImageInfo` in src-tauri/src/image_info.rs: what picture a binary value says it is. */
 export interface ImageInfo {
   readonly mime: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';

@@ -26,6 +26,8 @@ import { ObjectDetailsService } from '../details/details.service';
 import { CopyService } from '../results/copy.service';
 import { errorObjectText, errorReport } from './run-state';
 import { TabsStore } from './tabs.store';
+import { FilterBar } from '../filter/filter-bar';
+import { sortMarks, toggleLocalSort, toggleServerOrder } from '../filter/filter-logic';
 import { PARAM_TEXTS } from '../params/param-texts';
 import { ValuePanel } from '../value/value-panel';
 import { ActiveCell, ValueService } from '../value/value.service';
@@ -44,7 +46,7 @@ const EDITOR_MIN_W = 160;
  */
 @Component({
   selector: 'app-query-pane',
-  imports: [ResultGrid, SplitterComponent, SqlEditor, ValuePanel],
+  imports: [FilterBar, ResultGrid, SplitterComponent, SqlEditor, ValuePanel],
   host: {
     '[class.side]': 'side()',
     '[class.no-result]': '!settings.settings().resultVisible && !maximized()',
@@ -137,6 +139,14 @@ const EDITOR_MIN_W = 160;
           </button>
         </div>
       }
+      @if (filterBar()) {
+        <app-filter-bar
+          [tab]="tab()"
+          [columns]="result()?.columns ?? []"
+          [total]="baseRows()"
+          [local]="settings.settings().filterBarVisible"
+        />
+      }
       <div class="body" role="tabpanel">
         @if (tab().shown() === 'messages') {
           <ol class="log" [attr.aria-label]="t.messages">
@@ -165,7 +175,9 @@ const EDITOR_MIN_W = 160;
                     [result]="r"
                     [rows]="rows()"
                     [fetch]="fetch"
+                    [marks]="marks()"
                     (active)="onActive(r, $event)"
+                    (headClick)="onHeadClick(r, $event)"
                   />
                   @if (settings.settings().valuePanelVisible) {
                     <app-splitter
@@ -233,7 +245,9 @@ const EDITOR_MIN_W = 160;
                     [result]="r"
                     [rows]="rows()"
                     [fetch]="fetch"
+                    [marks]="marks()"
                     (active)="onActive(r, $event)"
+                    (headClick)="onHeadClick(r, $event)"
                   />
                   @if (settings.settings().valuePanelVisible) {
                     <app-splitter
@@ -491,14 +505,40 @@ export class QueryPane implements OnInit, OnDestroy {
   protected readonly result = computed<ResultRef | null>(
     () => {
       const s = this.state();
-      return s.kind === 'done' || s.kind === 'running' ? s.result : null;
+      const result = s.kind === 'done' || s.kind === 'running' ? s.result : null;
+      // looked at through a local filter or order: the view of the store stands in for the result
+      const view = this.tab().localView();
+      return result && view && view.base === result.resultId
+        ? { resultId: view.resultId, columns: result.columns }
+        : result;
     },
     // a row count that grows must not look like a new result (the grid would start over)
     { equal: (a, b) => a?.resultId === b?.resultId },
   );
-  protected readonly rows = computed(() => {
+  /** The filter rows have something to stand above: a result, or the view of a table. */
+  protected readonly filterBar = computed(
+    () => this.tab().shown() !== 'messages' && (!!this.result() || !!this.tab().tableView()),
+  );
+  /** Rows of the result as the database gave it. */
+  protected readonly baseRows = computed(() => {
     const s = this.state();
     return s.kind === 'done' || s.kind === 'running' ? s.rows : 0;
+  });
+  protected readonly rows = computed(() => {
+    const s = this.state();
+    const result = s.kind === 'done' || s.kind === 'running' ? s.result : null;
+    const view = this.tab().localView();
+    return result && view && view.base === result.resultId ? view.rows : this.baseRows();
+  });
+  /** The sort keys the heads show: those of the table view, else the local ones. */
+  protected readonly marks = computed(() => {
+    const s = this.state();
+    const columns = (s.kind === 'done' || s.kind === 'running' ? s.result?.columns : null) ?? [];
+    return sortMarks(
+      columns,
+      this.tab().tableView()?.spec.order ?? null,
+      this.tab().localSpec().sort,
+    );
   });
   protected readonly fetch = (resultId: number, from: number, count: number) =>
     this.tab().window(resultId, from, count);
@@ -663,6 +703,26 @@ export class QueryPane implements OnInit, OnDestroy {
 
   protected onChanged(change: EdChange): void {
     this.tabs.textChanged(this.tab(), change.charCount, change.dirty);
+  }
+
+  /** A click on a column head: the table view orders on the server, any other result in the store. */
+  protected onHeadClick(result: ResultRef, click: { column: number; additive: boolean }): void {
+    const tab = this.tab();
+    const column = result.columns[click.column];
+    if (!column) return;
+    const view = tab.tableView();
+    if (view) {
+      void tab.applyTable({
+        ...view.spec,
+        order: toggleServerOrder(view.spec.order, column.name, click.additive),
+      });
+    } else {
+      const spec = tab.localSpec();
+      void tab.setLocal({
+        ...spec,
+        sort: toggleLocalSort(spec.sort, click.column, click.additive),
+      });
+    }
   }
 
   /** The cursor of the grid moved: the value panel and the actions on the value follow. */

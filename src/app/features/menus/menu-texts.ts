@@ -19,6 +19,7 @@ export const MENU_EN = {
   schema: 'Schema',
   format: 'More formatting',
   saved: 'Folder of the saved queries',
+  filterCell: 'Filter by this cell',
   failed: (reason: string) => `The menu bar could not be built: ${reason}`,
   /** The words of the items macOS provides. */
   native: {

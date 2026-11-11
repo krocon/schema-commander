@@ -1,3 +1,4 @@
+import { TableView, remember, tableKey } from '../filter/filter-logic';
 import { ParamService } from '../params/param.service';
 import { ConfirmService } from '../../shared/confirm';
 import { closeQuestion, txOpen } from './tx-logic';
@@ -80,6 +81,14 @@ export class TabsStore {
     connections: this.connections,
     notify: (message: string) => this.notice.set(message),
     params: this.params,
+    tableApplied: (connection: string, view: TableView) =>
+      this.settings.update({
+        tableFilters: remember(
+          this.settings.settings().tableFilters,
+          tableKey(connection, view),
+          view.spec,
+        ),
+      }),
     record: (ran: RanStatement) => this.history.record(ran),
     confirmRun: (connection: string, statements: readonly GuardedStatement[], total: number) => {
       const profile = this.connections.profiles().find((p) => p.id === connection);

@@ -48,7 +48,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 | 024 | [Gespeicherte Abfragen und Snippets](done/024-snippets-gespeicherte-abfragen.md) ([Design](done/024-snippets-gespeicherte-abfragen.design.md)) | C7 | 004, E5 (editlicious: Snippets) | M | ✅ 11.11.2026 |
 | 025 | [Parameter in Abfragen](done/025-parameter.md) ([Design](done/025-parameter.design.md)) | C8 | 005 | S–M | ✅ 11.11.2026 |
 | 026 | [Wert-Ansicht](done/026-wert-ansicht.md) ([Design](done/026-wert-ansicht.design.md)) | D3 | 006, 007 | M | ✅ 11.11.2026 |
-| 027 | [Sortieren und Filtern](027-sortieren-filtern.md) | D5 | 006, 007, 008 | M | offen |
+| 027 | [Sortieren und Filtern](done/027-sortieren-filtern.md) ([Design](done/027-sortieren-filtern.design.md)) | D5 | 006, 007, 008 | M | ✅ 11.11.2026 |
 | 028 | [Auswahl auswerten](028-auswahl-auswerten.md) | D7 | 007 | S | offen |
 | 029 | [Spalten verwalten und im Ergebnis suchen](029-spalten-suche.md) | D8 | 006, 007 | S–M | offen |
 | 030 | [Fremdschlüsseln folgen](030-fremdschluessel-folgen.md) | D10 | 008, 027 | M | offen |

@@ -370,6 +370,35 @@ pub fn result_window(
         .map(tauri::ipc::Response::new)
 }
 
+/// Looks at a result through a text filter and in an order (prompt 027): in the store, not in the window.
+/// Answers with the id of a view that is read, copied and exported like a result. A job: `cancel_job`
+/// stops it. The query itself is not touched.
+#[tauri::command(async)]
+pub fn result_view(
+    store: State<'_, ResultStore>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    result_id: u64,
+    spec: crate::results::ViewSpec,
+) -> AppResult<crate::results::Viewed> {
+    use std::sync::atomic::Ordering;
+    let stop = jobs.start(job_id, None);
+    let result = store.derive(result_id, &spec, &|| stop.load(Ordering::Relaxed));
+    jobs.end(job_id);
+    result
+}
+
+/// The statement of a table view (prompt 027): names quoted here, every value a placeholder. The window
+/// runs what comes back with `run_query` – statement and values together, as it got them.
+#[tauri::command(async)]
+pub fn table_query(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    query: crate::db::filter::TableQuery,
+) -> AppResult<crate::db::filter::Built> {
+    crate::db::filter::build(manager.kind_of(&id)?, &query)
+}
+
 /// A part of the whole value of a cell (prompt 026): long texts and binary data are not in the rows the
 /// grid gets. The window asks piece by piece (`to` of one answer is `from` of the next).
 #[tauri::command(async)]

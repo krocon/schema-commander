@@ -5,6 +5,7 @@
 //! Rust, TLS over rustls with the roots of the OS.
 
 pub mod details;
+pub mod filter;
 pub mod guard;
 pub mod import;
 pub mod manager;
@@ -228,7 +229,7 @@ pub type TextRows = Vec<Vec<Option<String>>>;
 
 /// A value bound to a placeholder of a statement (prompt 025). The window says what a value is; numbers
 /// and dates travel as text and are read here or cast by the statement, so no digit is lost on the way.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "lowercase")]
 pub enum Bind {
     Text(String),

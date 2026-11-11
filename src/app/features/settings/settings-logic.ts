@@ -158,6 +158,7 @@ const LOCAL_KEYS: readonly string[] = [
   'savedQueriesDir',
   'recentSaved',
   'paramForms',
+  'tableFilters',
 ];
 
 export const EXPORT_FORMAT = 'schema-commander-settings';

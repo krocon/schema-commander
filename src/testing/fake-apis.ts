@@ -51,6 +51,7 @@ import {
 } from '../app/core/schema/schema.models';
 import {
   BoundValue,
+  BuiltQuery,
   Cell,
   CellValuePart,
   ImageInfo,
@@ -58,8 +59,11 @@ import {
   RowWindow,
   RunEvent,
   RunOutcome,
+  TableQuery,
   TxState,
   Verdict,
+  ViewSpec,
+  ViewedResult,
 } from '../app/core/sql/query.models';
 import { FileDialogApi } from '../app/core/backend/file-dialog-api';
 import { WindowApi } from '../app/core/backend/window-api';
@@ -280,6 +284,48 @@ export class FakeQueryApi extends QueryApi {
   copyCellValue(resultId: number, row: number, col: number): Promise<number> {
     this.copiedValues.push(`${resultId}:${row}:${col}`);
     return Promise.resolve(1);
+  }
+
+  /** The table queries asked for (prompt 027). The fake answers with a statement that names them. */
+  readonly tableQueries: { connection: string; query: TableQuery }[] = [];
+  /** The views asked for; a view gets the id `1000 + n` and as many rows as `viewRows` says. */
+  readonly views: { jobId: number; resultId: number; spec: ViewSpec }[] = [];
+  readonly cancelledViews: number[] = [];
+  viewRows = 2;
+  viewError: unknown = null;
+
+  tableQuery(connection: string, query: TableQuery): Promise<BuiltQuery> {
+    this.tableQueries.push({ connection, query });
+    if (this.error) return Promise.reject(this.error);
+    const where = query.conditions
+      .map((c) => `${c.column} ${c.op}${c.values.map(() => ' ?').join('')}`)
+      .join(query.any ? ' OR ' : ' AND ');
+    const order = query.order.map((o) => `${o.column}${o.desc ? ' DESC' : ''}`).join(', ');
+    const tail =
+      (where ? ` WHERE ${where}` : '') +
+      (query.whereSql ? ` AND (${query.whereSql})` : '') +
+      (order ? ` ORDER BY ${order}` : '');
+    const values = query.conditions.flatMap((c) => c.values);
+    const table = `${query.schema ? `${query.schema}.` : ''}${query.table}`;
+    let n = 0;
+    return Promise.resolve({
+      sql: `SELECT * FROM ${table}${tail}`,
+      params: values.map((value) => ({ kind: 'text' as const, value })),
+      display: `SELECT * FROM ${table}${tail.replace(/\?/g, () => `'${values[n++]}'`)}`,
+    });
+  }
+
+  resultView(jobId: number, resultId: number, spec: ViewSpec): Promise<ViewedResult> {
+    this.views.push({ jobId, resultId, spec });
+    if (this.viewError) return Promise.reject(this.viewError);
+    const id = 1000 + this.views.length;
+    this.results.set(id, (this.results.get(resultId) ?? []).slice(0, this.viewRows));
+    return Promise.resolve({ resultId: id, rows: this.viewRows });
+  }
+
+  cancelView(jobId: number): Promise<void> {
+    this.cancelledViews.push(jobId);
+    return Promise.resolve();
   }
 }
 

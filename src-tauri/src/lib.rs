@@ -136,6 +136,8 @@ pub fn run() {
             commands::names_query,
             commands::meta_search,
             commands::result_window,
+            commands::result_view,
+            commands::table_query,
             commands::cell_value,
             commands::save_cell_value,
             commands::copy_cell_value,
