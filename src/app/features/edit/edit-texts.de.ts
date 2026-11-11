@@ -49,6 +49,8 @@ export const EDIT_DE: Translation<typeof EDIT_EN> = {
   written: (rows) => (rows === 1 ? '1 Zeile geschrieben.' : `${rows} Zeilen geschrieben.`),
   conflict: (row) =>
     `Zeile ${row} wurde inzwischen von jemand anderem geändert (oder ist weg). Nichts wurde geschrieben.`,
+  conflictSome:
+    'Eine Zeile wurde inzwischen von jemand anderem geändert (oder ist weg). Nichts wurde geschrieben.',
   failed: (row, why) => `Zeile ${row}: ${why} Nichts wurde geschrieben.`,
   notWritten: (why) => `Nichts wurde geschrieben: ${why}`,
   txOpen: 'In diesem Tab ist eine Transaktion offen: erst Commit oder Rollback.',

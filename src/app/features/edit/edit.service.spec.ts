@@ -186,6 +186,12 @@ describe('EditService', () => {
     expect(edit.marks(tab)!.failed(2)).toBe(true);
     expect(edit.marks(tab)!.failed(0)).toBe(false);
     expect(query.statements.length).toBe(runs);
+    // a row the answer names that is none of the plan: said without a row number
+    query.applyAnswer = { done: 0, failed: 9, conflict: true };
+    await edit.save(tab);
+    expect(tabs.notice()).toBe(
+      'Eine Zeile wurde inzwischen von jemand anderem geändert (oder ist weg). Nichts wurde geschrieben.',
+    );
     // an error of the database is said with its row
     query.applyAnswer = {
       done: 0,

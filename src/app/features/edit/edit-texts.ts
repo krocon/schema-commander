@@ -47,6 +47,8 @@ export const EDIT_EN = {
   written: (rows: number) => (rows === 1 ? '1 row written.' : `${rows} rows written.`),
   conflict: (row: number) =>
     `Row ${row} was changed by someone else in the meantime (or is gone). Nothing was written.`,
+  conflictSome:
+    'A row was changed by someone else in the meantime (or is gone). Nothing was written.',
   failed: (row: number, why: string) => `Row ${row}: ${why} Nothing was written.`,
   notWritten: (why: string) => `Nothing was written: ${why}`,
   txOpen: 'A transaction is open in this tab: commit or roll it back first.',

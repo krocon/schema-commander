@@ -360,7 +360,7 @@ export class EditService {
       const key = applied.failed !== null ? (planned.keys[applied.failed] ?? null) : null;
       const row = key !== null ? (tab.edits().rows[key]?.row ?? 0) + 1 : 0;
       tab.edits.update((b) => ({ ...b, failed: key }));
-      if (applied.conflict) this.say(this.t.conflict(row));
+      if (applied.conflict) this.say(key !== null ? this.t.conflict(row) : this.t.conflictSome);
       else if (applied.error && key !== null) {
         this.say(this.t.failed(row, describeError(toAppError(applied.error))));
       } else this.say(this.t.notWritten(describeError(toAppError(applied.error ?? {}))));
