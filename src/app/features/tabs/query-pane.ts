@@ -139,7 +139,7 @@ const EDITOR_MIN_W = 160;
           </button>
         </div>
       }
-      @if (tab().shown() !== 'messages' && (result() || tab().tableView())) {
+      @if (filterBar()) {
         <app-filter-bar
           [tab]="tab()"
           [columns]="result()?.columns ?? []"
@@ -514,6 +514,10 @@ export class QueryPane implements OnInit, OnDestroy {
     },
     // a row count that grows must not look like a new result (the grid would start over)
     { equal: (a, b) => a?.resultId === b?.resultId },
+  );
+  /** The filter rows have something to stand above: a result, or the view of a table. */
+  protected readonly filterBar = computed(
+    () => this.tab().shown() !== 'messages' && (!!this.result() || !!this.tab().tableView()),
   );
   /** Rows of the result as the database gave it. */
   protected readonly baseRows = computed(() => {

@@ -31,6 +31,10 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   OS and an editor for your own shortcuts (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>S</kbd>)
 - Split view: two tab groups side by side or stacked, each tab on its own connection; the result below or beside
   the editor, hidden or maximised; the sidebar shows connections and schema or the history; a zen mode
+- Tables as tables: open one and filter it with conditions (column, operator, value – always bound, never
+  written into the SQL), sort by a click on a column head, add a condition from the cell under the cursor
+  (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>E</kbd>); the filter of a table is remembered. Any other
+  result is filtered and sorted in the backend's store without running the query again
 - Value panel (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>V</kbd>): the whole value of the cell
   under the cursor beside the grid – long text, JSON and XML laid out (without changing a digit), binary data
   as hex or as a picture, numbers in hex and binary, instants in UTC. 50 MB in one cell stay usable; a value is

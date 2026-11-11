@@ -44,11 +44,13 @@
   (Ansicht der Seitenleiste, Suche, `q:` in der Palette) und **Textbausteine** mit Platzhaltern je Dialekt
   (Prompt 024); **Parameter** (`:name`, `${name}`, `?`, `$1` …): Werte werden abgefragt, je Tab gemerkt und vom
   Treiber gebunden (Prompt 025); **Wert-Ansicht**: der ganze Wert der Zelle unter dem Cursor neben dem Gitter
-  (Text, JSON/XML gesetzt, Hex, Bild, Zahl, Datum), stückweise aus dem Ergebnisspeicher (Prompt 026);
+  (Text, JSON/XML gesetzt, Hex, Bild, Zahl, Datum), stückweise aus dem Ergebnisspeicher (Prompt 026); **Sortieren und
+  Filtern**: Tabellen-Ansicht mit Filterzeile und `ORDER BY` auf dem Server (Werte gebunden), jedes andere
+  Ergebnis als Sicht im Ergebnisspeicher (Prompt 027);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–026),
+  erledigt: 001–027),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -118,6 +120,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                editor-colors.ts (Farben des Editors aus unseren Tokens),
                                sql-split.ts (rein: Skripte je Dialekt zerlegen, Katalog sql-split.cases.json)
   app/features/export/         ExportDialog, ExportService (Root: ein Job, Statuszeile), export-logic.ts (rein)
+  app/features/filter/         FilterBar (Bedingungen der Tabellen-Ansicht, lokaler Filter), TableViews (Root:
+                               Tabelle als Tabellen-Ansicht öffnen), filter-logic.ts (rein)
   app/features/format/         FormatService (Root: ein Job, Statuszeile), format-logic.ts (rein: Stil,
                                Cursor nach dem Formatieren)
   app/features/guard/          GuardDialog (Rückfrage), GuardService, guard-logic.ts (rein)
@@ -175,6 +179,8 @@ src-tauri/                     Rust
   src/extract.rs               Formate (TSV, CSV, JSON, Markdown, HTML, INSERT, IN, WHERE), Literale je Dialekt (rein)
   src/copy.rs                  Auswahl eines Ergebnisses als Text: Zeilenbereiche, Spalten, Abbruch, Grenze (rein)
   src/db/import.rs             Verbindungs-URLs und fremde Dateien lesen (rein, Katalog), eigener Export
+  src/db/filter.rs             das SELECT einer Tabellen-Ansicht: Namen gequotet, Werte gebunden (rein, Katalog
+                               auch böser Werte)
   src/db/guard.rs              Anweisungen einstufen (lesend/schreibend/DDL/gefährlich), Schutzstufen (rein, Katalog)
   src/db/details.rs            Objekt-Details als Listen + DDL je Datenbank (Katalog, gebundene Parameter)
   src/db/names.rs              Namensindex je Verbindung: Katalog lesen, Suche und Rangfolge (rein, Katalog als Test)
@@ -220,6 +226,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   gegen die Tokens des Textes. Das Fenster ersetzt nur den Bereich (`replaceRange`), nie den ganzen Text.
   Stellen des Editors zählen Spalten in **Codepunkten**, JavaScript in UTF-16: umgerechnet wird nur mit
   `core/text/places.ts` (`placeIn`, `offsetAt`).
+- **Tabellen-Ansicht**: Ihr SQL baut nur `db/filter.rs`; das Fenster setzt nie Werte oder Namen in SQL ein.
+  Lokales Sortieren/Filtern geschieht im Ergebnisspeicher (`derive`), nie über die Zeilen im Fenster.
 - **Werte**: Eine `Cell` trägt den ganzen Wert; gekürzt wird nur beim Schreiben der Zeile. Nichts aus einem
   Wert wird als Markup in die Seite gesetzt; Bilder nur innerhalb der Grenzen von `value-logic.ts` als `blob:`.
 - **Parameter**: Werte des Nutzers gehen nur als `Bind` über `run_query` und werden vom Treiber gebunden

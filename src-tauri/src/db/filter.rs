@@ -130,16 +130,65 @@ fn name(raw: &str, kind: DbKind) -> AppResult<String> {
     Ok(quote(raw, kind))
 }
 
-/// A type name that can stand in a `CAST` as it is: letters, digits, `_`, blanks, `[]`, `(n,m)`.
+/// A type name that can stand in a `CAST` as it is – by its **shape**, not by its characters: a name, up
+/// to three more words (`timestamp with time zone`), a size (`(12,2)`), array brackets. The name comes
+/// from the server or from a stored filter: anyone may create a type called `int4) or exists(select f()`.
+/// What has another shape is not written; the value is then compared as text.
 fn castable(type_name: &str) -> Option<String> {
-    let t = type_name.trim();
-    let ok = !t.is_empty()
-        && t.len() <= 64
-        && t.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
-        && t.chars().all(|c| {
-            c.is_ascii_alphanumeric() || matches!(c, '_' | ' ' | '[' | ']' | '(' | ')' | ',')
-        });
-    ok.then(|| t.to_ascii_lowercase())
+    let t = type_name.trim().to_ascii_lowercase();
+    if t.is_empty() || t.len() > 64 {
+        return None;
+    }
+    let b = t.as_bytes();
+    let mut i = 0;
+    let word = |i: &mut usize, first: bool| -> bool {
+        let start = *i;
+        while *i < b.len()
+            && (b[*i].is_ascii_lowercase()
+                || (first && (b[*i] == b'_' || (*i > start && b[*i].is_ascii_digit()))))
+        {
+            *i += 1;
+        }
+        *i > start
+    };
+    if !word(&mut i, true) {
+        return None;
+    }
+    let mut words = 1;
+    while i < b.len() && b[i] == b' ' {
+        i += 1;
+        if words == 4 || !word(&mut i, false) {
+            return None;
+        }
+        words += 1;
+    }
+    let digits = |i: &mut usize| -> bool {
+        let start = *i;
+        while *i < b.len() && b[*i].is_ascii_digit() {
+            *i += 1;
+        }
+        (1..=4).contains(&(*i - start))
+    };
+    if i < b.len() && b[i] == b'(' {
+        i += 1;
+        if !digits(&mut i) {
+            return None;
+        }
+        if i < b.len() && b[i] == b',' {
+            i += 1;
+            if !digits(&mut i) {
+                return None;
+            }
+        }
+        if i >= b.len() || b[i] != b')' {
+            return None;
+        }
+        i += 1;
+    }
+    while b[i..].starts_with(b"[]") {
+        i += 2;
+    }
+    (i == b.len()).then_some(t)
 }
 
 fn is_int(text: &str) -> bool {
@@ -209,6 +258,13 @@ impl Builder {
                 (_, true) => "TRUE".to_owned(),
                 (_, false) => "FALSE".to_owned(),
             },
+            // the readable form may be run by hand: a backslash must not be read as an escape by a
+            // PostgreSQL that is set to do so – in an E'…' string it is written out as one
+            Bind::Text(v) | Bind::Date(v) | Bind::Datetime(v)
+                if self.kind == DbKind::Postgres && v.contains('\\') =>
+            {
+                format!("E'{}'", v.replace('\\', "\\\\").replace('\'', "''"))
+            }
             Bind::Text(v) | Bind::Date(v) | Bind::Datetime(v) => sql_text(v, self.kind),
         };
         match cast {
@@ -315,17 +371,82 @@ impl Builder {
     }
 }
 
-/// The free condition must be one expression of the user: nothing that ends the statement or hides text.
-fn check_where(sql: &str) -> AppResult<()> {
-    if sql.len() > 10_000
-        || sql.contains(';')
-        || sql.contains("--")
-        || sql.contains("/*")
-        || sql.contains('\0')
-    {
-        return Err(invalid(
-            "the free condition must be one expression: no `;` and no comments",
-        ));
+/// The free condition must be one expression that stays in its brackets. Outside of strings and quoted
+/// names it holds nothing that ends the statement or hides its rest (`;`, comments), no bracket that
+/// closes what it did not open, and no placeholder – those belong to the values of the conditions.
+fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
+    let refuse = |what: &str| {
+        Err(invalid(&format!(
+            "the free condition must be one expression: {what}"
+        )))
+    };
+    if sql.len() > 10_000 || sql.contains('\0') {
+        return refuse("it is too long");
+    }
+    let b = sql.as_bytes();
+    let mut depth = 0usize;
+    let mut i = 0;
+    while i < b.len() {
+        let c = b[i];
+        let next = b.get(i + 1).copied().unwrap_or(0);
+        // strings and quoted names: text, whatever it holds (a doubled quote is the quote itself)
+        let close = match c {
+            b'\'' => Some(b'\''),
+            b'"' => Some(b'"'),
+            b'`' if kind == DbKind::Mysql || kind == DbKind::Sqlite => Some(b'`'),
+            b'[' if kind == DbKind::Sqlserver => Some(b']'),
+            _ => None,
+        };
+        if let Some(close) = close {
+            i += 1;
+            loop {
+                match b.get(i) {
+                    None => return refuse("a string or a quoted name is not closed"),
+                    // MySQL reads a backslash in a string as an escape
+                    Some(b'\\') if kind == DbKind::Mysql && close != b'`' => i += 2,
+                    Some(&x) if x == close => {
+                        if b.get(i + 1) == Some(&close) {
+                            i += 2;
+                        } else {
+                            i += 1;
+                            break;
+                        }
+                    }
+                    Some(_) => i += 1,
+                }
+            }
+            continue;
+        }
+        match c {
+            b';' => return refuse("no `;`"),
+            b'-' if next == b'-' => return refuse("no comments"),
+            b'/' if next == b'*' => return refuse("no comments"),
+            b'#' if kind == DbKind::Mysql => return refuse("no comments"),
+            b'(' => depth += 1,
+            b')' => {
+                if depth == 0 {
+                    return refuse("a bracket closes that was not opened");
+                }
+                depth -= 1;
+            }
+            b'$' if kind == DbKind::Postgres && next.is_ascii_digit() => {
+                return refuse("no placeholders");
+            }
+            b'?' if matches!(kind, DbKind::Mysql | DbKind::Sqlite) => {
+                return refuse("no placeholders");
+            }
+            b'@' if kind == DbKind::Sqlserver
+                && (next | 0x20) == b'p'
+                && b.get(i + 2).is_some_and(u8::is_ascii_digit) =>
+            {
+                return refuse("no placeholders");
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    if depth > 0 {
+        return refuse("a bracket is not closed");
     }
     Ok(())
 }
@@ -355,7 +476,7 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
         .map(str::trim)
         .filter(|w| !w.is_empty());
     if let Some(free) = free {
-        check_where(free)?;
+        check_where(free, kind)?;
     }
     if !q.conditions.is_empty() || free.is_some() {
         b.text("\nWHERE ");
@@ -770,5 +891,120 @@ mod tests {
             serde_json::json!({ "kind": "text", "value": "1" })
         );
         assert!(built["display"].as_str().unwrap().contains("NULLS FIRST"));
+    }
+
+    /// Review 027: a type name comes from the server (anyone may `CREATE TYPE "…"`) or from a stored
+    /// filter – it is written into a cast only when it has the shape of a type name.
+    #[test]
+    fn a_type_name_that_is_sql_is_never_written() {
+        for evil in [
+            "int4) or (true",
+            "int4) or exists(select pg_reload_conf()",
+            "int4) or exists(select pg_sleep(9)",
+            "text) , (select 1",
+            "numeric(12,2) or true",
+            "a b c d e f",
+            "int4()",
+            "int4(1,2,3)",
+            "int4(x)",
+            "int4[] or true",
+            "(int4)",
+            "int4,int8",
+        ] {
+            let q = query(vec![Condition {
+                type_name: evil.into(),
+                ..cond("c", Op::Eq, &["1"])
+            }]);
+            let built = build(DbKind::Postgres, &q).unwrap();
+            assert_eq!(
+                built.sql, "SELECT *\nFROM shop.orders\nWHERE c = $1",
+                "{evil}"
+            );
+        }
+        for (good, written) in [
+            ("INT4", "int4"),
+            ("timestamptz", "timestamptz"),
+            ("NUMERIC(12,2)", "numeric(12,2)"),
+            ("varchar(40)", "varchar(40)"),
+            ("TIMESTAMP WITH TIME ZONE", "timestamp with time zone"),
+            ("double precision", "double precision"),
+            ("int4[]", "int4[]"),
+            ("_my_enum", "_my_enum"),
+        ] {
+            let q = query(vec![Condition {
+                type_name: good.into(),
+                ..cond("c", Op::Eq, &["1"])
+            }]);
+            let built = build(DbKind::Postgres, &q).unwrap();
+            assert!(
+                built.sql.ends_with(&format!("c = CAST($1 AS {written})")),
+                "{good}: {}",
+                built.sql
+            );
+        }
+    }
+
+    /// Review 027: the free condition stays inside its brackets, and takes no placeholder of the values.
+    #[test]
+    fn the_free_condition_cannot_leave_its_brackets() {
+        let free = |kind: DbKind, sql: &str| {
+            build(
+                kind,
+                &TableQuery {
+                    table: "t".into(),
+                    where_sql: Some(sql.into()),
+                    ..TableQuery::default()
+                },
+            )
+        };
+        for bad in [
+            "1=1) UNION SELECT usename, passwd FROM pg_shadow WHERE (1=1",
+            "a = 1) or (b = 2",
+            "(a = 1",
+            "a = 1)",
+            ")(",
+            "a = 'open",
+            "a = \"open",
+        ] {
+            for kind in ALL {
+                assert!(free(kind, bad).is_err(), "{kind:?}: {bad}");
+            }
+        }
+        // MySQL: `#` starts a comment that would hide the closing bracket
+        assert!(free(DbKind::Mysql, "1=1) INTO OUTFILE '/tmp/x' #").is_err());
+        assert!(free(DbKind::Mysql, "a = 1 # x").is_err());
+        // a placeholder would take a value of a condition, or none at all
+        assert!(free(DbKind::Postgres, "a = $1").is_err());
+        assert!(free(DbKind::Mysql, "a = ?").is_err());
+        assert!(free(DbKind::Sqlite, "a = ?1").is_err());
+        assert!(free(DbKind::Sqlserver, "a = @P1").is_err());
+        // what is text in the condition is text: brackets, `;`, `--` and `#` in a literal are fine
+        for good in [
+            "name = 'a;b' and note <> '--' and x = '/* (' ",
+            "(a = 1 or (b = 2 and c in (1, 2)))",
+            "\"odd)name\" = 'it''s )'",
+            "tags ? 'a'",
+            "price > @price_floor",
+        ] {
+            assert!(free(DbKind::Postgres, good).is_ok(), "{good}");
+        }
+        assert!(free(DbKind::Sqlserver, "[a)b] = 1 and x = '#'").is_ok());
+        assert!(free(DbKind::Mysql, "`a#b` = '#'").is_ok());
+    }
+
+    /// Review 027: the readable form can be run by hand – a backslash in a value must not end its literal
+    /// on a PostgreSQL that reads backslashes in strings.
+    #[test]
+    fn the_readable_form_writes_backslashes_so_that_every_server_reads_them_as_text() {
+        let q = query(vec![cond("c", Op::Eq, &["\\'; DROP TABLE t; --"])]);
+        let pg = build(DbKind::Postgres, &q).unwrap();
+        assert_eq!(
+            pg.display,
+            "SELECT *\nFROM shop.orders\nWHERE c = E'\\\\''; DROP TABLE t; --'"
+        );
+        // what runs is untouched: the value is bound as it is
+        assert_eq!(pg.params[0], Bind::Text("\\'; DROP TABLE t; --".into()));
+        let plain = build(DbKind::Postgres, &query(vec![cond("c", Op::Eq, &["it's"])])).unwrap();
+        assert!(plain.display.ends_with("c = 'it''s'"));
     }
 }
