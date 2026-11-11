@@ -35,6 +35,10 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   written into the SQL), sort by a click on a column head, add a condition from the cell under the cursor
   (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>E</kbd>); the filter of a table is remembered. Any other
   result is filtered and sorted in the backend's store without running the query again
+- Figures of the selection: mark cells and the status line shows count, sum, mean, smallest and largest –
+  added up exactly in the backend (a `NUMERIC(38,10)` sum is right to the last digit), for dates the span, for
+  text the lengths; a click copies a figure. "Summarize the column"
+  (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>A</kbd>) adds the ten most frequent values
 - Value panel (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>V</kbd>): the whole value of the cell
   under the cursor beside the grid – long text, JSON and XML laid out (without changing a digit), binary data
   as hex or as a picture, numbers in hex and binary, instants in UTC. 50 MB in one cell stay usable; a value is

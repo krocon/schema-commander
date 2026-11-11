@@ -102,6 +102,8 @@ export interface Settings {
   readonly tableFilters: Readonly<Record<string, TableSpecStored>>;
   /** The row for filtering a result locally is shown. */
   readonly filterBarVisible: boolean;
+  /** The figures of a selection the status line shows (prompt 028): keys of `MEASURES`. */
+  readonly statsMeasures: readonly string[];
   /** Look for parameters in statements and ask for their values (prompt 025). */
   readonly paramsEnabled: boolean;
   /**
@@ -181,6 +183,7 @@ export const DEFAULT_SETTINGS: Settings = {
   valueWrap: true,
   tableFilters: {},
   filterBarVisible: false,
+  statsMeasures: ['cells', 'sum', 'mean', 'min', 'max'],
   paramsEnabled: true,
   paramForms: {},
   activeConnection: 'demo',
@@ -302,6 +305,15 @@ export function mergeSettings(saved: unknown): Settings {
           ) as Record<string, TableSpecStored>)
         : {},
     filterBarVisible: bool('filterBarVisible'),
+    statsMeasures: Array.isArray(s['statsMeasures'])
+      ? [
+          ...new Set(
+            s['statsMeasures'].filter(
+              (m): m is string => typeof m === 'string' && /^[a-zA-Z]{1,20}$/.test(m),
+            ),
+          ),
+        ].slice(0, 20)
+      : DEFAULT_SETTINGS.statsMeasures,
     paramsEnabled: bool('paramsEnabled'),
     paramForms:
       s['paramForms'] && typeof s['paramForms'] === 'object' && !Array.isArray(s['paramForms'])

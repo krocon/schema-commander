@@ -155,6 +155,25 @@ describe('CopyService', () => {
     expect(copier.message()).toBeNull();
   });
 
+  it('copies what a local filter or order shows, not the result behind it', async () => {
+    const base = await run();
+    query.viewRows = 2;
+    await tabs.active()!.setLocal({ text: 'a', column: null, sort: [] });
+    const view = tabs.active()!.localView()!;
+    expect(view.resultId).not.toBe(base);
+    // the grid shows the view and says what is selected in it
+    copier.register(view.resultId, () => ({ rows: [[1, 1]], columns: [0] }));
+    expect(copier.current()).toMatchObject({ result: { resultId: view.resultId }, rows: 2 });
+    await copier.copy();
+    expect(clipboard.copies.at(-1)).toMatchObject({
+      resultId: view.resultId,
+      selection: { rows: [[1, 1]], columns: [0] },
+    });
+    // without the view it is the result again
+    await tabs.active()!.dropLocal();
+    expect(copier.current()?.result.resultId).toBe(base);
+  });
+
   it('opens the menu only when there is something to copy', async () => {
     copier.openMenu(10, 20);
     expect(copier.menu()).toBeNull();

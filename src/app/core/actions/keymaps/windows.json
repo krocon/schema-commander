@@ -1,174 +1,60 @@
 {
-  "RUN_STATEMENT": [
-    "Mod+Enter"
-  ],
-  "RUN_SCRIPT": [
-    "Mod+Shift+Enter"
-  ],
-  "RUN_AGAIN": [
-    "Mod+Alt+Enter"
-  ],
-  "EXPAND_STAR": [
-    "Mod+K Mod+8"
-  ],
-  "FORMAT_SQL": [
-    "Mod+Shift+F"
-  ],
-  "FORMAT_SCRIPT": [
-    "Mod+K Mod+F"
-  ],
-  "TOGGLE_COMMENT": [
-    "Mod+/"
-  ],
-  "CANCEL_QUERY": [
-    "Mod+."
-  ],
-  "NEW_TAB": [
-    "Mod+T"
-  ],
-  "CLOSE_TAB": [
-    "Mod+W"
-  ],
-  "REOPEN_TAB": [
-    "Mod+Shift+T"
-  ],
-  "NEXT_TAB": [
-    "Ctrl+Tab"
-  ],
-  "PREV_TAB": [
-    "Ctrl+Shift+Tab"
-  ],
-  "OPEN_FILE": [
-    "Mod+O"
-  ],
-  "SAVE_FILE": [
-    "Mod+S"
-  ],
-  "SAVE_FILE_AS": [
-    "Mod+Shift+S"
-  ],
-  "NEW_CONNECTION": [
-    "Mod+Shift+N"
-  ],
-  "SCHEMA_FILTER": [
-    "Mod+Shift+O"
-  ],
-  "SCHEMA_DETAILS": [
-    "Mod+I"
-  ],
-  "SCHEMA_REFRESH": [
-    "F5"
-  ],
-  "COPY_AS": [
-    "Mod+Shift+C"
-  ],
-  "OPEN_HISTORY": [
-    "Mod+Shift+H"
-  ],
-  "HISTORY_PREV": [
-    "Mod+Alt+ArrowUp"
-  ],
-  "HISTORY_NEXT": [
-    "Mod+Alt+ArrowDown"
-  ],
-  "EXPORT_RESULT": [
-    "Mod+Shift+E"
-  ],
-  "TX_COMMIT": [
-    "Mod+Alt+C"
-  ],
-  "TX_ROLLBACK": [
-    "Mod+Alt+R"
-  ],
-  "TOGGLE_SIDEBAR": [
-    "Mod+B"
-  ],
-  "SPLIT_RIGHT": [
-    "Mod+K Mod+ArrowRight"
-  ],
-  "SPLIT_DOWN": [
-    "Mod+K Mod+ArrowDown"
-  ],
-  "MOVE_TAB_TO_OTHER_GROUP": [
-    "Mod+K Mod+M"
-  ],
-  "FOCUS_OTHER_GROUP": [
-    "Mod+K Mod+O"
-  ],
-  "UNSPLIT": [
-    "Mod+K Mod+U"
-  ],
-  "TOGGLE_RESULT": [
-    "Mod+J"
-  ],
-  "TOGGLE_RESULT_PLACEMENT": [
-    "Mod+K Mod+J"
-  ],
-  "MAXIMIZE_RESULT": [
-    "Mod+Shift+M"
-  ],
-  "SIDEBAR_DATABASE": [
-    "Mod+K Mod+D"
-  ],
-  "SIDEBAR_HISTORY": [
-    "Mod+K Mod+H"
-  ],
-  "SIDEBAR_SAVED": [
-    "Mod+K Mod+Q"
-  ],
-  "TOGGLE_VALUE_PANEL": [
-    "Mod+K Mod+V"
-  ],
-  "TOGGLE_FILTER_BAR": [
-    "Mod+Alt+F"
-  ],
-  "FILTER_CELL_EQ": [
-    "Mod+K Mod+E"
-  ],
-  "FILTER_RESET": [
-    "Mod+K Mod+R"
-  ],
-  "SAVE_QUERY": [
-    "Mod+Alt+S"
-  ],
-  "GOTO_SAVED": [
-    "Mod+Alt+O"
-  ],
-  "TOGGLE_ZEN": [
-    "Mod+K Mod+N"
-  ],
-  "COLOR_SCHEME": [
-    "Mod+Alt+T"
-  ],
-  "GOTO_ANYTHING": [
-    "Mod+P"
-  ],
-  "OPEN_PALETTE": [
-    "Mod+Shift+P",
-    "F1"
-  ],
-  "FOCUS_SIDEBAR": [
-    "Mod+0"
-  ],
-  "FOCUS_EDITOR": [
-    "Mod+1"
-  ],
-  "FOCUS_RESULT": [
-    "Mod+2"
-  ],
-  "FOCUS_NEXT_AREA": [
-    "F6"
-  ],
-  "FOCUS_PREV_AREA": [
-    "Shift+F6"
-  ],
-  "OPEN_SETTINGS": [
-    "Mod+,"
-  ],
-  "OPEN_SHORTCUTS": [
-    "Mod+K Mod+S"
-  ],
-  "SHOW_SHORTCUTS": [
-    "?"
-  ]
+  "RUN_STATEMENT": ["Mod+Enter"],
+  "RUN_SCRIPT": ["Mod+Shift+Enter"],
+  "RUN_AGAIN": ["Mod+Alt+Enter"],
+  "EXPAND_STAR": ["Mod+K Mod+8"],
+  "FORMAT_SQL": ["Mod+Shift+F"],
+  "FORMAT_SCRIPT": ["Mod+K Mod+F"],
+  "TOGGLE_COMMENT": ["Mod+/"],
+  "CANCEL_QUERY": ["Mod+."],
+  "NEW_TAB": ["Mod+T"],
+  "CLOSE_TAB": ["Mod+W"],
+  "REOPEN_TAB": ["Mod+Shift+T"],
+  "NEXT_TAB": ["Ctrl+Tab"],
+  "PREV_TAB": ["Ctrl+Shift+Tab"],
+  "OPEN_FILE": ["Mod+O"],
+  "SAVE_FILE": ["Mod+S"],
+  "SAVE_FILE_AS": ["Mod+Shift+S"],
+  "NEW_CONNECTION": ["Mod+Shift+N"],
+  "SCHEMA_FILTER": ["Mod+Shift+O"],
+  "SCHEMA_DETAILS": ["Mod+I"],
+  "SCHEMA_REFRESH": ["F5"],
+  "COPY_AS": ["Mod+Shift+C"],
+  "OPEN_HISTORY": ["Mod+Shift+H"],
+  "HISTORY_PREV": ["Mod+Alt+ArrowUp"],
+  "HISTORY_NEXT": ["Mod+Alt+ArrowDown"],
+  "EXPORT_RESULT": ["Mod+Shift+E"],
+  "TX_COMMIT": ["Mod+Alt+C"],
+  "TX_ROLLBACK": ["Mod+Alt+R"],
+  "TOGGLE_SIDEBAR": ["Mod+B"],
+  "SPLIT_RIGHT": ["Mod+K Mod+ArrowRight"],
+  "SPLIT_DOWN": ["Mod+K Mod+ArrowDown"],
+  "MOVE_TAB_TO_OTHER_GROUP": ["Mod+K Mod+M"],
+  "FOCUS_OTHER_GROUP": ["Mod+K Mod+O"],
+  "UNSPLIT": ["Mod+K Mod+U"],
+  "TOGGLE_RESULT": ["Mod+J"],
+  "TOGGLE_RESULT_PLACEMENT": ["Mod+K Mod+J"],
+  "MAXIMIZE_RESULT": ["Mod+Shift+M"],
+  "SIDEBAR_DATABASE": ["Mod+K Mod+D"],
+  "SIDEBAR_HISTORY": ["Mod+K Mod+H"],
+  "SIDEBAR_SAVED": ["Mod+K Mod+Q"],
+  "TOGGLE_VALUE_PANEL": ["Mod+K Mod+V"],
+  "TOGGLE_FILTER_BAR": ["Mod+Alt+F"],
+  "FILTER_CELL_EQ": ["Mod+K Mod+E"],
+  "FILTER_RESET": ["Mod+K Mod+R"],
+  "SUMMARIZE_COLUMN": ["Mod+K Mod+A"],
+  "SAVE_QUERY": ["Mod+Alt+S"],
+  "GOTO_SAVED": ["Mod+Alt+O"],
+  "TOGGLE_ZEN": ["Mod+K Mod+N"],
+  "COLOR_SCHEME": ["Mod+Alt+T"],
+  "GOTO_ANYTHING": ["Mod+P"],
+  "OPEN_PALETTE": ["Mod+Shift+P", "F1"],
+  "FOCUS_SIDEBAR": ["Mod+0"],
+  "FOCUS_EDITOR": ["Mod+1"],
+  "FOCUS_RESULT": ["Mod+2"],
+  "FOCUS_NEXT_AREA": ["F6"],
+  "FOCUS_PREV_AREA": ["Shift+F6"],
+  "OPEN_SETTINGS": ["Mod+,"],
+  "OPEN_SHORTCUTS": ["Mod+K Mod+S"],
+  "SHOW_SHORTCUTS": ["?"]
 }

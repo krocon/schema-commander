@@ -388,6 +388,27 @@ pub fn result_view(
     result
 }
 
+/// The figures of a selection of a result (prompt 028): counts, sum, mean, smallest, largest – worked out
+/// over the store, exactly. `top` adds the most frequent values. A job: `cancel_job` stops it (the window
+/// does so as soon as the selection changes).
+#[tauri::command(async)]
+pub fn result_stats(
+    store: State<'_, ResultStore>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    result_id: u64,
+    selection: Selection,
+    top: bool,
+) -> AppResult<crate::stats::Stats> {
+    use std::sync::atomic::Ordering;
+    let stop = jobs.start(job_id, None);
+    let result = crate::stats::stats(&store, result_id, &selection, top, &|| {
+        stop.load(Ordering::Relaxed)
+    });
+    jobs.end(job_id);
+    result
+}
+
 /// The statement of a table view (prompt 027): names quoted here, every value a placeholder. The window
 /// runs what comes back with `run_query` – statement and values together, as it got them.
 #[tauri::command(async)]

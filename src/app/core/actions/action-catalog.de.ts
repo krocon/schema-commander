@@ -23,6 +23,8 @@ export const ACTION_LABELS_DE: Readonly<Record<ActionId, string>> = {
   FILTER_RESET: 'Ergebnis: Filter und Sortierung zurücksetzen',
   TOGGLE_VALUE_PANEL: 'Ergebnis: Wert-Feld zeigen',
   COPY_CELL_VALUE: 'Ergebnis: ganzen Wert der Zelle kopieren',
+  SUMMARIZE_COLUMN: 'Ergebnis: Spalte zusammenfassen',
+  COPY_SELECTION_SUM: 'Ergebnis: Summe der Auswahl kopieren',
   SAVE_CELL_VALUE: 'Ergebnis: Wert der Zelle speichern …',
   TOGGLE_DIGIT_GROUPING: 'Ergebnis: Tausendertrennung ein/aus',
   TOGGLE_CONFIRM_DANGEROUS: 'Rückfrage bei zerstörenden Anweisungen ein/aus',

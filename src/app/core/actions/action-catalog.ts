@@ -130,6 +130,19 @@ export const ACTIONS = [
     group: 'File',
     scope: 'global',
   },
+  // The figures of a selection (prompt 028)
+  {
+    id: 'SUMMARIZE_COLUMN',
+    label: 'Result: summarize the column',
+    group: 'Query',
+    scope: 'global',
+  },
+  {
+    id: 'COPY_SELECTION_SUM',
+    label: 'Result: copy the sum of the selection',
+    group: 'Query',
+    scope: 'global',
+  },
   {
     id: 'TOGGLE_DIGIT_GROUPING',
     label: 'Result: toggle digit grouping',

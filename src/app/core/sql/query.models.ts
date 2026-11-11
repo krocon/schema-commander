@@ -191,3 +191,35 @@ export interface Verdict {
  * says. `failed`: open, but only a rollback gets out of it. `unknown`: the server could not be asked.
  */
 export type TxState = 'idle' | 'active' | 'failed' | 'unknown';
+
+/** Mirrors `Frequent` in src-tauri/src/stats.rs: a value (`null` = NULL) and how often it occurs. */
+export interface FrequentValue {
+  readonly value: string | null;
+  readonly count: number;
+}
+
+/**
+ * Mirrors `Stats` in src-tauri/src/stats.rs (prompt 028): the figures of a selection. Numbers come as
+ * decimal text – they are exact and can be longer than a JavaScript number holds.
+ */
+export interface ResultStats {
+  readonly cells: number;
+  readonly nonNull: number;
+  readonly distinct: number;
+  readonly distinctCapped: boolean;
+  /** Cells that are numbers: sum, mean, min and max are theirs. */
+  readonly numbers: number;
+  /** Cells with a value that is no number while others are. */
+  readonly ignored: number;
+  readonly sum: string | null;
+  readonly mean: string | null;
+  readonly min: string | null;
+  readonly max: string | null;
+  readonly first: string | null;
+  readonly last: string | null;
+  readonly spanMs: number | null;
+  readonly shortest: number | null;
+  readonly longest: number | null;
+  readonly top: readonly FrequentValue[];
+  readonly topPartial: boolean;
+}
