@@ -1,7 +1,7 @@
 //! SQLite over `rusqlite` (bundled, built without extension loading – `.cargo/config.toml`): database files,
 //! and the demo database in memory the app ships with.
 
-use super::value::{Budget, Cell, ColKind, Column, QueryResult, text, text_bytes};
+use super::value::{Cell, ColKind, Column, Outcome, RowSink, text, text_bytes};
 use super::{DbKind, Limits, Profile, Session, Stop};
 use crate::error::{AppError, AppResult, ErrorCode};
 use rusqlite::types::ValueRef;
@@ -151,7 +151,13 @@ fn cell(value: ValueRef<'_>) -> Cell {
 }
 
 impl Session for Lite {
-    fn execute(&mut self, sql: &str, limits: Limits, stop: Stop) -> AppResult<QueryResult> {
+    fn execute(
+        &mut self,
+        sql: &str,
+        limits: Limits,
+        sink: &mut dyn RowSink,
+        stop: Stop,
+    ) -> AppResult<Outcome> {
         let sql = sql.trim();
         if sql.is_empty() {
             return Err(AppError::new(ErrorCode::InvalidQuery, "empty statement"));
@@ -184,7 +190,7 @@ impl Session for Lite {
                     }
                 }
             });
-            let result = Self::run(conn, sql, limits.max_rows, &elapsed);
+            let result = Self::run(conn, sql, sink, &elapsed);
             done.store(true, Ordering::Relaxed);
             result
         });
@@ -213,65 +219,59 @@ impl Lite {
     fn run(
         conn: &Connection,
         sql: &str,
-        max_rows: usize,
+        sink: &mut dyn RowSink,
         elapsed: &dyn Fn() -> u64,
-    ) -> AppResult<QueryResult> {
-        {
-            let mut stmt = conn.prepare(sql).map_err(invalid)?;
-            let count = stmt.column_count();
-            let columns: Vec<Column> = stmt
-                .columns()
-                .map(|c| Column {
-                    name: c.name().to_string(),
-                    kind: kind(c.decl_type()),
-                    type_name: c.decl_type().unwrap_or_default().to_string(),
-                })
-                .collect();
-            if count == 0 {
-                let changed = stmt.execute([]).map_err(invalid)?;
-                return Ok(QueryResult {
-                    columns,
-                    rows: Vec::new(),
-                    truncated: false,
-                    rows_affected: Some(changed as u64),
-                    elapsed_ms: elapsed(),
-                });
-            }
-            let mut rows = Vec::new();
-            let mut truncated = false;
-            let mut budget = Budget::default();
-            let mut cursor = stmt.query([]).map_err(invalid)?;
-            while let Some(row) = cursor.next().map_err(invalid)? {
-                if rows.len() >= max_rows {
-                    truncated = true;
-                    break;
-                }
-                let mut cells = Vec::with_capacity(count);
-                for i in 0..count {
-                    cells.push(cell(row.get_ref(i).map_err(invalid)?));
-                }
-                let room = budget.add(&cells);
-                rows.push(cells);
-                if !room {
-                    truncated = true;
-                    break;
-                }
-            }
-            Ok(QueryResult {
-                columns,
-                rows,
-                truncated,
-                rows_affected: None,
-                elapsed_ms: elapsed(),
+    ) -> AppResult<Outcome> {
+        let mut stmt = conn.prepare(sql).map_err(invalid)?;
+        let count = stmt.column_count();
+        let columns: Vec<Column> = stmt
+            .columns()
+            .map(|c| Column {
+                name: c.name().to_string(),
+                kind: kind(c.decl_type()),
+                type_name: c.decl_type().unwrap_or_default().to_string(),
             })
+            .collect();
+        if count == 0 {
+            let changed = stmt.execute([]).map_err(invalid)?;
+            return Ok(Outcome {
+                columns,
+                rows: 0,
+                truncated: false,
+                rows_affected: Some(changed as u64),
+                elapsed_ms: elapsed(),
+            });
         }
+        sink.start(&columns);
+        let mut rows: u64 = 0;
+        let mut truncated = false;
+        let mut cursor = stmt.query([]).map_err(invalid)?;
+        while let Some(row) = cursor.next().map_err(invalid)? {
+            let mut cells = Vec::with_capacity(count);
+            for i in 0..count {
+                cells.push(cell(row.get_ref(i).map_err(invalid)?));
+            }
+            rows += 1;
+            if !sink.row(cells) {
+                truncated = true;
+                break;
+            }
+        }
+        drop(cursor);
+        Ok(Outcome {
+            columns,
+            rows,
+            truncated,
+            rows_affected: None,
+            elapsed_ms: elapsed(),
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::value::MAX_ROWS;
+    use crate::db::value::{MAX_ROWS, QueryResult};
     use serde_json::json;
 
     fn demo() -> Lite {
@@ -279,7 +279,7 @@ mod tests {
     }
 
     fn run(db: &mut Lite, sql: &str) -> AppResult<QueryResult> {
-        db.execute(sql, Limits::rows(MAX_ROWS), &|| false)
+        db.query(sql, Limits::rows(MAX_ROWS), &|| false)
     }
 
     fn json_rows(r: &QueryResult) -> serde_json::Value {
@@ -317,7 +317,7 @@ mod tests {
     fn cuts_off_at_the_row_limit() {
         let mut db = demo();
         let r = db
-            .execute("SELECT * FROM orders", Limits::rows(100), &|| false)
+            .query("SELECT * FROM orders", Limits::rows(100), &|| false)
             .unwrap();
         assert_eq!(r.rows.len(), 100);
         assert!(r.truncated);
@@ -357,14 +357,14 @@ mod tests {
         let mut db = demo();
         let endless = "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n) \
                        SELECT count(*) FROM n";
-        let e = db.execute(endless, Limits::rows(10), &|| true).unwrap_err();
+        let e = db.query(endless, Limits::rows(10), &|| true).unwrap_err();
         assert_eq!(e.code, ErrorCode::Cancelled);
         assert_eq!(run(&mut db, "SELECT 1").unwrap().rows.len(), 1);
         let limits = Limits {
             max_rows: 10,
             timeout: Some(std::time::Duration::from_millis(80)),
         };
-        let e = db.execute(endless, limits, &|| false).unwrap_err();
+        let e = db.query(endless, limits, &|| false).unwrap_err();
         assert_eq!(e.code, ErrorCode::Timeout);
         assert_eq!(run(&mut db, "SELECT 1").unwrap().rows.len(), 1);
     }

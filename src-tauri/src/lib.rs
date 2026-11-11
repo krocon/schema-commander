@@ -5,6 +5,7 @@ pub mod commands;
 pub mod db;
 pub mod error;
 pub mod menu;
+pub mod results;
 pub mod session;
 pub mod textfile;
 pub mod themes;
@@ -38,6 +39,7 @@ pub fn run() {
                 std::sync::Arc::new(db::secrets::SystemStore);
             app.manage(db::manager::ConnectionManager::new(file, store));
             app.manage(session::SessionDir::new(app.path().app_data_dir()?));
+            app.manage(results::ResultStore::new(&app.path().app_cache_dir()?));
             // A frontend that never applies a scheme must not leave the window hidden.
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -55,6 +57,8 @@ pub fn run() {
             commands::close_connection,
             commands::run_query,
             commands::cancel_query,
+            commands::result_window,
+            commands::free_results,
             commands::load_session,
             commands::save_session,
             commands::load_tab_text,

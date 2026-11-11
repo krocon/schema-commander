@@ -119,7 +119,7 @@ impl Serialize for Cell {
     }
 }
 
-/// The rows of a statement.
+/// The rows of a statement, all in memory (see [`VecSink`]).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryResult {
@@ -131,6 +131,63 @@ pub struct QueryResult {
     /// database does not say).
     pub rows_affected: Option<u64>,
     pub elapsed_ms: u64,
+}
+
+/// Where a driver puts the rows of a statement as they arrive (prompt 006).
+pub trait RowSink: Send {
+    /// The statement has a result with these columns. Called once, before the first row.
+    fn start(&mut self, columns: &[Column]);
+    /// A row. `false`: no more rows are wanted (a limit was reached, or the sink failed).
+    fn row(&mut self, cells: Vec<Cell>) -> bool;
+}
+
+/// How a statement ended; its rows went into the sink.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Outcome {
+    pub columns: Vec<Column>,
+    /// Rows handed to the sink.
+    pub rows: u64,
+    /// The sink did not want all rows.
+    pub truncated: bool,
+    /// Rows changed by a statement without a result; `None` for a statement with one (or when the database
+    /// does not say).
+    pub rows_affected: Option<u64>,
+    pub elapsed_ms: u64,
+}
+
+/// A sink that keeps the rows in memory, up to a number of rows and [`MAX_RESULT_BYTES`]: for the app's own
+/// small questions and for tests.
+pub struct VecSink {
+    pub columns: Vec<Column>,
+    pub rows: Vec<Vec<Cell>>,
+    max_rows: usize,
+    budget: Budget,
+}
+
+impl VecSink {
+    pub fn new(max_rows: usize) -> Self {
+        Self {
+            columns: Vec::new(),
+            rows: Vec::new(),
+            max_rows,
+            budget: Budget::default(),
+        }
+    }
+}
+
+impl RowSink for VecSink {
+    fn start(&mut self, columns: &[Column]) {
+        self.columns = columns.to_vec();
+    }
+
+    fn row(&mut self, cells: Vec<Cell>) -> bool {
+        if self.rows.len() >= self.max_rows {
+            return false;
+        }
+        let room = self.budget.add(&cells);
+        self.rows.push(cells);
+        room
+    }
 }
 
 /// Rows a result holds at most; more are cut off and `truncated` says so.

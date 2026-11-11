@@ -3,7 +3,7 @@
 
 use super::profiles::{self, LoadedProfiles};
 use super::secrets::{self, Secret, SecretKind, SecretStore};
-use super::value::{MAX_ROWS, QueryResult};
+use super::value::{MAX_ROWS, Outcome, QueryResult, RowSink, VecSink};
 use super::{Limits, Profile, Session, connect, sqlite};
 use crate::error::{AppError, AppResult, ErrorCode};
 use parking_lot::Mutex;
@@ -230,13 +230,34 @@ impl ConnectionManager {
         })
     }
 
-    /// Runs one statement on an open connection. One at a time per connection: a second call waits.
+    /// One statement at a time per connection: a second call waits.
+    /// Runs one statement on an open connection and keeps its rows in memory (at most [`MAX_ROWS`]): for
+    /// tests and small questions. The window uses [`ConnectionManager::run_into`].
     pub fn run(
         &self,
         id: &str,
         sql: &str,
         timeout: Option<std::time::Duration>,
     ) -> AppResult<QueryResult> {
+        let mut sink = VecSink::new(MAX_ROWS);
+        let outcome = self.run_into(id, sql, timeout, &mut sink)?;
+        Ok(QueryResult {
+            columns: outcome.columns,
+            rows: sink.rows,
+            truncated: outcome.truncated,
+            rows_affected: outcome.rows_affected,
+            elapsed_ms: outcome.elapsed_ms,
+        })
+    }
+
+    /// Runs one statement on an open connection; its rows go into `sink` as they arrive.
+    pub fn run_into(
+        &self,
+        id: &str,
+        sql: &str,
+        timeout: Option<std::time::Duration>,
+        sink: &mut dyn RowSink,
+    ) -> AppResult<Outcome> {
         let open = self.opened(id)?;
         let mut session = open.session.lock();
         open.stop.store(false, Ordering::Relaxed);
@@ -244,7 +265,7 @@ impl ConnectionManager {
             max_rows: MAX_ROWS,
             timeout,
         };
-        let result = session.execute(sql, limits, &|| open.stop.load(Ordering::Relaxed));
+        let result = session.execute(sql, limits, sink, &|| open.stop.load(Ordering::Relaxed));
         let lost = !session.is_open();
         drop(session);
         if lost {

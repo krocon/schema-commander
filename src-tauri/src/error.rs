@@ -15,6 +15,8 @@ pub enum ErrorCode {
     /// A file is larger than a command reads.
     TooLarge,
     NotFound,
+    /// A result that is not (any more) in the store (prompt 006).
+    UnknownResult,
     /// The session of open tabs (prompt 004): a tab id or entry that breaks a rule.
     InvalidSession,
     /// A text cannot be written in the encoding of its file without losing characters.

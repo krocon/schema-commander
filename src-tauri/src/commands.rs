@@ -4,12 +4,15 @@ use crate::db::Profile;
 use crate::db::manager::{ConnectionInfo, ConnectionManager};
 use crate::db::profiles::LoadedProfiles;
 use crate::db::secrets::Secret;
-use crate::db::value::QueryResult;
+use crate::db::value::Column;
 use crate::error::{AppError, AppResult, ErrorCode};
+use crate::results::{Progress, ResultStore, StoreSink};
 use crate::session::{LoadedSession, SessionDir, SessionFile};
 use crate::textfile::{self, TextFile};
 use crate::themes::{self, LoadedThemes, ThemesFile, UserTheme};
+use serde::Serialize;
 use std::path::{Path, PathBuf};
+use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
 /// The stored connections, the demo database first (prompt 003). Never a secret.
@@ -58,19 +61,103 @@ pub fn close_connection(manager: State<'_, ConnectionManager>, id: String) {
     manager.close(&id);
 }
 
+/// What `run_query` reports while it runs, over its channel.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum RunEvent {
+    /// The statement has a result; its rows can be asked for from now on (`result_window`).
+    #[serde(rename_all = "camelCase")]
+    Started {
+        result_id: u64,
+        columns: Vec<Column>,
+    },
+    /// So many rows are stored by now.
+    Rows { rows: u64 },
+}
+
+/// How a statement ended.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunOutcome {
+    /// Where the rows are; `None` for a statement without a result.
+    pub result_id: Option<u64>,
+    pub columns: Vec<Column>,
+    pub rows: u64,
+    /// More rows existed than the store takes.
+    pub truncated: bool,
+    pub rows_affected: Option<u64>,
+    pub elapsed_ms: u64,
+}
+
 /// Runs one statement on an open connection, for at most `timeout_ms` (none or 0 = as long as it takes).
-/// `async`: off the main thread, the window stays responsive.
+/// Its rows go into the result store as they arrive; `on_event` says when the first are there and how many
+/// there are by now, so the window shows them while the rest is still read. A statement that fails or is
+/// stopped leaves no result behind. `async`: off the main thread, the window stays responsive.
 #[tauri::command(async)]
 pub fn run_query(
     manager: State<'_, ConnectionManager>,
+    store: State<'_, ResultStore>,
     id: String,
     sql: String,
     timeout_ms: Option<u64>,
-) -> AppResult<QueryResult> {
+    on_event: Channel<RunEvent>,
+) -> AppResult<RunOutcome> {
     let timeout = timeout_ms
         .filter(|ms| *ms > 0)
         .map(std::time::Duration::from_millis);
-    manager.run(&id, &sql, timeout)
+    let report = |progress: Progress| {
+        // a window that is gone does not want to know
+        let _ = on_event.send(match progress {
+            Progress::Started { id, columns } => RunEvent::Started {
+                result_id: id,
+                columns: columns.to_vec(),
+            },
+            Progress::Rows(rows) => RunEvent::Rows { rows },
+        });
+    };
+    let mut sink = StoreSink::new(&store, &report);
+    let result = manager.run_into(&id, &sql, timeout, &mut sink);
+    sink.finish();
+    let result_id = sink.result_id();
+    let failed = sink.error.take().map(Err).unwrap_or(result);
+    match failed {
+        Ok(outcome) => Ok(RunOutcome {
+            result_id,
+            columns: outcome.columns,
+            rows: sink.rows(),
+            truncated: outcome.truncated || sink.full,
+            rows_affected: outcome.rows_affected,
+            elapsed_ms: outcome.elapsed_ms,
+        }),
+        Err(e) => {
+            if let Some(id) = result_id {
+                store.free(id);
+            }
+            Err(e)
+        }
+    }
+}
+
+/// Rows `from..from + count` of a result as a JSON array of rows (long texts cut). The answer is the stored
+/// JSON itself, not parsed and built again here.
+#[tauri::command(async)]
+pub fn result_window(
+    store: State<'_, ResultStore>,
+    result_id: u64,
+    from: u64,
+    count: u64,
+) -> AppResult<tauri::ipc::Response> {
+    store
+        .window(result_id, from, count)
+        .map(tauri::ipc::Response::new)
+}
+
+/// Forgets results the window no longer shows (their files go too).
+#[tauri::command(async)]
+pub fn free_results(store: State<'_, ResultStore>, result_ids: Vec<u64>) {
+    for id in result_ids {
+        store.free(id);
+    }
 }
 
 /// Stops the statement that runs on a connection.
