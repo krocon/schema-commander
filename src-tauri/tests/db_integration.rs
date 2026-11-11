@@ -2054,6 +2054,7 @@ fn every_server_writes_changed_cells_one_row_at_a_time() {
                 schema: Some(schema.into()),
                 table: "sc_edit".into(),
                 rows: vec![row],
+                ..UpdatePlan::default()
             };
             let built = edit::build(kind, &plan).unwrap();
             bound(s, &built[0].sql, &built[0].params).rows_affected
@@ -2159,6 +2160,7 @@ fn values_keep_their_length_and_their_day_when_they_are_written() {
                 schema: Some(schema.into()),
                 table: table.into(),
                 rows: vec![row],
+                ..UpdatePlan::default()
             };
             let built = edit::build(kind, &plan).unwrap();
             bound(s, &built[0].sql, &built[0].params).rows_affected

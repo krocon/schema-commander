@@ -459,8 +459,8 @@ pub fn edit_preview(
     manager: State<'_, ConnectionManager>,
     id: String,
     plan: crate::db::edit::UpdatePlan,
-) -> AppResult<Vec<crate::db::filter::Built>> {
-    crate::db::edit::build(manager.kind_of(&id)?, &plan)
+) -> AppResult<Vec<crate::db::edit::Step>> {
+    crate::db::edit::steps(manager.kind_of(&id)?, &plan)
 }
 
 /// Writes changed cells: the statements are built here again from the plan (the window never sends
@@ -475,14 +475,16 @@ pub fn edit_apply(
     confirmations: Option<Vec<Option<String>>>,
     timeout_ms: Option<u64>,
 ) -> AppResult<crate::db::manager::Applied> {
-    let statements = crate::db::edit::build(manager.kind_of(&id)?, &plan)?;
+    let kind = manager.kind_of(&id)?;
+    let steps = crate::db::edit::steps(kind, &plan)?;
     let timeout = timeout_ms
         .filter(|ms| *ms > 0)
         .map(std::time::Duration::from_millis);
-    manager.apply_updates(
+    manager.apply_steps(
         &id,
         session.as_deref(),
-        &statements,
+        &steps,
+        &|first, rows| crate::db::edit::single_inserts(kind, &plan, first, rows),
         confirmations.as_deref().unwrap_or(&[]),
         timeout,
     )

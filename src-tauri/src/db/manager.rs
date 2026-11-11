@@ -120,8 +120,12 @@ fn keychain(e: secrets::StoreError) -> AppError {
 #[serde(rename_all = "camelCase")]
 pub struct Applied {
     pub done: usize,
-    /// The statement that stopped everything (counted from 0).
+    /// The row that stopped everything: its place among the rows of its kind in the plan (from 0).
     pub failed: Option<usize>,
+    /// Whether that row was to be deleted, changed or inserted.
+    pub failed_kind: Option<super::edit::StepKind>,
+    /// The keys the database gave new rows, where it reports them (PostgreSQL, SQLite), in their order.
+    pub inserted: Vec<String>,
     /// It changed no row or several: the row is not what it was when it was read.
     pub conflict: bool,
     /// What the database said, when a statement or the commit failed.
@@ -652,21 +656,50 @@ impl ConnectionManager {
         tokens: &[Option<String>],
         timeout: Option<std::time::Duration>,
     ) -> AppResult<Applied> {
-        for (i, statement) in statements.iter().enumerate() {
+        let steps: Vec<super::edit::Step> = statements
+            .iter()
+            .enumerate()
+            .map(|(i, built)| super::edit::Step {
+                kind: super::edit::StepKind::Update,
+                built: built.clone(),
+                first: i,
+                rows: 1,
+                returns: false,
+            })
+            .collect();
+        self.apply_steps(id, tab, &steps, &|_, _| Ok(Vec::new()), tokens, timeout)
+    }
+
+    /// As [`ConnectionManager::apply_updates`], for the statements of a whole plan (prompt 032): rows
+    /// deleted, changed and inserted. A statement must change exactly the rows it covers. When an
+    /// `INSERT` for several rows fails, `singles(first, rows)` gives one statement per row: they are
+    /// tried in a transaction that is rolled back, only to say which row it was.
+    pub fn apply_steps(
+        &self,
+        id: &str,
+        tab: Option<&str>,
+        steps: &[super::edit::Step],
+        singles: &dyn Fn(usize, usize) -> AppResult<Vec<super::filter::Built>>,
+        tokens: &[Option<String>],
+        timeout: Option<std::time::Duration>,
+    ) -> AppResult<Applied> {
+        for (i, step) in steps.iter().enumerate() {
             let token = tokens.get(i).and_then(|t| t.as_deref());
-            self.admit(id, &statement.sql, token, false)?;
+            self.admit(id, &step.built.sql, token, false)?;
         }
         let (key, open, profile) = self.session_of(id, tab)?;
         let mut session = open.session.lock();
         open.stop.store(false, Ordering::Relaxed);
         let stop = || open.stop.load(Ordering::Relaxed);
         let limits = Limits {
-            max_rows: 1,
+            max_rows: super::edit::MAX_BATCH_ROWS + 1,
             timeout,
         };
         let mut applied = Applied {
             done: 0,
             failed: None,
+            failed_kind: None,
+            inserted: Vec::new(),
             conflict: false,
             error: None,
             blocked: false,
@@ -685,26 +718,51 @@ impl ConnectionManager {
         let mut problem = session
             .query(super::begin_statement(profile.kind), Limits::rows(1), &stop)
             .err();
+        // the shared INSERT that failed: its rows are tried one by one afterwards, to name the row
+        let mut probe: Option<&super::edit::Step> = None;
         if problem.is_none() {
-            for (i, statement) in statements.iter().enumerate() {
-                let mut sink = VecSink::new(1);
-                match session.execute_bound(
-                    &statement.sql,
-                    &statement.params,
+            for step in steps {
+                let mut sink = VecSink::new(super::edit::MAX_BATCH_ROWS + 1);
+                let ran = session.execute_bound(
+                    &step.built.sql,
+                    &step.built.params,
                     limits,
                     &mut sink,
                     &stop,
-                ) {
-                    Ok(outcome) if outcome.rows_affected == Some(1) => applied.done += 1,
-                    Ok(_) => {
-                        // no row, or more than one: the row is not what it was when it was read
-                        applied.failed = Some(i);
-                        applied.conflict = true;
-                        break;
+                );
+                match ran {
+                    Ok(outcome) => {
+                        // a statement that gives rows back says with them how many it made
+                        let changed = if step.returns {
+                            Some(sink.rows.len() as u64)
+                        } else {
+                            outcome.rows_affected
+                        };
+                        if changed != Some(step.rows as u64) {
+                            // not the rows it covers: the row is not what it was when it was read
+                            applied.failed = Some(step.first);
+                            applied.failed_kind = Some(step.kind);
+                            applied.conflict = true;
+                            break;
+                        }
+                        applied.done += 1;
+                        if step.returns {
+                            applied.inserted.extend(sink.rows.iter().map(|row| {
+                                match row.first().and_then(|c| serde_json::to_value(c).ok()) {
+                                    Some(serde_json::Value::String(s)) => s,
+                                    Some(other) => other.to_string(),
+                                    None => String::new(),
+                                }
+                            }));
+                        }
                     }
                     Err(e) => {
-                        applied.failed = Some(i);
+                        applied.failed = Some(step.first);
+                        applied.failed_kind = Some(step.kind);
                         problem = Some(e);
+                        if step.rows > 1 {
+                            probe = Some(step);
+                        }
                         break;
                     }
                 }
@@ -746,6 +804,32 @@ impl ConnectionManager {
         }
         if end == "ROLLBACK" || problem.is_some() {
             applied.done = 0;
+            applied.inserted.clear();
+        }
+        // which row of the shared INSERT was it? Its rows one by one, in a transaction that is rolled
+        // back whatever happens – nothing of this is written
+        if let Some(step) = probe
+            && session.is_open()
+            && applied.tx == TxState::Idle
+            && let Ok(rows) = singles(step.first, step.rows)
+            && session
+                .query(super::begin_statement(profile.kind), Limits::rows(1), &stop)
+                .is_ok()
+        {
+            for (i, single) in rows.iter().enumerate() {
+                let mut sink = VecSink::new(1);
+                if let Err(e) =
+                    session.execute_bound(&single.sql, &single.params, limits, &mut sink, &stop)
+                {
+                    applied.failed = Some(step.first + i);
+                    problem = Some(e);
+                    break;
+                }
+            }
+            if session.is_open() {
+                let _ = session.query("ROLLBACK", Limits::rows(1), &|| false);
+                applied.tx = session.transaction_state(&|| false);
+            }
         }
         applied.error = problem;
         *open.tx.lock() = applied.tx;
@@ -1092,6 +1176,7 @@ mod tests {
                     expect: vec![cell(*expected)],
                 })
                 .collect(),
+            ..UpdatePlan::default()
         };
         build(DbKind::Sqlite, &plan).unwrap()
     }
@@ -1168,6 +1253,155 @@ mod tests {
         );
         assert!(broken.error.is_some());
         assert_eq!(count(&m, &id, "b"), json!([[10], [10], [21], [200]]));
+    }
+
+    /// Prompt 032: rows deleted, changed and inserted in one go; a shared INSERT that fails names its row.
+    #[test]
+    fn a_whole_plan_is_written_in_its_order_or_not_at_all() {
+        use crate::db::edit::{CellValue, RowDelete, RowInsert, SetCell, StepKind, UpdatePlan};
+        use crate::db::edit::{single_inserts, steps};
+        use crate::db::filter::ValueKind;
+        use serde_json::json;
+        let dir = tempdir().unwrap();
+        let (m, _) = manager(dir.path());
+        let id = protected(&m, dir.path(), Protection::Free);
+        run_tab(
+            &m,
+            &id,
+            "b",
+            "CREATE TABLE p (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE)",
+            false,
+        );
+        run_tab(
+            &m,
+            &id,
+            "b",
+            "INSERT INTO p VALUES (1, 'one'), (2, 'two')",
+            false,
+        );
+        let cell = |column: &str, value: &str| CellValue {
+            column: column.into(),
+            kind: ValueKind::Text,
+            type_name: String::new(),
+            value: Some(value.into()),
+        };
+        let set = |column: &str, value: Option<&str>| SetCell {
+            column: column.into(),
+            kind: ValueKind::Text,
+            type_name: String::new(),
+            value: value.map(str::to_owned),
+            default: false,
+        };
+        let new_row = |name: Option<&str>| RowInsert {
+            set: vec![set("name", name)],
+        };
+        let apply = |plan: &UpdatePlan| {
+            let all = steps(DbKind::Sqlite, plan).unwrap();
+            m.apply_steps(
+                &id,
+                Some("a"),
+                &all,
+                &|first, rows| single_inserts(DbKind::Sqlite, plan, first, rows),
+                &[],
+                None,
+            )
+            .unwrap()
+        };
+        let names = || {
+            let mut sink = VecSink::new(10_000);
+            let (r, _) = m.run_in(
+                &id,
+                Some("b"),
+                "SELECT id, name FROM p ORDER BY id",
+                None,
+                &mut sink,
+                false,
+            );
+            r.unwrap();
+            serde_json::to_value(&sink.rows).unwrap()
+        };
+        // row 1 goes, and a new row takes its name in the same go: deleted first, inserted last
+        let plan = UpdatePlan {
+            table: "p".into(),
+            deletes: vec![RowDelete {
+                key: vec![cell("id", "1")],
+                expect: vec![cell("name", "one")],
+            }],
+            rows: vec![crate::db::edit::RowUpdate {
+                key: vec![cell("id", "2")],
+                set: vec![set("name", Some("zwei"))],
+                expect: vec![],
+            }],
+            inserts: vec![new_row(Some("one")), new_row(Some("three"))],
+            returning: Some("id".into()),
+            ..UpdatePlan::default()
+        };
+        let done = apply(&plan);
+        assert_eq!((done.done, done.failed), (3, None));
+        // the keys the database gave the new rows
+        assert_eq!(done.inserted, ["3", "4"]);
+        assert_eq!(names(), json!([[2, "zwei"], [3, "one"], [4, "three"]]));
+
+        // many new rows share statements; one of them breaks a rule: nothing is written, and the row is named
+        let mut many: Vec<RowInsert> = (0..450).map(|i| new_row(Some(&format!("n{i}")))).collect();
+        many[317] = new_row(None);
+        let plan = UpdatePlan {
+            table: "p".into(),
+            inserts: many,
+            ..UpdatePlan::default()
+        };
+        assert_eq!(steps(DbKind::Sqlite, &plan).unwrap().len(), 3);
+        let broken = apply(&plan);
+        assert_eq!(broken.done, 0);
+        assert_eq!(
+            (broken.failed, broken.failed_kind),
+            (Some(317), Some(StepKind::Insert))
+        );
+        assert!(broken.error.is_some() && !broken.conflict);
+        assert_eq!(broken.tx, TxState::Idle);
+        assert_eq!(names(), json!([[2, "zwei"], [3, "one"], [4, "three"]]));
+
+        // a row to delete that is gone already: a conflict, nothing else is written either
+        let plan = UpdatePlan {
+            table: "p".into(),
+            deletes: vec![RowDelete {
+                key: vec![cell("id", "99")],
+                expect: vec![],
+            }],
+            inserts: vec![new_row(Some("never"))],
+            ..UpdatePlan::default()
+        };
+        let gone = apply(&plan);
+        assert_eq!(
+            (gone.done, gone.failed, gone.failed_kind),
+            (0, Some(0), Some(StepKind::Delete))
+        );
+        assert!(gone.conflict);
+        assert_eq!(names(), json!([[2, "zwei"], [3, "one"], [4, "three"]]));
+
+        // five thousand new rows: written together, quickly
+        let plan = UpdatePlan {
+            table: "p".into(),
+            inserts: (0..5000)
+                .map(|i| new_row(Some(&format!("row {i}"))))
+                .collect(),
+            ..UpdatePlan::default()
+        };
+        let start = std::time::Instant::now();
+        let big = apply(&plan);
+        assert_eq!(big.done, 25);
+        assert!(start.elapsed().as_secs() < 5, "{:?}", start.elapsed());
+        let mut sink = VecSink::new(1);
+        let (r, _) = m.run_in(
+            &id,
+            Some("b"),
+            "SELECT COUNT(*) FROM p",
+            None,
+            &mut sink,
+            false,
+        );
+        r.unwrap();
+        assert_eq!(serde_json::to_value(&sink.rows).unwrap(), json!([[5003]]));
     }
 
     #[test]
