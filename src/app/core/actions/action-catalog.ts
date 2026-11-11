@@ -180,6 +180,34 @@ export const ACTIONS = [
   },
   { id: 'COLUMNS_FIT', label: 'Result: fit all column widths', group: 'View', scope: 'global' },
   { id: 'COLUMNS_RESET', label: 'Result: reset the columns', group: 'View', scope: 'global' },
+  // Editing cells (prompt 031)
+  { id: 'EDIT_CELL', label: 'Edit: edit the cell', group: 'Query', scope: 'result' },
+  { id: 'EDIT_SET_NULL', label: 'Edit: set the cell to NULL', group: 'Query', scope: 'global' },
+  {
+    id: 'EDIT_SET_DEFAULT',
+    label: 'Edit: set the cell to its default',
+    group: 'Query',
+    scope: 'global',
+  },
+  {
+    id: 'EDIT_UNDO',
+    label: 'Edit: undo the change',
+    group: 'Query',
+    scope: 'result',
+    repeat: true,
+  },
+  {
+    id: 'EDIT_REDO',
+    label: 'Edit: redo the change',
+    group: 'Query',
+    scope: 'result',
+    repeat: true,
+  },
+  { id: 'EDIT_RESET_CELL', label: 'Edit: reset the cell', group: 'Query', scope: 'global' },
+  { id: 'EDIT_RESET_ROW', label: 'Edit: reset the row', group: 'Query', scope: 'global' },
+  { id: 'EDIT_DISCARD', label: 'Edit: discard all changes', group: 'Query', scope: 'global' },
+  { id: 'EDIT_PREVIEW', label: 'Edit: preview the changes …', group: 'Query', scope: 'global' },
+  { id: 'EDIT_SAVE', label: 'Edit: write the changes', group: 'Query', scope: 'global' },
   // Following foreign keys (prompt 030)
   {
     id: 'FK_FOLLOW',

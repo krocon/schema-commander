@@ -59,6 +59,8 @@ export interface Settings {
   readonly showSystemSchemas: boolean;
   /** Copying from a result (prompt 009): a first line with the column names. */
   readonly copyHeader: boolean;
+  /** Writing changed cells checks that nobody else changed them in the meantime (prompt 031). */
+  readonly editLock: boolean;
   /** NULL in copied text: `''`, `NULL` or `\\N`. */
   readonly copyNullAs: string;
   /** The separator of CSV: `,`, `;` or a tab. */
@@ -198,6 +200,7 @@ export const DEFAULT_SETTINGS: Settings = {
   groupDigits: false,
   showSystemSchemas: false,
   copyHeader: true,
+  editLock: true,
   copyNullAs: '',
   csvDelimiter: ',',
   lastCopyFormat: null,
@@ -367,6 +370,7 @@ export function mergeSettings(saved: unknown): Settings {
         : DEFAULT_SETTINGS.showSystemSchemas,
     copyHeader:
       typeof s['copyHeader'] === 'boolean' ? s['copyHeader'] : DEFAULT_SETTINGS.copyHeader,
+    editLock: typeof s['editLock'] === 'boolean' ? s['editLock'] : DEFAULT_SETTINGS.editLock,
     copyNullAs: ['', 'NULL', '\\N'].includes(s['copyNullAs'] as string)
       ? (s['copyNullAs'] as string)
       : DEFAULT_SETTINGS.copyNullAs,

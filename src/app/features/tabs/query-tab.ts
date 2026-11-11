@@ -1,4 +1,5 @@
 import { BuiltQuery, QueryColumn, ViewSpec } from '../../core/sql/query.models';
+import { EMPTY_BUFFER, EditBuffer, editCount } from '../edit/edit-buffer';
 import { ResultFind } from '../find/result-find';
 import { EMPTY_NAV, NavState, navReplace } from '../relations/relation-logic';
 import { ColumnLayout, EMPTY_LAYOUT, ResultGridHandle } from '../results/column-layout';
@@ -117,6 +118,11 @@ export interface TabServices {
     forms(connectionId: string): readonly string[] | undefined;
     ask(request: ParamRequest): Promise<Readonly<Record<string, ParamValue>> | null>;
   };
+  /**
+   * The rows of the tab are about to be read anew while it has changes that are not written (prompt 031):
+   * asks whether they may go. `false`: the run does not happen. Without it, changes are dropped silently.
+   */
+  readonly dropEdits?: (tab: QueryTab) => Promise<boolean>;
   /** A table view was applied on a connection (its filter is remembered for the table). */
   readonly tableApplied?: (connection: string, view: TableView) => void;
   /** A statement ended, one way or the other (the history notes it). */
@@ -156,6 +162,8 @@ export class QueryTab {
   readonly paramValues = signal<Readonly<Record<string, ParamValue>>>({});
   /** The statements of the last run that had parameters: to run them again with the same values. */
   private lastStatements: readonly string[] | null = null;
+  /** Changes to cells of the table view that are not written yet (prompt 031). */
+  readonly edits = signal<EditBuffer>(EMPTY_BUFFER);
   /** The table views the user came along in this tab, following foreign keys (prompt 030). */
   readonly nav = signal<NavState>(EMPTY_NAV);
   /** Searching in the result of this tab (prompt 029). */
@@ -339,6 +347,11 @@ export class QueryTab {
      */
     prebuilt: readonly BoundStatement[] | null = null,
   ): Promise<void> {
+    // rows read anew would leave the changes without their rows: the user says whether they may go
+    if (editCount(this.edits()).cells > 0) {
+      if (this.services.dropEdits && !(await this.services.dropEdits(this))) return;
+      this.edits.set(EMPTY_BUFFER);
+    }
     this.origin = origin;
     // any other run ends the table view: the text in the editor is the user's again
     if (!prebuilt) this.tableView.set(null);

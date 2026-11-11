@@ -1,3 +1,5 @@
+import { EMPTY_BUFFER, editCount } from '../edit/edit-buffer';
+import { EDIT_TEXTS } from '../edit/edit-texts';
 import { TableView, remember, tableKey } from '../filter/filter-logic';
 import { ParamService } from '../params/param.service';
 import { ConfirmService } from '../../shared/confirm';
@@ -81,6 +83,7 @@ export class TabsStore {
     connections: this.connections,
     notify: (message: string) => this.notice.set(message),
     params: this.params,
+    dropEdits: (tab: QueryTab) => this.dropEdits([tab]),
     tableApplied: (connection: string, view: TableView) => {
       // reached over a key: where the user came from, nothing to remember for the table
       if (view.spec.keys) return;
@@ -336,7 +339,27 @@ export class TabsStore {
    * Before tabs with an open transaction go: commit, roll back, or stay. Resolves with `false` when the
    * user wants to stay, or when ending a transaction failed (the tab then shows why).
    */
+  /**
+   * Asks before changes to cells that are not written are lost (prompt 031); `true`: they may go (and
+   * are gone), or there were none.
+   */
+  async dropEdits(tabs: readonly QueryTab[]): Promise<boolean> {
+    const edited = tabs.filter((t) => editCount(t.edits()).cells > 0);
+    if (edited.length === 0) return true;
+    const cells = edited.reduce((n, t) => n + editCount(t.edits()).cells, 0);
+    const yes = await this.confirm.ask({
+      title: EDIT_TEXTS.discardTitle,
+      message: EDIT_TEXTS.discardMessage(cells),
+      confirm: EDIT_TEXTS.discardYes,
+    });
+    if (yes) for (const tab of edited) tab.edits.set(EMPTY_BUFFER);
+    return yes;
+  }
+
   async settleTransactions(tabs: readonly QueryTab[], what: string): Promise<boolean> {
+    // asked only where there is something to lose (no extra turn for a tab that has nothing)
+    const edited = tabs.some((t) => editCount(t.edits()).cells > 0);
+    if (edited && !(await this.dropEdits(tabs))) return false;
     const open = tabs.filter((t) => txOpen(t.tx()));
     if (open.length === 0) return true;
     const failed = open.every((t) => t.tx() === 'failed');

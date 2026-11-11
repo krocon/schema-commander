@@ -19,6 +19,7 @@ export const MENU_DE: Translation<typeof MENU_EN> = {
   format: 'Weitere Formatierung',
   saved: 'Ordner der gespeicherten Abfragen',
   filterCell: 'Nach dieser Zelle filtern',
+  editCells: 'Zellen bearbeiten',
   relations: 'Beziehungen',
   resultColumns: 'Spalten',
   resultFind: 'Suchen und springen',

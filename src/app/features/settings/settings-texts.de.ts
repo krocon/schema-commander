@@ -60,6 +60,7 @@ export const SETTINGS_DE: Translation<typeof SETTINGS_EN> = {
     groupDigits: 'Ziffern von Zahlen gruppieren',
     resultPlacement: 'Platz des Ergebnisses',
     copyHeader: 'Mit Spaltennamen kopieren',
+    editLock: 'Änderungen anderer nicht überschreiben',
     copyNullAs: 'NULL in kopiertem Text',
     csvDelimiter: 'Trennzeichen von CSV',
     stopOnError: 'Skript beim ersten Fehler anhalten',
@@ -98,6 +99,8 @@ export const SETTINGS_DE: Translation<typeof SETTINGS_EN> = {
     groupDigits: 'Nur im Gitter, nie in kopierten oder exportierten Werten.',
     resultPlacement: 'Unter oder neben dem Editor, für alle Tabs.',
     copyHeader: 'Eine erste Zeile mit den Namen der Spalten.',
+    editLock:
+      'Beim Schreiben bearbeiteter Zellen wird geprüft, dass sie noch enthalten, was gelesen wurde; eine Zeile, die jemand anderes geändert hat, wird gemeldet, nicht überschrieben.',
     copyNullAs: '',
     csvDelimiter: '',
     stopOnError: 'Der Rest des Skripts wird ausgelassen.',

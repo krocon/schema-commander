@@ -61,6 +61,7 @@ export const SETTINGS_EN = {
     groupDigits: 'Group digits of numbers',
     resultPlacement: 'Place of the result',
     copyHeader: 'Copy with column names',
+    editLock: 'Do not overwrite changes of others',
     copyNullAs: 'NULL in copied text',
     csvDelimiter: 'Separator of CSV',
     stopOnError: 'Stop a script at the first error',
@@ -98,6 +99,8 @@ export const SETTINGS_EN = {
     groupDigits: 'Only in the grid, never in copied or exported values.',
     resultPlacement: 'Below or beside the editor, for all tabs.',
     copyHeader: 'A first line with the names of the columns.',
+    editLock:
+      'Writing edited cells checks that they still hold what was read; a row somebody else changed is reported, not overwritten.',
     copyNullAs: '',
     csvDelimiter: '',
     stopOnError: 'The rest of the script is left out.',

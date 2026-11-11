@@ -21,6 +21,8 @@ import {
   TableModelIf,
 } from '@guiexpert/table';
 import { CopySelection } from '../../core/backend/clipboard-api';
+import { EditMarks } from '../edit/edit-buffer';
+import { EDIT_TEXTS } from '../edit/edit-texts';
 import { ResultRef, RowWindow } from '../../core/sql/query.models';
 import { SettingsService } from '../../core/settings/settings.service';
 import { CellFormat } from './cell-format';
@@ -50,6 +52,7 @@ import { RESULTS_TEXTS } from './results-texts';
     '(copy)': 'onCopy($event)',
     '(contextmenu)': 'onContextMenu($event)',
     '(keydown)': 'onKey($event)',
+    '(dblclick)': 'onDoubleClick($event)',
     // font size and row height are settings (prompt 017); `ge-table-theme.css` reads them
     '[style.--result-font-size.px]': 'settings.settings().resultFontSize',
     '[style.--result-row-height.px]': 'settings.settings().resultRowHeight',
@@ -117,6 +120,10 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
   readonly layoutChange = output<ColumnLayout>();
   /** The cells a search found. */
   readonly hits = input<HitMarks | null>(null);
+  /** Changes to cells that are not written yet: shown instead of what was read (prompt 031). */
+  readonly edits = input<EditMarks | null>(null);
+  /** A cell was double-clicked: edit it. */
+  readonly editCell = output<void>();
   /** The columns of the result whose cells are links to another table (prompt 030). */
   readonly links = input<ReadonlySet<number> | null>(null);
   /** A link was clicked with `Ctrl`/`Cmd`: follow it. */
@@ -175,6 +182,12 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
       this.api()?.repaint();
     });
     effect(() => {
+      const edits = this.edits();
+      if (!this.model()) return;
+      this.body?.setEdits(edits, EDIT_TEXTS.marked);
+      this.api()?.repaint();
+    });
+    effect(() => {
       const links = this.links();
       if (!this.model()) return;
       this.body?.setLinks(links);
@@ -219,6 +232,13 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
       return;
     }
     void this.copier.copy();
+  }
+
+  /** A double click on a cell of the body edits it (the click before it has put the cursor there). */
+  protected onDoubleClick(event: MouseEvent): void {
+    // not on a head (that fits the width) and not on a row number
+    if (this.local() || (event.target as HTMLElement).closest('.sc-head, .sc-rownum')) return;
+    if (this.cursor()) this.editCell.emit();
   }
 
   /** What can be done with the selection and the result (prompt 018). */
@@ -466,6 +486,10 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
     body.setShown(this.resolved.shown);
     body.setHits(untracked(() => this.hits()));
     body.setLinks(untracked(() => this.links()));
+    body.setEdits(
+      untracked(() => this.edits()),
+      EDIT_TEXTS.marked,
+    );
     const rows = untracked(() => this.rows());
     body.setRowCount(Math.max(rows, first.length));
     this.body = body;

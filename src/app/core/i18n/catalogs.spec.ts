@@ -31,6 +31,7 @@ import '../../features/tabs/tab-bar-texts';
 import '../../features/tabs/tabs-texts';
 import '../../features/themes/theme-editor-texts';
 import '../../features/themes/theme-picker-texts';
+import '../../features/edit/edit-texts';
 import '../../features/find/find-texts';
 import '../../features/relations/relation-texts';
 import '../../features/stats/stats-texts';
@@ -45,7 +46,9 @@ const SAME = new Set<string>([
   'Alt',
   'CSV',
   'Commit',
+  'DEFAULT',
   'DBeaver (data-sources.json)',
+  'Default',
   'DataGrip / JetBrains (dataSources.xml)',
   'Deutsch',
   'Editor',
@@ -100,7 +103,7 @@ const SAME = new Set<string>([
   '~/.pgpass (PostgreSQL)',
 ]);
 
-const CATALOG_FILES = 35;
+const CATALOG_FILES = 36;
 const SAMPLE_ARGS: unknown[] = [2, 'x', 3, 4];
 
 function walk(path: string, en: unknown, de: unknown, problems: string[], same: string[]): void {
