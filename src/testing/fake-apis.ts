@@ -33,6 +33,9 @@ import { QueryApi, RunGuard } from '../app/core/sql/query-api';
 import { SchemaApi } from '../app/core/schema/schema-api';
 import {
   Found,
+  NameContext,
+  NameHit,
+  NameHits,
   ObjectDetails,
   ObjectInfo,
   SchemaInfo,
@@ -617,6 +620,44 @@ export class FakeSchemaApi extends SchemaApi {
     },
   };
 
+  /** The names `names` searches (by a part of the name; the real ranking is tested in Rust). */
+  nameList: NameHit[] = [
+    hit('table', 'public', 'orders'),
+    hit('table', 'public', 'order_items'),
+    hit('view', 'public', 'big_orders'),
+    hit('routine', 'public', 'twice', 'n integer'),
+    {
+      ...hit('column', 'public', 'customer_id', 'integer'),
+      parent: 'orders',
+      quoted: 'customer_id',
+    },
+  ];
+  /** Answers of `names` wait for these to be resolved, in order (for tests of overtaken answers). */
+  readonly nameGates: Promise<void>[] = [];
+  readonly nameQueries: { query: string; context: NameContext }[] = [];
+  refreshed = 0;
+
+  async names(_id: string, query: string, context: NameContext): Promise<NameHits> {
+    this.nameQueries.push({ query, context });
+    const gate = this.nameGates.shift();
+    if (gate) await gate;
+    if (this.fail) throw this.fail;
+    const columns = /^c:/i.test(query.trim());
+    const text = query
+      .replace(/^[a-z]:/i, '')
+      .trim()
+      .toLowerCase();
+    const hits = this.nameList.filter(
+      (h) => (h.kind === 'column') === columns && h.name.toLowerCase().includes(text),
+    );
+    return { hits, total: hits.length, indexed: this.nameList.length, cut: false };
+  }
+
+  refreshNames(): Promise<number> {
+    this.refreshed++;
+    return Promise.resolve(this.nameList.length);
+  }
+
   details(_id: string, schema: string, name: string, kind: string): Promise<ObjectDetails> {
     return this.answer(
       `details ${schema}.${name} ${kind}`,
@@ -803,4 +844,8 @@ export class FakeExportApi extends ExportApi {
     this.revealed.push(path);
     return Promise.resolve();
   }
+}
+
+function hit(kind: NameHit['kind'], schema: string, name: string, detail = ''): NameHit {
+  return { kind, schema, name, parent: null, detail, quoted: `${schema}.${name}`, marks: [0] };
 }

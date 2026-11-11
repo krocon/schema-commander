@@ -1416,3 +1416,97 @@ fn sqlserver_details_and_ddl_round_trip() {
         run(&mut s, sql);
     }
 }
+
+// --- the name index (prompt 020) -------------------------------------------------------------------
+
+use schema_commander_lib::db::names::{self, Context, NameKind};
+
+/// Reads the index of a server and finds a table, a routine and – once asked for – a column.
+fn names_of(p: &Profile, kind: DbKind, schema: &str, create: &[&str], drop: &[&str]) {
+    let mut s = open(p);
+    for sql in drop.iter().chain(create) {
+        run(&mut s, sql);
+    }
+    let mut index = names::read_objects(s.as_mut(), kind, &|| false).unwrap();
+    assert!(!index.columns);
+    let find = |index: &names::NameIndex, query: &str| {
+        names::search(index, query, &Context::default(), kind).hits
+    };
+    let tables = find(&index, "sc_nm_ord_it");
+    assert_eq!(tables[0].name, "sc_nm_order_items", "{tables:?}");
+    assert_eq!(tables[0].kind, NameKind::Table);
+    assert_eq!(tables[0].schema, schema);
+    assert!(tables[0].quoted.ends_with("sc_nm_order_items"));
+    let routines = find(&index, "f:sc_nm_twice");
+    assert_eq!(routines[0].kind, NameKind::Routine, "{routines:?}");
+    let views = find(&index, "v:sc_nm_open");
+    assert_eq!(views[0].name, "sc_nm_open_items", "{views:?}");
+    // the system's own objects are not in the index
+    for system in ["pg_class", "sysobjects", "TABLES", "sqlite_schema"] {
+        assert!(
+            find(&index, system).iter().all(|h| h.name != system),
+            "{system}"
+        );
+    }
+    assert!(find(&index, "c:sc_nm_order_items.ord").is_empty());
+    names::read_columns(s.as_mut(), kind, &mut index, &|| false).unwrap();
+    let columns = find(&index, "c:sc_nm_order_items.ord");
+    assert_eq!(columns[0].name, "order_id", "{columns:?}");
+    assert_eq!(columns[0].parent.as_deref(), Some("sc_nm_order_items"));
+    assert!(!columns[0].detail.is_empty());
+    for sql in drop {
+        run(&mut s, sql);
+    }
+}
+
+#[test]
+#[ignore = "needs the database containers"]
+fn names_of_every_server() {
+    names_of(
+        &pg(),
+        DbKind::Postgres,
+        "public",
+        &[
+            "CREATE TABLE public.sc_nm_order_items (id int PRIMARY KEY, order_id int)",
+            "CREATE VIEW public.sc_nm_open_items AS SELECT id FROM public.sc_nm_order_items",
+            "CREATE FUNCTION public.sc_nm_twice(n int) RETURNS int LANGUAGE sql AS 'SELECT n * 2'",
+        ],
+        &[
+            "DROP VIEW IF EXISTS public.sc_nm_open_items",
+            "DROP TABLE IF EXISTS public.sc_nm_order_items",
+            "DROP FUNCTION IF EXISTS public.sc_nm_twice(int)",
+        ],
+    );
+    for p in [my(), maria()] {
+        names_of(
+            &p,
+            DbKind::Mysql,
+            "shop",
+            &[
+                "CREATE TABLE sc_nm_order_items (id int PRIMARY KEY, order_id int)",
+                "CREATE VIEW sc_nm_open_items AS SELECT id FROM sc_nm_order_items",
+                "CREATE FUNCTION sc_nm_twice(n int) RETURNS int DETERMINISTIC RETURN n * 2",
+            ],
+            &[
+                "DROP VIEW IF EXISTS sc_nm_open_items",
+                "DROP TABLE IF EXISTS sc_nm_order_items",
+                "DROP FUNCTION IF EXISTS sc_nm_twice",
+            ],
+        );
+    }
+    names_of(
+        &ms(),
+        DbKind::Sqlserver,
+        "dbo",
+        &[
+            "CREATE TABLE dbo.sc_nm_order_items (id int PRIMARY KEY, order_id int)",
+            "CREATE VIEW dbo.sc_nm_open_items AS SELECT id FROM dbo.sc_nm_order_items",
+            "CREATE FUNCTION dbo.sc_nm_twice(@n int) RETURNS int AS BEGIN RETURN @n * 2; END",
+        ],
+        &[
+            "IF OBJECT_ID('dbo.sc_nm_open_items') IS NOT NULL DROP VIEW dbo.sc_nm_open_items",
+            "IF OBJECT_ID('dbo.sc_nm_order_items') IS NOT NULL DROP TABLE dbo.sc_nm_order_items",
+            "IF OBJECT_ID('dbo.sc_nm_twice') IS NOT NULL DROP FUNCTION dbo.sc_nm_twice",
+        ],
+    );
+}

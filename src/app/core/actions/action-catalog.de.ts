@@ -77,6 +77,7 @@ export const ACTION_LABELS_DE: Readonly<Record<ActionId, string>> = {
   FOCUS_SIDEBAR: 'In die Seitenleiste',
   FOCUS_NEXT_AREA: 'Nächster Bereich',
   FOCUS_PREV_AREA: 'Voriger Bereich',
+  GOTO_ANYTHING: 'Springen zu Tabelle, View, Tab …',
   OPEN_SETTINGS: 'Einstellungen …',
   QUIT_APP: 'Beenden',
   RENAME_TAB: 'Tab umbenennen',

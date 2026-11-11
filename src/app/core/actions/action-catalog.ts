@@ -310,6 +310,7 @@ export const ACTIONS = [
     scope: 'global',
     repeat: true,
   },
+  { id: 'GOTO_ANYTHING', label: 'Go to table, view, tab …', group: 'Navigation', scope: 'global' },
   { id: 'OPEN_SETTINGS', label: 'Settings …', group: 'View', scope: 'global' },
   { id: 'QUIT_APP', label: 'Quit', group: 'File', scope: 'global' },
   // Help

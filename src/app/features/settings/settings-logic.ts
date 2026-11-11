@@ -121,7 +121,12 @@ export function searchSettings(query: string): SettingDef[] {
 }
 
 /** What names things of this machine and stays out of an exported file. */
-const LOCAL_KEYS: readonly string[] = ['activeConnection', 'historyOff', 'recentActions'];
+const LOCAL_KEYS: readonly string[] = [
+  'activeConnection',
+  'historyOff',
+  'recentActions',
+  'recentObjects',
+];
 
 export const EXPORT_FORMAT = 'schema-commander-settings';
 export const EXPORT_VERSION = 1;
