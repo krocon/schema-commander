@@ -118,6 +118,8 @@ export class TabsStore {
   readonly focusedGroup = computed<Group>(() => this.active()?.group() ?? 0);
   /** The result fills its tab, the editor is out of sight (until asked back; not kept over a restart). */
   readonly resultMaximized = signal(false);
+  /** The tab whose name is being edited in its strip. */
+  readonly renaming = signal<string | null>(null);
   /** The tab that is dragged, for both tab strips. */
   dragged: string | null = null;
   /** What the store has to say (broken session, a file that could not be read or written). */

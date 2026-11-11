@@ -162,6 +162,8 @@ export const ACTIONS = [
     group: 'Tabs',
     scope: 'global',
   },
+  { id: 'RENAME_TAB', label: 'Rename tab', group: 'Tabs', scope: 'global' },
+  { id: 'CLOSE_OTHER_TABS', label: 'Close other tabs', group: 'Tabs', scope: 'global' },
   { id: 'NEXT_TAB', label: 'Next tab', group: 'Tabs', scope: 'global', repeat: true },
   { id: 'PREV_TAB', label: 'Previous tab', group: 'Tabs', scope: 'global', repeat: true },
   { id: 'DUPLICATE_TAB', label: 'Duplicate tab', group: 'Tabs', scope: 'global' },
@@ -308,6 +310,7 @@ export const ACTIONS = [
     repeat: true,
   },
   { id: 'OPEN_SETTINGS', label: 'Settings …', group: 'View', scope: 'global' },
+  { id: 'QUIT_APP', label: 'Quit', group: 'File', scope: 'global' },
   // Help
   { id: 'OPEN_SHORTCUTS', label: 'Edit keyboard shortcuts …', group: 'Help', scope: 'global' },
   { id: 'SHOW_SHORTCUTS', label: 'Show keyboard shortcuts', group: 'Help', scope: 'view' },

@@ -32,10 +32,11 @@
   (neben- oder übereinander), Ergebnis unten/rechts/aus/maximiert, Seitenleiste mit Ansichten Datenbank und
   Verlauf, Zen, Gruppen und Cursor in der Sitzung (Prompt 016); **Sprache** Englisch/Deutsch zur Laufzeit
   (Text-Kataloge) und **Einstellungsdialog** mit Suche, Zurücksetzen, Export/Import (Prompt 017);
+  **Menüleiste** (macOS nativ, sonst im Fenster) und **Kontextmenüs** aus einem Menümodell (Prompt 018);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–017),
+  erledigt: 001–018),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -81,6 +82,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/i18n/               i18n.ts (translatable, phrasebook, language, locale), common-texts,
                                catalogs.spec.ts (jeder Katalog vollständig in beiden Sprachen)
   app/core/history/            HistoryApi (history_*) + DTOs – spiegelt history.rs
+  app/core/menu/               MenuApi (set_app_menu, set_menu_state, subscribe_menu) + DTOs – spiegelt app_menu.rs
   app/core/schema/             SchemaApi (meta_*) + DTOs (SchemaInfo, ObjectInfo, TableInfo) – spiegelt db/meta.rs
   app/core/session/            SessionApi: session.json, Texte der Tabs, .sql lesen/schreiben
   app/core/settings/           Settings (Modell, mergeSettings), SettingsService (tauri-plugin-store)
@@ -97,6 +99,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/guard/          GuardDialog (Rückfrage), GuardService, guard-logic.ts (rein)
   app/features/history/        HistoryDialog (Listbox, Vorschau), HistoryPanel (Ansicht der Seitenleiste),
                                HistoryService (Root: aufzeichnen, blättern), history-logic.ts (rein)
+  app/features/menus/          menu-model.ts (rein: Menüs aus Aktions-Ids → Fenster / native Spec), MenuService
+                               (Root: Menüleiste, Kontextmenü), MenuBar (APG-Menubar für Windows/Linux)
   app/features/palette/        Befehlspalette (CommandPalette, palette-logic.ts rein: unscharfe Suche)
   app/features/schema/         SchemaTree (virtuelle Liste, APG-Baum), SchemaStore (Root: Zustand je Verbindung),
                                SchemaActions, schema-logic.ts (rein: Zeilen, Filter, Tasten, Vorlagen)
@@ -121,7 +125,8 @@ src-tauri/                     Rust
   src/commands.rs              dünne Command-Schicht (Verbindungen, run_query, cancel_query, Fenster, Farbschemata)
   src/session.rs               Sitzung der Tabs: session.json + tabs/<id>.sql (rein, getestet)
   src/textfile.rs              .sql lesen/schreiben mit Kodierung (UTF-8/-BOM, UTF-16, Windows-1252)
-  src/menu.rs                  macOS-Menü ohne Cmd+W (das volle Menü: Prompt 018)
+  src/menu.rs                  das Menü von macOS, solange das Fenster lädt (ohne Cmd+W)
+  src/app_menu.rs              native Menüleiste aus der MenuSpec des Fensters: Prüfung, Beschleuniger (rein, getestet)
   src/db/mod.rs                Profile, DbKind, TlsMode, Session-Trait, Laufzeit, Fehler in Worten
   src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
   src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink (rein, getestet)
@@ -159,7 +164,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   Async-Runtime-Thread; lange Arbeit mit Fortschritt und Abbruch.
 - **Reine Logik in eigenen Dateien** (Rust-Module ohne Tauri, TS ohne Angular), Tests daneben.
 - **Jede Funktion ist eine Aktion**: Id in `core/actions/action-catalog.ts`, Kürzel nur in `keymaps/*.json`,
-  Handler per `ActionService.register`. Keine eigenen `keydown`-Handler für Funktionen (Ausnahmen: Widgets nach
+  Handler per `ActionService.register`, Umschalter dazu per `registerCheck`. Jede Aktion steht in der
+  Menüleiste (`features/menus/menu-model.ts`, ein Test verlangt es); Menüs enthalten nur Aktions-Ids. Keine eigenen `keydown`-Handler für Funktionen (Ausnahmen: Widgets nach
   APG – Dialoge, Listen, Menüs, Splitter). Die Tasten des Editors (`Mod+C/V/X/A/Z`, `Mod+F`, `F3`,
   `Strg+Leertaste`) sind reserviert; einfache Tasten und AltGr-Zeichen erreichen im Editor nie eine Aktion.
 - **Sitzungen**: Jeder Tab läuft auf seiner eigenen Sitzung (`session` = Tab-Id am Command); die Sitzung der

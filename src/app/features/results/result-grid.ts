@@ -1,4 +1,15 @@
-import { Component, OnDestroy, effect, inject, input, signal, untracked } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  OnDestroy,
+  effect,
+  inject,
+  input,
+  signal,
+  untracked,
+} from '@angular/core';
+import { RESULT_MENU } from '../menus/menu-model';
+import { MenuService } from '../menus/menu.service';
 import { TableSignalComponent } from '@guiexpert/angular-table';
 import { TableApi, TableModelIf } from '@guiexpert/table';
 import { ResultRef, RowWindow } from '../../core/sql/query.models';
@@ -18,6 +29,7 @@ import { RESULTS_TEXTS } from './results-texts';
   host: {
     '(copy)': 'onCopy($event)',
     '(contextmenu)': 'onContextMenu($event)',
+    '(keydown)': 'onKey($event)',
     // font size and row height are settings (prompt 017); `ge-table-theme.css` reads them
     '[style.--result-font-size.px]': 'settings.settings().resultFontSize',
     '[style.--result-row-height.px]': 'settings.settings().resultRowHeight',
@@ -65,6 +77,8 @@ export class ResultGrid implements OnDestroy {
 
   protected readonly settings = inject(SettingsService);
   private readonly copier = inject(CopyService);
+  private readonly menus = inject(MenuService);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   /** Ends telling the copy service what is selected here. */
   private unregister: (() => void) | null = null;
   /** The options of the table on screen; a new result (or row height) gets new ones. */
@@ -112,9 +126,26 @@ export class ResultGrid implements OnDestroy {
     void this.copier.copy();
   }
 
+  /** What can be done with the selection and the result (prompt 018). */
   protected onContextMenu(event: MouseEvent): void {
     event.preventDefault();
-    this.copier.openMenu(event.clientX, event.clientY);
+    this.openMenu(event.clientX, event.clientY);
+  }
+
+  /** `Shift+F10` or the menu key: the same menu, at the top left of the grid. */
+  protected onKey(event: KeyboardEvent): void {
+    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = this.host.nativeElement.getBoundingClientRect();
+    this.openMenu(rect.left + 48, rect.top + 32);
+  }
+
+  private openMenu(x: number, y: number): void {
+    const before = document.activeElement as HTMLElement | null;
+    this.menus.openContext(RESULT_MENU, x, y, () => {
+      if (before?.isConnected) before.focus();
+    });
   }
 
   ngOnDestroy(): void {

@@ -1,0 +1,37 @@
+import type { Translation } from '../../core/i18n/i18n';
+import type { MENU_EN } from './menu-texts';
+
+export const MENU_DE: Translation<typeof MENU_EN> = {
+  appName: 'Schema Commander',
+  menuBar: 'Menüleiste',
+  file: 'Datei',
+  edit: 'Bearbeiten',
+  view: 'Ansicht',
+  query: 'Abfrage',
+  connection: 'Verbindung',
+  tools: 'Werkzeuge',
+  window: 'Fenster',
+  help: 'Hilfe',
+  copyAs: 'Ergebnis kopieren als',
+  navigation: 'Gehe zu',
+  layout: 'Geteilte Ansicht',
+  schema: 'Schema',
+  failed: (reason) => `Die Menüleiste ließ sich nicht aufbauen: ${reason}`,
+  native: {
+    about: 'Über Schema Commander',
+    services: 'Dienste',
+    hide: 'Schema Commander ausblenden',
+    hideOthers: 'Andere ausblenden',
+    showAll: 'Alle einblenden',
+    quit: 'Schema Commander beenden',
+    undo: 'Widerrufen',
+    redo: 'Wiederholen',
+    cut: 'Ausschneiden',
+    copy: 'Kopieren',
+    paste: 'Einsetzen',
+    selectAll: 'Alles auswählen',
+    minimize: 'Im Dock ablegen',
+    maximize: 'Zoomen',
+    fullscreen: 'Vollbild',
+  },
+};

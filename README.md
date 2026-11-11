@@ -31,6 +31,8 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   OS and an editor for your own shortcuts (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>S</kbd>)
 - Split view: two tab groups side by side or stacked, each tab on its own connection; the result below or beside
   the editor, hidden or maximised; the sidebar shows connections and schema or the history; a zen mode
+- A menu bar (native on macOS, drawn by the window on Windows and Linux) and context menus on tabs, results
+  and connections – all made of the same actions, with their current shortcuts
 - English and German, switchable while the app runs; a settings dialog with search, reset per value, export
   and import (<kbd>Ctrl/⌘</kbd>+<kbd>,</kbd>)
 - Layout, tab groups, caret positions, colour scheme and window position survive a restart
