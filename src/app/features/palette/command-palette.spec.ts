@@ -8,6 +8,7 @@ import {
   FakeFileDialogApi,
   FakeHistoryApi,
   FakeQueryApi,
+  FakeSavedApi,
   FakeSchemaApi,
   FakeSessionApi,
 } from '../../../testing/fake-apis';
@@ -16,6 +17,7 @@ import { FileDialogApi } from '../../core/backend/file-dialog-api';
 import { ConnectionsApi } from '../../core/connections/connections-api';
 import { ConnectionsStore } from '../../core/connections/connections.store';
 import { HistoryApi } from '../../core/history/history-api';
+import { SavedApi } from '../../core/saved/saved-api';
 import { SchemaApi } from '../../core/schema/schema-api';
 import { SessionApi } from '../../core/session/session-api';
 import { QueryApi } from '../../core/sql/query-api';
@@ -24,10 +26,12 @@ import { TabsStore } from '../tabs/tabs.store';
 import { CommandPalette } from './command-palette';
 
 const schema = { api: new FakeSchemaApi(), clipboard: new FakeClipboardApi() };
+const saved = { api: new FakeSavedApi(), session: new FakeSessionApi() };
 const providers = () => [
   { provide: SchemaApi, useValue: schema.api },
   { provide: ClipboardApi, useValue: schema.clipboard },
-  { provide: SessionApi, useValue: new FakeSessionApi() },
+  { provide: SessionApi, useValue: saved.session },
+  { provide: SavedApi, useValue: saved.api },
   { provide: FileDialogApi, useValue: new FakeFileDialogApi() },
   { provide: ConnectionsApi, useValue: new FakeConnectionsApi() },
   { provide: QueryApi, useValue: new FakeQueryApi() },
@@ -123,6 +127,8 @@ describe('go to anything (prompt 020)', () => {
   beforeEach(() => {
     TestBed.resetTestingModule();
     schema.api = new FakeSchemaApi();
+    saved.api = new FakeSavedApi();
+    saved.session = new FakeSessionApi();
     const proto = HTMLDialogElement.prototype as unknown as Record<string, unknown>;
     proto['showModal'] = function (this: HTMLDialogElement) {
       this.setAttribute('open', '');
@@ -187,7 +193,7 @@ describe('go to anything (prompt 020)', () => {
     expect(el.querySelector('li .where')?.textContent).toContain('Verbindung');
     expect(schema.api.nameQueries.length).toBe(asked);
     await type('q:x');
-    expect(status()).toBe('Gespeicherte Abfragen gibt es noch nicht.');
+    expect(status()).toBe('Keine gespeicherte Abfrage passt.');
     await type('zzzz');
     expect(status()).toBe('Nichts passt.');
   });
@@ -245,6 +251,26 @@ describe('go to anything (prompt 020)', () => {
     await type('bestell');
     await key('Enter');
     expect(tabs.active()?.title()).toBe('Offene Bestellungen');
+  });
+
+  it('finds saved queries behind q: and opens, inserts or runs them (prompt 024)', async () => {
+    saved.api.outside('reports/Umsatz.sql', 'Umsatz je Monat', 'select sum(total) from orders');
+    saved.api.outside('Kunden.sql', 'Kunden in Köln', 'select * from kunden');
+    saved.session.disk.set('/queries/Kunden.sql', {
+      text: '-- name: Kunden in Köln\n\nselect * from kunden',
+      encoding: 'utf-8',
+    });
+    const { type, key, labels, tabs, el } = await open();
+    await type('q:');
+    expect(labels()).toEqual(['Kunden in Köln', 'Umsatz je Monat']);
+    expect(el.querySelector('.keys')?.textContent).toContain('öffnen und ausführen');
+    await type('q: köln');
+    expect(labels()).toEqual(['Kunden in Köln']);
+    await key('Enter');
+    await new Promise((r) => setTimeout(r, 0));
+    // the file of the query is a tab now
+    expect(tabs.active()?.filePath()).toBe('/queries/Kunden.sql');
+    expect(TestBed.inject(SettingsService).settings().recentSaved).toEqual(['Kunden.sql']);
   });
 
   it('changes to the commands with > and back with Backspace in the empty field', async () => {

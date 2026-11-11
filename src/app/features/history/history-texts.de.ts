@@ -20,6 +20,7 @@ export const HISTORY_DE: Translation<typeof HISTORY_EN> = {
   copy: 'Kopieren',
   inNewTab: 'In neuem Tab',
   runAgain: 'Erneut ausführen',
+  saveAsQuery: 'Als Abfrage speichern …',
   insert: 'Einfügen',
   clearTitle: 'Verlauf löschen',
   clearConnection: (name) => `Alle Einträge der Verbindung „${name}“ werden endgültig gelöscht.`,

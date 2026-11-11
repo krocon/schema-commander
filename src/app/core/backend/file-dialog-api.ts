@@ -20,6 +20,8 @@ export abstract class FileDialogApi {
     defaultName: string,
     filters: readonly FileFilter[],
   ): Promise<string | null>;
+  /** The chosen folder, `null` = cancelled. */
+  abstract openFolder(title: string): Promise<string | null>;
 }
 
 const plain = (filters: readonly FileFilter[]) =>
@@ -45,5 +47,11 @@ export class TauriFileDialogApi extends FileDialogApi {
   ): Promise<string | null> {
     if (!isTauri()) return null;
     return (await save({ title, defaultPath: defaultName, filters: plain(filters) })) ?? null;
+  }
+
+  async openFolder(title: string): Promise<string | null> {
+    if (!isTauri()) return null;
+    const chosen = await open({ title, multiple: false, directory: true });
+    return typeof chosen === 'string' ? chosen : null;
   }
 }

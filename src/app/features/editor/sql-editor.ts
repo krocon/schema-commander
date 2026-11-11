@@ -20,6 +20,8 @@ import { ThemeService } from '../../core/theme/theme.service';
 import { FormatMode } from '../../core/format/format-api';
 import { CompletionService, LINES_AFTER, LINES_BEFORE } from '../completion/completion.service';
 import { FormatService } from '../format/format.service';
+import { SchemaStore } from '../schema/schema.store';
+import { snippetsFor } from '../snippets/snippet-logic';
 import {
   EdPlace,
   FormatOutcome,
@@ -104,6 +106,7 @@ export class SqlEditor implements OnInit {
   private readonly theme = inject(ThemeService);
   private readonly completion = inject(CompletionService);
   private readonly formatter = inject(FormatService);
+  private readonly schema = inject(SchemaStore);
   /** Font, tab width, wrapping … of every editor are settings (prompt 017). */
   protected readonly look = inject(SettingsService).settings;
   /** The editor's own texts (search bar, menus) follow the language of the window. */
@@ -150,6 +153,28 @@ export class SqlEditor implements OnInit {
     effect(() => {
       if (this.editor()) this.seed();
     });
+    // snippets (prompt 024): the built-in ones of the dialect and the user's own; `$TABLE` and `$SCHEMA`
+    // are what is under the cursor of the schema tree, as long as the tree shows this editor's connection
+    effect(() => {
+      const editor = this.editor()?.nativeElement;
+      if (!editor) return;
+      if (this.readonly()) {
+        editor.snippets = null;
+        return;
+      }
+      const row =
+        this.schema.connectionId() === this.connectionId() ? this.schema.activeRow() : null;
+      const table =
+        row?.object && row.schema
+          ? row.schema.current
+            ? row.object.quoted
+            : `${row.schema.quoted}.${row.object.quoted}`
+          : null;
+      editor.snippets = snippetsFor(this.dialect(), this.look().snippets, {
+        table,
+        schema: row?.schema?.quoted ?? null,
+      });
+    });
     // the completion that knows the schema (prompt 021): asked by the editor, answered by the service
     effect(() => {
       const editor = this.editor()?.nativeElement;
@@ -186,6 +211,11 @@ export class SqlEditor implements OnInit {
     // before the start text is in, the start text is the text
     if (!editor || !this.seededDone) return Promise.resolve(this.initialValue());
     return editor.getValue();
+  }
+
+  /** The selected text; `''` when nothing is selected. */
+  async selectedText(): Promise<string> {
+    return (await this.editor()?.nativeElement.getSelection())?.text ?? '';
   }
 
   async setText(text: string): Promise<void> {

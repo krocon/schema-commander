@@ -1,0 +1,47 @@
+import type { Translation } from '../../core/i18n/i18n';
+import type { SAVED_EN } from './saved-texts';
+
+export const SAVED_DE: Translation<typeof SAVED_EN> = {
+  search: 'Gespeicherte Abfragen durchsuchen',
+  tree: 'Gespeicherte Abfragen',
+  empty:
+    'Noch keine gespeicherten Abfragen. „Als Abfrage speichern …“ legt den Text eines Tabs hier ab.',
+  nothingFound: 'Keine gespeicherte Abfrage passt.',
+  reading: 'Lese …',
+  truncated: 'In diesem Ordner liegen mehr Dateien, als gezeigt werden.',
+  folderCount: (n) => (n === 1 ? '1 Abfrage' : `${n} Abfragen`),
+  open: 'Öffnen',
+  openHint: 'In neuem Tab öffnen (Enter)',
+  insert: 'Einfügen',
+  insertHint: 'In den Editor einfügen (Alt+Enter)',
+  run: 'Ausführen',
+  runHint: 'In neuem Tab öffnen und ausführen (Strg/Cmd+Enter)',
+  edit: 'Eigenschaften …',
+  delete: 'Löschen',
+  deleteTitle: 'Gespeicherte Abfrage löschen',
+  deleteQuestion: (name) =>
+    `„${name}“ kommt in den Papierkorb des Systems. Von dort lässt sie sich zurückholen.`,
+  folder: 'Ordner der gespeicherten Abfragen',
+  chooseFolder: 'Ordner wählen …',
+  defaultFolder: 'Vorgegebenen Ordner nutzen',
+  folderGone:
+    'Der Ordner der gespeicherten Abfragen ist nicht mehr da; der vorgegebene Ordner wird genutzt.',
+  saved: (name) => `„${name}“ wurde gespeichert.`,
+  nothingToSave: 'Es gibt keinen Text zum Speichern.',
+  saveTitle: 'Als Abfrage speichern',
+  editTitle: 'Eigenschaften der gespeicherten Abfrage',
+  name: 'Name',
+  folderField: 'Ordner',
+  folderHint: 'Leer = der oberste Ordner; a/b = Ordner b in Ordner a. Neue Ordner werden angelegt.',
+  description: 'Beschreibung',
+  tags: 'Schlagworte',
+  tagsHint: 'Durch Kommas getrennt.',
+  bind: (connection) => `Gehört zur Verbindung „${connection}“`,
+  bindNone: 'Gehört zu einer Verbindung',
+  bindHint: 'Von hier geöffnet, beginnt die Abfrage auf dieser Verbindung.',
+  save: 'Speichern',
+  nameMissing: 'Eine gespeicherte Abfrage braucht einen Namen.',
+  folderInvalid: 'Das ist kein Ordnername.',
+  preview: 'Vorschau',
+  boundTo: (connection) => `Verbindung: ${connection}`,
+};

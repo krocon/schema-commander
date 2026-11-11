@@ -30,6 +30,8 @@ export const APP_DE: Translation<typeof APP_EN> = {
   database: 'Datenbank',
   historyHint: 'Zuletzt ausgeführte Anweisungen',
   history: 'Verlauf',
+  savedHint: 'Gespeicherte Abfragen',
+  saved: 'Abfragen',
   sidebarWidth: 'Breite der Seitenleiste',
   revealExport: 'Im Dateimanager zeigen',
   dismissExport: 'Meldung des Exports schließen',

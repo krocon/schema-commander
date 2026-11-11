@@ -11,11 +11,13 @@ export const PALETTE_EN = {
   count: (n: number) => (n === 1 ? '1 command' : `${n} commands`),
   gotoTitle: 'Go to anything',
   gotoSearch: 'Search tables, views, routines, tabs and connections',
-  gotoPlaceholder: 'Go to … (t: tables, c: columns, f: routines, @ connections, > commands)',
+  gotoPlaceholder:
+    'Go to … (t: tables, c: columns, f: routines, q: saved queries, @ connections, > commands)',
   gotoList: 'Hits',
   gotoNone: 'Nothing matches.',
   gotoReading: 'Reading the names of the database …',
-  gotoNoSaved: 'There are no saved queries yet.',
+  gotoNoSaved: 'No saved query matches.',
+  gotoSavedKeys: 'Enter: open · Alt+Enter: insert the text · Ctrl/⌘+Enter: open and run',
   gotoCount: (n: number) => (n === 1 ? '1 hit' : `${n} hits`),
   gotoCountOf: (shown: number, all: number) => `${shown} of ${all} hits – type more to narrow them`,
   gotoKeys:
@@ -29,6 +31,7 @@ export const PALETTE_EN = {
     column: 'Column',
     tab: 'Open tab',
     connection: 'Connection',
+    saved: 'Saved query',
   },
   /** The sign in front of a hit. */
   icons: {
@@ -40,6 +43,7 @@ export const PALETTE_EN = {
     column: 'c',
     tab: '▭',
     connection: '@',
+    saved: 'Q',
   },
 };
 

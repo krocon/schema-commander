@@ -30,6 +30,8 @@ export interface TabEditor {
   /** Puts the caret at a line and column (both from 1) and shows the place. */
   goTo(line: number, ch: number): Promise<void>;
   getText(): Promise<string>;
+  /** The selected text; `''` = nothing selected. */
+  selectedText(): Promise<string>;
   setText(text: string): Promise<void>;
   focus(): void;
   /** Puts text where the caret is (over the selection); a snippet has placeholders to tab through. */
@@ -205,6 +207,11 @@ export class QueryTab {
   /** The text of the editor; `null` while the tab has none (never shown). */
   text(): Promise<string | null> {
     return this.editor ? this.editor.getText() : Promise.resolve(null);
+  }
+
+  /** The selected text of the editor; `''` when nothing is selected or the editor is not on screen. */
+  selectedText(): Promise<string> {
+    return this.editor?.selectedText() ?? Promise.resolve('');
   }
 
   focus(): void {

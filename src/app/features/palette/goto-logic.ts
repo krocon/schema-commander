@@ -6,7 +6,7 @@ import { fuzzyMatch } from './palette-logic';
  * knows (open tabs, connections), and what a key does with a hit. The objects of the database are searched
  * by the backend (`db/names.rs`).
  */
-export type GotoKind = NameKind | 'tab' | 'connection';
+export type GotoKind = NameKind | 'tab' | 'connection' | 'saved';
 
 /** A hit of the list, whatever it is. */
 export interface GotoHit {
@@ -35,7 +35,7 @@ export interface GotoScope {
   readonly connections: boolean;
   /** The text for the local sources (without its prefix). */
   readonly text: string;
-  /** `q:` – saved queries; there are none yet. */
+  /** `q:` – saved queries (prompt 024). */
   readonly saved: boolean;
 }
 
@@ -83,7 +83,7 @@ export interface LocalItem {
 
 /** Tabs or connections that match, the best first; without a text all of them, as given. */
 export function localHits(
-  kind: 'tab' | 'connection',
+  kind: 'tab' | 'connection' | 'saved',
   items: readonly LocalItem[],
   text: string,
 ): GotoHit[] {
@@ -160,6 +160,8 @@ export function variantOf(event: {
 /** Whether a variant makes sense for a hit; the usual thing always does. */
 export function allowsVariant(hit: GotoHit, variant: GotoVariant): boolean {
   if (variant === 'default') return true;
+  // a saved query: put its text into the editor, or open and run it
+  if (hit.kind === 'saved') return variant === 'insert' || variant === 'select';
   if (!hit.object) return false;
   const kind = hit.object.kind;
   const relation = kind === 'table' || kind === 'view' || kind === 'matview';

@@ -153,6 +153,8 @@ const LOCAL_KEYS: readonly string[] = [
   'historyOff',
   'recentActions',
   'recentObjects',
+  'savedQueriesDir',
+  'recentSaved',
 ];
 
 export const EXPORT_FORMAT = 'schema-commander-settings';

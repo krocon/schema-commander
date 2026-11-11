@@ -7,6 +7,7 @@ import {
   effect,
   inject,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { ImportDialog } from './features/connections/import-dialog';
@@ -29,6 +30,11 @@ import { ExportDialog } from './features/export/export-dialog';
 import { ExportService } from './features/export/export.service';
 import { FormatMode } from './core/format/format-api';
 import { FormatService } from './features/format/format.service';
+import { SavedDialog } from './features/saved/saved-dialog';
+import { nameFromText } from './features/saved/saved-logic';
+import { SavedPanel } from './features/saved/saved-panel';
+import { SavedStore } from './features/saved/saved.store';
+import { SnippetDialog } from './features/snippets/snippet-dialog';
 import { FORMAT_TEXTS } from './features/format/format-texts';
 import { CopyService } from './features/results/copy.service';
 import { ConfirmDialog, ConfirmRequest, ConfirmService } from './shared/confirm';
@@ -45,7 +51,9 @@ import { txOpen, txStatus } from './features/tabs/tx-logic';
 import { ActionService } from './core/actions/action.service';
 import { DEMO_ID, Profile, emptyProfile } from './core/connections/connection.models';
 import { ConnectionsStore } from './core/connections/connections.store';
-import { DEFAULT_SETTINGS, SidebarView } from './core/settings/settings.models';
+import { DEFAULT_SETTINGS, SIDEBAR_VIEWS, SidebarView } from './core/settings/settings.models';
+import { FileDialogApi } from './core/backend/file-dialog-api';
+import { SAVED_TEXTS } from './features/saved/saved-texts';
 import { SettingsService } from './core/settings/settings.service';
 import { ThemeService } from './core/theme/theme.service';
 import { ConnectionDialog } from './features/connections/connection-dialog';
@@ -92,6 +100,9 @@ const SIDEBAR_MIN = 140;
     PasswordDialog,
     SchemaTree,
     QueryPane,
+    SavedDialog,
+    SavedPanel,
+    SnippetDialog,
     DetailsDialog,
     MenuBar,
     SettingsDialog,
@@ -244,6 +255,19 @@ const SIDEBAR_MIN = 140;
             >
               {{ t.history }}
             </button>
+            <button
+              type="button"
+              role="tab"
+              id="view-saved"
+              aria-controls="sidebar-view"
+              [attr.aria-selected]="view === 'saved'"
+              [tabindex]="view === 'saved' ? 0 : -1"
+              [title]="t.savedHint + actions.hint('SIDEBAR_SAVED')"
+              (click)="actions.run('SIDEBAR_SAVED')"
+              (keydown)="onViewKey($event)"
+            >
+              {{ t.saved }}
+            </button>
           </div>
           <div
             id="sidebar-view"
@@ -253,6 +277,8 @@ const SIDEBAR_MIN = 140;
           >
             @if (view === 'history') {
               <app-history-panel />
+            } @else if (view === 'saved') {
+              <app-saved-panel />
             } @else {
               <app-connection-list class="connections" (edit)="connectionDialog.set($event)" />
               <app-schema-tree />
@@ -432,13 +458,23 @@ const SIDEBAR_MIN = 140;
     }
     @if (paletteOpen(); as mode) {
       @defer (on immediate) {
-        <app-command-palette [start]="mode" (closed)="paletteOpen.set(null)" />
+        <app-command-palette
+          [start]="mode"
+          [initial]="paletteQuery()"
+          (closed)="paletteOpen.set(null)"
+        />
       }
     }
     @if (objectDetails.current()) {
       @defer (on immediate) {
         <app-details-dialog />
       }
+    }
+    @if (saved.request()) {
+      <app-saved-dialog />
+    }
+    @if (snippetsOpen()) {
+      <app-snippet-dialog (closed)="snippetsOpen.set(false)" />
     }
     @if (settingsOpen()) {
       @defer (on immediate) {
@@ -477,6 +513,9 @@ export class App implements OnInit, OnDestroy {
   protected readonly connectionDialog = signal<Profile | null>(null);
   /** The palette is open: as the commands, or as „go to anything“ (prompt 020). */
   protected readonly paletteOpen = signal<'commands' | 'goto' | null>(null);
+  /** What the palette starts with (`q: ` for the saved queries). */
+  protected readonly paletteQuery = signal('');
+  protected readonly snippetsOpen = signal(false);
   protected readonly importOpen = signal(false);
   /** The shortcut editor, `read` as an overview. */
   protected readonly shortcutsOpen = signal<'edit' | 'read' | null>(null);
@@ -539,6 +578,8 @@ export class App implements OnInit, OnDestroy {
   protected readonly badge = computed(() => badgeText(this.connections.active()));
   protected readonly exporter = inject(ExportService);
   protected readonly formatter = inject(FormatService);
+  protected readonly saved = inject(SavedStore);
+  private readonly fileDialogs = inject(FileDialogApi);
   protected readonly formatTexts = FORMAT_TEXTS;
   protected readonly confirm = inject(ConfirmService);
   /** The formats of "copy as", the one used last on top. */
@@ -577,6 +618,15 @@ export class App implements OnInit, OnDestroy {
       measure();
       this.observer = new ResizeObserver(measure);
       this.observer.observe(element);
+    });
+    // what the saved queries have to tell goes where every notice goes
+    effect(() => {
+      const told = this.saved.notice();
+      if (told === null) return;
+      untracked(() => {
+        this.ownNotice.set(told);
+        this.saved.notice.set(null);
+      });
     });
   }
 
@@ -930,8 +980,14 @@ export class App implements OnInit, OnDestroy {
         },
         COLOR_SCHEME: () => this.theme.pickerOpen.set(true),
         EDIT_COLOR_SCHEME: () => this.editCurrentScheme(),
-        OPEN_PALETTE: () => this.paletteOpen.set('commands'),
-        GOTO_ANYTHING: () => this.paletteOpen.set('goto'),
+        OPEN_PALETTE: () => this.openPalette('commands'),
+        GOTO_ANYTHING: () => this.openPalette('goto'),
+        GOTO_SAVED: () => this.openPalette('goto', 'q: '),
+        SIDEBAR_SAVED: () => this.showSidebarView('saved'),
+        SAVE_QUERY: () => void this.saveQuery(),
+        SAVED_FOLDER: () => void this.chooseSavedFolder(),
+        SAVED_DEFAULT_FOLDER: () => void this.saved.useFolder(null),
+        OPEN_SNIPPETS: () => this.snippetsOpen.set(true),
         OPEN_SETTINGS: () => this.settingsOpen.set(true),
         OPEN_SHORTCUTS: () => this.shortcutsOpen.set('edit'),
         SHOW_SHORTCUTS: () => this.shortcutsOpen.set('read'),
@@ -955,6 +1011,25 @@ export class App implements OnInit, OnDestroy {
     setTimeout(() => this.tabs.active()?.focus(), 50);
   }
 
+  private openPalette(mode: 'commands' | 'goto', query = ''): void {
+    this.paletteQuery.set(query);
+    this.paletteOpen.set(mode);
+  }
+
+  /** The selection of the tab in front, else its whole text, becomes a saved query (prompt 024). */
+  private async saveQuery(): Promise<void> {
+    const tab = this.tabs.active();
+    if (!tab) return;
+    const selection = await tab.selectedText();
+    const text = selection.trim() !== '' ? selection : ((await tab.text()) ?? '');
+    this.saved.ask(text, nameFromText(text));
+  }
+
+  private async chooseSavedFolder(): Promise<void> {
+    const path = await this.fileDialogs.openFolder(SAVED_TEXTS.folder);
+    if (path !== null) await this.saved.useFolder(path);
+  }
+
   private showSidebarView(view: SidebarView): void {
     this.zen.set(false);
     this.settings.update({ sidebarVisible: true, sidebarView: view });
@@ -966,14 +1041,14 @@ export class App implements OnInit, OnDestroy {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
     const now = this.settings.settings().sidebarView;
+    const at = SIDEBAR_VIEWS.indexOf(now);
+    const n = SIDEBAR_VIEWS.length;
     const view: SidebarView =
       event.key === 'Home'
-        ? 'database'
+        ? SIDEBAR_VIEWS[0]
         : event.key === 'End'
-          ? 'history'
-          : now === 'database'
-            ? 'history'
-            : 'database';
+          ? SIDEBAR_VIEWS[n - 1]
+          : SIDEBAR_VIEWS[(at + (event.key === 'ArrowRight' ? 1 : n - 1)) % n];
     this.settings.update({ sidebarView: view });
     setTimeout(() => document.getElementById(`view-${view}`)?.focus());
   }
@@ -1010,6 +1085,7 @@ export class App implements OnInit, OnDestroy {
       TOGGLE_COPY_HEADER: () => s().copyHeader,
       SIDEBAR_DATABASE: () => s().sidebarView === 'database',
       SIDEBAR_HISTORY: () => s().sidebarView === 'history',
+      SIDEBAR_SAVED: () => s().sidebarView === 'saved',
     };
     return Object.entries(checks).map(([id, on]) =>
       this.actions.registerCheck(id as ActionId, on as () => boolean),
