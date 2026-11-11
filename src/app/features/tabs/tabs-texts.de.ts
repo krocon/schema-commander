@@ -2,6 +2,14 @@ import type { Translation } from '../../core/i18n/i18n';
 import type { TABS_EN } from './tabs-texts';
 
 export const TABS_DE: Translation<typeof TABS_EN> = {
+  errorCode: 'Code',
+  errorDetail: 'Detail',
+  errorHint: 'Hinweis',
+  errorContext: 'Kontext',
+  errorObject: 'Objekt',
+  errorGoTo: 'Zur Stelle',
+  errorCopy: 'Meldung kopieren',
+  errorShowTable: (table) => `Details zu ${table}`,
   editorLabel: (title) => `SQL-Editor: ${title}`,
   loadingText: 'Text wird geladen …',
   resultWidth: 'Breite des Ergebnisbereichs',

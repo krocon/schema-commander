@@ -5,6 +5,7 @@ export type {
   EdCaret,
   EdChange,
   EditliciousEditorElement,
+  Marker,
 } from 'editlicious-editor';
 
 /**

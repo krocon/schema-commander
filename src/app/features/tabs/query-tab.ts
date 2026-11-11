@@ -3,7 +3,7 @@ import { GuardAnswer, GuardedStatement, needingConfirmation } from '../guard/gua
 import type { RanStatement } from '../history/history.service';
 import { computed, signal } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
-import { describeError, toAppError } from '../../core/errors/app-error';
+import { ErrorDetails, describeError, toAppError } from '../../core/errors/app-error';
 import { TabMeta } from '../../core/session/session-api';
 import { Group, restoreGroup } from './layout-logic';
 import { QueryApi } from '../../core/sql/query-api';
@@ -38,6 +38,21 @@ export interface TabEditor {
   runScript(): Promise<void>;
   /** Writes out the `*` at the caret as its columns; resolves with whether it did. */
   expandStar(): Promise<boolean>;
+  /**
+   * Marks in the text (prompt 022). `statements` is the list a run was started with: the editor knows
+   * where each of its statements stands. `markRunning(…, null)` ends the mark of the running statement.
+   */
+  clearMarks(): void;
+  markRunning(statements: readonly string[], index: number | null): void;
+  markError(
+    statements: readonly string[],
+    index: number,
+    message: string,
+    details: ErrorDetails | null,
+    jump: boolean,
+  ): void;
+  /** Puts the caret on the place of the error that is marked, if there is one. */
+  goToError(): void;
 }
 
 /** The services a tab works with (handed in by the `TabsStore`, tabs are no injectables). */
@@ -201,6 +216,11 @@ export class QueryTab {
     void this.editor?.runCurrent();
   }
 
+  /** The caret goes to the place of the error that is marked in the text. */
+  goToError(): void {
+    this.editor?.goToError();
+  }
+
   /** `*` at the caret → the columns it stands for; `false` when there is nothing to write out. */
   expandStar(): Promise<boolean> {
     return this.editor?.expandStar() ?? Promise.resolve(false);
@@ -280,6 +300,9 @@ export class QueryTab {
     let kept = 0;
     const succeeded: string[] = [];
     let stop: 'failed' | 'cancelled' | null = null;
+    // the marks of the last run go; the statement that runs is shown in the text (prompt 022)
+    let jumped = false;
+    this.editor?.clearMarks();
     try {
       for (let index = 0; index < sqls.length && latest(); index++) {
         const sql = sqls[index];
@@ -288,6 +311,7 @@ export class QueryTab {
           continue;
         }
         set(index, { kind: 'running' });
+        this.editor?.markRunning(statements, index);
         this.runningOn = connection;
         const started = Date.now();
         try {
@@ -373,13 +397,30 @@ export class QueryTab {
             set(index, { kind: 'cancelled', elapsedMs });
             stop = 'cancelled';
           } else {
-            set(index, { kind: 'failed', message: describeError(error), elapsedMs });
+            set(index, {
+              kind: 'failed',
+              message: describeError(error),
+              details: error.details ?? null,
+              elapsedMs,
+            });
+            // the place in the text: the first failure of a run takes the caret there
+            if (latest()) {
+              this.editor?.markError(
+                statements,
+                index,
+                describeError(error),
+                error.details ?? null,
+                !jumped,
+              );
+              jumped = true;
+            }
             if (options.stopOnError) stop = 'failed';
           }
         }
         if (latest()) this.note(index, started);
       }
     } finally {
+      if (latest()) this.editor?.markRunning(statements, null);
       if (succeeded.length > 0) this.services.ran?.(connection, succeeded);
       if (latest()) {
         this.runningOn = null;

@@ -57,8 +57,49 @@ describe('QueryTab', () => {
       kind: 'failed',
       sql: 'selec 1',
       message: 'Die Anweisung ist ungültig. near "selec": syntax error',
+      details: null,
     });
     expect(store.state('demo').kind).toBe('open');
+  });
+
+  it('marks in the text what runs and where it failed (prompt 022)', async () => {
+    const marks: string[] = [];
+    tab.attach({
+      clearMarks: () => void marks.push('clear'),
+      markRunning: (statements: readonly string[], index: number | null) =>
+        void marks.push(index === null ? 'running: none' : `running: ${statements[index]}`),
+      markError: (
+        statements: readonly string[],
+        index: number,
+        message: string,
+        details: unknown,
+        jump: boolean,
+      ) =>
+        void marks.push(`error: ${statements[index]} | ${JSON.stringify(details)} | jump ${jump}`),
+    } as never);
+    api.error = {
+      code: 'invalid_query',
+      message: 'column "nmae" does not exist (42703)',
+      details: { sqlstate: '42703', position: 8, hint: 'Perhaps you meant "name".' },
+    } as never;
+    const statements = ['select nmae from t', 'select 2'];
+    await tab.runAll(statements);
+    expect(marks).toEqual([
+      'clear',
+      'running: select nmae from t',
+      'error: select nmae from t | {"sqlstate":"42703","hint":"Perhaps you meant \\"name\\".","position":8} | jump true',
+      'running: none',
+    ]);
+    // the result area has the parts of the message apart
+    expect(tab.state()).toMatchObject({
+      kind: 'failed',
+      details: { sqlstate: '42703', hint: 'Perhaps you meant "name".' },
+    });
+    // the next run starts with a clean text
+    api.error = null;
+    marks.length = 0;
+    await tab.run('select 1');
+    expect(marks).toEqual(['clear', 'running: select 1', 'running: none']);
   });
 
   it('says why when the connection cannot be opened', async () => {

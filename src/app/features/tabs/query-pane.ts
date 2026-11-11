@@ -22,6 +22,9 @@ import { Dialect } from '../editor/sql-split';
 import { ResultGrid } from '../results/result-grid';
 import { QueryTab, TabEditor } from './query-tab';
 import { StatementRun, clock, outcomeText, statusText } from './run-state';
+import { ObjectDetailsService } from '../details/details.service';
+import { CopyService } from '../results/copy.service';
+import { errorObjectText, errorReport } from './run-state';
 import { TabsStore } from './tabs.store';
 import { TABS_TEXTS } from './tabs-texts';
 
@@ -156,7 +159,43 @@ const EDITOR_MIN_W = 160;
               }
             }
             @case ('failed') {
-              <p class="message error" role="alert">{{ errorMessage() }}</p>
+              <!-- the message of the server in full, its parts apart (prompt 022) -->
+              <div class="failure" role="alert">
+                <p class="what">{{ errorMessage() }}</p>
+                @if (errorDetails(); as d) {
+                  <dl>
+                    @if (d.sqlstate) {
+                      <dt>{{ t.errorCode }}</dt>
+                      <dd>{{ d.sqlstate }}</dd>
+                    }
+                    @if (d.detail) {
+                      <dt>{{ t.errorDetail }}</dt>
+                      <dd>{{ d.detail }}</dd>
+                    }
+                    @if (d.hint) {
+                      <dt>{{ t.errorHint }}</dt>
+                      <dd>{{ d.hint }}</dd>
+                    }
+                    @if (d.context) {
+                      <dt>{{ t.errorContext }}</dt>
+                      <dd>{{ d.context }}</dd>
+                    }
+                    @if (errorObject(); as o) {
+                      <dt>{{ t.errorObject }}</dt>
+                      <dd>{{ o }}</dd>
+                    }
+                  </dl>
+                }
+                <p class="acts">
+                  <button type="button" (click)="tab().goToError()">{{ t.errorGoTo }}</button>
+                  <button type="button" (click)="copyError()">{{ t.errorCopy }}</button>
+                  @if (errorDetails()?.table; as table) {
+                    <button type="button" (click)="showErrorTable()">
+                      {{ t.errorShowTable(table) }}
+                    </button>
+                  }
+                </p>
+              </div>
             }
             @case ('running') {
               <!-- rows are shown as soon as there are some, while the rest is still read -->
@@ -286,6 +325,50 @@ const EDITOR_MIN_W = 160;
       padding: 12px 16px;
       color: var(--text-dim);
     }
+    .failure {
+      padding: 10px 16px;
+      background: var(--error-bg);
+      color: var(--error-fg);
+      border-left: 3px solid var(--error-edge);
+      /* the message can be marked and copied by hand too */
+      user-select: text;
+      -webkit-user-select: text;
+    }
+    .failure .what {
+      margin: 0;
+      font-family: var(--font-mono);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .failure dl {
+      display: grid;
+      grid-template-columns: max-content minmax(0, 1fr);
+      gap: 2px 12px;
+      margin: 8px 0 0;
+      font-size: 12px;
+    }
+    .failure dt {
+      font-weight: 600;
+    }
+    .failure dd {
+      margin: 0;
+      font-family: var(--font-mono);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .failure .acts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 10px 0 0;
+    }
+    .failure button {
+      padding: 1px 10px;
+      border: 1px solid var(--error-edge);
+      border-radius: var(--radius);
+      background: transparent;
+      color: inherit;
+    }
     .message.error {
       background: var(--error-bg);
       color: var(--error-fg);
@@ -300,6 +383,8 @@ export class QueryPane implements OnInit, OnDestroy {
   private readonly tabs = inject(TabsStore);
   protected readonly settings = inject(SettingsService);
   private readonly connections = inject(ConnectionsStore);
+  private readonly copier = inject(CopyService);
+  private readonly objectDetails = inject(ObjectDetailsService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   readonly tab = input.required<QueryTab>();
@@ -335,6 +420,16 @@ export class QueryPane implements OnInit, OnDestroy {
   protected readonly errorMessage = computed(() => {
     const s = this.state();
     return s.kind === 'failed' ? s.message : '';
+  });
+  /** What the database said beyond the message; `null` for an error of the app or without any. */
+  protected readonly errorDetails = computed(() => {
+    const s = this.state();
+    return s.kind === 'failed' ? s.details : null;
+  });
+  /** The object an error names: `schema.table.column`, and the constraint that was violated. */
+  protected readonly errorObject = computed(() => {
+    const d = this.errorDetails();
+    return d ? errorObjectText(d) : '';
   });
 
   // The height is stored when a drag ends; in between the drag signal holds it.
@@ -375,6 +470,11 @@ export class QueryPane implements OnInit, OnDestroy {
     runCurrent: () => this.editor()?.runCurrent() ?? Promise.resolve(),
     runScript: () => this.editor()?.runScript() ?? Promise.resolve(),
     expandStar: () => this.editor()?.expandStar() ?? Promise.resolve(false),
+    clearMarks: () => this.editor()?.clearMarks(),
+    markRunning: (statements, index) => void this.editor()?.markRunning(statements, index),
+    markError: (statements, index, message, details, jump) =>
+      void this.editor()?.markError(statements, index, message, details, jump),
+    goToError: () => void this.editor()?.goToError(),
   };
 
   constructor() {
@@ -451,6 +551,26 @@ export class QueryPane implements OnInit, OnDestroy {
   protected onSeeded(): void {
     const at = this.tab().takeStartCaret();
     if (at) void this.editor()?.goTo(at.line, at.ch);
+  }
+
+  /** The error as text: what one sends to a colleague. */
+  protected copyError(): void {
+    const s = this.state();
+    if (s.kind !== 'failed') return;
+    void this.copier.copyText(errorReport(s.message, s.details, s.sql, this.t));
+  }
+
+  /** The table an error names, in the object details (prompt 019). */
+  protected showErrorTable(): void {
+    const d = this.errorDetails();
+    if (!d?.table) return;
+    this.objectDetails.open({
+      connectionId: this.tab().connectionId(),
+      schema: d.schema ?? '',
+      name: d.table,
+      kind: 'table',
+      detail: '',
+    });
   }
 
   protected onChanged(change: EdChange): void {
