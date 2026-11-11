@@ -18,6 +18,9 @@
 //! `*`/`?` and negation `!`, `[host]:port` for ports other than 22, hashed hosts `|1|salt|hash`
 //! (HMAC-SHA1), host names compared in lower case, markers `@revoked` and `@cert-authority`.
 
+// kept as in log-commander, so both stay in step
+#![allow(clippy::collapsible_if)]
+
 use data_encoding::BASE64;
 use hmac::{Hmac, KeyInit, Mac};
 use russh::keys::PublicKey;

@@ -33,7 +33,33 @@ export function groupProfiles(profiles: readonly Profile[], filter = ''): Profil
   }));
 }
 
-export type Field = 'name' | 'host' | 'port' | 'database' | 'user';
+export type Field =
+  | 'name'
+  | 'host'
+  | 'port'
+  | 'database'
+  | 'user'
+  | 'clientKey'
+  | 'tls'
+  | 'sshHost'
+  | 'sshPort'
+  | 'sshUser';
+
+/** The stage of a connect an error belongs to, as a prefix for its message (`''` when it says so itself). */
+export function stageOf(code: string): string {
+  switch (code) {
+    case 'host_key_changed':
+    case 'ssh_secret_required':
+      return 'SSH-Tunnel: ';
+    case 'tls_failed':
+      return 'TLS: ';
+    case 'auth_failed':
+    case 'secret_required':
+      return 'Anmeldung: ';
+    default:
+      return '';
+  }
+}
 
 /** What is wrong with a profile, by field; empty = it can be stored. Mirrors `profiles::check` in Rust. */
 export function profileProblems(p: Profile): Partial<Record<Field, string>> {
@@ -56,6 +82,23 @@ export function profileProblems(p: Profile): Partial<Record<Field, string>> {
     out.host = 'Nur der Name oder die Adresse des Rechners, ohne Leerzeichen, Pfad oder Benutzer.';
   }
   if (!p.user.trim()) out.user = 'Bitte einen Benutzer eingeben.';
+  if (!p.clientCert.trim() !== !p.clientKey.trim()) {
+    out.clientKey = 'Client-Zertifikat und Client-Schlüssel gehören zusammen.';
+  }
+  if (p.ssh) {
+    const sshHost = p.ssh.host.trim();
+    if (!sshHost || !/^[A-Za-z0-9._:[\]%-]{1,253}$/.test(sshHost)) {
+      out.sshHost = 'Bitte den Namen oder die Adresse des SSH-Servers eingeben.';
+    }
+    if (!Number.isInteger(p.ssh.port) || p.ssh.port < 0 || p.ssh.port > 65535) {
+      out.sshPort = 'Der SSH-Port liegt zwischen 1 und 65535.';
+    }
+    if (!p.ssh.user.trim()) out.sshUser = 'Bitte den SSH-Benutzer eingeben.';
+    if (p.tls === 'verify') {
+      out.tls =
+        'Durch einen SSH-Tunnel lässt sich der Hostname des Zertifikats nicht prüfen: „nur das Zertifikat“ wählen.';
+    }
+  }
   return out;
 }
 

@@ -659,8 +659,9 @@ async fn forward(
             return;
         };
         // a connection nobody announced: another program found the port
+        #[allow(deprecated)] // `try_update` is newer than the oldest Rust we build with
         let allowed = permits
-            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
             .is_ok();
         if !allowed || !peer.ip().is_loopback() {
             continue;

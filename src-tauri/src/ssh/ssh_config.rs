@@ -10,6 +10,9 @@
 //! `KnownHostsCommand` are **never executed**; a host with a proxy is reported as unsupported.
 //! Everything else is ignored.
 
+// kept as in log-commander, so both stay in step
+#![allow(clippy::collapsible_if)]
+
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 

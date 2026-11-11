@@ -2,6 +2,7 @@ import { Profile, emptyProfile } from '../../core/connections/connection.models'
 import {
   groupProfiles,
   profileProblems,
+  stageOf,
   suggestedName,
   suggestedTls,
   withKind,
@@ -67,5 +68,40 @@ describe('connection logic', () => {
     expect(suggestedName({ ...emptyProfile('sqlite'), database: '/tmp/Meine Daten.db' })).toBe(
       'Meine Daten.db',
     );
+  });
+});
+
+describe('TLS and SSH in a profile', () => {
+  const base = { ...emptyProfile('postgres'), name: 'x', host: 'db.example' };
+
+  it('wants certificate and key together', () => {
+    expect(profileProblems({ ...base, clientCert: '/c.pem' }).clientKey).toBeDefined();
+    expect(profileProblems({ ...base, clientKey: '/k.pem' }).clientKey).toBeDefined();
+    expect(profileProblems({ ...base, clientCert: '/c.pem', clientKey: '/k.pem' })).toEqual({});
+  });
+
+  it('wants host and user of the jump host and refuses the host name check through it', () => {
+    const ssh = { host: '', port: 0, user: '', auth: 'agent' as const, keyFile: '' };
+    const problems = profileProblems({ ...base, tls: 'verify', ssh });
+    expect(Object.keys(problems).sort()).toEqual(['sshHost', 'sshUser', 'tls']);
+    expect(
+      profileProblems({
+        ...base,
+        tls: 'verify-ca',
+        ssh: { ...ssh, host: 'jump.example', user: 'ops', port: 2222 },
+      }),
+    ).toEqual({});
+    expect(
+      profileProblems({ ...base, tls: 'off', ssh: { ...ssh, host: 'j', user: 'o', port: 70000 } })
+        .sshPort,
+    ).toBeDefined();
+  });
+
+  it('names the stage an error belongs to', () => {
+    expect(stageOf('ssh_secret_required')).toBe('SSH-Tunnel: ');
+    expect(stageOf('host_key_changed')).toBe('SSH-Tunnel: ');
+    expect(stageOf('tls_failed')).toBe('TLS: ');
+    expect(stageOf('auth_failed')).toBe('Anmeldung: ');
+    expect(stageOf('connection_failed')).toBe('');
   });
 });

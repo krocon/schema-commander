@@ -16,6 +16,9 @@ export type ErrorCode =
   | 'permission_denied'
   | 'confirmation_required'
   | 'secret_required'
+  | 'host_key_unknown'
+  | 'host_key_changed'
+  | 'ssh_secret_required'
   | 'keychain_unavailable'
   | 'invalid_profile'
   | 'unknown_connection'
@@ -47,6 +50,9 @@ const CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'permission_denied',
   'confirmation_required',
   'secret_required',
+  'host_key_unknown',
+  'host_key_changed',
+  'ssh_secret_required',
   'keychain_unavailable',
   'invalid_profile',
   'unknown_connection',
@@ -88,6 +94,10 @@ const TEXTS: Readonly<Record<ErrorCode, string>> = {
   permission_denied: 'Dafür fehlen die Rechte.',
   confirmation_required: 'Diese Anweisung braucht eine Bestätigung.',
   secret_required: 'Ein Passwort ist nötig.',
+  host_key_unknown: 'Der SSH-Server zeigt einen Schlüssel, der noch nicht bestätigt ist.',
+  host_key_changed:
+    'Der Schlüssel des SSH-Servers passt nicht zum bekannten. Die Verbindung wird nicht aufgebaut.',
+  ssh_secret_required: 'Der SSH-Tunnel braucht ein Passwort oder die Passphrase des Schlüssels.',
   keychain_unavailable: 'Der Schlüsselbund des Systems ist nicht verfügbar.',
   invalid_profile: 'Die Angaben der Verbindung sind unvollständig oder ungültig.',
   unknown_connection: 'Diese Verbindung gibt es nicht (mehr).',
@@ -112,6 +122,9 @@ export function describeError(e: unknown): string {
     'connection_failed',
     'auth_failed',
     'tls_failed',
+    'host_key_unknown',
+    'host_key_changed',
+    'ssh_secret_required',
     'permission_denied',
     'not_found',
     'invalid_session',

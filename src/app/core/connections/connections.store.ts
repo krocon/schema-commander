@@ -1,7 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { AppError, describeError, toAppError } from '../errors/app-error';
 import { SettingsService } from '../settings/settings.service';
-import { DEMO_ID, Profile, usesPassword } from './connection.models';
+import { DEMO_ID, Profile, SshCredentials, SshHost, usesPassword } from './connection.models';
 import { ConnectionsApi } from './connections-api';
 
 export type ConnectionState =
@@ -15,6 +15,24 @@ export interface PasswordRequest {
   readonly id: string;
   /** The password tried before was refused. */
   readonly wrong: boolean;
+  /** What is asked for: the login of the database, or what unlocks its SSH tunnel. */
+  readonly kind: 'database' | 'ssh';
+}
+
+/** The app asks whether the key an SSH server shows is the right one. */
+export interface HostKeyRequest {
+  readonly id: string;
+  readonly host: string;
+  readonly keyType: string;
+  readonly fingerprint: string;
+}
+
+/**
+ * Key type and fingerprint from a `host_key_unknown` error: its message ends with them.
+ */
+export function shownHostKey(message: string): { keyType: string; fingerprint: string } | null {
+  const found = /([a-z0-9@.-]+) (SHA256:[A-Za-z0-9+/=]+)\s*$/.exec(message);
+  return found ? { keyType: found[1], fingerprint: found[2] } : null;
 }
 
 const CLOSED: ConnectionState = { kind: 'closed' };
@@ -35,6 +53,9 @@ export class ConnectionsStore {
   private readonly states = signal<Readonly<Record<string, ConnectionState>>>({});
   /** The password dialog is open for this connection. */
   readonly passwordRequest = signal<PasswordRequest | null>(null);
+  /** An SSH server shows a key nobody confirmed yet. */
+  readonly hostKeyRequest = signal<HostKeyRequest | null>(null);
+  private hostKeyWaiter: ((trust: boolean) => void) | null = null;
   private passwordWaiters: ((password: string | null) => void)[] = [];
   private readonly activated: ((id: string) => void)[] = [];
   /** A connection attempt per id, so two callers share one. */
@@ -94,15 +115,38 @@ export class ConnectionsStore {
 
   private async open(id: string): Promise<boolean> {
     let password: string | null = null;
+    let sshSecret: string | null = null;
+    let trustFingerprint: string | null = null;
     for (;;) {
       this.setState(id, { kind: 'connecting' });
       try {
-        const info = await this.api.open(id, password);
+        const info = await this.api.open(id, password, { secret: sshSecret, trustFingerprint });
         this.setState(id, { kind: 'open', serverVersion: info.serverVersion });
         return true;
       } catch (e) {
         const error = toAppError(e);
         const profile = this.profiles().find((p) => p.id === id);
+        // the stages of the SSH tunnel come first: its host key, then what unlocks it
+        if (error.code === 'host_key_unknown') {
+          const shown = shownHostKey(error.message);
+          const yes =
+            shown !== null &&
+            (await this.askHostKey({ id, host: profile?.ssh?.host ?? '', ...shown }));
+          if (!yes) {
+            this.setState(id, CLOSED);
+            return false;
+          }
+          trustFingerprint = shown.fingerprint;
+          continue;
+        }
+        if (error.code === 'ssh_secret_required') {
+          sshSecret = await this.askPassword(id, sshSecret !== null, 'ssh');
+          if (sshSecret === null) {
+            this.setState(id, CLOSED);
+            return false;
+          }
+          continue;
+        }
         const ask =
           error.code === 'secret_required' ||
           (error.code === 'auth_failed' && !!profile && usesPassword(profile));
@@ -110,7 +154,7 @@ export class ConnectionsStore {
           this.setState(id, { kind: 'failed', message: describeError(error) });
           return false;
         }
-        password = await this.askPassword(id, error.code === 'auth_failed');
+        password = await this.askPassword(id, error.code === 'auth_failed', 'database');
         if (password === null) {
           this.setState(
             id,
@@ -152,8 +196,12 @@ export class ConnectionsStore {
     this.setState(id, CLOSED);
   }
 
-  test(profile: Profile, password: string | null): Promise<string> {
-    return this.api.test(profile, password);
+  test(profile: Profile, password: string | null, ssh?: SshCredentials): Promise<string> {
+    return this.api.test(profile, password, ssh);
+  }
+
+  sshHosts(): Promise<SshHost[]> {
+    return this.api.sshHosts();
   }
 
   /** The password dialog answers (`null` = cancelled). */
@@ -164,8 +212,26 @@ export class ConnectionsStore {
     for (const resolve of waiters) resolve(password);
   }
 
-  private askPassword(id: string, wrong: boolean): Promise<string | null> {
-    this.passwordRequest.set({ id, wrong });
+  /** The host key dialog answers. */
+  answerHostKey(trust: boolean): void {
+    this.hostKeyRequest.set(null);
+    const waiter = this.hostKeyWaiter;
+    this.hostKeyWaiter = null;
+    waiter?.(trust);
+  }
+
+  private askHostKey(request: HostKeyRequest): Promise<boolean> {
+    this.hostKeyWaiter?.(false);
+    this.hostKeyRequest.set(request);
+    return new Promise((resolve) => (this.hostKeyWaiter = resolve));
+  }
+
+  private askPassword(
+    id: string,
+    wrong: boolean,
+    kind: PasswordRequest['kind'],
+  ): Promise<string | null> {
+    this.passwordRequest.set({ id, wrong, kind });
     return new Promise((resolve) => this.passwordWaiters.push(resolve));
   }
 

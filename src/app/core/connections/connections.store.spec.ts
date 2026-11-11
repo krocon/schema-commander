@@ -20,6 +20,10 @@ const PG: Profile = {
   savePassword: true,
   protection: 'free',
   label: '',
+  caFile: '',
+  clientCert: '',
+  clientKey: '',
+  ssh: null,
 };
 
 /** Lets the microtasks of a pending connect run up to the password request. */
@@ -70,11 +74,11 @@ describe('ConnectionsStore', () => {
     api.passwords.set('pg', 'richtig');
     const done = store.connect('pg');
     await settle();
-    expect(store.passwordRequest()).toEqual({ id: 'pg', wrong: false });
+    expect(store.passwordRequest()).toEqual({ id: 'pg', wrong: false, kind: 'database' });
     expect(store.state('pg').kind).toBe('connecting');
     store.answerPassword('falsch');
     await settle();
-    expect(store.passwordRequest()).toEqual({ id: 'pg', wrong: true });
+    expect(store.passwordRequest()).toEqual({ id: 'pg', wrong: true, kind: 'database' });
     store.answerPassword('richtig');
     expect(await done).toBe(true);
     expect(store.state('pg')).toEqual({ kind: 'open', serverVersion: 'Fake 1.0' });
