@@ -158,11 +158,11 @@ pub struct Built {
     pub display: String,
 }
 
-fn invalid(message: &str) -> AppError {
+pub(super) fn invalid(message: &str) -> AppError {
     AppError::new(ErrorCode::Unsupported, message)
 }
 
-fn name(raw: &str, kind: DbKind) -> AppResult<String> {
+pub(super) fn name(raw: &str, kind: DbKind) -> AppResult<String> {
     if raw.is_empty() || raw.len() > 256 || raw.contains('\0') {
         return Err(invalid("not a name"));
     }
@@ -246,21 +246,32 @@ fn is_decimal(text: &str) -> bool {
         && a.bytes().chain(b.bytes()).all(|c| c.is_ascii_digit())
 }
 
-struct Builder {
-    kind: DbKind,
-    sql: String,
-    display: String,
-    params: Vec<Bind>,
+/// Writes a statement twice: with placeholders (and the values beside it), and readable with literals.
+/// Also used for the `UPDATE`s of `edit.rs` – the one place that turns a value into a placeholder.
+pub(super) struct Builder {
+    pub(super) kind: DbKind,
+    pub(super) sql: String,
+    pub(super) display: String,
+    pub(super) params: Vec<Bind>,
 }
 
 impl Builder {
-    fn text(&mut self, text: &str) {
+    pub(super) fn new(kind: DbKind) -> Self {
+        Builder {
+            kind,
+            sql: String::new(),
+            display: String::new(),
+            params: Vec::new(),
+        }
+    }
+
+    pub(super) fn text(&mut self, text: &str) {
         self.sql.push_str(text);
         self.display.push_str(text);
     }
 
     /// A placeholder for a value of a column, and the value beside it.
-    fn value(&mut self, raw: &str, kind: ValueKind, type_name: &str) {
+    pub(super) fn value(&mut self, raw: &str, kind: ValueKind, type_name: &str) {
         let n = self.params.len() + 1;
         let (bind, cast) = match self.kind {
             // the server reads the text as what the column is

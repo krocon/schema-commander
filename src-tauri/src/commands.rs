@@ -452,6 +452,42 @@ pub fn result_seek(
     result
 }
 
+/// The `UPDATE`s for changed cells (prompt 031), one per row: to show them, and to ask the guard about
+/// them. Names quoted here, every value a placeholder. Nothing runs.
+#[tauri::command(async)]
+pub fn edit_preview(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    plan: crate::db::edit::UpdatePlan,
+) -> AppResult<Vec<crate::db::filter::Built>> {
+    crate::db::edit::build(manager.kind_of(&id)?, &plan)
+}
+
+/// Writes changed cells: the statements are built here again from the plan (the window never sends
+/// SQL), pass the guard (`confirmations[i]` for statement `i`), and run in one transaction on the
+/// session of the tab – all or nothing, each changing exactly one row.
+#[tauri::command(async)]
+pub fn edit_apply(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    session: Option<String>,
+    plan: crate::db::edit::UpdatePlan,
+    confirmations: Option<Vec<Option<String>>>,
+    timeout_ms: Option<u64>,
+) -> AppResult<crate::db::manager::Applied> {
+    let statements = crate::db::edit::build(manager.kind_of(&id)?, &plan)?;
+    let timeout = timeout_ms
+        .filter(|ms| *ms > 0)
+        .map(std::time::Duration::from_millis);
+    manager.apply_updates(
+        &id,
+        session.as_deref(),
+        &statements,
+        confirmations.as_deref().unwrap_or(&[]),
+        timeout,
+    )
+}
+
 /// The statement of a table view (prompt 027): names quoted here, every value a placeholder. The window
 /// runs what comes back with `run_query` – statement and values together, as it got them.
 #[tauri::command(async)]

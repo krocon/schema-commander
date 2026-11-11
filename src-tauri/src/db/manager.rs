@@ -114,6 +114,21 @@ fn keychain(e: secrets::StoreError) -> AppError {
     AppError::new(ErrorCode::KeychainUnavailable, e.0)
 }
 
+/// How writing changed rows ended (prompt 031). Nothing is half written: `done` is the number of
+/// statements that are committed – all of them, or none.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Applied {
+    pub done: usize,
+    /// The statement that stopped everything (counted from 0).
+    pub failed: Option<usize>,
+    /// It changed no row or several: the row is not what it was when it was read.
+    pub conflict: bool,
+    /// What the database said, when a statement or the commit failed.
+    pub error: Option<AppError>,
+    pub tx: TxState,
+}
+
 impl ConnectionManager {
     /// `file`: `connections.json`; `store`: where passwords are kept.
     pub fn new(file: PathBuf, store: Arc<dyn SecretStore>) -> Self {
@@ -621,6 +636,106 @@ impl ConnectionManager {
         (result, tx)
     }
 
+    /// Writes changed rows (prompt 031): all statements in one transaction on the session of a tab, each
+    /// of them must change **exactly one row** – else everything is rolled back. Every statement passes
+    /// the guard of the connection first (`tokens[i]` confirms statement `i`), before anything runs.
+    /// A transaction that is open on the session already is the user's: nothing is written then.
+    pub fn apply_updates(
+        &self,
+        id: &str,
+        tab: Option<&str>,
+        statements: &[super::filter::Built],
+        tokens: &[Option<String>],
+        timeout: Option<std::time::Duration>,
+    ) -> AppResult<Applied> {
+        for (i, statement) in statements.iter().enumerate() {
+            let token = tokens.get(i).and_then(|t| t.as_deref());
+            self.admit(id, &statement.sql, token, false)?;
+        }
+        let (key, open, profile) = self.session_of(id, tab)?;
+        let mut session = open.session.lock();
+        open.stop.store(false, Ordering::Relaxed);
+        let stop = || open.stop.load(Ordering::Relaxed);
+        if *open.tx.lock() != TxState::Idle {
+            return Err(AppError::new(
+                ErrorCode::Unsupported,
+                "a transaction is open on this tab",
+            ));
+        }
+        let limits = Limits {
+            max_rows: 1,
+            timeout,
+        };
+        let mut applied = Applied {
+            done: 0,
+            failed: None,
+            conflict: false,
+            error: None,
+            tx: TxState::Idle,
+        };
+        let mut problem = session
+            .query(super::begin_statement(profile.kind), Limits::rows(1), &stop)
+            .err();
+        if problem.is_none() {
+            for (i, statement) in statements.iter().enumerate() {
+                let mut sink = VecSink::new(1);
+                match session.execute_bound(
+                    &statement.sql,
+                    &statement.params,
+                    limits,
+                    &mut sink,
+                    &stop,
+                ) {
+                    Ok(outcome) if outcome.rows_affected == Some(1) => applied.done += 1,
+                    Ok(_) => {
+                        // no row, or more than one: the row is not what it was when it was read
+                        applied.failed = Some(i);
+                        applied.conflict = true;
+                        break;
+                    }
+                    Err(e) => {
+                        applied.failed = Some(i);
+                        problem = Some(e);
+                        break;
+                    }
+                }
+            }
+        }
+        let end = if applied.failed.is_none() && problem.is_none() {
+            "COMMIT"
+        } else {
+            "ROLLBACK"
+        };
+        if session.is_open()
+            && let Err(e) = session.query(end, Limits::rows(1), &|| false)
+        {
+            // a commit that fails (a deferred constraint) wrote nothing: say why, and make sure of it
+            if end == "COMMIT" {
+                problem = Some(e);
+                let _ = session.query("ROLLBACK", Limits::rows(1), &|| false);
+            }
+        }
+        if end == "ROLLBACK" || problem.is_some() {
+            applied.done = 0;
+        }
+        applied.error = problem;
+        let lost = !session.is_open();
+        applied.tx = if lost {
+            TxState::Idle
+        } else {
+            session.transaction_state(&|| false)
+        };
+        *open.tx.lock() = applied.tx;
+        drop(session);
+        if lost {
+            let mut all = self.open.lock();
+            if all.get(&key).is_some_and(|o| Arc::ptr_eq(o, &open)) {
+                all.remove(&key);
+            }
+        }
+        Ok(applied)
+    }
+
     /// Ends the transaction of a tab; returns what the server says afterwards.
     pub fn end_transaction(&self, id: &str, tab: Option<&str>, commit: bool) -> AppResult<TxState> {
         let mut sink = VecSink::new(1);
@@ -925,6 +1040,148 @@ mod tests {
         let (r, tx) = m.run_in(id, Some(tab), sql, None, &mut sink, manual);
         r.unwrap_or_else(|e| panic!("{sql}: {e}"));
         tx
+    }
+
+    /// The `UPDATE`s that set `a` of the rows `(from, to, expected)`: found by `a`, locked on `a`.
+    fn updates(rows: &[(i64, i64, i64)]) -> Vec<crate::db::filter::Built> {
+        use crate::db::edit::{CellValue, RowUpdate, SetCell, UpdatePlan, build};
+        use crate::db::filter::ValueKind;
+        let cell = |v: i64| CellValue {
+            column: "a".into(),
+            kind: ValueKind::Number,
+            type_name: String::new(),
+            value: Some(v.to_string()),
+        };
+        let plan = UpdatePlan {
+            schema: None,
+            table: "t".into(),
+            rows: rows
+                .iter()
+                .map(|(from, to, expected)| RowUpdate {
+                    key: vec![cell(*from)],
+                    set: vec![SetCell {
+                        column: "a".into(),
+                        kind: ValueKind::Number,
+                        type_name: String::new(),
+                        value: Some(to.to_string()),
+                        default: false,
+                    }],
+                    expect: vec![cell(*expected)],
+                })
+                .collect(),
+        };
+        build(DbKind::Sqlite, &plan).unwrap()
+    }
+
+    /// Prompt 031: changed rows are written all or not at all, each statement changing exactly one row.
+    #[test]
+    fn changed_rows_are_written_together_or_not_at_all() {
+        use serde_json::json;
+        let dir = tempdir().unwrap();
+        let (m, _) = manager(dir.path());
+        let id = protected(&m, dir.path(), Protection::Free);
+        let done = m
+            .apply_updates(
+                &id,
+                Some("a"),
+                &updates(&[(1, 10, 1), (2, 20, 2)]),
+                &[],
+                None,
+            )
+            .unwrap();
+        assert_eq!((done.done, done.failed, done.conflict), (2, None, false));
+        assert!(done.error.is_none());
+        assert_eq!(done.tx, TxState::Idle);
+        // committed: another tab sees it
+        assert_eq!(count(&m, &id, "b"), json!([[10], [20]]));
+
+        // the second row is not what it was (somebody changed it): nothing is written, not the first either
+        run_tab(&m, &id, "b", "UPDATE t SET a = 21 WHERE a = 20", false);
+        let stale = m
+            .apply_updates(
+                &id,
+                Some("a"),
+                &updates(&[(10, 11, 10), (20, 22, 20)]),
+                &[],
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            (stale.done, stale.failed, stale.conflict),
+            (0, Some(1), true)
+        );
+        assert_eq!(stale.tx, TxState::Idle);
+        assert_eq!(count(&m, &id, "b"), json!([[10], [21]]));
+
+        // a statement that would change two rows is no change of one row
+        run_tab(&m, &id, "b", "INSERT INTO t VALUES (10)", false);
+        let two = m
+            .apply_updates(&id, Some("a"), &updates(&[(10, 12, 10)]), &[], None)
+            .unwrap();
+        assert_eq!((two.done, two.failed, two.conflict), (0, Some(0), true));
+        assert_eq!(count(&m, &id, "b"), json!([[10], [10], [21]]));
+
+        // an error of the database: rolled back, and said
+        run_tab(
+            &m,
+            &id,
+            "b",
+            "CREATE UNIQUE INDEX t_a ON t (a) WHERE a > 100",
+            false,
+        );
+        run_tab(&m, &id, "b", "INSERT INTO t VALUES (200)", false);
+        let broken = m
+            .apply_updates(
+                &id,
+                Some("a"),
+                &updates(&[(21, 30, 21), (30, 200, 30)]),
+                &[],
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            (broken.done, broken.failed, broken.conflict),
+            (0, Some(1), false)
+        );
+        assert!(broken.error.is_some());
+        assert_eq!(count(&m, &id, "b"), json!([[10], [10], [21], [200]]));
+    }
+
+    #[test]
+    fn writing_changes_respects_an_open_transaction_and_the_guard() {
+        use serde_json::json;
+        let dir = tempdir().unwrap();
+        let (m, _) = manager(dir.path());
+        let id = protected(&m, dir.path(), Protection::Free);
+        // the tab has a transaction of its own open: that is the user's, nothing is written into it
+        run_tab(&m, &id, "a", "UPDATE t SET a = 5 WHERE a = 1", true);
+        let refused = m.apply_updates(&id, Some("a"), &updates(&[(2, 20, 2)]), &[], None);
+        assert_eq!(refused.unwrap_err().code, ErrorCode::Unsupported);
+        assert_eq!(m.tx_state(&id, Some("a")), TxState::Active);
+        m.end_transaction(&id, Some("a"), false).unwrap();
+
+        // a connection that only reads writes nothing
+        let read_only = protected(&m, dir.path(), Protection::Readonly);
+        let no = m.apply_updates(&read_only, Some("a"), &updates(&[(1, 10, 1)]), &[], None);
+        assert_eq!(no.unwrap_err().code, ErrorCode::PermissionDenied);
+
+        // a connection that asks wants every statement confirmed – before anything runs
+        let ask = protected(&m, dir.path(), Protection::Ask);
+        let statements = updates(&[(1, 10, 1), (2, 20, 2)]);
+        let unasked = m.apply_updates(&ask, Some("a"), &statements, &[], None);
+        assert_eq!(unasked.unwrap_err().code, ErrorCode::ConfirmationRequired);
+        let sqls: Vec<String> = statements.iter().map(|s| s.sql.clone()).collect();
+        let tokens = m.confirm(&ask, &sqls, None, false).unwrap();
+        // one confirmation missing: nothing is written, not the confirmed one either
+        let half = m.apply_updates(&ask, Some("a"), &statements, &tokens[..1], None);
+        assert_eq!(half.unwrap_err().code, ErrorCode::ConfirmationRequired);
+        assert_eq!(count(&m, &ask, "b"), json!([[1], [2]]));
+        let tokens = m.confirm(&ask, &sqls, None, false).unwrap();
+        let done = m
+            .apply_updates(&ask, Some("a"), &statements, &tokens, None)
+            .unwrap();
+        assert_eq!(done.done, 2);
+        assert_eq!(count(&m, &ask, "b"), json!([[10], [20]]));
     }
 
     #[test]
