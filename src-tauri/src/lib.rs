@@ -111,6 +111,7 @@ pub fn run() {
             commands::copy_result,
             commands::cancel_copy,
             commands::copy_text,
+            commands::read_clipboard_text,
             commands::export_result,
             commands::export_query,
             commands::cancel_job,

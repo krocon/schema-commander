@@ -14,6 +14,7 @@ import {
   Verdict,
   ViewSpec,
   Applied,
+  EditStep,
   ResultStats,
   UpdatePlan,
   SearchFound,
@@ -152,8 +153,11 @@ export abstract class QueryApi {
     seek: SeekKind,
   ): Promise<number | null>;
   abstract cancelSearch(jobId: number): Promise<void>;
-  /** The `UPDATE`s for changed cells (prompt 031), one per row: to show and to ask the guard about. */
-  abstract editPreview(connectionId: string, plan: UpdatePlan): Promise<BuiltQuery[]>;
+  /**
+   * The statements for the changes of a table (prompts 031, 032) in the order they run – rows deleted,
+   * changed, inserted: to show and to ask the guard about.
+   */
+  abstract editPreview(connectionId: string, plan: UpdatePlan): Promise<EditStep[]>;
   /**
    * Writes changed cells in one transaction on the session of a tab: all rows or none, each statement
    * must change exactly one row. `confirmations[i]` confirms statement `i` where the connection asks.
@@ -301,7 +305,7 @@ export class TauriQueryApi extends QueryApi {
     return call('cancel_job', { jobId });
   }
 
-  editPreview(connectionId: string, plan: UpdatePlan): Promise<BuiltQuery[]> {
+  editPreview(connectionId: string, plan: UpdatePlan): Promise<EditStep[]> {
     return call('edit_preview', { id: connectionId, plan });
   }
 

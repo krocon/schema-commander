@@ -109,7 +109,7 @@ describe('EditService', () => {
     expect(edit.editing()).toMatchObject({ row: 0, column: 2, text: 'first', key: '["1"]' });
     expect(edit.commit({ kind: 'value', text: 'changed' })).toBeNull();
     expect(edit.editing()).toBeNull();
-    expect(edit.count(tab)).toEqual({ cells: 1, rows: 1 });
+    expect(edit.count(tab)).toMatchObject({ cells: 1, rows: 1 });
     expect(edit.marks(tab)!.at(0, 2)).toEqual({ kind: 'value', text: 'changed' });
     // a number column takes no text; the cell stays in the edit row
     cursor = [1, 1];
@@ -182,7 +182,7 @@ describe('EditService', () => {
     const runs = query.statements.length;
     expect(await edit.save(tab)).toBe(false);
     expect(tabs.notice()).toContain('Zeile 3 wurde inzwischen');
-    expect(edit.count(tab)).toEqual({ cells: 2, rows: 2 });
+    expect(edit.count(tab)).toMatchObject({ cells: 2, rows: 2 });
     expect(edit.marks(tab)!.failed(2)).toBe(true);
     expect(edit.marks(tab)!.failed(0)).toBe(false);
     expect(query.statements.length).toBe(runs);
@@ -317,7 +317,7 @@ describe('EditService', () => {
     expect(edit.editing()).toBeNull();
     await edit.setAtCursor(tab, { kind: 'default' });
     edit.undo(tab);
-    expect(edit.count(tab)).toEqual({ cells: 1, rows: 1 });
+    expect(edit.count(tab)).toMatchObject({ cells: 1, rows: 1 });
     open();
     expect(await saving).toBe(true);
     expect(query.applied.at(-1)!.plan.rows).toHaveLength(1);

@@ -41,6 +41,8 @@ export interface Copied {
  */
 export abstract class ClipboardApi {
   abstract copyText(text: string): Promise<void>;
+  /** The text on the clipboard (prompt 032: a block of cells to paste); `''` if there is none. */
+  abstract readText(): Promise<string>;
   abstract copyResult(
     resultId: number,
     selection: CopySelection,
@@ -55,6 +57,10 @@ export abstract class ClipboardApi {
 export class TauriClipboardApi extends ClipboardApi {
   copyText(text: string): Promise<void> {
     return call('copy_text', { text });
+  }
+
+  readText(): Promise<string> {
+    return call('read_clipboard_text');
   }
 
   copyResult(
