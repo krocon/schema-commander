@@ -1,0 +1,951 @@
+[
+ {
+  "sql": "▮",
+  "expect": "statement"
+ },
+ {
+  "sql": "sel▮",
+  "expect": "statement",
+  "word": "sel"
+ },
+ {
+  "sql": "SELECT 1; ▮",
+  "expect": "statement"
+ },
+ {
+  "sql": "  \n▮",
+  "expect": "statement"
+ },
+ {
+  "sql": "SELECT ▮",
+  "expect": "column",
+  "clause": "SELECT"
+ },
+ {
+  "sql": "SELECT ▮ FROM orders",
+  "expect": "column",
+  "tables": [
+   "orders"
+  ]
+ },
+ {
+  "sql": "SELECT id, ▮ FROM orders o",
+  "expect": "column",
+  "tables": [
+   "o=orders"
+  ]
+ },
+ {
+  "sql": "SELECT o.▮ FROM orders o JOIN customer c ON c.id = o.customer_id",
+  "expect": "column",
+  "qualifier": [
+   "o"
+  ],
+  "tables": [
+   "o=orders",
+   "c=customer"
+  ]
+ },
+ {
+  "sql": "SELECT c.na▮ FROM orders o JOIN customer c ON c.id = o.customer_id",
+  "expect": "column",
+  "qualifier": [
+   "c"
+  ],
+  "word": "na"
+ },
+ {
+  "sql": "SELECT DISTINCT ▮ FROM orders",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT id ▮ FROM orders",
+  "expect": "keyword"
+ },
+ {
+  "sql": "SELECT id AS ▮ FROM orders",
+  "expect": "none"
+ },
+ {
+  "sql": "SELECT count(▮) FROM orders",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT coalesce(note, ▮) FROM orders",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * ▮",
+  "expect": "keyword"
+ },
+ {
+  "sql": "SELECT *, ▮ FROM orders",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT shop.orders.▮ FROM shop.orders",
+  "expect": "column",
+  "qualifier": [
+   "shop",
+   "orders"
+  ],
+  "tables": [
+   "orders=shop.orders"
+  ]
+ },
+ {
+  "sql": "SELECT \"Odd Name\".▮ FROM \"Odd Name\"",
+  "expect": "column",
+  "qualifier": [
+   "Odd Name"
+  ],
+  "tables": [
+   "Odd Name"
+  ],
+  "dialects": [
+   "postgres",
+   "sqlite",
+   "sqlserver"
+  ]
+ },
+ {
+  "sql": "SELECT CASE WHEN ▮ FROM orders",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT CASE WHEN total > 5 THEN ▮ FROM orders",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT id + ▮ FROM orders",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT -▮ FROM orders",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT CAST(total AS ▮) FROM orders",
+  "expect": "type"
+ },
+ {
+  "sql": "SELECT total::▮ FROM orders",
+  "expect": "type",
+  "dialects": [
+   "postgres"
+  ]
+ },
+ {
+  "sql": "SELECT id FROM orders WHERE note = 'x▮'",
+  "expect": "none"
+ },
+ {
+  "sql": "SELECT id -- pick ▮",
+  "expect": "none"
+ },
+ {
+  "sql": "SELECT id /* ▮ */ FROM orders",
+  "expect": "none"
+ },
+ {
+  "sql": "SELECT 12▮ FROM orders",
+  "expect": "none"
+ },
+ {
+  "sql": "SELECT * FROM ▮",
+  "expect": "table",
+  "clause": "FROM"
+ },
+ {
+  "sql": "SELECT * FROM ord▮",
+  "expect": "table",
+  "word": "ord"
+ },
+ {
+  "sql": "SELECT * FROM shop.▮",
+  "expect": "table",
+  "qualifier": [
+   "shop"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM shop.ord▮",
+  "expect": "table",
+  "qualifier": [
+   "shop"
+  ],
+  "word": "ord"
+ },
+ {
+  "sql": "SELECT * FROM orders ▮",
+  "expect": "keyword",
+  "tables": [
+   "orders"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders o ▮",
+  "expect": "keyword",
+  "tables": [
+   "o=orders"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders AS o ▮",
+  "expect": "keyword",
+  "tables": [
+   "o=orders"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders, ▮",
+  "expect": "table",
+  "tables": [
+   "orders"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders o, cust▮",
+  "expect": "table",
+  "word": "cust"
+ },
+ {
+  "sql": "SELECT * FROM orders AS ▮",
+  "expect": "none"
+ },
+ {
+  "sql": "SELECT * FROM ONLY ▮",
+  "expect": "table",
+  "dialects": [
+   "postgres"
+  ]
+ },
+ {
+  "sql": "DELETE FROM ▮",
+  "expect": "table"
+ },
+ {
+  "sql": "DELETE FROM orders ▮",
+  "expect": "keyword"
+ },
+ {
+  "sql": "TRUNCATE TABLE ▮",
+  "expect": "table"
+ },
+ {
+  "sql": "DROP TABLE ▮",
+  "expect": "table"
+ },
+ {
+  "sql": "DROP TABLE IF EXISTS ▮",
+  "expect": "table"
+ },
+ {
+  "sql": "ALTER TABLE ▮",
+  "expect": "table"
+ },
+ {
+  "sql": "UPDATE ▮",
+  "expect": "table"
+ },
+ {
+  "sql": "INSERT INTO ▮",
+  "expect": "table"
+ },
+ {
+  "sql": "SELECT * FROM (SELECT id FROM orders) ▮",
+  "expect": "keyword"
+ },
+ {
+  "sql": "SELECT * FROM orders o JOIN ▮",
+  "expect": "join",
+  "tables": [
+   "o=orders"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders o LEFT JOIN ▮",
+  "expect": "join"
+ },
+ {
+  "sql": "SELECT * FROM orders o INNER JOIN cu▮",
+  "expect": "join",
+  "word": "cu"
+ },
+ {
+  "sql": "SELECT * FROM orders o LEFT ▮",
+  "expect": "keyword"
+ },
+ {
+  "sql": "SELECT * FROM orders o JOIN customer c ▮",
+  "expect": "keyword",
+  "tables": [
+   "o=orders",
+   "c=customer"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders o JOIN customer c ON ▮",
+  "expect": "column",
+  "clause": "ON",
+  "tables": [
+   "o=orders",
+   "c=customer"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders o JOIN customer c ON c.▮",
+  "expect": "column",
+  "qualifier": [
+   "c"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders o JOIN customer c ON c.id = ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders o JOIN customer c ON c.id = o.▮",
+  "expect": "column",
+  "qualifier": [
+   "o"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders o JOIN shop.▮",
+  "expect": "table",
+  "qualifier": [
+   "shop"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders o CROSS JOIN ▮",
+  "expect": "join"
+ },
+ {
+  "sql": "SELECT * FROM orders o JOIN customer c USING (▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE ▮",
+  "expect": "column",
+  "clause": "WHERE",
+  "tables": [
+   "orders"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE id = ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE id = 1 ▮",
+  "expect": "keyword"
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE id = 1 AND ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE id = 1 OR no▮",
+  "expect": "column",
+  "word": "no"
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE NOT ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE id IN (▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE id BETWEEN ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE note LIKE ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE note IS ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE (id = 1 OR ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders o WHERE o.▮",
+  "expect": "column",
+  "qualifier": [
+   "o"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE id > ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE id <> ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE lower(note) ▮",
+  "expect": "keyword"
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE lower(▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders HAVING ▮",
+  "expect": "column",
+  "clause": "HAVING"
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE id = 1 AND note = 'a' ▮",
+  "expect": "keyword"
+ },
+ {
+  "sql": "SELECT status, count(*) AS n FROM orders GROUP BY ▮",
+  "expect": "column",
+  "clause": "GROUP BY",
+  "selected": [
+   "status",
+   "n"
+  ]
+ },
+ {
+  "sql": "SELECT status, count(*) AS n FROM orders GROUP BY status ORDER BY ▮",
+  "expect": "column",
+  "clause": "ORDER BY",
+  "selected": [
+   "status",
+   "n"
+  ]
+ },
+ {
+  "sql": "SELECT o.id, c.name customer FROM orders o JOIN customer c ON c.id = o.customer_id ORDER BY ▮",
+  "expect": "column",
+  "selected": [
+   "id",
+   "customer"
+  ]
+ },
+ {
+  "sql": "SELECT id FROM orders ORDER BY id ▮",
+  "expect": "keyword"
+ },
+ {
+  "sql": "SELECT id FROM orders ORDER BY id DESC, ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT id FROM orders GROUP BY id, ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT id FROM orders ORDER ▮",
+  "expect": "keyword"
+ },
+ {
+  "sql": "SELECT id FROM orders GROUP ▮",
+  "expect": "keyword"
+ },
+ {
+  "sql": "SELECT id FROM orders LIMIT ▮",
+  "expect": "none",
+  "dialects": [
+   "postgres",
+   "mysql",
+   "sqlite"
+  ]
+ },
+ {
+  "sql": "INSERT INTO orders (▮",
+  "expect": "insertColumns",
+  "tables": [
+   "orders"
+  ]
+ },
+ {
+  "sql": "INSERT INTO orders (id, ▮",
+  "expect": "insertColumns"
+ },
+ {
+  "sql": "INSERT INTO shop.orders (▮",
+  "expect": "insertColumns",
+  "tables": [
+   "orders=shop.orders"
+  ]
+ },
+ {
+  "sql": "INSERT INTO orders (id, note) ▮",
+  "expect": "keyword"
+ },
+ {
+  "sql": "INSERT INTO orders (id) VALUES (▮",
+  "expect": "column"
+ },
+ {
+  "sql": "INSERT INTO orders ▮",
+  "expect": "keyword"
+ },
+ {
+  "sql": "UPDATE orders ▮",
+  "expect": "keyword"
+ },
+ {
+  "sql": "UPDATE orders SET ▮",
+  "expect": "column",
+  "clause": "SET",
+  "tables": [
+   "orders"
+  ]
+ },
+ {
+  "sql": "UPDATE orders SET note = ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "UPDATE orders SET note = 'x', ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "UPDATE orders SET note = 'x' ▮",
+  "expect": "keyword"
+ },
+ {
+  "sql": "UPDATE orders SET note = 'x' WHERE ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "UPDATE orders o SET note = c.▮ FROM customer c",
+  "expect": "column",
+  "qualifier": [
+   "c"
+  ],
+  "tables": [
+   "o=orders",
+   "c=customer"
+  ],
+  "dialects": [
+   "postgres",
+   "sqlserver",
+   "sqlite"
+  ]
+ },
+ {
+  "sql": "DELETE FROM orders WHERE ▮",
+  "expect": "column",
+  "tables": [
+   "orders"
+  ]
+ },
+ {
+  "sql": "DELETE FROM orders o WHERE o.▮",
+  "expect": "column",
+  "qualifier": [
+   "o"
+  ]
+ },
+ {
+  "sql": "INSERT INTO orders (id) SELECT ▮ FROM customer",
+  "expect": "column",
+  "tables": [
+   "orders",
+   "customer"
+  ]
+ },
+ {
+  "sql": "UPDATE orders SET note = 'x' RETURNING ▮",
+  "expect": "column",
+  "dialects": [
+   "postgres",
+   "sqlite"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders o WHERE o.customer_id IN (SELECT ▮ FROM customer c)",
+  "expect": "column",
+  "tables": [
+   "c=customer",
+   "o=orders"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders o WHERE EXISTS (SELECT 1 FROM customer c WHERE c.id = o.▮)",
+  "expect": "column",
+  "qualifier": [
+   "o"
+  ],
+  "tables": [
+   "c=customer",
+   "o=orders"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders o WHERE o.customer_id IN (SELECT c.▮ FROM customer c)",
+  "expect": "column",
+  "qualifier": [
+   "c"
+  ]
+ },
+ {
+  "sql": "SELECT x.▮ FROM (SELECT id, total AS sum FROM orders) x",
+  "expect": "column",
+  "qualifier": [
+   "x"
+  ],
+  "tables": [
+   "x"
+  ],
+  "derived": {
+   "x": [
+    "id",
+    "sum"
+   ]
+  }
+ },
+ {
+  "sql": "SELECT * FROM (SELECT id FROM orders) AS x WHERE x.▮",
+  "expect": "column",
+  "qualifier": [
+   "x"
+  ],
+  "derived": {
+   "x": [
+    "id"
+   ]
+  }
+ },
+ {
+  "sql": "SELECT * FROM (SELECT ▮ FROM orders) x",
+  "expect": "column",
+  "tables": [
+   "orders"
+  ]
+ },
+ {
+  "sql": "WITH big AS (SELECT id, total FROM orders) SELECT ▮ FROM big",
+  "expect": "column",
+  "tables": [
+   "big"
+  ],
+  "derived": {
+   "big": [
+    "id",
+    "total"
+   ]
+  }
+ },
+ {
+  "sql": "WITH big AS (SELECT id, total FROM orders) SELECT b.▮ FROM big b",
+  "expect": "column",
+  "qualifier": [
+   "b"
+  ],
+  "derived": {
+   "b": [
+    "id",
+    "total"
+   ]
+  }
+ },
+ {
+  "sql": "WITH big (a, b) AS (SELECT id, total FROM orders) SELECT ▮ FROM big",
+  "expect": "column",
+  "derived": {
+   "big": [
+    "a",
+    "b"
+   ]
+  }
+ },
+ {
+  "sql": "WITH big AS (SELECT ▮ FROM orders) SELECT * FROM big",
+  "expect": "column",
+  "tables": [
+   "orders"
+  ]
+ },
+ {
+  "sql": "WITH a AS (SELECT 1 AS one), b AS (SELECT 2 AS two) SELECT * FROM ▮",
+  "expect": "table",
+  "ctes": [
+   "a",
+   "b"
+  ]
+ },
+ {
+  "sql": "WITH a AS (SELECT 1 AS one), b AS (SELECT 2 AS two) SELECT ▮ FROM a JOIN b ON true",
+  "expect": "column",
+  "derived": {
+   "a": [
+    "one"
+   ],
+   "b": [
+    "two"
+   ]
+  }
+ },
+ {
+  "sql": "WITH ▮",
+  "expect": "none"
+ },
+ {
+  "sql": "WITH big AS (▮",
+  "expect": "statement"
+ },
+ {
+  "sql": "WITH RECURSIVE t AS (SELECT 1 AS n) SELECT ▮ FROM t",
+  "expect": "column",
+  "derived": {
+   "t": [
+    "n"
+   ]
+  },
+  "dialects": [
+   "postgres",
+   "mysql",
+   "sqlite"
+  ]
+ },
+ {
+  "sql": "SELECT ▮ FROM orders o JOIN customer c ON c.id = o.customer_id WHERE o.id = 1",
+  "expect": "column",
+  "tables": [
+   "o=orders",
+   "c=customer"
+  ]
+ },
+ {
+  "sql": "SELECT o.▮, c.name FROM orders o, customer c",
+  "expect": "column",
+  "qualifier": [
+   "o"
+  ],
+  "tables": [
+   "o=orders",
+   "c=customer"
+  ]
+ },
+ {
+  "sql": "SELECT ▮\nFROM orders\nWHERE id = 1",
+  "expect": "column",
+  "tables": [
+   "orders"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE",
+  "expect": "keyword_or_column"
+ },
+ {
+  "sql": "SELECT * FROM",
+  "expect": "keyword_or_table"
+ },
+ {
+  "sql": "SELECT FROM orders WHERE ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders o JOIN customer c ON WHERE ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT ( ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE id = (▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders WHERE id = (SELECT ▮",
+  "expect": "column"
+ },
+ {
+  "sql": "SELECT * FROM orders o WHERE o. ▮",
+  "expect": "column",
+  "qualifier": [
+   "o"
+  ]
+ },
+ {
+  "sql": "select * from Orders O where O.▮",
+  "expect": "column",
+  "qualifier": [
+   "O"
+  ],
+  "tables": [
+   "O=Orders"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders -- all\nWHERE ▮",
+  "expect": "column",
+  "tables": [
+   "orders"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders /* o */ o WHERE o.▮",
+  "expect": "column",
+  "qualifier": [
+   "o"
+  ],
+  "tables": [
+   "o=orders"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM \"orders\" o WHERE ▮",
+  "expect": "column",
+  "tables": [
+   "o=orders"
+  ],
+  "dialects": [
+   "postgres",
+   "sqlite",
+   "sqlserver"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM `orders` o WHERE ▮",
+  "expect": "column",
+  "tables": [
+   "o=orders"
+  ],
+  "dialects": [
+   "mysql",
+   "sqlite"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM [orders] o WHERE ▮",
+  "expect": "column",
+  "tables": [
+   "o=orders"
+  ],
+  "dialects": [
+   "sqlserver",
+   "sqlite"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM [shop].[orders] o WHERE o.▮",
+  "expect": "column",
+  "qualifier": [
+   "o"
+  ],
+  "tables": [
+   "o=shop.orders"
+  ],
+  "dialects": [
+   "sqlserver"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM \"shop\".\"Odd Name\" AS x WHERE x.▮",
+  "expect": "column",
+  "qualifier": [
+   "x"
+  ],
+  "tables": [
+   "x=shop.Odd Name"
+  ],
+  "dialects": [
+   "postgres"
+  ]
+ },
+ {
+  "sql": "SELECT $$ ▮ $$",
+  "expect": "none",
+  "dialects": [
+   "postgres"
+  ]
+ },
+ {
+  "sql": "SELECT 'it''s ▮",
+  "expect": "none"
+ },
+ {
+  "sql": "SELECT TOP 5 ▮ FROM orders",
+  "expect": "column",
+  "dialects": [
+   "sqlserver"
+  ]
+ },
+ {
+  "sql": "SELECT * FROM orders o UNION SELECT ▮ FROM customer c",
+  "expect": "column"
+ },
+ {
+  "sql": "CALL ▮",
+  "expect": "routine",
+  "dialects": [
+   "postgres",
+   "mysql"
+  ]
+ },
+ {
+  "sql": "EXEC ▮",
+  "expect": "routine",
+  "dialects": [
+   "sqlserver"
+  ]
+ },
+ {
+  "sql": "CREATE TABLE t (id ▮",
+  "expect": "type"
+ },
+ {
+  "sql": "CREATE TABLE t (id int, name ▮",
+  "expect": "type"
+ },
+ {
+  "sql": "CREATE TABLE t (▮",
+  "expect": "keyword_or_none"
+ },
+ {
+  "sql": "ALTER TABLE orders ADD COLUMN extra ▮",
+  "expect": "type"
+ },
+ {
+  "sql": "ALTER TABLE orders ADD extra ▮",
+  "expect": "type",
+  "dialects": [
+   "sqlserver",
+   "mysql"
+  ]
+ },
+ {
+  "sql": "ALTER TABLE orders ALTER COLUMN note TYPE ▮",
+  "expect": "type",
+  "dialects": [
+   "postgres"
+  ]
+ },
+ {
+  "sql": "CREATE ▮",
+  "expect": "keyword"
+ },
+ {
+  "sql": "DROP ▮",
+  "expect": "keyword"
+ },
+ {
+  "sql": "CREATE INDEX i ON ▮",
+  "expect": "table"
+ },
+ {
+  "sql": "CREATE VIEW v AS SELECT ▮ FROM orders",
+  "expect": "column"
+ },
+ {
+  "sql": "EXPLAIN SELECT ▮ FROM orders",
+  "expect": "column"
+ }
+]
