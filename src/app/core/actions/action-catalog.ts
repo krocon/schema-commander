@@ -54,6 +54,12 @@ export const ACTIONS = [
     group: 'Abfrage',
     scope: 'global',
   },
+  {
+    id: 'TOGGLE_CONFIRM_DANGEROUS',
+    label: 'Rückfrage bei zerstörenden Anweisungen ein/aus',
+    group: 'Verbindung',
+    scope: 'global',
+  },
   // Export (prompt 011)
   { id: 'EXPORT_RESULT', label: 'Ergebnis exportieren …', group: 'Datei', scope: 'global' },
   { id: 'CANCEL_EXPORT', label: 'Export abbrechen', group: 'Datei', scope: 'global' },

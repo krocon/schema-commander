@@ -48,6 +48,7 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | A26 | Formate zum Kopieren und Exportieren schreibt Rust (`extract.rs`); die Zwischenablage gehört Rust (`arboard`, drei schmale Commands), Zeilen gehen nie durch die WebView | Design 009 E1–E2 |
 | A27 | Verlauf in eigener SQLite-Datei (`history.rs`), Suche mit `LIKE`, Löschen mit `secure_delete` + `VACUUM`; was nicht gemerkt werden soll, verlässt das Frontend nicht | Design 010 E1–E6 |
 | A28 | Export schreibt Rust zeilenweise (`export.rs`: Speicher oder `FileSink` am Treiber), neben das Ziel und benennt um; Jobs mit Id, Fortschritt über `Channel`, Abbruch | Design 011 E2, E6, E8 |
+| A29 | Schutz der Verbindungen im Backend: `guard::classify` (eigener Scanner, im Zweifel schreibend), `admit` an jedem Ausführ-Command, Bestätigung als einmaliges Token, `readonly` zusätzlich auf dem Server | Design 012 E1–E6 |
 | A10 | Oberflächentexte vorerst deutsch in den Komponenten | übernommene Galerie ist deutsch; Kataloge de/en kommen mit dem Prompt „Einstellungen und Sprache“ |
 
 ## Offene Architekturfragen (entscheidet der jeweilige Prompt)

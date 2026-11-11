@@ -4,6 +4,12 @@ export type DbKind = 'postgres' | 'mysql' | 'sqlserver' | 'sqlite';
 /** Mirrors `TlsMode`: no TLS (servers on this machine), or TLS with certificate and host name checked. */
 export type TlsMode = 'off' | 'verify';
 
+/**
+ * Mirrors `Protection` in src-tauri/src/db/guard.rs: `free` asks only for what destroys, `ask` for everything
+ * that does not read, `readonly` runs nothing else (enforced in the backend, and on the server where it can).
+ */
+export type Protection = 'free' | 'ask' | 'readonly';
+
 /** A stored connection – never a secret. Mirrors `Profile`. */
 export interface Profile {
   /** `''` for a profile that is not stored yet. */
@@ -23,6 +29,10 @@ export interface Profile {
   readonly color: number;
   /** Keep the password in the keychain of the OS after a login that worked. */
   readonly savePassword: boolean;
+  /** What may run here without asking (prompt 012). */
+  readonly protection: Protection;
+  /** A short mark shown with the connection (`PROD`); `''` = none. */
+  readonly label: string;
 }
 
 /** Mirrors `LoadedProfiles`. */
@@ -79,6 +89,8 @@ export function emptyProfile(kind: DbKind = 'postgres'): Profile {
     folder: '',
     color: 1,
     savePassword: true,
+    protection: 'free',
+    label: '',
   };
 }
 

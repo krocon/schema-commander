@@ -14,6 +14,7 @@ export type ErrorCode =
   | 'timeout'
   | 'cancelled'
   | 'permission_denied'
+  | 'confirmation_required'
   | 'secret_required'
   | 'keychain_unavailable'
   | 'invalid_profile'
@@ -44,6 +45,7 @@ const CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'timeout',
   'cancelled',
   'permission_denied',
+  'confirmation_required',
   'secret_required',
   'keychain_unavailable',
   'invalid_profile',
@@ -84,6 +86,7 @@ const TEXTS: Readonly<Record<ErrorCode, string>> = {
   timeout: 'Keine Antwort in der vorgesehenen Zeit.',
   cancelled: 'Abgebrochen.',
   permission_denied: 'Dafür fehlen die Rechte.',
+  confirmation_required: 'Diese Anweisung braucht eine Bestätigung.',
   secret_required: 'Ein Passwort ist nötig.',
   keychain_unavailable: 'Der Schlüsselbund des Systems ist nicht verfügbar.',
   invalid_profile: 'Die Angaben der Verbindung sind unvollständig oder ungültig.',

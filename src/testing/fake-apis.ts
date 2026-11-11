@@ -22,10 +22,17 @@ import {
 } from '../app/core/history/history-api';
 import { ConnectionsApi } from '../app/core/connections/connections-api';
 import { LoadedSession, SessionApi, SessionFile, TextFile } from '../app/core/session/session-api';
-import { QueryApi } from '../app/core/sql/query-api';
+import { QueryApi, RunGuard } from '../app/core/sql/query-api';
 import { SchemaApi } from '../app/core/schema/schema-api';
 import { Found, ObjectInfo, SchemaInfo, TableInfo } from '../app/core/schema/schema.models';
-import { Cell, QueryColumn, RowWindow, RunEvent, RunOutcome } from '../app/core/sql/query.models';
+import {
+  Cell,
+  QueryColumn,
+  RowWindow,
+  RunEvent,
+  RunOutcome,
+  Verdict,
+} from '../app/core/sql/query.models';
 import { FileDialogApi } from '../app/core/backend/file-dialog-api';
 import { WindowApi } from '../app/core/backend/window-api';
 import { LoadedThemes, ThemeApi } from '../app/core/theme/theme-api';
@@ -70,13 +77,49 @@ export class FakeQueryApi extends QueryApi {
   readonly windows: { resultId: number; from: number; count: number }[] = [];
   private nextId = 1;
 
+  /** What `check` says about a statement; the default lets everything run. */
+  verdict: (sql: string) => Verdict = () => ({ class: 'read', need: 'nothing' });
+  /** The name `confirm` wants typed for `type_name`. */
+  connectionName = 'Demo';
+  readonly confirmed: { sqls: readonly string[]; typedName: string | null }[] = [];
+  /** The confirmation each statement ran with. */
+  readonly tokens: (string | null)[] = [];
+
+  check(_connection: string, sqls: readonly string[]): Promise<Verdict[]> {
+    return Promise.resolve(sqls.map((sql) => this.verdict(sql)));
+  }
+
+  confirm(
+    _connection: string,
+    sqls: readonly string[],
+    typedName: string | null,
+  ): Promise<(string | null)[]> {
+    this.confirmed.push({ sqls, typedName });
+    const verdicts = sqls.map((sql) => this.verdict(sql));
+    if (verdicts.some((v) => v.need === 'type_name') && typedName !== this.connectionName) {
+      return Promise.reject({ code: 'confirmation_required', message: 'name not typed' });
+    }
+    return Promise.resolve(
+      verdicts.map((v, i) => (v.need === 'nothing' ? null : `token-${i}-${sqls[i].length}`)),
+    );
+  }
+
   run(
     connection: string,
     sql: string,
     timeoutMs = 0,
     onEvent?: (event: RunEvent) => void,
+    guard: RunGuard = {},
   ): Promise<RunOutcome> {
     this.statements.push({ connection, sql });
+    this.tokens.push(guard.confirmation ?? null);
+    const need = this.verdict(sql).need;
+    if (need === 'refused') {
+      return Promise.reject({ code: 'permission_denied', message: 'this connection is read only' });
+    }
+    if (need !== 'nothing' && !guard.confirmation) {
+      return Promise.reject({ code: 'confirmation_required', message: 'needs a confirmation' });
+    }
     this.timeouts.push(timeoutMs);
     // `null` in `errors` = this call succeeds
     const next = this.errors.length > 0 ? this.errors.shift() : this.error;
@@ -139,6 +182,8 @@ export const DEMO_PROFILE: Profile = {
   folder: '',
   color: 3,
   savePassword: false,
+  protection: 'free',
+  label: '',
 };
 
 /**

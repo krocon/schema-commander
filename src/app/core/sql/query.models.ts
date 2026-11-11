@@ -65,3 +65,15 @@ export interface RunOutcome {
 
 /** A window of rows as it crosses the bridge. */
 export type RowWindow = readonly (readonly Cell[])[];
+
+/** Mirrors `Class` in src-tauri/src/db/guard.rs: what a statement does, the mildest first. */
+export type StatementClass = 'read' | 'write' | 'ddl' | 'dangerous';
+
+/** Mirrors `Need`: what a statement needs before it may run on its connection. */
+export type StatementNeed = 'nothing' | 'confirm' | 'type_name' | 'refused';
+
+/** Mirrors `Verdict`. */
+export interface Verdict {
+  readonly class: StatementClass;
+  readonly need: StatementNeed;
+}

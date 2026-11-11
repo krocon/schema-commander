@@ -4,6 +4,7 @@
 //! Drivers after log-commander (its prompt 019): `sqlx-postgres`, `sqlx-mysql`, `tiberius`, `rusqlite` – pure
 //! Rust, TLS over rustls with the roots of the OS.
 
+pub mod guard;
 pub mod manager;
 pub mod meta;
 pub mod mssql;
@@ -88,6 +89,12 @@ pub struct Profile {
     /// Keep the password in the keychain of the OS after a login that worked.
     #[serde(default)]
     pub save_password: bool,
+    /// What may run here without asking (prompt 012).
+    #[serde(default)]
+    pub protection: guard::Protection,
+    /// A short mark shown with the connection (`PROD`); empty = none.
+    #[serde(default)]
+    pub label: String,
 }
 
 fn default_color() -> u8 {
@@ -442,6 +449,8 @@ mod tests {
             folder: String::new(),
             color: 1,
             save_password: false,
+            protection: crate::db::guard::Protection::Free,
+            label: String::new(),
         }
     }
 

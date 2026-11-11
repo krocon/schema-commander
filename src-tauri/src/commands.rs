@@ -2,7 +2,7 @@
 
 use crate::copy::{self, Copied, Selection};
 use crate::db::Profile;
-use crate::db::manager::{ConnectionInfo, ConnectionManager};
+use crate::db::manager::{ConnectionInfo, ConnectionManager, Verdict};
 use crate::db::meta;
 use crate::db::profiles::LoadedProfiles;
 use crate::db::secrets::Secret;
@@ -99,14 +99,24 @@ pub struct RunOutcome {
 /// there are by now, so the window shows them while the rest is still read. A statement that fails or is
 /// stopped leaves no result behind. `async`: off the main thread, the window stays responsive.
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 pub fn run_query(
     manager: State<'_, ConnectionManager>,
     store: State<'_, ResultStore>,
     id: String,
     sql: String,
     timeout_ms: Option<u64>,
+    confirmation: Option<String>,
+    allow_dangerous: Option<bool>,
     on_event: Channel<RunEvent>,
 ) -> AppResult<RunOutcome> {
+    // the guard of the connection (prompt 012): here, not in the window
+    manager.admit(
+        &id,
+        &sql,
+        confirmation.as_deref(),
+        allow_dangerous.unwrap_or(false),
+    )?;
     let timeout = timeout_ms
         .filter(|ms| *ms > 0)
         .map(std::time::Duration::from_millis);
@@ -329,6 +339,13 @@ pub fn export_query(
     on_progress: Channel<u64>,
 ) -> AppResult<export::Exported> {
     let path = export_target(&path)?;
+    // an export reads: nothing else runs through it, whatever the connection allows
+    if manager.verdict(&id, &sql, false)?.class != crate::db::guard::Class::Read {
+        return Err(AppError::new(
+            ErrorCode::PermissionDenied,
+            "an export runs statements that read, nothing else",
+        ));
+    }
     jobs.start(job_id, Some(id.clone()));
     let report = |n: u64| {
         let _ = on_progress.send(n);
@@ -341,6 +358,32 @@ pub fn export_query(
     let done = sink.finish()?;
     jobs.written.lock().insert(path);
     Ok(done)
+}
+
+/// What statements are and what they need on a connection before they may run (prompt 012).
+#[tauri::command(async)]
+pub fn check_statements(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    sqls: Vec<String>,
+    allow_dangerous: bool,
+) -> AppResult<Vec<Verdict>> {
+    sqls.iter()
+        .map(|sql| manager.verdict(&id, sql, allow_dangerous))
+        .collect()
+}
+
+/// The user confirmed these statements (for dangerous ones on a protected connection: by typing its
+/// name). Returns a token for each statement that needs one; `run_query` takes it.
+#[tauri::command(async)]
+pub fn confirm_statements(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    sqls: Vec<String>,
+    typed_name: Option<String>,
+    allow_dangerous: bool,
+) -> AppResult<Vec<Option<String>>> {
+    manager.confirm(&id, &sqls, typed_name.as_deref(), allow_dangerous)
 }
 
 /// Stops a job (its statement on the server too).

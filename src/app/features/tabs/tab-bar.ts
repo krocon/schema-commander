@@ -61,6 +61,9 @@ interface Menu {
             />
           } @else {
             <span class="title">{{ tab.title() }}</span>
+            @if (mark(tab); as m) {
+              <span class="guard-mark">{{ m }}</span>
+            }
             @if (tab.filePath() && tab.dirty()) {
               <span class="dirty" title="Geändert seit dem Speichern" aria-label="geändert">●</span>
             }
@@ -148,6 +151,13 @@ export class TabBar {
   private readonly colors = computed(
     () => new Map(this.connections.profiles().map((p) => [p.id, p.color])),
   );
+
+  /** The mark of the tab's connection when it is protected or labelled. */
+  protected mark(tab: QueryTab): string | null {
+    const profile = this.connections.profiles().find((p) => p.id === tab.connectionId());
+    if (!profile) return null;
+    return profile.label.trim() || (profile.protection === 'free' ? null : '🔒');
+  }
 
   protected color(tab: QueryTab): number {
     return this.colors().get(tab.connectionId()) ?? 1;

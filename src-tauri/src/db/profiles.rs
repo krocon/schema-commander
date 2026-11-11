@@ -61,6 +61,9 @@ pub fn check(p: &Profile) -> AppResult<()> {
     if p.name.trim().is_empty() || !plain(&p.name, MAX_NAME_LEN) {
         return Err(invalid("the name is missing or not allowed"));
     }
+    if !plain(&p.label, 12) {
+        return Err(invalid("the label is too long (12 characters at most)"));
+    }
     if !(1..=8).contains(&p.color) {
         return Err(invalid("the colour must be 1 to 8"));
     }
@@ -234,6 +237,8 @@ mod tests {
             folder: "Entwicklung".into(),
             color: 3,
             save_password: true,
+            protection: crate::db::guard::Protection::Free,
+            label: String::new(),
         }
     }
 

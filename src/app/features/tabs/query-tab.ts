@@ -1,3 +1,5 @@
+import { RunGuard } from '../../core/sql/query-api';
+import { GuardAnswer, GuardedStatement, needingConfirmation } from '../guard/guard-logic';
 import type { RanStatement } from '../history/history.service';
 import { computed, signal } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
@@ -37,6 +39,15 @@ export interface TabServices {
   readonly connections: ConnectionsStore;
   /** How statements run right now (from the settings). */
   readonly options: () => RunOptions;
+  /**
+   * Asks the user about statements the connection guards (prompt 012); `null` = no. Without it, guarded
+   * statements are not confirmed and the backend refuses them.
+   */
+  readonly confirmRun?: (
+    connection: string,
+    statements: readonly GuardedStatement[],
+    total: number,
+  ) => Promise<GuardAnswer | null>;
   /** A statement ended, one way or the other (the history notes it). */
   readonly record?: (ran: RanStatement) => void;
   /** Statements ended well on a connection (the schema tree reads again after DDL). */
@@ -48,6 +59,8 @@ export interface RunOptions {
   readonly stopOnError: boolean;
   /** Time at most per statement, 0 = as long as it takes. */
   readonly timeoutMs: number;
+  /** Dangerous statements on unprotected connections run without a question. */
+  readonly allowDangerous?: boolean;
 }
 
 /**
@@ -90,6 +103,8 @@ export class QueryTab {
   );
 
   private editor: TabEditor | null = null;
+  /** The run `cancel` was asked for last. */
+  private cancelledRun = 0;
   /** Who wrote the statements of the run that is on. */
   private origin: 'user' | 'app' = 'user';
   private runId = 0;
@@ -181,6 +196,45 @@ export class QueryTab {
       if (!latest()) return;
       this.runs.update((all) => all.map((r, i) => (i === index ? { ...r, ...change } : r)));
     };
+    // what the connection guards is asked about once, for the whole run (prompt 012)
+    const allowDangerous = options.allowDangerous ?? false;
+    let tokens: (string | null)[] = [];
+    this.runningOn = connection;
+    /** Ends the run before a statement was sent. */
+    const abandon = () => {
+      this.runs.update((all) => all.map((r) => ({ ...r, kind: 'cancelled' as const })));
+      this.runningOn = null;
+      this.stopTimer();
+      this.shown.set(0);
+    };
+    try {
+      const verdicts = await this.services.api.check(connection, sqls, allowDangerous);
+      const guarded = needingConfirmation(sqls, verdicts);
+      if (guarded.length > 0 && latest()) {
+        const answer = await this.services.confirmRun?.(connection, guarded, sqls.length);
+        if (!latest()) return;
+        if (!answer) {
+          // a no: nothing of the run happens
+          abandon();
+          return;
+        }
+        tokens = await this.services.api.confirm(
+          connection,
+          sqls,
+          answer.typedName,
+          allowDangerous,
+        );
+      }
+    } catch {
+      // the check itself failed (unknown connection, wrong name): the run goes on and the backend, which
+      // decides anyway, says why each statement does not run
+      tokens = [];
+    }
+    if (!latest()) return;
+    if (this.cancelledRun === id) {
+      abandon();
+      return;
+    }
     let kept = 0;
     const succeeded: string[] = [];
     let stop: 'failed' | 'cancelled' | null = null;
@@ -205,11 +259,18 @@ export class QueryTab {
             continue;
           }
           const keep = kept < MAX_KEPT_RESULTS;
-          const outcome = await this.runOnce(connection, sql, options.timeoutMs, (event) => {
-            // rows can be looked at while the rest is still read
-            if (event.kind === 'rows') set(index, { rows: event.rows });
-            else if (keep) set(index, { result: event, rows: 0 });
-          });
+          const guard = { confirmation: tokens[index] ?? null, allowDangerous };
+          const outcome = await this.runOnce(
+            connection,
+            sql,
+            options.timeoutMs,
+            (event) => {
+              // rows can be looked at while the rest is still read
+              if (event.kind === 'rows') set(index, { rows: event.rows });
+              else if (keep) set(index, { result: event, rows: 0 });
+            },
+            guard,
+          );
           succeeded.push(sql);
           const hasRows = outcome.resultId !== null;
           if (hasRows && keep) kept++;
@@ -230,7 +291,13 @@ export class QueryTab {
           const elapsedMs = Date.now() - started;
           // the backend says whether the session survived; a lost one is opened again by the next run
           if (
-            !['invalid_query', 'permission_denied', 'cancelled', 'timeout'].includes(error.code)
+            ![
+              'invalid_query',
+              'permission_denied',
+              'confirmation_required',
+              'cancelled',
+              'timeout',
+            ].includes(error.code)
           ) {
             connections.markClosed(connection);
           }
@@ -258,6 +325,8 @@ export class QueryTab {
 
   /** Asks the backend to stop the statement that runs. */
   cancel(): void {
+    // a run that is still being checked has nothing on the server yet: it ends before it starts
+    this.cancelledRun = this.runId;
     if (this.runningOn !== null) {
       void this.services.api.cancel(this.runningOn).catch(() => undefined);
     }
@@ -269,15 +338,16 @@ export class QueryTab {
     sql: string,
     timeoutMs: number,
     onEvent: (event: RunEvent) => void,
+    guard: RunGuard,
   ): Promise<RunOutcome> {
     const { api, connections } = this.services;
     try {
-      return await api.run(connection, sql, timeoutMs, onEvent);
+      return await api.run(connection, sql, timeoutMs, onEvent, guard);
     } catch (e) {
       if (toAppError(e).code !== 'not_connected') throw e;
       connections.markClosed(connection);
       if (!(await connections.connect(connection))) throw e;
-      return api.run(connection, sql, timeoutMs, onEvent);
+      return api.run(connection, sql, timeoutMs, onEvent, guard);
     }
   }
 

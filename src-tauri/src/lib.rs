@@ -64,6 +64,8 @@ pub fn run() {
             commands::close_connection,
             commands::run_query,
             commands::cancel_query,
+            commands::check_statements,
+            commands::confirm_statements,
             commands::copy_result,
             commands::cancel_copy,
             commands::copy_text,
