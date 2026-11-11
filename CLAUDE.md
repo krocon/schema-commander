@@ -34,11 +34,12 @@
   (Text-Kataloge) und **Einstellungsdialog** mit Suche, Zurücksetzen, Export/Import (Prompt 017);
   **Menüleiste** (macOS nativ, sonst im Fenster) und **Kontextmenüs** aus einem Menümodell (Prompt 018);
   **Objekt-Details** (Spalten, Indizes, Constraints, Beziehungen, Rechte, Statistik) und **DDL** je Objekt
-  (Prompt 019);
+  (Prompt 019); **Springen zu allem** (`Mod+P`): Tabellen, Views, Routinen, Spalten, Tabs, Verbindungen über
+  einen Namensindex im Backend, in der gemeinsamen Palette (Prompt 020);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–019),
+  erledigt: 001–020),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -105,7 +106,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                HistoryService (Root: aufzeichnen, blättern), history-logic.ts (rein)
   app/features/menus/          menu-model.ts (rein: Menüs aus Aktions-Ids → Fenster / native Spec), MenuService
                                (Root: Menüleiste, Kontextmenü), MenuBar (APG-Menubar für Windows/Linux)
-  app/features/palette/        Befehlspalette (CommandPalette, palette-logic.ts rein: unscharfe Suche)
+  app/features/palette/        die eine Palette: Befehle und „Springen zu allem“ (CommandPalette), palette-logic.ts
+                               und goto-logic.ts (rein), GotoService (führt einen Treffer aus)
   app/features/schema/         SchemaTree (virtuelle Liste, APG-Baum), SchemaStore (Root: Zustand je Verbindung),
                                SchemaActions, schema-logic.ts (rein: Zeilen, Filter, Tasten, Vorlagen)
   app/features/settings/       SettingsDialog (Gruppen, Suche, Zurücksetzen, Export/Import), settings-logic.ts
@@ -143,6 +145,7 @@ src-tauri/                     Rust
   src/db/import.rs             Verbindungs-URLs und fremde Dateien lesen (rein, Katalog), eigener Export
   src/db/guard.rs              Anweisungen einstufen (lesend/schreibend/DDL/gefährlich), Schutzstufen (rein, Katalog)
   src/db/details.rs            Objekt-Details als Listen + DDL je Datenbank (Katalog, gebundene Parameter)
+  src/db/names.rs              Namensindex je Verbindung: Katalog lesen, Suche und Rangfolge (rein, Katalog als Test)
   src/db/meta.rs               Metadaten aus dem Systemkatalog (gebundene Parameter), quote() je Dialekt
   src/db/value.rs              Cell, ColKind, QueryResult (verlustfrei über die Brücke)
   src/db/manager.rs            ConnectionManager: Sitzungen, Schlüsselbund-Regeln, Abbruch

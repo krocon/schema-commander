@@ -62,7 +62,7 @@ Prompts) · **Stufe** = meine Empfehlung: **1** Grundlage (ohne das ist es kein 
 | Id | Feature | Vorbild | Umfang | Stufe | Freigabe |
 |---|---|---|---|---|---|
 | B1 | **Schema-Baum** in der Seitenleiste: Datenbanken, Schemata, Tabellen, Views, Spalten, Indizes, Schlüssel, Routinen; lädt Äste erst beim Aufklappen; **Filter beim Tippen**; als GuiExpert-Baumtabelle auch bei 50 000 Objekten flüssig | DataGrip, HeidiSQL | L | 1 | ☑ [008](../prompts/done/008-schema-baum.md) |
-| B2 | **Springen zu allem** (`Strg/Cmd+P`): ein Feld, unscharfe Suche über alle Tabellen, Views, Routinen, gespeicherte Abfragen, offene Tabs | DataGrip, TablePlus | M | 2 | ☑ [020](../prompts/020-springen-zu-allem.md) |
+| B2 | **Springen zu allem** (`Strg/Cmd+P`): ein Feld, unscharfe Suche über alle Tabellen, Views, Routinen, gespeicherte Abfragen, offene Tabs | DataGrip, TablePlus | M | 2 | ☑ [020](../prompts/done/020-springen-zu-allem.md) |
 | B3 | **Objekt-Details**: Spalten mit Typ/Default/Kommentar, Indizes, Constraints, Trigger; **DDL anzeigen und kopieren**; Zeilenzahl und Größe | DBeaver, Postico | M | 2 | ☑ [019](../prompts/done/019-objekt-details.md) |
 | B4 | **Suche auf dem Server**: einen Text in allen Tabellen (Daten) und in Routinen/Views (Quelltext) finden, als abbrechbarer Job mit Treffer-Tab | HeidiSQL, DataGrip | M | 3 | ☑ [036](../prompts/036-server-suche.md) |
 | B5 | **ER-Diagramm** einer Tabelle mit ihren Nachbarn bzw. eines Schemas | DBeaver | L | 3 | ☑ [037](../prompts/037-er-diagramm.md) |

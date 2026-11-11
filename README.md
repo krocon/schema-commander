@@ -31,6 +31,8 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   OS and an editor for your own shortcuts (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>S</kbd>)
 - Split view: two tab groups side by side or stacked, each tab on its own connection; the result below or beside
   the editor, hidden or maximised; the sidebar shows connections and schema or the history; a zen mode
+- Go to anything (<kbd>Ctrl/⌘</kbd>+<kbd>P</kbd>): a few letters find a table, view, routine, column, open tab
+  or connection across all schemas – by word starts (`ord_it`), with typos, ranked
 - Object details for every table, view, routine, sequence and type: columns, indexes, constraints, relations,
   privileges, statistics – and the DDL to read, copy or open in a tab
 - A menu bar (native on macOS, drawn by the window on Windows and Linux) and context menus on tabs, results
