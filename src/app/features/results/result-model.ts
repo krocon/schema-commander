@@ -1,24 +1,43 @@
 import {
   AreaModel,
+  CellRendererIf,
   ColumnDef,
+  SelectionModel,
   Size,
   TableFactory,
   TableModelIf,
   TableOptions,
   TableOptionsIf,
 } from '@guiexpert/table';
-import { Cell, QueryColumn, RowWindow } from '../../core/sql/query.models';
+import { QueryColumn, RowWindow } from '../../core/sql/query.models';
+import { CellFormat, PLAIN_FORMAT, showCell, typeLabel } from './cell-format';
 
 /** Row heights in px; the line height of the cells follows them in `ge-table-theme.css`. */
 export const HEADER_ROW_HEIGHT = 26;
 export const BODY_ROW_HEIGHT = 22;
 
-/** The options of the result grid. */
-export const RESULT_OPTIONS: TableOptionsIf = {
-  ...new TableOptions(),
-  hoverColumnVisible: false,
-  defaultRowHeights: { header: HEADER_ROW_HEIGHT, body: BODY_ROW_HEIGHT, footer: 0 },
-};
+/** A fitted column (double click on its edge) is never wider than this. */
+export const MAX_FIT_WIDTH = 800;
+
+/**
+ * The options of one result grid. Each grid has a selection of its own: cells, ranges, rows and columns by
+ * mouse and keyboard (the ground for copying, prompt 009).
+ */
+export function resultOptions(): TableOptionsIf {
+  const selection = new SelectionModel('range', 'multi');
+  const base = new TableOptions();
+  return {
+    ...base,
+    hoverColumnVisible: false,
+    defaultRowHeights: { header: HEADER_ROW_HEIGHT, body: BODY_ROW_HEIGHT, footer: 0 },
+    getSelectionModel: () => selection,
+    columnAutoWidth: {
+      ...base.columnAutoWidth,
+      doubleClick: true,
+      getWidth: (ctx) => Math.min(MAX_FIT_WIDTH, ctx.getDefaultWidth()),
+    },
+  };
+}
 
 /** Rows asked for at once. */
 export const PAGE_ROWS = 200;
@@ -29,34 +48,17 @@ const CHAR_PX = 8;
 const MIN_WIDTH = 60;
 const MAX_WIDTH = 420;
 const NUMBER_MIN_WIDTH = 44;
-
-/** A cell as the table shows it. */
-export type Shown = string | number | null;
-
-/** A cell as text; `null` stays `null` (shown empty until prompt 007 brings a renderer for NULL). */
-export function cellText(cell: Cell): string | null {
-  if (cell === null) return null;
-  if (typeof cell === 'object') {
-    if ('unreadable' in cell) return `‹${cell.unreadable}›`;
-    return `0x${cell.hex}${cell.bytes * 2 > cell.hex.length ? '…' : ''} (${cell.bytes} B)`;
-  }
-  return String(cell);
-}
-
-/** A window as the table shows it: numbers and text as they are, everything else as text. */
-export function shownRows(rows: RowWindow): Shown[][] {
-  return rows.map((row) =>
-    row.map((cell) =>
-      cell === null || typeof cell === 'string' || typeof cell === 'number' ? cell : cellText(cell),
-    ),
-  );
-}
+/** Rows looked at for the widths. */
+const WIDTH_SAMPLE = 100;
 
 /** Column widths in px from the header and some rows. */
 export function columnWidths(columns: readonly QueryColumn[], sample: RowWindow): number[] {
   return columns.map((column, c) => {
-    let chars = column.name.length + 2;
-    for (const row of sample) chars = Math.max(chars, (cellText(row[c]) ?? 'NULL').length);
+    const type = typeLabel(column.typeName);
+    let chars = column.name.length + (type ? type.length + 1 : 0) + 2;
+    for (const row of sample.slice(0, WIDTH_SAMPLE)) {
+      chars = Math.max(chars, showCell(row[c], column.kind).text.length);
+    }
     return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, chars * CHAR_PX + 16));
   });
 }
@@ -64,18 +66,6 @@ export function columnWidths(columns: readonly QueryColumn[], sample: RowWindow)
 /** The width of the row number column for so many rows. */
 export function numberWidth(rows: number): number {
   return Math.max(NUMBER_MIN_WIDTH, String(Math.max(1, rows)).length * CHAR_PX + 18);
-}
-
-/**
- * Numbers are right-aligned: by the kind of the column, and for a column of unknown kind (an expression in
- * SQLite) by its first value.
- */
-export function isNumeric(columns: readonly QueryColumn[], c: number, sample: RowWindow): boolean {
-  const kind = columns[c].kind;
-  if (kind === 'int' || kind === 'float' || kind === 'decimal') return true;
-  if (kind !== 'other') return false;
-  const first = sample.find((row) => row[c] !== null)?.[c];
-  return typeof first === 'number';
 }
 
 /** The page a row is on, and the pages a cache keeps when it is full. */
@@ -92,11 +82,13 @@ export function pagesToDrop(pages: readonly number[], around: number, max: numbe
 /**
  * The rows of a result in the store of the backend, as the body of the table (prompt 006): the table asks
  * for cells, this model answers from the pages it has and fetches the others. A cell of a page that is not
- * there yet is empty until it arrives (`onLoaded` repaints). Column 0 is the row number.
+ * there yet is empty until it arrives (`onLoaded` repaints). Column 0 is the row number. The pages hold the
+ * cells as they came; what the grid shows is made from them when it asks (`showCell`).
  */
 export class WindowAreaModel extends AreaModel {
   private count = 0;
-  private readonly pages = new Map<number, Shown[][]>();
+  private readonly pages = new Map<number, RowWindow>();
+  private format: CellFormat = PLAIN_FORMAT;
   private readonly pending = new Set<number>();
   private disposed = false;
 
@@ -104,10 +96,16 @@ export class WindowAreaModel extends AreaModel {
     private readonly fetch: (from: number, count: number) => Promise<RowWindow>,
     private readonly onLoaded: () => void,
     first: RowWindow,
+    private readonly columns: readonly QueryColumn[] = [],
   ) {
     super();
     this.areaIdent = 'body';
-    if (first.length > 0) this.pages.set(0, shownRows(first));
+    if (first.length > 0) this.pages.set(0, first);
+  }
+
+  /** How cells are shown from now on (the caller repaints). */
+  setFormat(format: CellFormat): void {
+    this.format = format;
   }
 
   /** The result has so many rows by now. */
@@ -137,21 +135,37 @@ export class WindowAreaModel extends AreaModel {
     return BODY_ROW_HEIGHT;
   }
 
-  override getValueAt(row: number, col: number): Shown {
+  override getValueAt(row: number, col: number): string | number {
     if (col === 0) return row + 1;
+    return this.shown(row, col)?.text ?? '';
+  }
+
+  override getTextValueAt(row: number, col: number): string {
+    return String(this.getValueAt(row, col));
+  }
+
+  override getCustomClassesAt(row: number, col: number): string[] {
+    if (col === 0) return [];
+    const cls = this.shown(row, col)?.cls;
+    return cls ? [cls] : [];
+  }
+
+  /** The cell as it came from the backend; `undefined` while its page is not there. */
+  cellAt(row: number, col: number): RowWindow[number][number] | undefined {
     const page = pageOf(row);
-    const rows = this.pages.get(page);
-    if (!rows) {
-      this.request(page);
-      return '';
-    }
-    const cells = rows[row - page * PAGE_ROWS];
+    const cells = this.pages.get(page)?.[row - page * PAGE_ROWS];
     if (!cells) {
-      // the page was read before the result had this row
+      // not read yet, or read before the result had this row
       this.request(page);
-      return '';
+      return undefined;
     }
     return cells[col - 1] ?? null;
+  }
+
+  private shown(row: number, col: number) {
+    const cell = this.cellAt(row, col);
+    if (cell === undefined) return undefined;
+    return showCell(cell, this.columns[col - 1]?.kind ?? 'other', this.format);
   }
 
   /** Whether a page is there (for tests). */
@@ -166,7 +180,7 @@ export class WindowAreaModel extends AreaModel {
       (rows) => {
         this.pending.delete(page);
         if (this.disposed) return;
-        this.pages.set(page, shownRows(rows));
+        this.pages.set(page, rows);
         for (const old of pagesToDrop([...this.pages.keys()], page, MAX_PAGES)) {
           this.pages.delete(old);
         }
@@ -181,6 +195,32 @@ export class WindowAreaModel extends AreaModel {
 }
 
 /**
+ * The header of a result column: its name and, small, its type. Built from text nodes only.
+ */
+export class HeaderRenderer implements CellRendererIf {
+  constructor(private readonly column: QueryColumn) {}
+
+  render(cellDiv: HTMLDivElement): undefined {
+    const doc = cellDiv.ownerDocument;
+    const type = typeLabel(this.column.typeName);
+    const name = doc.createElement('span');
+    name.className = 'sc-head-name';
+    name.textContent = this.column.name;
+    cellDiv.appendChild(name);
+    if (type) {
+      const small = doc.createElement('span');
+      small.className = 'sc-head-type';
+      small.textContent = type;
+      cellDiv.appendChild(small);
+    }
+    cellDiv.title = this.column.typeName
+      ? `${this.column.name} · ${this.column.typeName}`
+      : this.column.name;
+    return undefined;
+  }
+}
+
+/**
  * The table model of a result: the row number, then one column per result column. `first` are its first
  * rows (for the widths; they are shown without another fetch).
  */
@@ -189,6 +229,7 @@ export function resultModel(
   first: RowWindow,
   body: WindowAreaModel,
   rows: number,
+  options: TableOptionsIf,
 ): TableModelIf {
   const widths = columnWidths(columns, first);
   const columnDefs = [
@@ -198,22 +239,28 @@ export function resultModel(
       width: new Size(numberWidth(rows), 'px'),
       headerClasses: ['sc-rownum'],
       bodyClasses: ['sc-rownum'],
+      resizable: false,
+      movable: false,
     }),
     ...columns.map((column, c) =>
       ColumnDef.create({
         property: `c${c}`,
         headerLabel: column.name,
         width: new Size(widths[c], 'px'),
-        // the table centres cells by default
-        headerClasses: ['ge-table-text-align-left'],
-        bodyClasses: isNumeric(columns, c, first) ? ['sc-num'] : ['ge-table-text-align-left'],
+        headerRenderer: new HeaderRenderer(column),
+        // the table centres cells by default; numbers move to the right by the class of the cell
+        headerClasses: ['ge-table-text-align-left', 'sc-head'],
+        bodyClasses: ['ge-table-text-align-left'],
+        // sorting comes with prompt 027: it cannot be done on the rows that happen to be here
+        sortable: () => false,
+        movable: false,
       }),
     ),
   ];
   return TableFactory.createTableModel({
     bodyAreaModel: body,
     columnDefs,
-    tableOptions: RESULT_OPTIONS,
+    tableOptions: options,
     fixedLeftColumnCount: 1,
   });
 }

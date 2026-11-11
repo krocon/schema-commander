@@ -106,7 +106,10 @@
   padding-inline: 8px;
 }
 
-/* numbers of a result are right-aligned (features/results/result-model.ts) */
+/*
+ * The cells of a result by what they hold (features/results/cell-format.ts). Three classes beat the
+ * alignment class of the column.
+ */
 .ge-table .ge-table-col-div.sc-num {
   text-align: end;
   color: var(--sql-number);
@@ -114,4 +117,34 @@
 
 .ge-table .ge-table-col-div.sc-num .ge-table-label {
   padding-inline: 8px;
+}
+
+.ge-table .ge-table-col-div.sc-null,
+.ge-table .ge-table-col-div.sc-empty {
+  color: var(--cell-null);
+  font-style: italic;
+}
+
+.ge-table .ge-table-col-div.sc-bool {
+  color: var(--sql-keyword);
+}
+
+.ge-table .ge-table-col-div.sc-bin {
+  color: var(--text-dim);
+}
+
+/* the header of a result column: name, then its type in small */
+.ge-table .ge-table-col-div.sc-head {
+  padding-inline: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ge-table .ge-table-col-div.sc-head .sc-head-type {
+  margin-inline-start: 6px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
 }

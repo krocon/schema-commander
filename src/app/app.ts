@@ -343,6 +343,9 @@ export class App implements OnInit, OnDestroy {
         () => tab()?.shown.set('messages'),
         () => !!tab(),
       ),
+      this.actions.register('TOGGLE_DIGIT_GROUPING', () =>
+        this.settings.update({ groupDigits: !this.settings.settings().groupDigits }),
+      ),
       this.actions.register(
         'CANCEL_QUERY',
         () => tab()?.cancel(),

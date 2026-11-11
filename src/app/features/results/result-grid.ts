@@ -1,8 +1,10 @@
-import { Component, OnDestroy, effect, input, signal, untracked } from '@angular/core';
+import { Component, OnDestroy, effect, inject, input, signal, untracked } from '@angular/core';
 import { TableSignalComponent } from '@guiexpert/angular-table';
 import { TableApi, TableModelIf } from '@guiexpert/table';
 import { ResultRef, RowWindow } from '../../core/sql/query.models';
-import { PAGE_ROWS, RESULT_OPTIONS, WindowAreaModel, resultModel } from './result-model';
+import { SettingsService } from '../../core/settings/settings.service';
+import { CellFormat } from './cell-format';
+import { PAGE_ROWS, WindowAreaModel, resultModel, resultOptions } from './result-model';
 
 /**
  * The rows of a result in a GuiExpert Table (prompt 006). The rows live in the backend: the grid fetches the
@@ -50,7 +52,8 @@ export class ResultGrid implements OnDestroy {
   readonly fetch =
     input.required<(resultId: number, from: number, count: number) => Promise<RowWindow>>();
 
-  protected readonly options = RESULT_OPTIONS;
+  private readonly settings = inject(SettingsService);
+  protected readonly options = resultOptions();
   /** A new result is a new model: the table starts over. `null` while its first rows are read. */
   protected readonly model = signal<TableModelIf | null>(null);
   protected readonly api = signal<TableApi | undefined>(undefined);
@@ -73,6 +76,16 @@ export class ResultGrid implements OnDestroy {
       // the row count changed: the scroll bar and the visible rows follow, the position stays
       api?.repaintHard();
     });
+    effect(() => {
+      const format = this.format();
+      if (!this.model()) return;
+      this.body?.setFormat(format);
+      this.api()?.repaint();
+    });
+  }
+
+  private format(): CellFormat {
+    return { groupDigits: this.settings.settings().groupDigits };
   }
 
   ngOnDestroy(): void {
@@ -99,10 +112,12 @@ export class ResultGrid implements OnDestroy {
       () => this.api()?.repaint(),
       // a short first page is read again when more rows arrive
       first,
+      result.columns,
     );
+    body.setFormat(untracked(() => this.format()));
     const rows = untracked(() => this.rows());
     body.setRowCount(Math.max(rows, first.length));
     this.body = body;
-    this.model.set(resultModel(result.columns, first, body, Math.max(rows, 1000)));
+    this.model.set(resultModel(result.columns, first, body, Math.max(rows, 1000), this.options));
   }
 }
