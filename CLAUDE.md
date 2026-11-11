@@ -98,6 +98,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/session/            SessionApi: session.json, Texte der Tabs, .sql lesen/schreiben
   app/core/settings/           Settings (Modell, mergeSettings), SettingsService (tauri-plugin-store)
   app/core/sql/                QueryApi (run mit Ereignissen, window, free, cancel) + DTOs (ResultRef, RunEvent, Cell, ColKind) – spiegelt db/value.rs
+  app/core/text/               places.ts (rein: Stelle des Editors ↔ Offset im Text; Spalten in Codepunkten)
   app/core/theme/              Farbschemata: tokens.ts (Katalog), themes/*.json, theme-logic.ts (rein),
                                ThemeService (Root: Auswahl, Vorschau, eigene Schemata), ThemeApi (themes.json),
                                contrast-pairs.json
@@ -112,8 +113,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                editor-colors.ts (Farben des Editors aus unseren Tokens),
                                sql-split.ts (rein: Skripte je Dialekt zerlegen, Katalog sql-split.cases.json)
   app/features/export/         ExportDialog, ExportService (Root: ein Job, Statuszeile), export-logic.ts (rein)
-  app/features/format/         FormatService (Root: ein Job, Statuszeile), format-logic.ts (rein: Stil, Stellen
-                               in Codepunkten, Cursor nach dem Formatieren, Zeilenkommentar)
+  app/features/format/         FormatService (Root: ein Job, Statuszeile), format-logic.ts (rein: Stil,
+                               Cursor nach dem Formatieren, Zeilenkommentar)
   app/features/guard/          GuardDialog (Rückfrage), GuardService, guard-logic.ts (rein)
   app/features/history/        HistoryDialog (Listbox, Vorschau), HistoryPanel (Ansicht der Seitenleiste),
                                HistoryService (Root: aufzeichnen, blättern), history-logic.ts (rein)
@@ -200,7 +201,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   `Session::ask` mit gebundenen Parametern.
 - **Formatieren** ändert nur Leerraum und die Schreibung von Schlüsselwörtern; `format.rs` prüft jedes Ergebnis
   gegen die Tokens des Textes. Das Fenster ersetzt nur den Bereich (`replaceRange`), nie den ganzen Text.
-  Stellen des Editors zählen Spalten in **Codepunkten** (`format-logic.ts`: `placeIn`, `offsetAt`).
+  Stellen des Editors zählen Spalten in **Codepunkten**, JavaScript in UTF-16: umgerechnet wird nur mit
+  `core/text/places.ts` (`placeIn`, `offsetAt`).
 - **Schutz**: Was SQL ausführt, ruft im Backend `ConnectionManager::admit`; das Fenster fragt nur, entscheidet nie.
 - **Zustand in Signals**, Stores je Instanz ohne `providedIn`, Globales in Root-Services; veraltete Antworten verwerfen.
 - **Texte nur in Katalogen**: `*-texts.ts` (Englisch, Quelle) + `*-texts.de.ts` über `translatable()`; nie beim

@@ -1,3 +1,4 @@
+import { placeIn } from '../text/places';
 import { ErrorDetails } from './app-error';
 
 /**
@@ -5,13 +6,14 @@ import { ErrorDetails } from './app-error';
  * in characters (PostgreSQL, SQLite), a line and the text it stumbled over (MySQL), a line and a quoted
  * name (SQL Server) – to lines and columns of the editor. Pure; the cases are in `error-position.cases.json`.
  *
- * Three ways of counting meet here: the databases count characters (an emoji is one), JavaScript and the
- * editor count UTF-16 units (an emoji is two), and a statement starts somewhere in the middle of a script.
+ * Two ways of counting meet here: the databases and the editor count characters (an emoji is one),
+ * JavaScript counts UTF-16 units (an emoji is two) – and a statement starts somewhere in the middle of a
+ * script.
  */
 export interface Place {
   /** From 1. */
   readonly line: number;
-  /** From 1, in UTF-16 units – as the editor counts. */
+  /** From 1, in characters (code points) – as the editor counts. */
   readonly ch: number;
 }
 
@@ -127,12 +129,7 @@ export function errorSpan(statement: string, details: ErrorDetails | null | unde
 
 /** An offset of a statement as a place of the editor; `start` is where the statement begins there. */
 export function placeOf(statement: string, start: Place, offset: number): Place {
-  const before = statement.slice(0, Math.max(0, Math.min(offset, statement.length)));
-  const lines = before.split('\n');
-  const last = lines[lines.length - 1];
-  return lines.length === 1
-    ? { line: start.line, ch: start.ch + last.length }
-    : { line: start.line + lines.length - 1, ch: last.length + 1 };
+  return placeIn(statement, offset, start);
 }
 
 /** The range of the editor to mark for a failed statement that starts at `start`. */

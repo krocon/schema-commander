@@ -24,7 +24,7 @@
   "exact": true
  },
  {
-  "name": "an emoji is one character for the database and two for the editor",
+  "name": "an emoji is one character for the database and for the editor, two for JavaScript",
   "sql": "SELECT '😀😀', nmae FROM t",
   "details": {
    "position": 14
@@ -33,9 +33,9 @@
   "exact": true,
   "range": [
    1,
-   16,
+   14,
    1,
-   20
+   18
   ]
  },
  {
