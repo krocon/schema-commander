@@ -126,7 +126,11 @@ export class SchemaStore {
   /** Statements ran on a connection: when one of them changes the schema, the tree is read again. */
   ran(id: string, statements: readonly string[]): void {
     if ((this.states()[id] ?? EMPTY_STATE).schemas === null) return;
-    if (statements.some(changesSchema)) this.refresh(id);
+    if (statements.some(changesSchema)) {
+      this.refresh(id);
+      // the name index (prompt 020) knows the objects of all schemas: read it again, in the background
+      void this.api.refreshNames(id).catch(() => undefined);
+    }
   }
 
   /** Opens or closes a node of the active connection. */

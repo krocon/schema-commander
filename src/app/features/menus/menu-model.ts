@@ -227,7 +227,13 @@ export const MENU_BAR: readonly TopMenu[] = [
   {
     id: 'tools',
     label: () => T.tools,
-    items: ['OPEN_PALETTE', '-', { when: 'notMacos', items: ['OPEN_SETTINGS'] }, 'OPEN_SHORTCUTS'],
+    items: [
+      'GOTO_ANYTHING',
+      'OPEN_PALETTE',
+      '-',
+      { when: 'notMacos', items: ['OPEN_SETTINGS'] },
+      'OPEN_SHORTCUTS',
+    ],
   },
   {
     id: 'window',

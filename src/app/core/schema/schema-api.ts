@@ -2,6 +2,8 @@ import { Injectable } from '@angular/core';
 import { call } from '../backend/call';
 import {
   Found,
+  NameContext,
+  NameHits,
   ObjectDetails,
   ObjectInfo,
   ObjectKind,
@@ -30,6 +32,13 @@ export abstract class SchemaApi {
     kind: ObjectKind,
     detail: string,
   ): Promise<ObjectDetails>;
+  /**
+   * Searches the names of all schemas (prompt 020). The index is read on the first search, the columns on
+   * the first search for columns; after that a search touches no database.
+   */
+  abstract names(connectionId: string, query: string, context: NameContext): Promise<NameHits>;
+  /** Reads the names again (after DDL); resolves with how many there are. */
+  abstract refreshNames(connectionId: string): Promise<number>;
 }
 
 @Injectable()
@@ -58,5 +67,13 @@ export class TauriSchemaApi extends SchemaApi {
     detail: string,
   ): Promise<ObjectDetails> {
     return call('meta_details', { id: connectionId, schema, name, kind, detail });
+  }
+
+  names(connectionId: string, query: string, context: NameContext): Promise<NameHits> {
+    return call('names_query', { id: connectionId, query, context });
+  }
+
+  refreshNames(connectionId: string): Promise<number> {
+    return call('names_refresh', { id: connectionId });
   }
 }

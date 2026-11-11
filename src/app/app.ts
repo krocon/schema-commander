@@ -421,9 +421,9 @@ const SIDEBAR_MIN = 140;
         <app-history-dialog (closed)="history.open.set(false)" />
       }
     }
-    @if (paletteOpen()) {
+    @if (paletteOpen(); as mode) {
       @defer (on immediate) {
-        <app-command-palette (closed)="paletteOpen.set(false)" />
+        <app-command-palette [start]="mode" (closed)="paletteOpen.set(null)" />
       }
     }
     @if (objectDetails.current()) {
@@ -466,7 +466,8 @@ export class App implements OnInit, OnDestroy {
 
   /** The connection dialog is open with this profile (`id === ''` = a new one). */
   protected readonly connectionDialog = signal<Profile | null>(null);
-  protected readonly paletteOpen = signal(false);
+  /** The palette is open: as the commands, or as „go to anything“ (prompt 020). */
+  protected readonly paletteOpen = signal<'commands' | 'goto' | null>(null);
   protected readonly importOpen = signal(false);
   /** The shortcut editor, `read` as an overview. */
   protected readonly shortcutsOpen = signal<'edit' | 'read' | null>(null);
@@ -885,7 +886,8 @@ export class App implements OnInit, OnDestroy {
         },
         COLOR_SCHEME: () => this.theme.pickerOpen.set(true),
         EDIT_COLOR_SCHEME: () => this.editCurrentScheme(),
-        OPEN_PALETTE: () => this.paletteOpen.set(true),
+        OPEN_PALETTE: () => this.paletteOpen.set('commands'),
+        GOTO_ANYTHING: () => this.paletteOpen.set('goto'),
         OPEN_SETTINGS: () => this.settingsOpen.set(true),
         OPEN_SHORTCUTS: () => this.shortcutsOpen.set('edit'),
         SHOW_SHORTCUTS: () => this.shortcutsOpen.set('read'),

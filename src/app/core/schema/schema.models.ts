@@ -71,3 +71,38 @@ export interface ObjectDetails {
   /** Ids of lists the server refused; `ddl` when there is no DDL. */
   readonly notes: readonly string[];
 }
+
+/** Mirrors `NameKind` in src-tauri/src/db/names.rs (prompt 020). */
+export type NameKind = 'table' | 'view' | 'matview' | 'routine' | 'sequence' | 'column';
+
+/** Mirrors `NameHit`: a name of the index that a search found. */
+export interface NameHit {
+  readonly kind: NameKind;
+  readonly schema: string;
+  readonly name: string;
+  /** The table of a column. */
+  readonly parent: string | null;
+  /** The arguments of a routine, the type of a column. */
+  readonly detail: string;
+  /** The name as it is written in SQL, with its schema (a column: only its own name). */
+  readonly quoted: string;
+  /** The characters of `name` that matched (indices of characters, not of UTF-16 units). */
+  readonly marks: readonly number[];
+}
+
+/** Mirrors `NameHits`. */
+export interface NameHits {
+  readonly hits: readonly NameHit[];
+  /** Names that match in all. */
+  readonly total: number;
+  /** Names in the index. */
+  readonly indexed: number;
+  readonly cut: boolean;
+}
+
+/** Mirrors `Context`: what the ranking knows beside the query. */
+export interface NameContext {
+  readonly currentSchema: string;
+  /** `schema.name` of what was chosen lately, the latest first. */
+  readonly recent: readonly string[];
+}

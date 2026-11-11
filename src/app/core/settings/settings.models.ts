@@ -71,6 +71,8 @@ export interface Settings {
   readonly txWarnMinutes: number;
   /** Ids of the actions run from the command palette, the latest first. */
   readonly recentActions: readonly string[];
+  /** `schema.name` of the objects jumped to (prompt 020), the latest first. */
+  readonly recentObjects: readonly string[];
 }
 
 export type LanguageSetting = 'system' | 'en' | 'de';
@@ -83,6 +85,7 @@ export type SidebarView = 'database' | 'history';
 
 export const KEYMAP_VERSION = 1;
 export const MAX_RECENT_ACTIONS = 12;
+export const MAX_RECENT_OBJECTS = 50;
 
 export interface KeymapSetting {
   readonly version: number;
@@ -111,6 +114,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarView: 'database',
   keymap: { version: KEYMAP_VERSION, bindings: {} },
   recentActions: [],
+  recentObjects: [],
   activeConnection: 'demo',
   stopOnError: true,
   statementTimeoutSec: 0,
@@ -188,6 +192,11 @@ export function mergeSettings(saved: unknown): Settings {
     sidebarView: s['sidebarView'] === 'history' ? 'history' : 'database',
     keymap: mergeKeymap(s['keymap']).keymap,
     recentActions: recent(s['recentActions']),
+    recentObjects: Array.isArray(s['recentObjects'])
+      ? s['recentObjects']
+          .filter((n): n is string => typeof n === 'string' && n.length > 0 && n.length <= 600)
+          .slice(0, MAX_RECENT_OBJECTS)
+      : [],
     stopOnError:
       typeof s['stopOnError'] === 'boolean' ? s['stopOnError'] : DEFAULT_SETTINGS.stopOnError,
     groupDigits:

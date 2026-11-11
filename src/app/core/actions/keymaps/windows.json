@@ -104,6 +104,9 @@
   "COLOR_SCHEME": [
     "Mod+Alt+T"
   ],
+  "GOTO_ANYTHING": [
+    "Mod+P"
+  ],
   "OPEN_PALETTE": [
     "Mod+Shift+P",
     "F1"
