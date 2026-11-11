@@ -13,6 +13,7 @@ use crate::extract::{Format, Options};
 use crate::format;
 use crate::history::{self, History};
 use crate::results::{Progress, ResultStore, StoreSink};
+use crate::saved::{self, SavedDir};
 use crate::session::{LoadedSession, SessionDir, SessionFile};
 use crate::ssh::SshCredentials;
 use crate::textfile::{self, TextFile};
@@ -871,6 +872,72 @@ pub fn save_tab_text(dir: State<'_, SessionDir>, id: String, text: String) -> Ap
 #[tauri::command(async)]
 pub fn delete_tab_text(dir: State<'_, SessionDir>, id: String) -> AppResult<()> {
     dir.delete_text(&id)
+}
+
+/// Saved queries (prompt 024): `.sql` files in one folder. `path` comes from the folder dialog; `None` is
+/// the app's own folder. Every other command names a query by its path below that folder.
+#[tauri::command(async)]
+pub fn saved_use_folder(
+    dir: State<'_, SavedDir>,
+    path: Option<String>,
+) -> AppResult<saved::Listing> {
+    dir.set(path.as_deref())?;
+    Ok(saved::list(&dir.root()))
+}
+
+#[tauri::command(async)]
+pub fn saved_list(dir: State<'_, SavedDir>) -> saved::Listing {
+    saved::list(&dir.root())
+}
+
+/// A fingerprint of the folder: differs when something changed in it, also from outside.
+#[tauri::command(async)]
+pub fn saved_stamp(dir: State<'_, SavedDir>) -> String {
+    saved::stamp(&dir.root())
+}
+
+#[tauri::command(async)]
+pub fn saved_read(dir: State<'_, SavedDir>, id: String) -> AppResult<saved::Saved> {
+    saved::read(&dir.root(), &id)
+}
+
+/// Writes a query; `id` = the file to write again, else a new one in `folder`. Answers with the id.
+#[tauri::command(async)]
+pub fn saved_save(
+    dir: State<'_, SavedDir>,
+    id: Option<String>,
+    folder: String,
+    meta: saved::Meta,
+    text: String,
+) -> AppResult<String> {
+    saved::save(&dir.root(), id.as_deref(), &folder, &meta, &text)
+}
+
+#[tauri::command(async)]
+pub fn saved_rename(
+    dir: State<'_, SavedDir>,
+    id: String,
+    folder: String,
+    name: String,
+) -> AppResult<String> {
+    saved::rename(&dir.root(), &id, &folder, &name)
+}
+
+#[tauri::command(async)]
+pub fn saved_create_folder(dir: State<'_, SavedDir>, folder: String) -> AppResult<()> {
+    saved::create_folder(&dir.root(), &folder)
+}
+
+/// Moves the file of a query to the trash of the system: it can be brought back from there.
+#[tauri::command(async)]
+pub fn saved_delete(dir: State<'_, SavedDir>, id: String) -> AppResult<()> {
+    let path = saved::path_for_delete(&dir.root(), &id)?;
+    trash::delete(&path).map_err(|e| AppError::new(ErrorCode::Io, e.to_string()))
+}
+
+#[tauri::command(async)]
+pub fn saved_search(dir: State<'_, SavedDir>, query: String) -> Vec<String> {
+    saved::search(&dir.root(), &query)
 }
 
 /// Reads a text file the user chose (native dialog, or dropped onto the window).

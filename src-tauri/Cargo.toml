@@ -52,6 +52,8 @@ sha1 = "0.11"
 # The clipboard (prompt 009): text and HTML, written by Rust so that a million rows never pass the WebView.
 # Without the image feature; `wayland-data-control` for Wayland without XWayland.
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
+# Saved queries (prompt 024): deleting moves the file to the trash of the OS (as in files-and-folders-tauri).
+trash = { version = "5.2", default-features = false, features = ["coinit_apartmentthreaded"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
