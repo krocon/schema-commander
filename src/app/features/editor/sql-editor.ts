@@ -19,7 +19,7 @@ import { offsetOf, statementAt } from './sql-split';
 
 /**
  * The SQL editor: `<editlicious-editor>` with the SQL grammar, coloured by the app's tokens.
- * `Mod+Enter` asks to run the statement under the caret (`run`).
+ * `runCurrent()` asks to run the statement under the caret (`run`); the key for it is an action (prompt 002).
  */
 @Component({
   selector: 'app-sql-editor',
@@ -34,7 +34,6 @@ import { offsetOf, statementAt } from './sql-split';
         [attr.color-scheme]="dark() ? 'dark' : 'light'"
         [style]="colors"
         [attr.aria-label]="label()"
-        (keydown)="onKey($event)"
         (ed-caret)="onCaret($event)"
       />
     } @else if (state() === 'failed') {
@@ -120,14 +119,6 @@ export class SqlEditor implements OnInit {
     if (!detail) return;
     this.lastCaret = detail;
     this.caret.emit(detail);
-  }
-
-  protected onKey(event: KeyboardEvent): void {
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey) {
-      event.preventDefault();
-      event.stopPropagation();
-      void this.runCurrent();
-    }
   }
 
   /** Puts the start text in (once). */

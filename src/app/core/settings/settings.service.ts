@@ -1,7 +1,7 @@
 import { Injectable, effect, signal } from '@angular/core';
 import { isTauri } from '@tauri-apps/api/core';
 import { LazyStore } from '@tauri-apps/plugin-store';
-import { DEFAULT_SETTINGS, Settings, mergeSettings } from './settings.models';
+import { DEFAULT_SETTINGS, Settings, mergeKeymap, mergeSettings } from './settings.models';
 
 const STORE_KEY = 'settings';
 const SAVE_DELAY_MS = 300;
@@ -14,6 +14,8 @@ export class SettingsService {
   readonly settings = signal<Settings>(DEFAULT_SETTINGS);
   /** The stored settings are read (or could not be): the colour scheme is the user's from here on. */
   readonly loaded = signal(false);
+  /** The stored shortcuts were unreadable (prompt 002); shown at the start. */
+  readonly keymapNotice = signal<string | null>(null);
 
   constructor() {
     effect(() => {
@@ -25,6 +27,11 @@ export class SettingsService {
   async load(): Promise<void> {
     try {
       const saved = await this.store?.get<unknown>(STORE_KEY);
+      const keymap =
+        saved && typeof saved === 'object'
+          ? (saved as Record<string, unknown>)['keymap']
+          : undefined;
+      this.keymapNotice.set(mergeKeymap(keymap).notice);
       this.settings.set(mergeSettings(saved));
     } catch (e) {
       console.warn('settings could not be loaded, using defaults', e);

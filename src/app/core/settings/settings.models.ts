@@ -8,6 +8,18 @@ export interface Settings {
   readonly sidebarWidth: number;
   /** Height of the result area, px. */
   readonly resultHeight: number;
+  /** Own shortcuts (prompt 002): only the actions that differ from the default keymap, `[]` = none. */
+  readonly keymap: KeymapSetting;
+  /** Ids of the actions run from the command palette, the latest first. */
+  readonly recentActions: readonly string[];
+}
+
+export const KEYMAP_VERSION = 1;
+export const MAX_RECENT_ACTIONS = 12;
+
+export interface KeymapSetting {
+  readonly version: number;
+  readonly bindings: Readonly<Record<string, readonly string[]>>;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -15,6 +27,8 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarVisible: true,
   sidebarWidth: 240,
   resultHeight: 300,
+  keymap: { version: KEYMAP_VERSION, bindings: {} },
+  recentActions: [],
 };
 
 function size(value: unknown, fallback: number): number {
@@ -34,5 +48,42 @@ export function mergeSettings(saved: unknown): Settings {
         : DEFAULT_SETTINGS.sidebarVisible,
     sidebarWidth: size(s['sidebarWidth'], DEFAULT_SETTINGS.sidebarWidth),
     resultHeight: size(s['resultHeight'], DEFAULT_SETTINGS.resultHeight),
+    keymap: mergeKeymap(s['keymap']).keymap,
+    recentActions: recent(s['recentActions']),
   };
+}
+
+function recent(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((id): id is string => typeof id === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(id))
+    .slice(0, MAX_RECENT_ACTIONS);
+}
+
+/**
+ * The stored shortcuts, forgiving about the shape only: whether an id or a shortcut exists is checked by
+ * `resolveKeymap`, which reports it. A broken value falls back to the defaults with a notice.
+ */
+export function mergeKeymap(raw: unknown): { keymap: KeymapSetting; notice: string | null } {
+  const empty = (): KeymapSetting => ({ version: KEYMAP_VERSION, bindings: {} });
+  if (raw === undefined || raw === null) return { keymap: empty(), notice: null };
+  const broken = {
+    keymap: empty(),
+    notice: 'Die eigenen Tastenkürzel waren nicht lesbar; es gelten die Vorgaben.',
+  };
+  if (typeof raw !== 'object' || Array.isArray(raw)) return broken;
+  const o = raw as Record<string, unknown>;
+  const b = o['bindings'];
+  if (o['version'] !== KEYMAP_VERSION || !b || typeof b !== 'object' || Array.isArray(b)) {
+    return broken;
+  }
+  const bindings: Record<string, string[]> = {};
+  for (const [id, list] of Object.entries(b as Record<string, unknown>).slice(0, 500)) {
+    if (!Array.isArray(list)) continue;
+    bindings[id.slice(0, 64)] = list
+      .filter((s): s is string => typeof s === 'string')
+      .slice(0, 8)
+      .map((s) => s.slice(0, 60));
+  }
+  return { keymap: { version: KEYMAP_VERSION, bindings }, notice: null };
 }

@@ -41,6 +41,8 @@ Unsere Ergänzungen und Abweichungen:
   es weg.**
 - **`@Service`**: erst verwenden, wenn die installierte Angular-Version den Decorator exportiert (22.2.5 tut es
   nicht). Bis dahin `@Injectable({ providedIn: 'root' })` für Globales.
+- **Tastatur nur über das Aktionssystem** (`core/actions/`, Design 002): keine verstreuten `keydown`-Handler für
+  Funktionen; Tooltips zeigen das Kürzel über `actions.hint(id)`.
 - **Kein Router**, solange die App ein Fenster mit Tabs ist. „Lazy loading“ heißt hier `@defer` und dynamisches
   `import()` (Farbschemata, Editor).
 - **Stores je Instanz**: Was es mehrfach gibt (Abfrage-Tab, Ergebnis, Verbindung), ist ein `@Injectable()` ohne

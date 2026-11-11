@@ -1,0 +1,13 @@
+{
+  "RUN_STATEMENT": ["Mod+Enter"],
+  "TOGGLE_SIDEBAR": ["Mod+B"],
+  "COLOR_SCHEME": ["Mod+Alt+T"],
+  "OPEN_PALETTE": ["Mod+Shift+P", "F1"],
+  "FOCUS_SIDEBAR": ["Mod+0"],
+  "FOCUS_EDITOR": ["Mod+1"],
+  "FOCUS_RESULT": ["Mod+2"],
+  "FOCUS_NEXT_AREA": ["F6"],
+  "FOCUS_PREV_AREA": ["Shift+F6"],
+  "OPEN_SHORTCUTS": ["Mod+K Mod+S"],
+  "SHOW_SHORTCUTS": ["?"]
+}
