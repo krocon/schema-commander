@@ -73,7 +73,7 @@ import { EditService } from './edit.service';
         }
       </form>
     }
-    @if (count().cells > 0) {
+    @if (count().total > 0) {
       <div class="pending" role="group" [attr.aria-label]="pending()">
         <span class="mark" aria-hidden="true"></span>
         <span class="text" role="status">{{ pending() }}</span>
@@ -167,9 +167,10 @@ export class EditBar {
   });
   protected readonly multiline = computed(() => this.editing()?.text.includes('\n') ?? false);
   protected readonly count = computed(() => this.edit.count(this.tab()));
-  protected readonly pending = computed(() =>
-    this.t.pending(this.count().cells, this.count().rows),
-  );
+  protected readonly pending = computed(() => {
+    const c = this.count();
+    return this.t.pending(c.cells, c.rows, c.inserts, c.deletes);
+  });
   protected readonly problem = signal<string | null>(null);
   private readonly field = viewChild<ElementRef<HTMLInputElement | HTMLTextAreaElement>>('field');
 

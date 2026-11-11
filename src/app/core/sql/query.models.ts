@@ -283,14 +283,52 @@ export interface RowUpdate {
 export interface UpdatePlan {
   readonly schema: string | null;
   readonly table: string;
+  /** Rows changed. */
   readonly rows: readonly RowUpdate[];
+  /** Rows to delete (prompt 032): by key, with the lock only as they were read. */
+  readonly deletes?: readonly RowDelete[];
+  /** New rows: the cells the user gave a value. */
+  readonly inserts?: readonly RowInsert[];
+  /** A column whose value new rows report back (the key the database assigns). */
+  readonly returning?: string | null;
+}
+
+/** Mirrors `RowDelete`. */
+export interface RowDelete {
+  readonly key: readonly EditCell[];
+  readonly expect: readonly EditCell[];
+}
+
+/** Mirrors `RowInsert`. */
+export interface RowInsert {
+  readonly set: readonly EditSet[];
+}
+
+/** Mirrors `StepKind`: what a statement of a plan does. They run in this order. */
+export type EditKind = 'delete' | 'update' | 'insert';
+
+/** Mirrors `Step`: one statement of a plan, and the rows of its kind it covers. */
+export interface EditStep extends BuiltQuery {
+  readonly kind: EditKind;
+  readonly first: number;
+  readonly rows: number;
+  readonly returns: boolean;
 }
 
 /** Mirrors `Applied` in src-tauri/src/db/manager.rs: all statements are committed (`done`), or none. */
 export interface Applied {
   readonly done: number;
-  /** The statement that stopped everything, counted from 0. */
+  /** The row that stopped everything: its place among the rows of its kind in the plan, from 0. */
   readonly failed: number | null;
+  /** Whether that row was to be deleted, changed or inserted. */
+  readonly failedKind: EditKind | null;
+  /**
+   * How many rows from `failed` on it could have been: 1 when the row is known, more when a statement
+   * for several new rows failed and the row could not be told.
+   */
+  readonly failedSpan: number;
+  /** The keys the database gave new rows, where it reports them (PostgreSQL, SQLite). */
+  readonly inserted: readonly string[];
   /** It changed no row or several: the row is not what it was when it was read. */
   readonly conflict: boolean;
   readonly error: { readonly code: string; readonly message: string } | null;

@@ -1147,7 +1147,7 @@ export class App implements OnInit, OnDestroy {
         // a table with changes that are not written: „save“ writes them (as TablePlus does)
         SAVE_FILE: withTab((id) => {
           const t = this.tabs.active();
-          return t && this.edit.count(t).cells > 0 ? this.edit.save(t) : this.tabs.save(id);
+          return t && this.edit.count(t).total > 0 ? this.edit.save(t) : this.tabs.save(id);
         }),
         SAVE_FILE_AS: withTab((id) => this.tabs.save(id, true)),
         NEW_CONNECTION: () => this.connectionDialog.set(emptyProfile()),
@@ -1335,7 +1335,7 @@ export class App implements OnInit, OnDestroy {
     const window = getCurrentWindow();
     return window.onCloseRequested(async (event) => {
       // nothing is lost by closing: no open transaction, no change that is not written
-      const loses = (t: QueryTab) => txOpen(t.tx()) || this.edit.count(t).cells > 0;
+      const loses = (t: QueryTab) => txOpen(t.tx()) || this.edit.count(t).total > 0;
       if (!this.tabs.tabs().some(loses)) return;
       event.preventDefault();
       if (await this.tabs.settleTransactions(this.tabs.tabs(), APP_TEXTS.theWindow)) {
@@ -1362,7 +1362,7 @@ export class App implements OnInit, OnDestroy {
     const register = this.actions.register.bind(this.actions);
     // following foreign keys (prompt 030): in a table view, where the table of every column is known
     const table = () => has() && !!tab()?.tableView();
-    const edited = () => this.edit.count(tab()).cells > 0;
+    const edited = () => this.edit.count(tab()).total > 0;
     const related = (run: (t: QueryTab) => unknown) => () => {
       const t = tab();
       if (t) void run(t);
@@ -1376,12 +1376,37 @@ export class App implements OnInit, OnDestroy {
       ),
       register(
         'EDIT_SET_NULL',
-        related((t) => this.edit.setAtCursor(t, { kind: 'null' })),
+        related((t) => this.edit.setCells(t, { kind: 'null' })),
+        table,
+      ),
+      register(
+        'EDIT_ADD_ROW',
+        related((t) => this.edit.addRow(t)),
+        table,
+      ),
+      register(
+        'EDIT_DUPLICATE_ROW',
+        related((t) => this.edit.duplicateRows(t)),
+        table,
+      ),
+      register(
+        'EDIT_DELETE_ROW',
+        related((t) => this.edit.deleteRows(t)),
+        table,
+      ),
+      register(
+        'EDIT_PASTE',
+        related((t) => this.edit.paste(t)),
+        table,
+      ),
+      register(
+        'EDIT_FILL_DOWN',
+        related((t) => this.edit.fillDown(t)),
         table,
       ),
       register(
         'EDIT_SET_DEFAULT',
-        related((t) => this.edit.setAtCursor(t, { kind: 'default' })),
+        related((t) => this.edit.setCells(t, { kind: 'default' })),
         table,
       ),
       register(

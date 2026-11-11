@@ -27,6 +27,9 @@ import { EditService } from './edit.service';
         <h2 id="edit-preview-title">{{ t.previewTitle(p.statements.length) }}</h2>
         <p class="note">{{ t.previewNote }}</p>
         <p class="note">{{ settings.settings().editLock ? t.locked : t.unlocked }}</p>
+        <p class="note">
+          {{ t.previewCounts(p.counts.delete, p.counts.update, p.counts.insert) }}
+        </p>
         <ol>
           @for (s of p.statements; track $index) {
             <li>

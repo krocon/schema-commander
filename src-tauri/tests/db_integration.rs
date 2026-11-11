@@ -2054,6 +2054,7 @@ fn every_server_writes_changed_cells_one_row_at_a_time() {
                 schema: Some(schema.into()),
                 table: "sc_edit".into(),
                 rows: vec![row],
+                ..UpdatePlan::default()
             };
             let built = edit::build(kind, &plan).unwrap();
             bound(s, &built[0].sql, &built[0].params).rows_affected
@@ -2159,6 +2160,7 @@ fn values_keep_their_length_and_their_day_when_they_are_written() {
                 schema: Some(schema.into()),
                 table: table.into(),
                 rows: vec![row],
+                ..UpdatePlan::default()
             };
             let built = edit::build(kind, &plan).unwrap();
             bound(s, &built[0].sql, &built[0].params).rows_affected
@@ -2271,4 +2273,236 @@ fn values_keep_their_length_and_their_day_when_they_are_written() {
         "types {types:?}"
     );
     run(&mut s, "DROP TABLE sc_when");
+}
+
+// --- inserting and deleting rows (prompt 032) --------------------------------------------------------
+
+use schema_commander_lib::db::edit::{RowDelete, RowInsert};
+
+/// New rows and rows to delete on every server: a shared INSERT reports all its rows, a row of nothing
+/// but defaults can be made, the database's key comes back where it can, and a row that others point to
+/// is not deleted.
+#[test]
+#[ignore]
+fn every_server_inserts_and_deletes_rows() {
+    // (profile, schema, the column that numbers itself)
+    let cases: Vec<(Profile, &str, &str)> = vec![
+        (
+            pg(),
+            "public",
+            "id int GENERATED ALWAYS AS IDENTITY PRIMARY KEY",
+        ),
+        (my(), "shop", "id int AUTO_INCREMENT PRIMARY KEY"),
+        (maria(), "shop", "id int AUTO_INCREMENT PRIMARY KEY"),
+        (ms(), "dbo", "id int IDENTITY PRIMARY KEY"),
+    ];
+    for (p, schema, id_column) in cases {
+        let kind = p.kind;
+        let mut s = open(&p);
+        run(&mut s, "DROP TABLE IF EXISTS sc_child");
+        run(&mut s, "DROP TABLE IF EXISTS sc_rows");
+        run(
+            &mut s,
+            &format!(
+                "CREATE TABLE sc_rows ({id_column}, name varchar(40) DEFAULT 'none', qty int DEFAULT 7)"
+            ),
+        );
+        run(
+            &mut s,
+            // as a constraint of the table: MySQL reads a REFERENCES at the column and ignores it
+            "CREATE TABLE sc_child (id int PRIMARY KEY, row_id int NOT NULL, \
+             CONSTRAINT sc_child_row FOREIGN KEY (row_id) REFERENCES sc_rows (id))",
+        );
+        let set = |column: &str, value: Option<&str>, number: bool| SetCell {
+            column: column.into(),
+            kind: if number {
+                ValueKind::Number
+            } else {
+                ValueKind::Text
+            },
+            type_name: if number {
+                "int4".into()
+            } else {
+                "varchar".into()
+            },
+            value: value.map(str::to_owned),
+            default: false,
+        };
+        let plan = UpdatePlan {
+            schema: Some(schema.into()),
+            table: "sc_rows".into(),
+            inserts: vec![
+                RowInsert {
+                    set: vec![
+                        set("name", Some("it's"), false),
+                        set("qty", Some("1"), true),
+                    ],
+                },
+                RowInsert {
+                    set: vec![set("name", None, false), set("qty", Some("2"), true)],
+                },
+                // only a name: qty gets its default
+                RowInsert {
+                    set: vec![set("name", Some("ä😀"), false)],
+                },
+                // nothing at all: the row the database makes of its own
+                RowInsert { set: vec![] },
+            ],
+            returning: Some("id".into()),
+            ..UpdatePlan::default()
+        };
+        let steps = edit::steps(kind, &plan).unwrap();
+        assert_eq!(
+            steps.iter().map(|x| x.rows).collect::<Vec<_>>(),
+            [2, 1, 1],
+            "{kind:?}"
+        );
+        let mut returned: Vec<Value> = Vec::new();
+        for step in &steps {
+            let done = bound(&mut s, &step.built.sql, &step.built.params);
+            if step.returns {
+                // the rows that come back say how many were made, and with which key
+                assert_eq!(done.rows.len(), step.rows, "{kind:?}");
+                returned.extend(rows(&done).as_array().unwrap().iter().map(|r| r[0].clone()));
+            } else {
+                assert_eq!(
+                    done.rows_affected,
+                    Some(step.rows as u64),
+                    "{kind:?}: {}",
+                    step.built.sql
+                );
+            }
+        }
+        if kind == DbKind::Postgres {
+            assert_eq!(returned, [json!(1), json!(2), json!(3), json!(4)]);
+        }
+        // Unicode needs an n-type on SQL Server: look at what every server keeps
+        let after = run(&mut s, "SELECT id, qty FROM sc_rows ORDER BY id");
+        assert_eq!(
+            rows(&after),
+            json!([[1, 1], [2, 2], [3, 7], [4, 7]]),
+            "{kind:?}"
+        );
+        let first = run(
+            &mut s,
+            "SELECT name FROM sc_rows WHERE id IN (1, 2, 4) ORDER BY id",
+        );
+        assert_eq!(
+            rows(&first),
+            json!([["it's"], [null], ["none"]]),
+            "{kind:?}"
+        );
+
+        // deleting: exactly the row; a row that is gone changes none; a row others point to stays
+        run(&mut s, "INSERT INTO sc_child VALUES (1, 2)");
+        let delete = |s: &mut Box<dyn Session>, id: &str, qty: Option<&str>| {
+            let plan = UpdatePlan {
+                schema: Some(schema.into()),
+                table: "sc_rows".into(),
+                deletes: vec![RowDelete {
+                    key: vec![CellValue {
+                        column: "id".into(),
+                        kind: ValueKind::Number,
+                        type_name: "int4".into(),
+                        value: Some(id.into()),
+                    }],
+                    expect: qty
+                        .map(|q| CellValue {
+                            column: "qty".into(),
+                            kind: ValueKind::Number,
+                            type_name: "int4".into(),
+                            value: Some(q.into()),
+                        })
+                        .into_iter()
+                        .collect(),
+                }],
+                ..UpdatePlan::default()
+            };
+            let step = &edit::steps(kind, &plan).unwrap()[0];
+            let mut sink = VecSink::new(1);
+            s.execute_bound(
+                &step.built.sql,
+                &step.built.params,
+                Limits::rows(1),
+                &mut sink,
+                &|| false,
+            )
+            .map(|o| o.rows_affected)
+        };
+        assert_eq!(delete(&mut s, "1", Some("1")).unwrap(), Some(1), "{kind:?}");
+        assert_eq!(delete(&mut s, "1", None).unwrap(), Some(0), "{kind:?}");
+        // the lock: qty is 7, not 8
+        assert_eq!(delete(&mut s, "3", Some("8")).unwrap(), Some(0), "{kind:?}");
+        let held = delete(&mut s, "2", None).unwrap_err();
+        assert_eq!(held.code, ErrorCode::InvalidQuery, "{kind:?}");
+        assert_eq!(
+            rows(&run(&mut s, "SELECT COUNT(*) FROM sc_rows")),
+            json!([[3]]),
+            "{kind:?}"
+        );
+        run(&mut s, "DROP TABLE sc_child");
+        run(&mut s, "DROP TABLE sc_rows");
+    }
+}
+
+/// Review 032: after a statement for several new rows failed, its rows are tried one by one from a
+/// savepoint inside the same transaction. The statements the app uses for that must work where it uses
+/// them: PostgreSQL (whose transaction is aborted by the failure until it goes back) and SQL Server.
+#[test]
+#[ignore]
+fn a_failed_insert_can_be_tried_again_from_a_savepoint() {
+    let cases = [
+        (
+            pg(),
+            "BEGIN",
+            "SAVEPOINT sc_rows",
+            "ROLLBACK TO SAVEPOINT sc_rows",
+        ),
+        (
+            ms(),
+            "BEGIN TRANSACTION",
+            "SAVE TRANSACTION sc_rows",
+            "ROLLBACK TRANSACTION sc_rows",
+        ),
+    ];
+    for (p, begin, mark, back) in cases {
+        let kind = p.kind;
+        let mut s = open(&p);
+        run(&mut s, "DROP TABLE IF EXISTS sc_save");
+        run(
+            &mut s,
+            "CREATE TABLE sc_save (id int NOT NULL PRIMARY KEY, name varchar(20) NOT NULL)",
+        );
+        run(&mut s, begin);
+        run(&mut s, "INSERT INTO sc_save VALUES (1, 'before')");
+        run(&mut s, mark);
+        let failed = s.query(
+            "INSERT INTO sc_save VALUES (2, 'ok'), (3, NULL)",
+            Limits::rows(1),
+            &|| false,
+        );
+        assert!(failed.is_err(), "{kind:?}");
+        run(&mut s, back);
+        // the transaction goes on from the savepoint: what the plan did before is still there
+        run(&mut s, "INSERT INTO sc_save VALUES (2, 'ok')");
+        assert!(
+            s.query(
+                "INSERT INTO sc_save VALUES (3, NULL)",
+                Limits::rows(1),
+                &|| false
+            )
+            .is_err(),
+            "{kind:?}"
+        );
+        // and in the end nothing of it stays
+        if s.is_open() {
+            let _ = s.query("ROLLBACK", Limits::rows(1), &|| false);
+        }
+        assert_eq!(
+            rows(&run(&mut s, "SELECT COUNT(*) FROM sc_save")),
+            json!([[0]]),
+            "{kind:?}"
+        );
+        run(&mut s, "DROP TABLE sc_save");
+    }
 }

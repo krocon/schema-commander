@@ -191,3 +191,24 @@
 .sc-result .ge-table-col-div.sc-edit-failed {
   box-shadow: inset 0 0 0 1px var(--danger);
 }
+
+/* rows of the change buffer (prompt 032): new ones below the table, and those to delete */
+.sc-result .ge-table-col-div.sc-new {
+  background: var(--cell-new-bg);
+  color: var(--cell-new-text);
+}
+
+.sc-result .ge-table-col-div.sc-new.sc-null .ge-table-label {
+  color: var(--cell-new-text);
+  font-style: italic;
+}
+
+.sc-result .ge-table-col-div.sc-deleted {
+  background: var(--cell-deleted-bg);
+  color: var(--cell-deleted-text);
+}
+
+.sc-result .ge-table-col-div.sc-deleted .ge-table-label {
+  color: var(--cell-deleted-text);
+  text-decoration: line-through;
+}

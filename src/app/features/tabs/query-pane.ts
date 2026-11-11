@@ -215,6 +215,7 @@ const EDITOR_MIN_W = 160;
                     [links]="links()"
                     [edits]="edits()"
                     (editCell)="edit.begin(tab())"
+                    (pasted)="edit.paste(tab(), $event)"
                     (follow)="relations.follow(tab(), 'here')"
                     (layoutChange)="setLayout($event)"
                     (active)="onActive(r, $event)"
@@ -292,6 +293,7 @@ const EDITOR_MIN_W = 160;
                     [links]="links()"
                     [edits]="edits()"
                     (editCell)="edit.begin(tab())"
+                    (pasted)="edit.paste(tab(), $event)"
                     (follow)="relations.follow(tab(), 'here')"
                     (layoutChange)="setLayout($event)"
                     (active)="onActive(r, $event)"
@@ -639,7 +641,7 @@ export class QueryPane implements OnInit, OnDestroy {
   /** The changes that are not written yet: the grid shows them instead of what was read. */
   protected readonly edits = computed(() =>
     // a local order or filter shows the rows elsewhere than where they were edited: no marks there
-    this.tab().localView() ? null : this.edit.marks(this.tab()),
+    this.tab().localView() ? null : this.edit.marks(this.tab(), this.result()?.columns ?? []),
   );
   /** The columns whose cells lead to another table: those of the foreign keys of a table view. */
   protected readonly links = computed(() => {

@@ -32,36 +32,55 @@ export interface RowEdit {
   readonly cells: Readonly<Record<number, NewValue>>;
 }
 
-/** One change of one cell, as undo and redo see it. */
-interface Step {
-  readonly key: string;
+/** A row that is not in the table yet (prompt 032). A cell without a value gets what the database gives. */
+export interface NewRow {
+  readonly id: number;
+  /** By index of the result column; never `default` (that is a cell without an entry). */
+  readonly cells: Readonly<Record<number, NewValue>>;
+}
+
+/** A row marked to be deleted. */
+export interface RowGone {
   readonly row: number;
   readonly original: readonly Cell[];
-  readonly column: number;
-  readonly before: NewValue | null;
-  readonly after: NewValue | null;
+}
+
+/** What undo and redo go back to. */
+interface Snapshot {
+  readonly rows: EditBuffer['rows'];
+  readonly inserts: EditBuffer['inserts'];
+  readonly deletes: EditBuffer['deletes'];
 }
 
 export interface EditBuffer {
-  /** By key of the row (`rowKey`). */
+  /** Changed cells, by key of the row (`rowKey`). */
   readonly rows: Readonly<Record<string, RowEdit>>;
-  readonly undo: readonly Step[];
-  readonly redo: readonly Step[];
-  /** The row whose statement stopped the last writing, to mark it. */
+  /** New rows, in the order they are shown below the rows of the table. */
+  readonly inserts: readonly NewRow[];
+  /** Rows to delete, by key. */
+  readonly deletes: Readonly<Record<string, RowGone>>;
+  readonly undo: readonly Snapshot[];
+  readonly redo: readonly Snapshot[];
+  /** What stopped the last writing, to mark it: the key of a row, or `new:<id>` of a new one. */
   readonly failed: string | null;
   /**
    * Where the rows of the buffer are from: connection, table and result, as one text (`originOf`). Set
    * with the first change. Changes are only ever written where they were made.
    */
   readonly origin: string | null;
+  /** The id the next new row gets. */
+  readonly nextId: number;
 }
 
 export const EMPTY_BUFFER: EditBuffer = {
   rows: {},
+  inserts: [],
+  deletes: {},
   undo: [],
   redo: [],
   failed: null,
   origin: null,
+  nextId: 1,
 };
 
 /** What tells where rows are from. */
@@ -73,12 +92,15 @@ export function originOf(
 ): string {
   return JSON.stringify([connection, schema, table, resultId]);
 }
+
 /** Steps kept for undo. */
 export const MAX_UNDO = 500;
 /** Rows written at once at most (`MAX_UPDATE_ROWS` in edit.rs). */
-export const MAX_EDIT_ROWS = 1000;
+export const MAX_EDIT_ROWS = 20_000;
 /** A text this long may be cut in the row the window has: it is no value to lock on. */
 const CUT_FROM = 1000;
+/** Cells of a row in a statement at most (`MAX_ROW_CELLS`). */
+const MAX_ROW_CELLS = 400;
 
 const keyText = (cell: Cell | undefined): string | null =>
   cell === null || cell === undefined || typeof cell === 'object' ? null : String(cell);
@@ -103,20 +125,25 @@ function unchanged(value: NewValue, original: Cell | undefined): boolean {
   return text !== null && text.length < CUT_FROM && text === value.text;
 }
 
-function put(buffer: EditBuffer, step: Step, value: NewValue | null): EditBuffer['rows'] {
-  const rows = { ...buffer.rows };
-  const have = rows[step.key];
-  const cells = { ...(have?.cells ?? {}) };
-  if (value === null) delete cells[step.column];
-  else cells[step.column] = value;
-  if (Object.keys(cells).length === 0) delete rows[step.key];
-  else rows[step.key] = { row: step.row, original: have?.original ?? step.original, cells };
-  return rows;
+/** The buffer after a change: what it was goes onto the undo stack, what could be redone is gone. */
+function changed(
+  buffer: EditBuffer,
+  next: Partial<Snapshot>,
+  more: Partial<EditBuffer> = {},
+): EditBuffer {
+  const before: Snapshot = { rows: buffer.rows, inserts: buffer.inserts, deletes: buffer.deletes };
+  return {
+    ...buffer,
+    ...next,
+    ...more,
+    undo: [...buffer.undo, before].slice(-MAX_UNDO),
+    redo: [],
+  };
 }
 
 /**
- * Changes a cell. A value that is what the cell holds takes the change away. `original`: the row as the
- * result has it.
+ * Changes a cell of a row of the table. A value that is what the cell holds takes the change away.
+ * `original`: the row as the result has it.
  */
 export function setCell(
   buffer: EditBuffer,
@@ -126,72 +153,278 @@ export function setCell(
   column: number,
   value: NewValue | null,
 ): EditBuffer {
-  const base = buffer.rows[key]?.original ?? original;
+  const have = buffer.rows[key];
+  const base = have?.original ?? original;
   const after = value !== null && unchanged(value, base[column]) ? null : value;
-  const before = buffer.rows[key]?.cells[column] ?? null;
+  const before = have?.cells[column] ?? null;
   if (JSON.stringify(before) === JSON.stringify(after)) return buffer;
-  const step: Step = { key, row, original: base, column, before, after };
-  return {
-    rows: put(buffer, step, after),
-    undo: [...buffer.undo, step].slice(-MAX_UNDO),
-    redo: [],
-    failed: buffer.failed === key ? null : buffer.failed,
-    origin: buffer.origin,
-  };
+  const rows = { ...buffer.rows };
+  const cells = { ...(have?.cells ?? {}) };
+  if (after === null) delete cells[column];
+  else cells[column] = after;
+  if (Object.keys(cells).length === 0) delete rows[key];
+  else rows[key] = { row: have?.row ?? row, original: base, cells };
+  return changed(buffer, { rows }, { failed: buffer.failed === key ? null : buffer.failed });
 }
 
 export function undoEdit(buffer: EditBuffer): EditBuffer {
-  const step = buffer.undo.at(-1);
-  if (!step) return buffer;
-  return {
-    ...buffer,
-    rows: put(buffer, step, step.before),
-    undo: buffer.undo.slice(0, -1),
-    redo: [...buffer.redo, step],
-  };
+  const back = buffer.undo.at(-1);
+  if (!back) return buffer;
+  const now: Snapshot = { rows: buffer.rows, inserts: buffer.inserts, deletes: buffer.deletes };
+  return { ...buffer, ...back, undo: buffer.undo.slice(0, -1), redo: [...buffer.redo, now] };
 }
 
 export function redoEdit(buffer: EditBuffer): EditBuffer {
-  const step = buffer.redo.at(-1);
-  if (!step) return buffer;
-  return {
-    ...buffer,
-    rows: put(buffer, step, step.after),
-    undo: [...buffer.undo, step],
-    redo: buffer.redo.slice(0, -1),
-  };
+  const again = buffer.redo.at(-1);
+  if (!again) return buffer;
+  const now: Snapshot = { rows: buffer.rows, inserts: buffer.inserts, deletes: buffer.deletes };
+  return { ...buffer, ...again, undo: [...buffer.undo, now], redo: buffer.redo.slice(0, -1) };
 }
 
-/** Takes the changes of a row back (each cell a step that can be undone). */
+/** Takes everything back that was done to a row of the table: its changed cells, its deletion. */
 export function resetRow(buffer: EditBuffer, key: string): EditBuffer {
-  const have = buffer.rows[key];
-  if (!have) return buffer;
-  return Object.keys(have.cells).reduce(
-    (b, column) => setCell(b, key, have.row, have.original, Number(column), null),
+  if (!buffer.rows[key] && !buffer.deletes[key]) return buffer;
+  const rows = { ...buffer.rows };
+  const deletes = { ...buffer.deletes };
+  delete rows[key];
+  delete deletes[key];
+  return changed(
     buffer,
+    { rows, deletes },
+    { failed: buffer.failed === key ? null : buffer.failed },
   );
 }
 
-/** How many cells are changed, in how many rows. */
-export function editCount(buffer: EditBuffer): { cells: number; rows: number } {
-  const rows = Object.values(buffer.rows);
-  return { rows: rows.length, cells: rows.reduce((n, r) => n + Object.keys(r.cells).length, 0) };
+// --- whole rows (prompt 032) --------------------------------------------------------------------------
+
+/** Adds new rows with the cells given (a `default` is no cell). All of them are one step of undo. */
+export function addRows(
+  buffer: EditBuffer,
+  rows: readonly Readonly<Record<number, NewValue>>[],
+): { buffer: EditBuffer; ids: number[] } {
+  if (rows.length === 0) return { buffer, ids: [] };
+  const ids = rows.map((_, i) => buffer.nextId + i);
+  const added = rows.map((cells, i) => ({
+    id: ids[i],
+    cells: Object.fromEntries(Object.entries(cells).filter(([, v]) => v.kind !== 'default')),
+  }));
+  return {
+    buffer: changed(
+      buffer,
+      { inserts: [...buffer.inserts, ...added] },
+      { nextId: buffer.nextId + rows.length },
+    ),
+    ids,
+  };
 }
 
-/** For the grid: what a cell shows instead of what was read. */
+/** Sets a cell of a new row; `null` or `default` leaves it to the database. */
+export function setNewCell(
+  buffer: EditBuffer,
+  id: number,
+  column: number,
+  value: NewValue | null,
+): EditBuffer {
+  const at = buffer.inserts.findIndex((r) => r.id === id);
+  if (at < 0) return buffer;
+  const cells = { ...buffer.inserts[at].cells };
+  const after = value && value.kind !== 'default' ? value : null;
+  if (JSON.stringify(cells[column] ?? null) === JSON.stringify(after)) return buffer;
+  if (after === null) delete cells[column];
+  else cells[column] = after;
+  const inserts = [...buffer.inserts];
+  inserts[at] = { id, cells };
+  const mark = `new:${id}`;
+  return changed(buffer, { inserts }, { failed: buffer.failed === mark ? null : buffer.failed });
+}
+
+/** Takes new rows away again. */
+export function removeNewRows(buffer: EditBuffer, ids: readonly number[]): EditBuffer {
+  const inserts = buffer.inserts.filter((r) => !ids.includes(r.id));
+  return inserts.length === buffer.inserts.length ? buffer : changed(buffer, { inserts });
+}
+
+/**
+ * Marks rows of the table to be deleted – or, when all of them are marked already, takes the mark away.
+ * One step of undo.
+ */
+export function toggleDeleted(
+  buffer: EditBuffer,
+  rows: readonly {
+    readonly key: string;
+    readonly row: number;
+    readonly original: readonly Cell[];
+  }[],
+): EditBuffer {
+  if (rows.length === 0) return buffer;
+  const deletes = { ...buffer.deletes };
+  if (rows.every((r) => deletes[r.key])) for (const r of rows) delete deletes[r.key];
+  else for (const r of rows) deletes[r.key] = { row: r.row, original: r.original };
+  return changed(buffer, { deletes });
+}
+
+/** Several changes as one step of undo. */
+export function asOneStep(buffer: EditBuffer, f: (b: EditBuffer) => EditBuffer): EditBuffer {
+  const after = f(buffer);
+  if (after === buffer) return buffer;
+  const before: Snapshot = { rows: buffer.rows, inserts: buffer.inserts, deletes: buffer.deletes };
+  return { ...after, undo: [...buffer.undo, before].slice(-MAX_UNDO), redo: [] };
+}
+
+/** What a pasted text means for a column: an empty cell is NULL, except in a text column. */
+export function textToValue(text: string, column: QueryColumn): NewValue {
+  return text === '' && valueKind(column.kind) !== 'text'
+    ? { kind: 'null' }
+    : { kind: 'value', text };
+}
+
+/** Where a block of cells goes. */
+export interface PasteTarget {
+  /** The rows of the table from the cursor down (`key: null`: a row without a usable key – left out). */
+  readonly existing: readonly {
+    readonly key: string | null;
+    readonly row: number;
+    readonly original: readonly Cell[];
+  }[];
+  /** The new row the block goes on in below the rows of the table (an index into the new rows). */
+  readonly firstNew: number;
+  /** The columns of the result, left to right from the cursor. */
+  readonly columns: readonly number[];
+}
+
+/**
+ * Puts a block of cells into the buffer (prompt 032): over the rows of the table from the cursor down,
+ * then over new rows, adding as many as it needs. Columns beyond the last one are left out. One step of
+ * undo. Says how many cells were set, how many rows added, and how many rows it could not touch.
+ */
+export function pasteBlock(
+  buffer: EditBuffer,
+  block: readonly (readonly string[])[],
+  target: PasteTarget,
+  columns: readonly QueryColumn[],
+): { buffer: EditBuffer; cells: number; added: number; skipped: number } {
+  let cells = 0;
+  let added = 0;
+  let skipped = 0;
+  const after = asOneStep(buffer, (start) => {
+    let b = start;
+    // the new rows are written into a copy of their list, once – not cell by cell (a block has
+    // thousands of rows)
+    const inserts = [...start.inserts];
+    let nextId = start.nextId;
+    let touched = false;
+    block.forEach((line, n) => {
+      const values = target.columns
+        .slice(0, line.length)
+        .map((c, i) => [c, textToValue(line[i], columns[c])] as const);
+      const row = target.existing[n];
+      if (row) {
+        // a row without a usable key, or one that is to be deleted, is left alone
+        if (row.key === null || b.deletes[row.key]) {
+          skipped++;
+          return;
+        }
+        for (const [c, value] of values) {
+          b = setCell(b, row.key, row.row, row.original, c, value);
+        }
+        cells += values.length;
+        return;
+      }
+      const at = target.firstNew + (n - target.existing.length);
+      const have = inserts[at];
+      const next = { ...(have?.cells ?? {}) };
+      for (const [c, value] of values) next[c] = value;
+      if (have) inserts[at] = { id: have.id, cells: next };
+      else {
+        inserts[at] = { id: nextId++, cells: next };
+        added++;
+      }
+      touched = true;
+      cells += values.length;
+    });
+    return touched ? { ...b, inserts, nextId } : b;
+  });
+  return { buffer: after, cells, added, skipped };
+}
+
+/** Which buffered values a column cannot take: `key|column` of rows, `new:id|column` of new rows. */
+export function invalidCells(
+  buffer: EditBuffer,
+  columns: readonly QueryColumn[],
+  info: readonly (ColumnInfo | undefined)[],
+): ReadonlyMap<string, ValueProblem> {
+  const out = new Map<string, ValueProblem>();
+  const check = (id: string, cellsOf: Readonly<Record<number, NewValue>>) => {
+    for (const [c, value] of Object.entries(cellsOf)) {
+      const column = columns[Number(c)];
+      const problem = column ? validate(value, column, info[Number(c)]) : null;
+      if (problem) out.set(`${id}|${c}`, problem);
+    }
+  };
+  for (const [key, edit] of Object.entries(buffer.rows)) {
+    // a row that is to be deleted is not changed: what its cells hold in the buffer is never written
+    if (!buffer.deletes[key]) check(key, edit.cells);
+  }
+  for (const row of buffer.inserts) check(`new:${row.id}`, row.cells);
+  return out;
+}
+
+/** What is to be written: changed cells in rows, new rows, rows to delete. */
+export function editCount(buffer: EditBuffer): {
+  cells: number;
+  rows: number;
+  inserts: number;
+  deletes: number;
+  /** Anything at all. */
+  total: number;
+} {
+  const rows = Object.values(buffer.rows);
+  const cells = rows.reduce((n, r) => n + Object.keys(r.cells).length, 0);
+  const inserts = buffer.inserts.length;
+  const deletes = Object.keys(buffer.deletes).length;
+  return { rows: rows.length, cells, inserts, deletes, total: cells + inserts + deletes };
+}
+
+/** For the grid: what a cell shows instead of what was read, and the rows below those of the table. */
 export interface EditMarks {
   at(row: number, column: number): NewValue | null;
   /** The row whose statement failed. */
   failed(row: number): boolean;
+  /** The row is marked to be deleted. */
+  deleted(row: number): boolean;
+  /** How many new rows stand below the rows of the table. */
+  readonly extra: number;
+  /** A cell of the `n`th new row; `null`: left to the database. */
+  newAt(n: number, column: number): NewValue | null;
+  newFailed(n: number): boolean;
+  /** The value in the buffer is none the column takes. */
+  invalid(row: number, column: number): boolean;
+  newInvalid(n: number, column: number): boolean;
 }
 
-export function marksOf(buffer: EditBuffer): EditMarks | null {
+export function marksOf(
+  buffer: EditBuffer,
+  invalid: ReadonlyMap<string, unknown> = new Map(),
+): EditMarks | null {
   const entries = Object.entries(buffer.rows);
-  if (entries.length === 0) return null;
+  const gone = Object.entries(buffer.deletes);
+  if (entries.length === 0 && gone.length === 0 && buffer.inserts.length === 0) return null;
   const byRow = new Map(entries.map(([key, edit]) => [edit.row, { key, edit }]));
+  const goneRows = new Map(gone.map(([key, g]) => [g.row, key]));
   return {
     at: (row, column) => byRow.get(row)?.edit.cells[column] ?? null,
-    failed: (row) => buffer.failed !== null && byRow.get(row)?.key === buffer.failed,
+    failed: (row) =>
+      buffer.failed !== null &&
+      (byRow.get(row)?.key === buffer.failed || goneRows.get(row) === buffer.failed),
+    deleted: (row) => goneRows.has(row),
+    extra: buffer.inserts.length,
+    newAt: (n, column) => buffer.inserts[n]?.cells[column] ?? null,
+    newFailed: (n) => buffer.failed === `new:${buffer.inserts[n]?.id}`,
+    invalid: (row, column) => {
+      const key = byRow.get(row)?.key;
+      return key !== undefined && invalid.has(`${key}|${column}`);
+    },
+    newInvalid: (n, column) => invalid.has(`new:${buffer.inserts[n]?.id}|${column}`),
   };
 }
 
@@ -206,10 +439,23 @@ function editCell(column: QueryColumn, value: string | null): EditCell {
   return { column: column.name, kind: valueKind(column.kind), typeName: column.typeName, value };
 }
 
+/** What a plan was made of, to find the row a failure names. */
+export interface Planned {
+  readonly plan: UpdatePlan;
+  /** Keys of the changed rows, in the order of `plan.rows`. */
+  readonly keys: string[];
+  /** Keys of the rows to delete, in the order of `plan.deletes`. */
+  readonly deleteKeys: string[];
+  /** Ids of the new rows, in the order of `plan.inserts`. */
+  readonly insertIds: number[];
+}
+
 /**
- * The plan for writing the buffer: one row each, found by its key. With `lock`, the values the changed
- * cells had when they were read must still be there – except where equality is no test: floating point
- * numbers, binary data, and texts so long that the row may hold them cut.
+ * The plan for writing the buffer: rows to delete and changed rows are found by their key, new rows
+ * carry the cells that were given. With `lock`, the values cells had when they were read must still be
+ * there (the changed cells of a changed row, all cells of a row to delete) – except where equality is no
+ * test: floating point numbers, binary data, types without `=`, and texts so long that the row may hold
+ * them cut. A row that is changed and deleted is deleted.
  */
 export function planOf(
   buffer: EditBuffer,
@@ -219,22 +465,30 @@ export function planOf(
   schema: string | null,
   table: string,
   dialect: Dialect = 'sqlite',
-): { plan: UpdatePlan; keys: string[] } {
-  const keys = Object.keys(buffer.rows).sort((a, b) => buffer.rows[a].row - buffer.rows[b].row);
+): Planned {
+  const byPlace = (a: { row: number }, b: { row: number }) => a.row - b.row;
+  const lockable = (original: readonly Cell[], c: number) => {
+    const cell = original[c];
+    if (columns[c].kind === 'float' || !comparable(dialect, columns[c].typeName)) return false;
+    if (cell !== null && typeof cell === 'object') return false;
+    return !(typeof cell === 'string' && cell.length >= CUT_FROM);
+  };
+  const keyOf = (original: readonly Cell[]) =>
+    pk.map((c) => editCell(columns[c], keyText(original[c])));
+  const deleteKeys = Object.keys(buffer.deletes).sort((a, b) =>
+    byPlace(buffer.deletes[a], buffer.deletes[b]),
+  );
+  const keys = Object.keys(buffer.rows)
+    .filter((key) => !buffer.deletes[key])
+    .sort((a, b) => byPlace(buffer.rows[a], buffer.rows[b]));
   const rows = keys.map((key): RowUpdate => {
     const edit = buffer.rows[key];
-    const changed = Object.keys(edit.cells)
+    const changedCells = Object.keys(edit.cells)
       .map(Number)
       .sort((a, b) => a - b);
-    const lockable = (c: number) => {
-      const cell = edit.original[c];
-      if (columns[c].kind === 'float' || !comparable(dialect, columns[c].typeName)) return false;
-      if (cell !== null && typeof cell === 'object') return false;
-      return !(typeof cell === 'string' && cell.length >= CUT_FROM);
-    };
     return {
-      key: pk.map((c) => editCell(columns[c], keyText(edit.original[c]))),
-      set: changed.map((c) => {
+      key: keyOf(edit.original),
+      set: changedCells.map((c) => {
         const value = edit.cells[c];
         return {
           ...editCell(columns[c], value.kind === 'value' ? value.text : null),
@@ -242,11 +496,51 @@ export function planOf(
         };
       }),
       expect: lock
-        ? changed.filter(lockable).map((c) => editCell(columns[c], keyText(edit.original[c])))
+        ? changedCells
+            .filter((c) => lockable(edit.original, c))
+            .map((c) => editCell(columns[c], keyText(edit.original[c])))
         : [],
     };
   });
-  return { plan: { schema, table, rows }, keys };
+  const deletes = deleteKeys.map((key) => {
+    const original = buffer.deletes[key].original;
+    return {
+      key: keyOf(original),
+      expect: lock
+        ? columns
+            .map((_, c) => c)
+            .filter((c) => !pk.includes(c) && lockable(original, c))
+            .slice(0, MAX_ROW_CELLS)
+            .map((c) => editCell(columns[c], keyText(original[c])))
+        : [],
+    };
+  });
+  const inserts = buffer.inserts.map((row) => ({
+    set: Object.keys(row.cells)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map((c) => {
+        const value = row.cells[c];
+        return {
+          ...editCell(columns[c], value.kind === 'value' ? value.text : null),
+          default: false,
+        };
+      }),
+  }));
+  return {
+    plan: {
+      schema,
+      table,
+      rows,
+      deletes,
+      inserts,
+      // the key the database gives a new row (the first column of the key)
+      returning: inserts.length > 0 && pk.length > 0 ? columns[pk[0]].name : null,
+    },
+    keys,
+    deleteKeys,
+    insertIds: buffer.inserts.map((r) => r.id),
+  };
 }
 
 /** The database of a connection, as far as the lock cares. */

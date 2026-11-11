@@ -459,8 +459,8 @@ pub fn edit_preview(
     manager: State<'_, ConnectionManager>,
     id: String,
     plan: crate::db::edit::UpdatePlan,
-) -> AppResult<Vec<crate::db::filter::Built>> {
-    crate::db::edit::build(manager.kind_of(&id)?, &plan)
+) -> AppResult<Vec<crate::db::edit::Step>> {
+    crate::db::edit::steps(manager.kind_of(&id)?, &plan)
 }
 
 /// Writes changed cells: the statements are built here again from the plan (the window never sends
@@ -475,14 +475,16 @@ pub fn edit_apply(
     confirmations: Option<Vec<Option<String>>>,
     timeout_ms: Option<u64>,
 ) -> AppResult<crate::db::manager::Applied> {
-    let statements = crate::db::edit::build(manager.kind_of(&id)?, &plan)?;
+    let kind = manager.kind_of(&id)?;
+    let steps = crate::db::edit::steps(kind, &plan)?;
     let timeout = timeout_ms
         .filter(|ms| *ms > 0)
         .map(std::time::Duration::from_millis);
-    manager.apply_updates(
+    manager.apply_steps(
         &id,
         session.as_deref(),
-        &statements,
+        &steps,
+        &|first, rows| crate::db::edit::single_inserts(kind, &plan, first, rows),
         confirmations.as_deref().unwrap_or(&[]),
         timeout,
     )
@@ -666,6 +668,36 @@ pub fn copy_text(clip: State<'_, ClipState>, text: String) -> AppResult<()> {
     }
     clip.put(text, None)
 }
+
+/// The text on the clipboard (prompt 032: a block of cells from a spreadsheet to paste into a table).
+/// Read by the backend, as the clipboard is written by it. Nothing of it is logged.
+#[tauri::command(async)]
+pub fn read_clipboard_text(clip: State<'_, ClipState>) -> AppResult<String> {
+    let fail = |e: arboard::Error| AppError::new(ErrorCode::Io, format!("clipboard: {e}"));
+    let mut guard = clip.clipboard.lock();
+    if guard.is_none() {
+        *guard = Some(arboard::Clipboard::new().map_err(fail)?);
+    }
+    let Some(clipboard) = guard.as_mut() else {
+        return Ok(String::new());
+    };
+    let text = match clipboard.get_text() {
+        Ok(text) => text,
+        // nothing there, or no text: an empty block
+        Err(arboard::Error::ContentNotAvailable) => String::new(),
+        Err(e) => return Err(fail(e)),
+    };
+    if text.len() > MAX_PASTE_BYTES {
+        return Err(AppError::new(
+            ErrorCode::TooLarge,
+            "too much text on the clipboard",
+        ));
+    }
+    Ok(text)
+}
+
+/// Text taken from the clipboard at most.
+pub const MAX_PASTE_BYTES: usize = 32 * 1024 * 1024;
 
 /// Long work that can be stopped (prompt 011): each job has an id the frontend chose, and a flag. Also
 /// remembers which files the app wrote, so only those can be shown in the file manager.

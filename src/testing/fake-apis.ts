@@ -65,6 +65,9 @@ import {
   Verdict,
   ViewSpec,
   Applied,
+  EditCell,
+  EditSet,
+  EditStep,
   ResultStats,
   UpdatePlan,
   SearchFound,
@@ -453,28 +456,65 @@ export class FakeQueryApi extends QueryApi {
   applyAnswer: Partial<Applied> | null = null;
   applyError: { code: string; message: string } | null = null;
 
-  /** One statement per row; its text names the cells, never their values. */
-  editPreview(_connection: string, plan: UpdatePlan): Promise<BuiltQuery[]> {
+  /** One statement per row, in the order of the backend; its text names the cells, never their values. */
+  editPreview(_connection: string, plan: UpdatePlan): Promise<EditStep[]> {
     this.previews.push(plan);
     const table = `${plan.schema ? `${plan.schema}.` : ''}${plan.table}`;
-    return Promise.resolve(
-      plan.rows.map((row) => {
-        const set = row.set.map((c) => c.column).join(', ');
-        const where = [...row.key, ...row.expect].map((c) => c.column).join(', ');
-        const text = (v: string | null) => (v === null ? 'NULL' : `'${v}'`);
-        return {
-          sql: `UPDATE ${table} SET ${set} WHERE ${where}`,
-          params: [...row.set, ...row.key, ...row.expect]
-            .filter((c) => c.value !== null && !('default' in c && c.default))
-            .map((c) => ({ kind: 'text' as const, value: c.value as string })),
-          display: `UPDATE ${table} SET ${row.set
+    const text = (v: string | null) => (v === null ? 'NULL' : `'${v}'`);
+    const where = (key: readonly EditCell[]) =>
+      key.map((c) => `${c.column} = ${text(c.value)}`).join(' AND ');
+    const bound = (cells: readonly (EditCell | EditSet)[]) =>
+      cells
+        .filter((c) => c.value !== null && !('default' in c && c.default))
+        .map((c) => ({ kind: 'text' as const, value: c.value as string }));
+    const step = (
+      kind: EditStep['kind'],
+      first: number,
+      sql: string,
+      display: string,
+      cells: readonly (EditCell | EditSet)[],
+    ): EditStep => ({
+      kind,
+      first,
+      rows: 1,
+      returns: false,
+      sql,
+      params: bound(cells),
+      display,
+    });
+    return Promise.resolve([
+      ...(plan.deletes ?? []).map((row, i) =>
+        step(
+          'delete',
+          i,
+          `DELETE FROM ${table} WHERE ${[...row.key, ...row.expect].map((c) => c.column).join(', ')}`,
+          `DELETE FROM ${table} WHERE ${where(row.key)}`,
+          [...row.key, ...row.expect],
+        ),
+      ),
+      ...plan.rows.map((row, i) =>
+        step(
+          'update',
+          i,
+          `UPDATE ${table} SET ${row.set.map((c) => c.column).join(', ')} WHERE ${[...row.key, ...row.expect].map((c) => c.column).join(', ')}`,
+          `UPDATE ${table} SET ${row.set
             .map((c) => `${c.column} = ${c.default ? 'DEFAULT' : text(c.value)}`)
-            .join(
-              ', ',
-            )} WHERE ${row.key.map((c) => `${c.column} = ${text(c.value)}`).join(' AND ')}`,
-        };
-      }),
-    );
+            .join(', ')} WHERE ${where(row.key)}`,
+          [...row.set, ...row.key, ...row.expect],
+        ),
+      ),
+      ...(plan.inserts ?? []).map((row, i) =>
+        step(
+          'insert',
+          i,
+          `INSERT INTO ${table} (${row.set.map((c) => c.column).join(', ')})`,
+          `INSERT INTO ${table} (${row.set.map((c) => c.column).join(', ')}) VALUES (${row.set
+            .map((c) => text(c.value))
+            .join(', ')})`,
+          row.set,
+        ),
+      ),
+    ]);
   }
 
   editApply(
@@ -486,8 +526,11 @@ export class FakeQueryApi extends QueryApi {
     this.applied.push({ connection, session, plan, confirmations });
     if (this.applyError) return Promise.reject(this.applyError);
     return Promise.resolve({
-      done: plan.rows.length,
+      done: plan.rows.length + (plan.deletes?.length ?? 0) + (plan.inserts?.length ?? 0),
       failed: null,
+      failedKind: null,
+      failedSpan: 1,
+      inserted: [],
       conflict: false,
       error: null,
       blocked: false,
@@ -983,6 +1026,14 @@ export class FakeClipboardApi extends ClipboardApi {
     if (this.fail) return Promise.reject(this.fail);
     this.texts.push(text);
     return Promise.resolve();
+  }
+
+  /** What is „on the clipboard“ for a paste. */
+  pasteText = '';
+
+  readText(): Promise<string> {
+    if (this.fail) return Promise.reject(this.fail);
+    return Promise.resolve(this.pasteText);
   }
 
   copyResult(

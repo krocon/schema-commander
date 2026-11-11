@@ -4,16 +4,22 @@ import { Cell, QueryColumn } from '../../core/sql/query.models';
 import {
   EMPTY_BUFFER,
   NewValue,
+  addRows,
   editCount,
   editability,
+  invalidCells,
   marksOf,
   maxLength,
+  pasteBlock,
   planOf,
   redoEdit,
+  removeNewRows,
   resetRow,
   rowKey,
   setCell,
+  setNewCell,
   startText,
+  toggleDeleted,
   undoEdit,
   validate,
 } from './edit-buffer';
@@ -55,7 +61,7 @@ describe('edit-buffer', () => {
     let b = edit(EMPTY_BUFFER, 0, 1, v('Eve'));
     b = edit(b, 0, 3, v('hello'));
     b = edit(b, 1, 3, { kind: 'null' });
-    expect(editCount(b)).toEqual({ cells: 3, rows: 2 });
+    expect(editCount(b)).toMatchObject({ cells: 3, rows: 2 });
     const marks = marksOf(b)!;
     expect(marks.at(0, 1)).toEqual(v('Eve'));
     expect(marks.at(1, 3)).toEqual({ kind: 'null' });
@@ -66,12 +72,12 @@ describe('edit-buffer', () => {
   it('takes a change away when the cell gets the value it had', () => {
     let b = edit(EMPTY_BUFFER, 0, 1, v('Eve'));
     b = edit(b, 0, 1, v('Ada'));
-    expect(editCount(b)).toEqual({ cells: 0, rows: 0 });
+    expect(editCount(b)).toMatchObject({ cells: 0, rows: 0 });
     // NULL on a cell that is NULL, the same number as text
     expect(edit(EMPTY_BUFFER, 0, 3, { kind: 'null' })).toBe(EMPTY_BUFFER);
     expect(edit(EMPTY_BUFFER, 0, 0, v('1'))).toBe(EMPTY_BUFFER);
     // an empty text is not NULL, and DEFAULT is always a change
-    expect(editCount(edit(EMPTY_BUFFER, 0, 3, v('')))).toEqual({ cells: 1, rows: 1 });
+    expect(editCount(edit(EMPTY_BUFFER, 0, 3, v('')))).toMatchObject({ cells: 1, rows: 1 });
     expect(editCount(edit(EMPTY_BUFFER, 0, 1, { kind: 'default' })).cells).toBe(1);
   });
 
@@ -95,14 +101,14 @@ describe('edit-buffer', () => {
     expect(redoEdit(b)).toBe(b);
   });
 
-  it('resets a row as steps that can be undone', () => {
+  it('resets a row as one step that can be undone', () => {
     let b = edit(EMPTY_BUFFER, 0, 1, v('Eve'));
     b = edit(b, 0, 3, v('n'));
     b = edit(b, 1, 1, v('Bo'));
     b = resetRow(b, key(0));
-    expect(editCount(b)).toEqual({ cells: 1, rows: 1 });
-    b = undoEdit(undoEdit(b));
-    expect(editCount(b)).toEqual({ cells: 3, rows: 2 });
+    expect(editCount(b)).toMatchObject({ cells: 1, rows: 1 });
+    b = undoEdit(b);
+    expect(editCount(b)).toMatchObject({ cells: 3, rows: 2 });
     expect(resetRow(b, 'nope')).toBe(b);
   });
 
@@ -113,7 +119,7 @@ describe('edit-buffer', () => {
     b = edit(b, 0, 3, { kind: 'default' });
     const { plan, keys } = planOf(b, COLUMNS, PK, true, 'shop', 'people');
     expect(keys).toEqual([key(0), key(1)]);
-    expect(plan).toEqual({
+    expect(plan).toMatchObject({
       schema: 'shop',
       table: 'people',
       rows: [
@@ -175,6 +181,154 @@ describe('edit-buffer', () => {
     // SQL Server's `text` is the old type without `=`
     expect(expectOn('sqlserver')).toEqual(['doc']);
     expect(expectOn('sqlite')).toEqual(['doc', 'body']);
+  });
+
+  // --- whole rows (prompt 032) ----------------------------------------------------------------------
+
+  it('adds new rows below the table, with cells or left to the database', () => {
+    const { buffer: one, ids } = addRows(EMPTY_BUFFER, [
+      {},
+      { 1: v('Zoe'), 3: { kind: 'default' } },
+    ]);
+    expect(ids).toEqual([1, 2]);
+    expect(editCount(one)).toMatchObject({ inserts: 2, cells: 0, total: 2 });
+    const marks = marksOf(one)!;
+    expect(marks.extra).toBe(2);
+    expect(marks.newAt(1, 1)).toEqual(v('Zoe'));
+    // a default is no cell: the database fills it
+    expect(marks.newAt(1, 3)).toBeNull();
+    let b = setNewCell(one, 1, 2, v('7'));
+    b = setNewCell(b, 1, 2, { kind: 'default' });
+    expect(marksOf(b)!.newAt(0, 2)).toBeNull();
+    expect(setNewCell(b, 99, 0, v('x'))).toBe(b);
+    // adding the two rows was one step
+    expect(editCount(undoEdit(one)).inserts).toBe(0);
+    expect(editCount(removeNewRows(one, [1])).inserts).toBe(1);
+    expect(addRows(one, []).buffer).toBe(one);
+  });
+
+  it('marks rows to delete, takes the mark away again, and undoes both', () => {
+    const rows = [0, 1].map((r) => ({ key: key(r), row: r, original: ROWS[r] }));
+    let b = toggleDeleted(EMPTY_BUFFER, rows);
+    expect(editCount(b)).toMatchObject({ deletes: 2, total: 2 });
+    expect(marksOf(b)!.deleted(1)).toBe(true);
+    // one of them again: not all are marked yet, so all get the mark (it stays)
+    b = toggleDeleted(b, [rows[0]]);
+    expect(editCount(b).deletes).toBe(1);
+    b = undoEdit(b);
+    expect(editCount(b).deletes).toBe(2);
+    expect(editCount(resetRow(b, key(0))).deletes).toBe(1);
+    expect(toggleDeleted(b, [])).toBe(b);
+  });
+
+  it('plans deletes, updates and inserts apart; a row changed and deleted is deleted', () => {
+    let b = edit(EMPTY_BUFFER, 0, 1, v('Eve'));
+    b = edit(b, 1, 1, v('Bo'));
+    b = toggleDeleted(b, [{ key: key(1), row: 1, original: ROWS[1] }]);
+    b = addRows(b, [{ 1: v('Zoe'), 3: { kind: 'null' } }, {}]).buffer;
+    const planned = planOf(b, COLUMNS, PK, true, 'shop', 'people');
+    expect(planned.keys).toEqual([key(0)]);
+    expect(planned.deleteKeys).toEqual([key(1)]);
+    expect(planned.insertIds).toEqual([1, 2]);
+    expect(planned.plan.rows).toHaveLength(1);
+    expect(planned.plan.deletes).toEqual([
+      {
+        key: [{ column: 'id', kind: 'number', typeName: 'int4', value: '2' }],
+        // the lock of a delete: every cell that can be compared (not the float)
+        expect: [
+          { column: 'name', kind: 'text', typeName: 'varchar(10)', value: 'Bob' },
+          { column: 'note', kind: 'text', typeName: 'text', value: 'x' },
+        ],
+      },
+    ]);
+    expect(planned.plan.inserts).toEqual([
+      {
+        set: [
+          { column: 'name', kind: 'text', typeName: 'varchar(10)', value: 'Zoe', default: false },
+          { column: 'note', kind: 'text', typeName: 'text', value: null, default: false },
+        ],
+      },
+      { set: [] },
+    ]);
+    // the key the database gives the new rows is asked back
+    expect(planned.plan.returning).toBe('id');
+    expect(planOf(b, COLUMNS, PK, false, null, 't').plan.deletes?.[0].expect).toEqual([]);
+  });
+
+  it('pastes a block over rows of the table and on into new rows, as one step', () => {
+    const target = {
+      existing: [1].map((r) => ({ key: key(r), row: r, original: ROWS[r] })),
+      firstNew: 0,
+      columns: [1, 2, 3],
+    };
+    const block = [
+      ['Bobby', '', 'n1'],
+      ['Cy', '3.5', ''],
+      ['Di', 'abc', 'n3', 'one cell too many'],
+    ];
+    const pasted = pasteBlock(EMPTY_BUFFER, block, target, COLUMNS);
+    expect(pasted).toMatchObject({ cells: 9, added: 2, skipped: 0 });
+    const b = pasted.buffer;
+    expect(editCount(b)).toMatchObject({ cells: 3, rows: 1, inserts: 2 });
+    const marks = marksOf(b)!;
+    expect(marks.at(1, 1)).toEqual(v('Bobby'));
+    // an empty cell: NULL in a number column, an empty text in a text column
+    expect(marks.at(1, 2)).toEqual({ kind: 'null' });
+    expect(marks.newAt(0, 3)).toEqual(v(''));
+    expect(marks.newAt(1, 2)).toEqual(v('abc'));
+    // one undo takes the whole block back
+    expect(editCount(undoEdit(b)).total).toBe(0);
+    // a value a column cannot take is in the buffer and marked – writing waits for it
+    const info = COLUMNS.map(() => undefined);
+    const invalid = invalidCells(b, COLUMNS, info);
+    expect([...invalid.entries()]).toEqual([['new:2|2', 'number']]);
+    expect(marksOf(b, invalid)!.newInvalid(1, 2)).toBe(true);
+    expect(marksOf(b, invalid)!.newInvalid(0, 2)).toBe(false);
+    // a second block from the first new row on overwrites it and adds none
+    const again = pasteBlock(b, [['Zed']], { existing: [], firstNew: 0, columns: [1] }, COLUMNS);
+    expect(again).toMatchObject({ cells: 1, added: 0 });
+    expect(marksOf(again.buffer)!.newAt(0, 1)).toEqual(v('Zed'));
+    // a row without a key is left alone and counted
+    const noKey = pasteBlock(
+      EMPTY_BUFFER,
+      [['x']],
+      { existing: [{ key: null, row: 0, original: ROWS[0] }], firstNew: 0, columns: [1] },
+      COLUMNS,
+    );
+    expect(noKey).toMatchObject({ cells: 0, skipped: 1 });
+    expect(noKey.buffer).toBe(EMPTY_BUFFER);
+  });
+
+  it('leaves rows that are to be deleted out of a paste and out of the check (review 032)', () => {
+    const gone = toggleDeleted(EMPTY_BUFFER, [{ key: key(0), row: 0, original: ROWS[0] }]);
+    const target = {
+      existing: [0, 1].map((r) => ({ key: key(r), row: r, original: ROWS[r] })),
+      firstNew: 0,
+      columns: [2],
+    };
+    const pasted = pasteBlock(gone, [['abc'], ['def']], target, COLUMNS);
+    expect(pasted).toMatchObject({ cells: 1, skipped: 1 });
+    expect(marksOf(pasted.buffer)!.at(0, 2)).toBeNull();
+    // a bad value in a row that is deleted afterwards blocks nothing: it is never written
+    const info = COLUMNS.map(() => undefined);
+    expect(invalidCells(pasted.buffer, COLUMNS, info).size).toBe(1);
+    const both = toggleDeleted(pasted.buffer, [{ key: key(1), row: 1, original: ROWS[1] }]);
+    expect(invalidCells(both, COLUMNS, info).size).toBe(0);
+  });
+
+  it('pastes many rows in a time one can wait (review 032)', () => {
+    const block = Array.from({ length: 20_000 }, (_, i) => [`n${i}`, String(i), 'x']);
+    const start = performance.now();
+    const pasted = pasteBlock(
+      EMPTY_BUFFER,
+      block,
+      { existing: [], firstNew: 0, columns: [1, 2, 3] },
+      COLUMNS,
+    );
+    expect(performance.now() - start).toBeLessThan(2000);
+    expect(pasted).toMatchObject({ cells: 60_000, added: 20_000 });
+    expect(pasted.buffer.undo).toHaveLength(1);
+    expect(marksOf(pasted.buffer)!.newAt(19_999, 1)).toEqual(v('n19999'));
   });
 
   it('remembers which row failed until it is changed again', () => {

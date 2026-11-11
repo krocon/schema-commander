@@ -37,8 +37,16 @@ export const EDIT_DE: Translation<typeof EDIT_EN> = {
     tooLong: (max) => `Länger als die ${max} Zeichen, die die Spalte nimmt.`,
     date: 'Ein Datum schreibt sich 2026-11-11.',
   },
-  pending: (cells, rows) =>
-    `${cells === 1 ? '1 Änderung' : `${cells} Änderungen`} in ${rows === 1 ? '1 Zeile' : `${rows} Zeilen`}, nicht geschrieben`,
+  pending: (cells, rows, inserts, deletes) =>
+    `${[
+      cells > 0
+        ? `${cells === 1 ? '1 Änderung' : `${cells} Änderungen`} in ${rows === 1 ? '1 Zeile' : `${rows} Zeilen`}`
+        : '',
+      inserts > 0 ? (inserts === 1 ? '1 neue Zeile' : `${inserts} neue Zeilen`) : '',
+      deletes > 0 ? (deletes === 1 ? '1 Zeile zu löschen' : `${deletes} Zeilen zu löschen`) : '',
+    ]
+      .filter(Boolean)
+      .join(', ')} – nicht geschrieben`,
   preview: 'Vorschau',
   write: 'Schreiben',
   discard: 'Verwerfen',
@@ -47,11 +55,11 @@ export const EDIT_DE: Translation<typeof EDIT_EN> = {
   nothing: 'Es gibt keine Änderungen zu schreiben.',
   tooMany: (max) => `Mehr als ${max} geänderte Zeilen: in Teilen schreiben.`,
   written: (rows) => (rows === 1 ? '1 Zeile geschrieben.' : `${rows} Zeilen geschrieben.`),
-  conflict: (row) =>
-    `Zeile ${row} wurde inzwischen von jemand anderem geändert (oder ist weg). Nichts wurde geschrieben.`,
+  conflict: (what) =>
+    `${what} wurde inzwischen von jemand anderem geändert (oder ist weg). Nichts wurde geschrieben.`,
   conflictSome:
     'Eine Zeile wurde inzwischen von jemand anderem geändert (oder ist weg). Nichts wurde geschrieben.',
-  failed: (row, why) => `Zeile ${row}: ${why} Nichts wurde geschrieben.`,
+  failed: (what, why) => `${what}: ${why} Nichts wurde geschrieben.`,
   notWritten: (why) => `Nichts wurde geschrieben: ${why}`,
   txOpen: 'In diesem Tab ist eine Transaktion offen: erst Commit oder Rollback.',
   unknownOutcome:
@@ -76,5 +84,55 @@ export const EDIT_DE: Translation<typeof EDIT_EN> = {
       ? 'Eine geänderte Zelle ist nicht geschrieben. Sie geht verloren, wenn du weitermachst.'
       : `${cells} geänderte Zellen sind nicht geschrieben. Sie gehen verloren, wenn du weitermachst.`,
   discardYes: 'Verwerfen',
+  rowN: (n) => `Zeile ${n}`,
+  newRowsSpan: (from, to) => `Neue Zeilen ${from}–${to} (eine davon)`,
+  notOneRow: (what) =>
+    `${what} hat nicht genau eine Zeile ergeben: Sie wurde geändert oder ist weg, oder ein Trigger oder eine Regel hat die Anweisung abgewiesen. Nichts wurde geschrieben.`,
+  deleteTitle: 'Zeilen löschen?',
+  deleteQuestion: (n, table) =>
+    n === 1 ? `1 Zeile von ${table} wird gelöscht.` : `${n} Zeilen von ${table} werden gelöscht.`,
+  deleteYes: 'Löschen und schreiben',
+  newRowN: (n) => `Neue Zeile ${n}`,
+  rowDeleted:
+    'Diese Zeile ist zum Löschen vorgemerkt: erst die Marke wegnehmen, um sie zu bearbeiten.',
+  tooManyRows: (max) => `Mehr als ${max} Zeilen markiert.`,
+  duplicated: (n) =>
+    n === 1 ? '1 Zeile als neue Zeile dupliziert.' : `${n} Zeilen als neue Zeilen dupliziert.`,
+  nothingToPaste: 'In der Zwischenablage ist kein Text.',
+  nothingToFill:
+    'Zellen von zwei oder mehr Zeilen markieren: Der Wert der obersten Zelle füllt die darunter.',
+  pasteTitle: 'Block einfügen?',
+  pasteQuestion: (rows, columns, over, added) =>
+    `${rows} Zeilen mit je ${columns} ${columns === 1 ? 'Zelle' : 'Zellen'}: ${over} vorhandene ${over === 1 ? 'Zeile wird' : 'Zeilen werden'} überschrieben, ${added} neue ${added === 1 ? 'Zeile kommt' : 'Zeilen kommen'} hinzu. Geschrieben wird noch nichts.`,
+  pasteYes: 'Einfügen',
+  pasted: (cells, added, invalid, skipped, cut) =>
+    [
+      `${cells} Zellen eingefügt`,
+      added > 0 ? `${added} neue Zeilen` : '',
+      invalid > 0
+        ? `${invalid} Zellen halten einen Wert, den ihre Spalte nicht nimmt (markiert)`
+        : '',
+      skipped > 0 ? `${skipped} Zeilen ohne Schlüssel ausgelassen` : '',
+      cut ? 'der Block war länger, als auf einmal genommen wird' : '',
+    ]
+      .filter(Boolean)
+      .join('; ') + '.',
+  invalidCells: (n) =>
+    n === 1
+      ? 'Eine Zelle hält einen Wert, den ihre Spalte nicht nimmt (markiert). Erst richtigstellen.'
+      : `${n} Zellen halten einen Wert, den ihre Spalte nicht nimmt (markiert). Erst richtigstellen.`,
+  writtenAll: (deleted, changed, inserted, keys) =>
+    [
+      deleted > 0 ? `${deleted} gelöscht` : '',
+      changed > 0 ? `${changed} geändert` : '',
+      inserted > 0 ? `${inserted} eingefügt` : '',
+    ]
+      .filter(Boolean)
+      .join(', ') +
+    ' – geschrieben.' +
+    (keys.length > 0 ? ` Neue Schlüssel: ${keys.join(', ')}.` : ''),
+  previewCounts: (deleted, changed, inserted) =>
+    `Zeilen zu löschen: ${deleted} · zu ändern: ${changed} · einzufügen: ${inserted}. In dieser Reihenfolge.`,
+  addRow: 'Neue Zeile',
   marked: { null: 'NULL', default: 'DEFAULT' },
 };
