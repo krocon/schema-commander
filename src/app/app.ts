@@ -40,6 +40,9 @@ import { nameFromText } from './features/saved/saved-logic';
 import { SavedPanel } from './features/saved/saved-panel';
 import { SavedStore } from './features/saved/saved.store';
 import { SnippetDialog } from './features/snippets/snippet-dialog';
+import { StatsPopover } from './features/stats/stats-popover';
+import { STATS_TEXTS } from './features/stats/stats-texts';
+import { StatsService } from './features/stats/stats.service';
 import { extensionOf } from './features/value/value-logic';
 import { ValueService } from './features/value/value.service';
 import { FORMAT_TEXTS } from './features/format/format-texts';
@@ -111,6 +114,7 @@ const SIDEBAR_MIN = 140;
     SavedDialog,
     SavedPanel,
     SnippetDialog,
+    StatsPopover,
     DetailsDialog,
     MenuBar,
     SettingsDialog,
@@ -382,6 +386,27 @@ const SIDEBAR_MIN = 140;
           </button>
         }
         <span class="spacer"></span>
+        @if (statsShown()) {
+          <!-- the figures change with every move of the selection: spoken only once it rests (below) -->
+          <span class="stats" role="group" aria-live="off" [attr.aria-label]="statsTexts.region">
+            @if (stats.busy()) {
+              <span class="stats-busy">{{ statsTexts.working }}</span>
+            }
+            @for (f of stats.shown(); track f.key) {
+              <button
+                type="button"
+                class="stat"
+                [title]="statsTexts.copyHint(f.label)"
+                (click)="stats.copy(f)"
+              >
+                <span class="stat-label">{{ f.label }}</span> {{ f.shown }}
+              </button>
+            }
+            @if (stats.ignored() > 0) {
+              <span class="stats-note">{{ statsTexts.ignored(stats.ignored()) }}</span>
+            }
+          </span>
+        }
         @if (tabs.active(); as tab) {
           @if (tab.filePath()) {
             <span>{{ encoding() }}</span>
@@ -391,6 +416,10 @@ const SIDEBAR_MIN = 140;
           }
         }
       </footer>
+    }
+    <span class="sr-only" aria-live="polite">{{ statsShown() ? stats.spoken() : '' }}</span>
+    @if (stats.summary()) {
+      <app-stats-popover />
     }
     @if (menus.context(); as m) {
       <app-context-menu
@@ -555,7 +584,7 @@ export class App implements OnInit, OnDestroy {
 
   protected readonly running = computed(() => this.tabs.active()?.running() ?? false);
   protected readonly status = computed(() => {
-    const copied = this.copier.message();
+    const copied = this.copier.message() ?? this.stats.notice();
     if (copied !== null) return copied;
     const job = this.exporter.job();
     if (job) return job.message;
@@ -592,6 +621,14 @@ export class App implements OnInit, OnDestroy {
   protected readonly saved = inject(SavedStore);
   protected readonly paramService = inject(ParamService);
   private readonly values = inject(ValueService);
+  protected readonly stats = inject(StatsService);
+  protected readonly statsTexts = STATS_TEXTS;
+  /** The figures belong to the result in front (or one is being worked out). */
+  protected readonly statsShown = computed(() => {
+    const front = this.copier.current()?.result.resultId;
+    const of = this.stats.stats()?.resultId;
+    return this.stats.busy() || (of !== undefined && of === front);
+  });
   private readonly fileDialogs = inject(FileDialogApi);
   protected readonly formatTexts = FORMAT_TEXTS;
   protected readonly confirm = inject(ConfirmService);
@@ -798,6 +835,22 @@ export class App implements OnInit, OnDestroy {
         'COPY_CELL_VALUE',
         () => this.values.copy(),
         () => this.values.cell() !== null,
+      ),
+      this.actions.register(
+        'SUMMARIZE_COLUMN',
+        () => {
+          const cell = this.values.cell();
+          if (!cell) return this.ownNotice.set(STATS_TEXTS.noCell);
+          void this.stats.summarize(cell.resultId, cell.col, cell.column);
+        },
+        () => this.values.cell() !== null,
+      ),
+      this.actions.register(
+        'COPY_SELECTION_SUM',
+        async () => {
+          if (!(await this.stats.copySum())) this.ownNotice.set(STATS_TEXTS.noSum);
+        },
+        () => this.stats.hasSum(),
       ),
       this.actions.register(
         'SAVE_CELL_VALUE',

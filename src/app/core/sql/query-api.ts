@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Channel } from '@tauri-apps/api/core';
 import { call } from '../backend/call';
+import { CopySelection } from '../backend/clipboard-api';
 import {
   BoundValue,
   BuiltQuery,
@@ -12,6 +13,7 @@ import {
   TxState,
   Verdict,
   ViewSpec,
+  ResultStats,
   ViewedResult,
 } from './query.models';
 
@@ -112,6 +114,17 @@ export abstract class QueryApi {
    */
   abstract resultView(jobId: number, resultId: number, spec: ViewSpec): Promise<ViewedResult>;
   abstract cancelView(jobId: number): Promise<void>;
+  /**
+   * The figures of a selection of a result (prompt 028), worked out over the store; `top` adds the most
+   * frequent values. A job: `cancelStats` stops it (`cancelled`).
+   */
+  abstract resultStats(
+    jobId: number,
+    resultId: number,
+    selection: CopySelection,
+    top: boolean,
+  ): Promise<ResultStats>;
+  abstract cancelStats(jobId: number): Promise<void>;
 }
 
 @Injectable()
@@ -206,6 +219,19 @@ export class TauriQueryApi extends QueryApi {
   }
 
   cancelView(jobId: number): Promise<void> {
+    return call('cancel_job', { jobId });
+  }
+
+  resultStats(
+    jobId: number,
+    resultId: number,
+    selection: CopySelection,
+    top: boolean,
+  ): Promise<ResultStats> {
+    return call('result_stats', { jobId, resultId, selection, top });
+  }
+
+  cancelStats(jobId: number): Promise<void> {
     return call('cancel_job', { jobId });
   }
 }

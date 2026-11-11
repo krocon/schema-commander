@@ -31,6 +31,7 @@ import '../../features/tabs/tab-bar-texts';
 import '../../features/tabs/tabs-texts';
 import '../../features/themes/theme-editor-texts';
 import '../../features/themes/theme-picker-texts';
+import '../../features/stats/stats-texts';
 import '../../features/value/value-texts';
 import '../../shared/shared-texts';
 import '../theme/tokens';
@@ -38,6 +39,7 @@ import '../theme/tokens';
 /** The same in both languages on purpose: names, symbols, technical terms. */
 const SAME = new Set<string>([
   '(null)',
+  '…',
   'Alt',
   'CSV',
   'Commit',
@@ -52,6 +54,8 @@ const SAME = new Set<string>([
   'Format',
   'Host',
   'JSON',
+  'Max',
+  'Min',
   'MySQL / MariaDB',
   'NULL',
   'Name',
@@ -94,7 +98,7 @@ const SAME = new Set<string>([
   '~/.pgpass (PostgreSQL)',
 ]);
 
-const CATALOG_FILES = 32;
+const CATALOG_FILES = 33;
 const SAMPLE_ARGS: unknown[] = [2, 'x', 3, 4];
 
 function walk(path: string, en: unknown, de: unknown, problems: string[], same: string[]): void {

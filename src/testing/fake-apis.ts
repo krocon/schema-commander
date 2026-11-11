@@ -63,6 +63,7 @@ import {
   TxState,
   Verdict,
   ViewSpec,
+  ResultStats,
   ViewedResult,
 } from '../app/core/sql/query.models';
 import { FileDialogApi } from '../app/core/backend/file-dialog-api';
@@ -325,6 +326,37 @@ export class FakeQueryApi extends QueryApi {
 
   cancelView(jobId: number): Promise<void> {
     this.cancelledViews.push(jobId);
+    return Promise.resolve();
+  }
+
+  /** Every question for figures, and how it is answered (a gate holds the answer back). */
+  readonly statsCalls: {
+    jobId: number;
+    resultId: number;
+    selection: CopySelection;
+    top: boolean;
+  }[] = [];
+  readonly cancelledStats: number[] = [];
+  statsAnswer: ResultStats = EMPTY_STATS;
+  statsError: { code: string; message: string } | null = null;
+  statsGate: Promise<void> | null = null;
+
+  async resultStats(
+    jobId: number,
+    resultId: number,
+    selection: CopySelection,
+    top: boolean,
+  ): Promise<ResultStats> {
+    this.statsCalls.push({ jobId, resultId, selection, top });
+    const answer = this.statsAnswer;
+    if (this.statsGate) await this.statsGate;
+    if (this.statsError) throw this.statsError;
+    if (this.cancelledStats.includes(jobId)) throw { code: 'cancelled', message: '' };
+    return answer;
+  }
+
+  cancelStats(jobId: number): Promise<void> {
+    this.cancelledStats.push(jobId);
     return Promise.resolve();
   }
 }
@@ -1146,3 +1178,24 @@ export class FakeSavedApi extends SavedApi {
       .map(([id]) => id);
   }
 }
+
+/** Figures of nothing: what a test changes a field of. */
+export const EMPTY_STATS: ResultStats = {
+  cells: 0,
+  nonNull: 0,
+  distinct: 0,
+  distinctCapped: false,
+  numbers: 0,
+  ignored: 0,
+  sum: null,
+  mean: null,
+  min: null,
+  max: null,
+  first: null,
+  last: null,
+  spanMs: null,
+  shortest: null,
+  longest: null,
+  top: [],
+  topPartial: false,
+};

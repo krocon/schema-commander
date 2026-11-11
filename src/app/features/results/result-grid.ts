@@ -18,6 +18,7 @@ import { SettingsService } from '../../core/settings/settings.service';
 import { CellFormat } from './cell-format';
 import { localTsv, selectionOf } from './copy-logic';
 import { CopyService } from './copy.service';
+import { StatsService } from '../stats/stats.service';
 import { PAGE_ROWS, WindowAreaModel, resultModel, resultOptions } from './result-model';
 import { RESULTS_TEXTS } from './results-texts';
 
@@ -45,6 +46,7 @@ import { RESULTS_TEXTS } from './results-texts';
         [debounceMouseClickDelay]="0"
         [(tableApi)]="api"
         (focusChanged)="onFocus()"
+        (selectionChanged)="onSelection()"
         (mouseClicked)="onMouse($event)"
       />
     } @else {
@@ -92,6 +94,7 @@ export class ResultGrid implements OnDestroy {
 
   protected readonly settings = inject(SettingsService);
   private readonly copier = inject(CopyService);
+  private readonly stats = inject(StatsService);
   private readonly menus = inject(MenuService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   /** Ends telling the copy service what is selected here. */
@@ -102,6 +105,8 @@ export class ResultGrid implements OnDestroy {
   protected readonly model = signal<TableModelIf | null>(null);
   protected readonly api = signal<TableApi | undefined>(undefined);
   private body: WindowAreaModel | null = null;
+  /** The result whose figures the status line may show. */
+  private shownId = -1;
   /** Counts the results shown, so the first rows of an older one are dropped. */
   private generation = 0;
 
@@ -179,6 +184,7 @@ export class ResultGrid implements OnDestroy {
 
   ngOnDestroy(): void {
     this.unregister?.();
+    this.stats.forget(this.shownId);
     this.generation++;
     this.body?.dispose();
   }
@@ -204,8 +210,26 @@ export class ResultGrid implements OnDestroy {
     this.active.emit(cell && cell[1] >= 1 ? [cell[0], cell[1] - 1] : null);
   }
 
+  /** What is marked changed: the status line shows its figures (prompt 028). */
+  protected onSelection(): void {
+    if (this.local()) return;
+    const result = this.result();
+    const selection = this.options.getSelectionModel?.();
+    const ranges = selection?.getRanges() ?? [];
+    const all = selection?.isAllSelected() ?? false;
+    this.stats.selectionChanged(
+      result.resultId,
+      selectionOf(ranges, all, result.columns.length),
+      this.rows(),
+      result.columns.length,
+      all || ranges.length > 0,
+    );
+  }
+
   private async show(result: ResultRef): Promise<void> {
     const generation = ++this.generation;
+    this.stats.forget(this.shownId);
+    this.shownId = result.resultId;
     this.active.emit(null);
     this.unregister?.();
     const rowHeight = untracked(() => this.settings.settings().resultRowHeight);

@@ -276,3 +276,46 @@
   background: var(--badge-danger-bg);
   box-shadow: none;
 }
+
+/* the figures of the selection (prompt 028) */
+.stats {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.stat {
+  flex: none;
+  max-width: 360px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stat:hover {
+  background: var(--bg-hover);
+}
+
+.stat-label,
+.stats-note,
+.stats-busy {
+  color: var(--text-dim);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

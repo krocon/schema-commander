@@ -766,6 +766,30 @@ mod tests {
         );
     }
 
+    /// The window reads these names (`ResultStats` in query.models.ts).
+    #[test]
+    fn crosses_the_bridge_in_camel_case() {
+        let rows = vec![vec![Cell::I64(2)], vec![Cell::I64(3)], vec![Cell::Null]];
+        let (_dir, store, id) = store_with(&[("n", ColKind::Int)], rows);
+        let s = stats(&store, id, &all(), true, &|| false).unwrap();
+        assert_eq!(
+            serde_json::to_value(&s).unwrap(),
+            serde_json::json!({
+                "cells": 3, "nonNull": 2, "distinct": 2, "distinctCapped": false,
+                "numbers": 2, "ignored": 0,
+                "sum": "5", "mean": "2.5", "min": "2", "max": "3",
+                "first": null, "last": null, "spanMs": null,
+                "shortest": null, "longest": null,
+                "top": [
+                    {"value": null, "count": 1},
+                    {"value": "2", "count": 1},
+                    {"value": "3", "count": 1}
+                ],
+                "topPartial": false
+            })
+        );
+    }
+
     #[test]
     fn stops_when_asked_and_knows_no_result() {
         let rows = (0..10_000).map(|i| vec![Cell::I64(i)]).collect();
