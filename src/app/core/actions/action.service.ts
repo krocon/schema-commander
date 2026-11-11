@@ -1,4 +1,4 @@
-import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { SettingsService } from '../settings/settings.service';
 import type { ActionId } from './action-catalog';
 import type { DispatchEvent, KeyboardDispatcher } from './keyboard-dispatcher';
@@ -19,12 +19,6 @@ export type RunSource = 'key' | 'menu' | 'other';
 
 /** A key and its menu event arrive within this time when both see the same press. */
 const DOUBLE_MS = 300;
-
-/** One menu entry and its shortcut in the keymap notation (`null` = none), for `set_menu_accelerators`. */
-export interface MenuAccelerator {
-  id: string;
-  shortcut: string | null;
-}
 
 const NO_KEYMAP: ResolvedKeymap = {
   bindings: {} as ResolvedKeymap['bindings'],
@@ -58,17 +52,8 @@ export class ActionService {
   readonly recording = signal(false);
   /** Where failures go (the error banner, set by the app). */
   reportError: (message: string) => void = (m) => console.warn(m);
-  /** Tells the native menu its accelerators; set by the menu (prompt 018), nothing until then. */
-  sendMenu: (items: MenuAccelerator[]) => Promise<unknown> = () => Promise.resolve();
-
-  constructor() {
-    effect(() => {
-      const engine = this.engine();
-      if (!engine || !this.settings.loaded()) return;
-      const items = engine.menuAccelerators(this.keymap(), this.recording());
-      untracked(() => void this.sendMenu(items).catch(() => undefined));
-    });
-  }
+  /** The switches among the actions: whether each is on (menus tick them, prompt 018). */
+  private readonly checks = new Map<ActionId, () => boolean>();
 
   /** Loads the engine (once); keys act from then on. */
   load(): Promise<Engine> {
@@ -121,8 +106,34 @@ export class ActionService {
     return this.handlers.has(id);
   }
 
-  /** It would run now: registered and enabled. */
+  /** Says whether a switch is on; returns a function that takes the rule away again. */
+  registerCheck(id: ActionId, checked: () => boolean): () => void {
+    this.checks.set(id, checked);
+    this.version.update((n) => n + 1);
+    return () => {
+      if (this.checks.get(id) === checked) {
+        this.checks.delete(id);
+        this.version.update((n) => n + 1);
+      }
+    };
+  }
+
+  /** Whether a switch is on; `undefined` for an action that is none. Reactive. */
+  isChecked(id: ActionId): boolean | undefined {
+    this.version();
+    return this.checks.get(id)?.();
+  }
+
+  /** The first shortcut of an action as the user reads it (`⌘T`, `Ctrl+T`); `''` without one. */
+  shortcutLabel(id: ActionId): string {
+    const first = this.shortcuts(id)[0];
+    const engine = this.engine();
+    return first && engine ? engine.formatShortcut(first, this.platform()) : '';
+  }
+
+  /** It would run now: registered and enabled. Reactive as far as the rules read signals. */
   canRun(id: ActionId): boolean {
+    this.version();
     const handler = this.handlers.get(id);
     return !!handler && (handler.enabled?.() ?? true);
   }

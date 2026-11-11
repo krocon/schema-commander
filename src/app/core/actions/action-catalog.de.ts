@@ -77,6 +77,9 @@ export const ACTION_LABELS_DE: Readonly<Record<ActionId, string>> = {
   FOCUS_NEXT_AREA: 'Nächster Bereich',
   FOCUS_PREV_AREA: 'Voriger Bereich',
   OPEN_SETTINGS: 'Einstellungen …',
+  QUIT_APP: 'Beenden',
+  RENAME_TAB: 'Tab umbenennen',
+  CLOSE_OTHER_TABS: 'Andere Tabs schließen',
   OPEN_SHORTCUTS: 'Tastenkürzel bearbeiten …',
   SHOW_SHORTCUTS: 'Tastenkürzel anzeigen',
 };

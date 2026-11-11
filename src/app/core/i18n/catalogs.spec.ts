@@ -15,6 +15,7 @@ import '../../features/editor/editor-texts';
 import '../../features/export/export-texts';
 import '../../features/guard/guard-texts';
 import '../../features/history/history-texts';
+import '../../features/menus/menu-texts';
 import '../../features/palette/palette-texts';
 import '../../features/results/results-texts';
 import '../../features/schema/schema-texts';
@@ -53,6 +54,7 @@ const SAME = new Set<string>([
   'PostgreSQL',
   'Rollback',
   'SQL Server',
+  'Schema Commander',
   'Schema',
   'TLS: ',
   'Tab',
@@ -65,7 +67,7 @@ const SAME = new Set<string>([
   '~/.pgpass (PostgreSQL)',
 ]);
 
-const CATALOG_FILES = 24;
+const CATALOG_FILES = 25;
 const SAMPLE_ARGS: unknown[] = [2, 'x', 3, 4];
 
 function walk(path: string, en: unknown, de: unknown, problems: string[], same: string[]): void {

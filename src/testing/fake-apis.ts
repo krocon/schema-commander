@@ -54,12 +54,6 @@ export class FakeWindowApi extends WindowApi {
     this.calls.push({ color, dark });
     return Promise.resolve();
   }
-
-  readonly languages: string[] = [];
-  setLanguage(language: string): Promise<void> {
-    this.languages.push(language);
-    return Promise.resolve();
-  }
 }
 
 /**

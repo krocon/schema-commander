@@ -49,6 +49,8 @@ import { ConnectionDialog } from './features/connections/connection-dialog';
 import { ConnectionList } from './features/connections/connection-list';
 import { PasswordDialog } from './features/connections/password-dialog';
 import { CommandPalette } from './features/palette/command-palette';
+import { MenuBar } from './features/menus/menu-bar';
+import { MenuService } from './features/menus/menu.service';
 import { SettingsDialog } from './features/settings/settings-dialog';
 import { ShortcutDialogComponent } from './features/shortcuts/shortcut-dialog';
 import { QueryPane } from './features/tabs/query-pane';
@@ -61,9 +63,7 @@ import { copyName } from './features/themes/theme-editor-logic';
 import { ThemePickerComponent } from './features/themes/theme-picker';
 import { SplitterComponent } from './shared/splitter';
 import { APP_TEXTS } from './app-texts';
-import { WindowApi } from './core/backend/window-api';
 import { COMMON_TEXTS } from './core/i18n/common-texts';
-import { language } from './core/i18n/i18n';
 
 const SIDEBAR_MIN = 140;
 
@@ -87,6 +87,7 @@ const SIDEBAR_MIN = 140;
     PasswordDialog,
     SchemaTree,
     QueryPane,
+    MenuBar,
     SettingsDialog,
     ShortcutDialogComponent,
     SplitterComponent,
@@ -96,6 +97,8 @@ const SIDEBAR_MIN = 140;
   ],
   template: `
     @if (!zen()) {
+      <!-- Windows and Linux: the menu bar of the window; macOS has the native one (prompt 018) -->
+      <app-menu-bar />
       <header class="toolbar" role="toolbar" [attr.aria-label]="t.toolbar">
         <button
           type="button"
@@ -343,6 +346,16 @@ const SIDEBAR_MIN = 140;
         }
       </footer>
     }
+    @if (menus.context(); as m) {
+      <app-context-menu
+        [label]="m.label"
+        [items]="m.items"
+        [x]="m.x"
+        [y]="m.y"
+        (picked)="menus.choose($event)"
+        (closed)="menus.close($event)"
+      />
+    }
     @if (copier.menu(); as m) {
       <app-context-menu
         [label]="t.copyAs"
@@ -450,7 +463,7 @@ export class App implements OnInit, OnDestroy {
   /** The shortcut editor, `read` as an overview. */
   protected readonly shortcutsOpen = signal<'edit' | 'read' | null>(null);
   protected readonly settingsOpen = signal(false);
-  private readonly windowApi = inject(WindowApi);
+  protected readonly menus = inject(MenuService);
   /** A message of the app itself (failed action, unreadable shortcuts). */
   private readonly ownNotice = signal<string | null>(null);
   protected readonly notice = computed(() => this.ownNotice() ?? this.tabs.notice());
@@ -534,11 +547,6 @@ export class App implements OnInit, OnDestroy {
   private observer: ResizeObserver | null = null;
 
   constructor() {
-    // the native parts (the menu bar of macOS) speak the language of the window
-    effect(() => {
-      const lang = language();
-      void this.windowApi.setLanguage(lang).catch(() => undefined);
-    });
     effect(() => {
       const element = this.workspace()?.nativeElement;
       this.observer?.disconnect();
@@ -552,12 +560,17 @@ export class App implements OnInit, OnDestroy {
   }
 
   async ngOnInit(): Promise<void> {
-    this.cleanups.push(this.actions.attach(document), this.registerActions());
+    this.cleanups.push(
+      this.actions.attach(document),
+      this.registerActions(),
+      ...this.registerChecks(),
+    );
     this.actions.reportError = (message) => this.ownNotice.set(message);
     const engine = this.actions.load();
     // both before the window shows: the stored scheme may be one of the user's own (design 001 E7)
     await Promise.all([this.settings.load(), this.theme.loadUserThemes()]);
     await engine;
+    this.menus.init();
     // after the settings: they name the active connection; the tabs name theirs
     await this.connections.load();
     await this.tabs.load();
@@ -765,6 +778,14 @@ export class App implements OnInit, OnDestroy {
         () => this.running(),
       ),
       this.actions.register(
+        'CLOSE_OTHER_TABS',
+        () => {
+          const id = this.tabs.activeId();
+          return id ? this.tabs.closeOthers(id) : undefined;
+        },
+        () => this.tabs.tabs().length > 1,
+      ),
+      this.actions.register(
         'REOPEN_TAB',
         () => this.tabs.reopen(),
         () => this.tabs.canReopen(),
@@ -791,6 +812,8 @@ export class App implements OnInit, OnDestroy {
           setTimeout(() => this.tabs.active()?.focus(), 50);
         },
         CLOSE_TAB: withTab((id) => this.tabs.close(id)),
+        RENAME_TAB: withTab((id) => this.tabs.renaming.set(id)),
+        QUIT_APP: () => this.quit(),
         NEXT_TAB: () => this.tabs.cycle(1),
         PREV_TAB: () => this.tabs.cycle(-1),
         DUPLICATE_TAB: withTab((id) => this.tabs.duplicate(id)),
@@ -907,6 +930,35 @@ export class App implements OnInit, OnDestroy {
         commit ? APP_TEXTS.commitFailed(problem) : APP_TEXTS.rollbackFailed(problem),
       );
     }
+  }
+
+  /** Closes the window like its close button: tabs with an open transaction are asked about first. */
+  private async quit(): Promise<void> {
+    this.tabs.flush();
+    if (isTauri()) await getCurrentWindow().close();
+  }
+
+  /** The switches among the actions: menus tick them. */
+  private registerChecks(): (() => void)[] {
+    const s = () => this.settings.settings();
+    const checks: Partial<Record<ActionId, () => boolean>> = {
+      TOGGLE_SIDEBAR: () => this.sidebarShown(),
+      TOGGLE_RESULT: () => s().resultVisible,
+      MAXIMIZE_RESULT: () => this.tabs.resultMaximized(),
+      TOGGLE_ZEN: () => this.zen(),
+      TOGGLE_DIGIT_GROUPING: () => s().groupDigits,
+      TOGGLE_AUTOCOMMIT: () => !(this.tabs.active()?.manual() ?? false),
+      TOGGLE_HISTORY: () => s().historyEnabled,
+      TOGGLE_HISTORY_CONNECTION: () => this.history.enabled(this.connections.activeId()),
+      TOGGLE_CONFIRM_DANGEROUS: () => s().confirmDangerous,
+      TOGGLE_SYSTEM_SCHEMAS: () => s().showSystemSchemas,
+      TOGGLE_COPY_HEADER: () => s().copyHeader,
+      SIDEBAR_DATABASE: () => s().sidebarView === 'database',
+      SIDEBAR_HISTORY: () => s().sidebarView === 'history',
+    };
+    return Object.entries(checks).map(([id, on]) =>
+      this.actions.registerCheck(id as ActionId, on as () => boolean),
+    );
   }
 
   /** The window is about to close: tabs with an open transaction are asked about first. */

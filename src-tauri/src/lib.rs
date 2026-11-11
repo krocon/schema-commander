@@ -1,6 +1,7 @@
 //! Schema Commander – the Rust side: database access behind Tauri commands; the web view only ever
 //! shows a window of the data.
 
+pub mod app_menu;
 pub mod commands;
 pub mod copy;
 pub mod db;
@@ -43,10 +44,11 @@ pub fn run() {
         unsafe { std::env::remove_var(name) };
     }
     let builder = tauri::Builder::default();
-    // Windows and Linux have no menu bar yet (prompt 018).
+    // Windows and Linux draw the menu bar in the window (design 018 E2).
     #[cfg(target_os = "macos")]
-    let builder = builder.menu(|app| menu::macos_menu(app, "en"));
+    let builder = builder.menu(menu::macos_menu);
     builder
+        .on_menu_event(|app, event| commands::forward_menu_event(app, event.id().as_ref()))
         // Native file dialogs: the only way a path gets into a command (design 001 E4).
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -69,6 +71,7 @@ pub fn run() {
             app.manage(session::SessionDir::new(app.path().app_data_dir()?));
             app.manage(results::ResultStore::new(&app.path().app_cache_dir()?));
             app.manage(commands::ClipState::default());
+            app.manage(commands::MenuState::default());
             app.manage(commands::Jobs::default());
             app.manage(history::History::new(app.path().app_data_dir()?));
             // A frontend that never applies a scheme must not leave the window hidden.
@@ -124,7 +127,9 @@ pub fn run() {
             commands::read_text_file,
             commands::write_text_file,
             commands::set_window_chrome,
-            commands::set_language,
+            commands::set_app_menu,
+            commands::set_menu_state,
+            commands::subscribe_menu,
             commands::load_themes,
             commands::save_themes,
             commands::import_theme,

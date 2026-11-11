@@ -12,14 +12,6 @@ export const TAB_BAR_EN = {
   closeTab: (title: string) => `Close ${title}`,
   newTab: 'New tab',
   menu: 'Tab',
-  rename: 'Rename',
-  duplicate: 'Duplicate',
-  saveAsFile: 'Save as file …',
-  toOtherGroup: 'To the other group',
-  splitRight: 'Split to the right',
-  unsplit: 'Join the groups',
-  closeOthers: 'Close others',
-  reopen: 'Reopen closed tab',
 };
 
 export const TAB_BAR_TEXTS = translatable('tabBar', TAB_BAR_EN, { de: TAB_BAR_DE });

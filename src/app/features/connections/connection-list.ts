@@ -2,6 +2,8 @@ import { Component, computed, inject, output, signal } from '@angular/core';
 import { ActionService } from '../../core/actions/action.service';
 import { DEMO_ID, Profile, whereLabel } from '../../core/connections/connection.models';
 import { ConnectionsStore } from '../../core/connections/connections.store';
+import { CONNECTION_MENU } from '../menus/menu-model';
+import { MenuService } from '../menus/menu.service';
 import { groupProfiles, kindName } from './connection-logic';
 import { CONNECTION_TEXTS } from './connection-texts';
 
@@ -53,6 +55,8 @@ import { CONNECTION_TEXTS } from './connection-texts';
               [attr.aria-current]="p.id === store.activeId() ? 'true' : null"
               [title]="title(p)"
               (click)="store.activate(p.id)"
+              (contextmenu)="openMenu($event, p.id)"
+              (keydown)="onItemKey($event, p.id)"
               (dblclick)="connect(p.id)"
               (keydown.enter)="$event.preventDefault(); connect(p.id)"
             >
@@ -214,6 +218,27 @@ import { CONNECTION_TEXTS } from './connection-texts';
 export class ConnectionList {
   protected readonly store = inject(ConnectionsStore);
   protected readonly actions = inject(ActionService);
+  private readonly menus = inject(MenuService);
+
+  /** The menu of a connection: it becomes the active one, so the actions of the menu mean it. */
+  protected openMenu(event: MouseEvent, id: string): void {
+    event.preventDefault();
+    this.showMenu(event.currentTarget as HTMLElement, id, event.clientX, event.clientY);
+  }
+
+  /** `Shift+F10` or the menu key on a connection. */
+  protected onItemKey(event: KeyboardEvent, id: string): void {
+    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+    event.preventDefault();
+    const item = event.currentTarget as HTMLElement;
+    const rect = item.getBoundingClientRect();
+    this.showMenu(item, id, rect.left + 16, rect.bottom);
+  }
+
+  private showMenu(item: HTMLElement, id: string, x: number, y: number): void {
+    this.store.activate(id);
+    this.menus.openContext(CONNECTION_MENU, x, y, () => item.focus());
+  }
   protected readonly t = CONNECTION_TEXTS;
 
   /** Asks for the dialog of a profile. */

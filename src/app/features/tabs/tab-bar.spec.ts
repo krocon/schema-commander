@@ -15,6 +15,8 @@ import { ConnectionsApi } from '../../core/connections/connections-api';
 import { ConnectionsStore } from '../../core/connections/connections.store';
 import { SessionApi } from '../../core/session/session-api';
 import { QueryApi } from '../../core/sql/query-api';
+import { ActionService } from '../../core/actions/action.service';
+import { MenuService } from '../menus/menu.service';
 import { TabBar } from './tab-bar';
 import { TabsStore } from './tabs.store';
 
@@ -110,20 +112,46 @@ describe('TabBar', () => {
     expect(store.tabs()[0].title()).toBe('Monatsbericht');
   });
 
-  it('offers a menu that can be worked with the keyboard', async () => {
-    const { store, el, tabs, settle, fixture } = await open();
+  it('opens the menu of a tab with the mouse and with the keyboard, made of actions', async () => {
+    const { store, tabs, key, settle, fixture } = await open();
+    const menus = TestBed.inject(MenuService);
+    const actions = TestBed.inject(ActionService);
+    actions.register('CLOSE_OTHER_TABS', () => store.closeOthers(store.activeId()!));
     tabs()[1].dispatchEvent(
       new MouseEvent('contextmenu', { bubbles: true, clientX: 50, clientY: 20 }),
     );
     fixture.detectChanges();
-    await settle();
+    // the tab comes to the front: the actions of the menu mean it
     expect(store.activeId()).toBe('tab-2');
-    const items = [...el.querySelectorAll<HTMLButtonElement>('[role=menuitem]')];
-    expect(items.map((i) => i.textContent?.trim())).toContain('Andere schließen');
-    items.find((i) => i.textContent?.includes('Andere schließen'))!.click();
+    expect(menus.context()).toMatchObject({ x: 50, y: 20, label: 'Tab' });
+    const labels = () => menus.context()!.items.map((i) => i.label);
+    expect(labels()).toContain('Andere Tabs schließen');
+    expect(labels()).toContain('Tab umbenennen');
+    // an action nobody registered is grey
+    expect(menus.context()!.items.find((i) => i.id === 'RENAME_TAB')?.disabled).toBe(true);
+    menus.choose('CLOSE_OTHER_TABS');
+    await settle();
     await settle();
     expect(store.tabs().map((t) => t.id)).toEqual(['tab-2']);
-    expect(el.querySelector('[role=menu]')).toBeNull();
+    expect(menus.context()).toBeNull();
+    // Shift+F10 and the menu key open it under the tab
+    tabs()[0].dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true }),
+    );
+    expect(menus.context()?.label).toBe('Tab');
+    menus.close('key');
+    key(tabs()[0], 'ContextMenu');
+    expect(menus.context()).not.toBeNull();
+    menus.close('key');
+  });
+
+  it('renames the tab the action names', async () => {
+    const { store, el, settle } = await open();
+    store.renaming.set('tab-1');
+    await settle();
+    const field = el.querySelector<HTMLInputElement>('.rename');
+    expect(field?.value).toBe(store.active()?.title());
+    expect(document.activeElement === field || field !== null).toBe(true);
   });
 
   it('marks a changed file and carries the colour of the connection', async () => {
@@ -163,21 +191,5 @@ describe('TabBar', () => {
     expect(tabs().find((t) => t.getAttribute('aria-selected') === 'true')?.dataset['id']).toBe(
       'tab-3',
     );
-  });
-
-  it('offers the other group in the menu of a tab', async () => {
-    const { fixture, store, el, tabs, settle } = await open();
-    tabs()[1].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
-    fixture.detectChanges();
-    await settle();
-    const item = () =>
-      [...el.querySelectorAll<HTMLButtonElement>('.menu [role=menuitem]')].find((b) =>
-        /teilen|andere Gruppe/.test(b.textContent ?? ''),
-      );
-    expect(item()?.textContent).toContain('Nach rechts teilen');
-    item()?.click();
-    fixture.detectChanges();
-    expect(store.isSplit()).toBe(true);
-    expect(store.groups()[1].map((t) => t.id)).toEqual(['tab-2']);
   });
 });

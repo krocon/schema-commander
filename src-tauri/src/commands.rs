@@ -782,22 +782,67 @@ pub fn set_window_chrome(app: AppHandle, color: String, dark: Option<bool>) -> A
     Ok(())
 }
 
-/// The language of the native parts follows the window (prompt 017): on macOS the menu bar is built again
-/// with the words of that language; elsewhere there is no native menu yet (prompt 018).
-#[tauri::command(async)]
-pub fn set_language(app: AppHandle, language: String) -> AppResult<()> {
-    #[cfg(target_os = "macos")]
-    {
-        let menu = crate::menu::macos_menu(&app, &language)
-            .map_err(|e| AppError::new(ErrorCode::Io, e.to_string()))?;
-        app.set_menu(menu)
-            .map_err(|e| AppError::new(ErrorCode::Io, e.to_string()))?;
+/// The channel of the menu events and the ids of the installed native menu (prompt 018).
+#[derive(Default)]
+pub struct MenuState {
+    channel: parking_lot::Mutex<Option<Channel<crate::app_menu::MenuEvent>>>,
+    ids: parking_lot::Mutex<std::collections::HashSet<String>>,
+}
+
+fn invalid_menu(message: impl Into<String>) -> AppError {
+    AppError::new(ErrorCode::Unsupported, message)
+}
+
+/// Installs the native menu bar from the model of the window. `false` = this platform has none: the
+/// window draws its own (design 018 E2). A spec that breaks a rule is refused and nothing changes.
+///
+/// The menu commands are synchronous on purpose: they change the native menu, the main thread is the
+/// safe place for that on macOS, and they do no I/O.
+#[tauri::command]
+pub fn set_app_menu(app: AppHandle, spec: crate::app_menu::MenuSpec) -> AppResult<bool> {
+    crate::app_menu::validate_spec(&spec).map_err(invalid_menu)?;
+    if !crate::app_menu::native_menu_wanted() {
+        return Ok(false);
     }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (&app, crate::menu::known_language(&language));
+    let menu = crate::app_menu::build_menu(&app, &spec).map_err(|e| invalid_menu(e.to_string()))?;
+    *app.state::<MenuState>().ids.lock() = crate::app_menu::item_ids(&spec);
+    app.set_menu(menu)
+        .map_err(|e| invalid_menu(e.to_string()))?;
+    Ok(true)
+}
+
+/// Enables, disables and ticks items of the installed menu without building it again (states change
+/// often). Ids the menu does not have are skipped.
+#[tauri::command]
+pub fn set_menu_state(app: AppHandle, items: Vec<crate::app_menu::MenuItemState>) -> AppResult<()> {
+    let wanted = {
+        let ids = app.state::<MenuState>().ids.lock().clone();
+        crate::app_menu::validate_enabled(&items, &ids).map_err(invalid_menu)?
+    };
+    if wanted.is_empty() || !crate::app_menu::native_menu_wanted() {
+        return Ok(());
     }
-    Ok(())
+    let Some(menu) = app.menu() else {
+        return Ok(());
+    };
+    crate::app_menu::apply_enabled(&menu, &wanted).map_err(|e| invalid_menu(e.to_string()))
+}
+
+/// The ids of chosen menu items go to this channel.
+#[tauri::command]
+pub fn subscribe_menu(app: AppHandle, on_event: Channel<crate::app_menu::MenuEvent>) {
+    *app.state::<MenuState>().channel.lock() = Some(on_event);
+}
+
+/// Called by Tauri for every chosen menu item: only ids of the installed spec go on.
+pub fn forward_menu_event(app: &AppHandle, id: &str) {
+    let state = app.state::<MenuState>();
+    if !state.ids.lock().contains(id) {
+        return;
+    }
+    if let Some(channel) = state.channel.lock().as_ref() {
+        let _ = channel.send(crate::app_menu::MenuEvent { id: id.to_string() });
+    }
 }
 
 pub fn show_main(app: &AppHandle) {

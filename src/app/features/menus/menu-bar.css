@@ -1,0 +1,35 @@
+:host {
+  display: block;
+  flex: none;
+}
+
+.bar {
+  display: flex;
+  gap: 1px;
+  padding: 1px 4px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.top {
+  flex: none;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+}
+
+.top:hover,
+.top[aria-expanded='true'] {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.top:focus-visible {
+  outline-offset: -2px;
+}
