@@ -1,3 +1,5 @@
+import { ConfirmService } from '../../shared/confirm';
+import { closeQuestion, txOpen } from './tx-logic';
 import { GuardedStatement } from '../guard/guard-logic';
 import { GuardService } from '../guard/guard.service';
 import { HistoryService, RanStatement } from '../history/history.service';
@@ -50,9 +52,11 @@ export class TabsStore {
   private readonly schema = inject(SchemaStore);
   private readonly history = inject(HistoryService);
   private readonly guard = inject(GuardService);
+  private readonly confirm = inject(ConfirmService);
   private readonly services = {
     api: inject(QueryApi),
     connections: this.connections,
+    notify: (message: string) => this.notice.set(message),
     record: (ran: RanStatement) => this.history.record(ran),
     confirmRun: (connection: string, statements: readonly GuardedStatement[], total: number) => {
       const profile = this.connections.profiles().find((p) => p.id === connection);
@@ -92,7 +96,21 @@ export class TabsStore {
     // The tab in front and the connection shown as active are the same thing, both ways: a connection
     // chosen in the list goes to the tab in front at once (no effect: a tab switch in the same turn must
     // not undo the choice), and a tab that comes to the front shows its connection as the active one.
-    this.connections.onActivated((id) => this.active()?.connectionId.set(id));
+    this.connections.onActivated((id) => {
+      const tab = this.active();
+      if (!tab || tab.connectionId() === id) return;
+      if (txOpen(tab.tx())) {
+        // the transaction belongs to the session on the old connection: it is ended first
+        const old = tab.connectionId();
+        this.notice.set(
+          'Dieser Tab hat eine offene Transaktion: erst Commit oder Rollback, dann die Verbindung wechseln.',
+        );
+        queueMicrotask(() => this.connections.activate(old));
+        return;
+      }
+      tab.leaveSession();
+      tab.connectionId.set(id);
+    });
     effect(() => {
       const tab = this.active();
       if (tab) untracked(() => this.connections.activate(tab.connectionId()));
@@ -189,11 +207,39 @@ export class TabsStore {
   }
 
   /** Closes a tab without a question: it can be brought back, its text is kept until then. */
+  /**
+   * Before tabs with an open transaction go: commit, roll back, or stay. Resolves with `false` when the
+   * user wants to stay, or when ending a transaction failed (the tab then shows why).
+   */
+  async settleTransactions(tabs: readonly QueryTab[], what: string): Promise<boolean> {
+    const open = tabs.filter((t) => txOpen(t.tx()));
+    if (open.length === 0) return true;
+    const failed = open.every((t) => t.tx() === 'failed');
+    const choice = await this.confirm.choose({
+      title: 'Offene Transaktion',
+      message: closeQuestion(what, open.length),
+      // a failed transaction can only be rolled back
+      confirm: failed ? 'Rollback' : 'Commit',
+      second: failed ? undefined : 'Rollback',
+    });
+    if (choice === 'no') return false;
+    const commit = choice === 'yes' && !failed;
+    for (const tab of open) {
+      const problem = await tab.endTransaction(commit && tab.tx() !== 'failed');
+      if (problem !== null) {
+        this.services.notify(`Die Transaktion ließ sich nicht beenden: ${problem}`);
+        return false;
+      }
+    }
+    return true;
+  }
+
   async close(id: string): Promise<void> {
     const tabs = this.tabs();
     const index = tabs.findIndex((t) => t.id === id);
     if (index < 0) return;
     const tab = tabs[index];
+    if (!(await this.settleTransactions([tab], `Der Tab „${tab.title()}“`))) return;
     this.cancelBackup(id);
     const text = (await tab.text().catch(() => null)) ?? (await this.startText(tab));
     // its statement stops and its results leave the store

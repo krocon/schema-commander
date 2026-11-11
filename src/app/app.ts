@@ -32,6 +32,8 @@ import { SchemaStore } from './features/schema/schema.store';
 import { SchemaTree } from './features/schema/schema-tree';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { txOpen, txStatus } from './features/tabs/tx-logic';
 import { ActionService } from './core/actions/action.service';
 import { DEMO_ID, Profile, emptyProfile } from './core/connections/connection.models';
 import { ConnectionsStore } from './core/connections/connections.store';
@@ -118,6 +120,40 @@ const SIDEBAR_MIN = 140;
           ■ Abbrechen
         </button>
       }
+      @if (tabs.active(); as tab) {
+        <button
+          type="button"
+          class="tx-mode"
+          [attr.aria-pressed]="tab.manual()"
+          [title]="
+            (tab.manual()
+              ? 'Manueller Commit: Änderungen bleiben offen, bis sie bestätigt werden'
+              : 'Auto-Commit: jede Anweisung gilt sofort') + actions.hint('TOGGLE_AUTOCOMMIT')
+          "
+          (click)="actions.run('TOGGLE_AUTOCOMMIT')"
+        >
+          {{ tab.manual() ? 'Tx: manuell' : 'Tx: auto' }}
+        </button>
+        @if (txIsOpen()) {
+          <button
+            type="button"
+            class="tx-commit"
+            [disabled]="running() || tab.tx() === 'failed'"
+            [title]="'Transaktion bestätigen' + actions.hint('TX_COMMIT')"
+            (click)="actions.run('TX_COMMIT')"
+          >
+            ✓ Commit
+          </button>
+          <button
+            type="button"
+            [disabled]="running()"
+            [title]="'Transaktion zurückrollen' + actions.hint('TX_ROLLBACK')"
+            (click)="actions.run('TX_ROLLBACK')"
+          >
+            ↶ Rollback
+          </button>
+        }
+      }
       <span class="spacer"></span>
       @if (connections.active(); as conn) {
         @let cs = connections.activeState();
@@ -192,6 +228,9 @@ const SIDEBAR_MIN = 140;
         <span class="guard-badge" [attr.data-protection]="connections.active()?.protection">{{
           b
         }}</span>
+      }
+      @if (txText(); as t) {
+        <span class="tx-status" [class.failed]="tabs.active()?.tx() === 'failed'">{{ t }}</span>
       }
       <span>{{ status() }}</span>
       @if (exporter.job(); as job) {
@@ -335,6 +374,20 @@ export class App implements OnInit, OnDestroy {
   });
   protected readonly copier = inject(CopyService);
   protected readonly history = inject(HistoryService);
+  /** Ticks while a transaction is open, so its duration is shown. */
+  private readonly clock = signal(Date.now());
+  protected readonly txIsOpen = computed(() => txOpen(this.tabs.active()?.tx() ?? 'idle'));
+  protected readonly txText = computed(() => {
+    const tab = this.tabs.active();
+    if (!tab) return null;
+    return txStatus(
+      tab.tx(),
+      tab.txSince(),
+      tab.txStatements(),
+      Math.max(this.clock(), tab.txSince() ?? 0),
+      this.settings.settings().txWarnMinutes * 60_000,
+    );
+  });
   protected readonly guard = inject(GuardService);
   /** The mark of the active connection: its label and how it is protected. */
   protected readonly badge = computed(() => badgeText(this.connections.active()));
@@ -401,6 +454,11 @@ export class App implements OnInit, OnDestroy {
       document.removeEventListener('visibilitychange', hidden);
     });
     if (isTauri()) this.cleanups.push(await this.listenForDrops());
+    if (isTauri()) this.cleanups.push(await this.listenForClose());
+    const tick = setInterval(() => {
+      if (this.txIsOpen()) this.clock.set(Date.now());
+    }, 5000);
+    this.cleanups.push(() => clearInterval(tick));
   }
 
   ngOnDestroy(): void {
@@ -484,6 +542,31 @@ export class App implements OnInit, OnDestroy {
         'REVEAL_EXPORT',
         () => this.exporter.reveal(),
         () => this.exporter.job()?.state === 'done',
+      ),
+      this.actions.register(
+        'TX_COMMIT',
+        () => this.endTransaction(true),
+        () => this.tabs.active()?.tx() === 'active' && !this.running(),
+      ),
+      this.actions.register(
+        'TX_ROLLBACK',
+        () => this.endTransaction(false),
+        () => this.txIsOpen() && !this.running(),
+      ),
+      this.actions.register(
+        'TOGGLE_AUTOCOMMIT',
+        () => {
+          const t = tab();
+          if (!t) return;
+          if (t.manual() && txOpen(t.tx())) {
+            this.ownNotice.set(
+              'Die Transaktion ist noch offen: erst Commit oder Rollback, dann zurück zu Auto-Commit.',
+            );
+            return;
+          }
+          t.manual.update((m) => !m);
+        },
+        () => !!tab(),
       ),
       this.actions.register('OPEN_HISTORY', () => this.history.open.set(true)),
       this.actions.register(
@@ -608,6 +691,23 @@ export class App implements OnInit, OnDestroy {
       }),
     ];
     return () => offs.forEach((off) => off());
+  }
+
+  private async endTransaction(commit: boolean): Promise<void> {
+    const problem = await this.tabs.active()?.endTransaction(commit);
+    if (problem) this.ownNotice.set(`${commit ? 'Commit' : 'Rollback'} gescheitert: ${problem}`);
+  }
+
+  /** The window is about to close: tabs with an open transaction are asked about first. */
+  private async listenForClose(): Promise<() => void> {
+    const window = getCurrentWindow();
+    return window.onCloseRequested(async (event) => {
+      if (!this.tabs.tabs().some((t) => txOpen(t.tx()))) return;
+      event.preventDefault();
+      if (await this.tabs.settleTransactions(this.tabs.tabs(), 'Das Fenster')) {
+        await window.destroy();
+      }
+    });
   }
 
   /** Opens the export dialog for the result in front: what is selected in its grid, or all of it. */

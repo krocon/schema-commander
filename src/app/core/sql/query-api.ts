@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Channel } from '@tauri-apps/api/core';
 import { call } from '../backend/call';
-import { RowWindow, RunEvent, RunOutcome, Verdict } from './query.models';
+import { RowWindow, RunEvent, RunOutcome, TxState, Verdict } from './query.models';
 
 /** What lets a guarded statement run (prompt 012). */
 export interface RunGuard {
@@ -9,6 +9,10 @@ export interface RunGuard {
   readonly confirmation?: string | null;
   /** The user's setting: dangerous statements on free connections need no confirmation. */
   readonly allowDangerous?: boolean;
+  /** The session to run on: the id of the tab. Each tab has its own, so its transaction is its own. */
+  readonly session?: string;
+  /** Manual commit: a transaction is opened before the statement when none is open. */
+  readonly manual?: boolean;
 }
 
 /**
@@ -51,7 +55,13 @@ export abstract class QueryApi {
     allowDangerous: boolean,
   ): Promise<(string | null)[]>;
   /** Stops the statement that runs on a connection. */
-  abstract cancel(connectionId: string): Promise<void>;
+  abstract cancel(connectionId: string, session?: string): Promise<void>;
+  /** `COMMIT` or `ROLLBACK` on the session of a tab; resolves with what the server says afterwards. */
+  abstract endTransaction(connectionId: string, session: string, commit: boolean): Promise<TxState>;
+  /** What the server said last about the transaction of a tab (asked after a statement that failed). */
+  abstract txState(connectionId: string, session: string): Promise<TxState>;
+  /** Closes the session of a tab; the server rolls back what was open on it. */
+  abstract closeSession(connectionId: string, session: string): Promise<void>;
   /** Rows `from..from + count` of a result (fewer at its end; long texts cut). */
   abstract window(resultId: number, from: number, count: number): Promise<RowWindow>;
   /** Forgets results that are no longer shown. */
@@ -75,6 +85,8 @@ export class TauriQueryApi extends QueryApi {
       timeoutMs: timeoutMs > 0 ? timeoutMs : null,
       confirmation: guard.confirmation ?? null,
       allowDangerous: guard.allowDangerous ?? false,
+      session: guard.session ?? null,
+      manual: guard.manual ?? false,
       onEvent: channel,
     });
   }
@@ -96,8 +108,20 @@ export class TauriQueryApi extends QueryApi {
     return call('confirm_statements', { id: connectionId, sqls, typedName, allowDangerous });
   }
 
-  cancel(connectionId: string): Promise<void> {
-    return call('cancel_query', { id: connectionId });
+  cancel(connectionId: string, session?: string): Promise<void> {
+    return call('cancel_query', { id: connectionId, session: session ?? null });
+  }
+
+  endTransaction(connectionId: string, session: string, commit: boolean): Promise<TxState> {
+    return call('end_transaction', { id: connectionId, session, commit });
+  }
+
+  txState(connectionId: string, session: string): Promise<TxState> {
+    return call('tx_state', { id: connectionId, session });
+  }
+
+  closeSession(connectionId: string, session: string): Promise<void> {
+    return call('close_session', { id: connectionId, session });
   }
 
   window(resultId: number, from: number, count: number): Promise<RowWindow> {

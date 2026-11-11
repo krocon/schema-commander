@@ -31,6 +31,7 @@ import {
   RowWindow,
   RunEvent,
   RunOutcome,
+  TxState,
   Verdict,
 } from '../app/core/sql/query.models';
 import { FileDialogApi } from '../app/core/backend/file-dialog-api';
@@ -113,6 +114,7 @@ export class FakeQueryApi extends QueryApi {
   ): Promise<RunOutcome> {
     this.statements.push({ connection, sql });
     this.tokens.push(guard.confirmation ?? null);
+    this.sessions.push({ session: guard.session ?? null, manual: guard.manual ?? false });
     const need = this.verdict(sql).need;
     if (need === 'refused') {
       return Promise.reject({ code: 'permission_denied', message: 'this connection is read only' });
@@ -132,6 +134,7 @@ export class FakeQueryApi extends QueryApi {
         truncated: false,
         rowsAffected: this.rowsAffected,
         elapsedMs: 3,
+        tx: this.tx,
       });
     }
     const resultId = this.nextId++;
@@ -145,11 +148,35 @@ export class FakeQueryApi extends QueryApi {
       truncated: this.truncated,
       rowsAffected: null,
       elapsedMs: 3,
+      tx: this.tx,
     });
   }
 
   cancel(connection: string): Promise<void> {
     this.cancelled.push(connection);
+    return Promise.resolve();
+  }
+
+  /** What the "server" says about the transaction after the next statements. */
+  tx: TxState = 'idle';
+  readonly ended: { connection: string; session: string; commit: boolean }[] = [];
+  readonly closedSessions: string[] = [];
+  /** The session and mode each statement ran with. */
+  readonly sessions: { session: string | null; manual: boolean }[] = [];
+
+  endTransaction(connection: string, session: string, commit: boolean): Promise<TxState> {
+    this.ended.push({ connection, session, commit });
+    if (this.error) return Promise.reject(this.error);
+    this.tx = 'idle';
+    return Promise.resolve(this.tx);
+  }
+
+  txState(): Promise<TxState> {
+    return Promise.resolve(this.tx);
+  }
+
+  closeSession(_connection: string, session: string): Promise<void> {
+    this.closedSessions.push(session);
     return Promise.resolve();
   }
 

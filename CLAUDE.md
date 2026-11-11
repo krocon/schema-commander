@@ -24,11 +24,12 @@
   aus dem Gitter, geschrieben von Rust (Prompt 009); **Verlauf** aller Anweisungen mit Suche, abschaltbar und
   endgültig löschbar (Prompt 010); **Export** in Dateien (CSV, TSV, JSON, NDJSON, INSERT, Markdown, HTML,
   Excel, gzip) als Job mit Fortschritt und Abbruch (Prompt 011); **Schutz für Produktion**: Schutzstufen je
-  Verbindung, Einstufung der Anweisungen und Bestätigung im Backend (Prompt 012);
+  Verbindung, Einstufung der Anweisungen und Bestätigung im Backend (Prompt 012); **Transaktionen**: Sitzung je
+  Tab, Zustand vom Server, Auto-Commit oder manuell, Commit/Rollback, Frage beim Schließen (Prompt 013);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–012),
+  erledigt: 001–013),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -98,7 +99,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/tabs/           TabsStore (Root: Tabs, Sicherung, Dateien), QueryTab (Tab mit Ausführung, kein
                                Injectable), QueryPane (Editor + Ergebnis eines Tabs), TabBar,
                                tab-logic.ts (rein: Titel, Ids, Reihenfolge), run-state.ts (Läufe, Meldungen,
-                               Statuszeile)
+                               Statuszeile), tx-logic.ts (rein: Texte zur Transaktion)
   app/features/themes/         Farbschema-Galerie (ThemePicker, ThemeThumb, theme-picker-logic.ts),
                                Schema-Editor (ThemeEditor, theme-editor-logic.ts rein: Ids, Import, Kontrast)
   app/shared/                  Splitter (+ splitter-logic.ts), ContextMenu (APG-Menü), confirm.ts (Rückfrage)
@@ -146,6 +147,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   Handler per `ActionService.register`. Keine eigenen `keydown`-Handler für Funktionen (Ausnahmen: Widgets nach
   APG – Dialoge, Listen, Menüs, Splitter). Die Tasten des Editors (`Mod+C/V/X/A/Z`, `Mod+F`, `F3`,
   `Strg+Leertaste`) sind reserviert; einfache Tasten und AltGr-Zeichen erreichen im Editor nie eine Aktion.
+- **Sitzungen**: Jeder Tab läuft auf seiner eigenen Sitzung (`session` = Tab-Id am Command); die Sitzung der
+  Verbindung gehört der App. Ob eine Transaktion offen ist, sagt der Server (`TxState`), nie eine Annahme.
 - **Tabs**: Ein Tab ist ein `QueryTab` (per Id adressiert), sein Editor bleibt in der Seite, auch wenn er nicht
   vorn ist. Der Text eines Tabs wird nie bei jedem Tastendruck über die Brücke geschickt: `TabsStore.textChanged`
   plant die Sicherung, die den Text einmal holt. Nichts fragt „Speichern?“.

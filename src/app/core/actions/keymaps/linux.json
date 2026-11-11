@@ -18,6 +18,8 @@
   "HISTORY_PREV": ["Mod+Alt+ArrowUp"],
   "HISTORY_NEXT": ["Mod+Alt+ArrowDown"],
   "EXPORT_RESULT": ["Mod+Shift+E"],
+  "TX_COMMIT": ["Mod+Alt+C"],
+  "TX_ROLLBACK": ["Mod+Alt+R"],
   "TOGGLE_SIDEBAR": ["Mod+B"],
   "COLOR_SCHEME": ["Mod+Alt+T"],
   "OPEN_PALETTE": ["Mod+Shift+P", "F1"],
