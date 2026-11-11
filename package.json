@@ -39,6 +39,7 @@
     "@guiexpert/angular-table": "^22.1.113",
     "@guiexpert/table": "^1.1.113",
     "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-dialog": "^2.8.4",
     "@tauri-apps/plugin-store": "^2",
     "editlicious-editor": "^1.2.0",
     "rxjs": "~7.8.0",
