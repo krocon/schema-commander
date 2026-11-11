@@ -20,6 +20,14 @@ export interface Settings {
   readonly groupDigits: boolean;
   /** Show the schemas of the database itself in the tree (prompt 008). */
   readonly showSystemSchemas: boolean;
+  /** Copying from a result (prompt 009): a first line with the column names. */
+  readonly copyHeader: boolean;
+  /** NULL in copied text: `''`, `NULL` or `\\N`. */
+  readonly copyNullAs: string;
+  /** The separator of CSV: `,`, `;` or a tab. */
+  readonly csvDelimiter: string;
+  /** The format "copy as" used last (on top of its menu); `null` = none yet. */
+  readonly lastCopyFormat: string | null;
   /** Ids of the actions run from the command palette, the latest first. */
   readonly recentActions: readonly string[];
 }
@@ -44,6 +52,10 @@ export const DEFAULT_SETTINGS: Settings = {
   statementTimeoutSec: 0,
   groupDigits: false,
   showSystemSchemas: false,
+  copyHeader: true,
+  copyNullAs: '',
+  csvDelimiter: ',',
+  lastCopyFormat: null,
 };
 
 function size(value: unknown, fallback: number): number {
@@ -73,6 +85,18 @@ export function mergeSettings(saved: unknown): Settings {
       typeof s['showSystemSchemas'] === 'boolean'
         ? s['showSystemSchemas']
         : DEFAULT_SETTINGS.showSystemSchemas,
+    copyHeader:
+      typeof s['copyHeader'] === 'boolean' ? s['copyHeader'] : DEFAULT_SETTINGS.copyHeader,
+    copyNullAs: ['', 'NULL', '\\N'].includes(s['copyNullAs'] as string)
+      ? (s['copyNullAs'] as string)
+      : DEFAULT_SETTINGS.copyNullAs,
+    csvDelimiter: [',', ';', '\t'].includes(s['csvDelimiter'] as string)
+      ? (s['csvDelimiter'] as string)
+      : DEFAULT_SETTINGS.csvDelimiter,
+    lastCopyFormat:
+      typeof s['lastCopyFormat'] === 'string' && /^[a-z]{1,16}$/.test(s['lastCopyFormat'])
+        ? s['lastCopyFormat']
+        : null,
     statementTimeoutSec: Math.min(86_400, size(s['statementTimeoutSec'], 0)),
     activeConnection:
       typeof s['activeConnection'] === 'string' && /^[a-z0-9-]{1,64}$/.test(s['activeConnection'])

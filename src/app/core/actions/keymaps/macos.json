@@ -13,6 +13,7 @@
   "NEW_CONNECTION": ["Mod+Shift+N"],
   "SCHEMA_FILTER": ["Mod+Shift+O"],
   "SCHEMA_REFRESH": ["F5"],
+  "COPY_AS": ["Mod+Shift+C"],
   "TOGGLE_SIDEBAR": ["Mod+B"],
   "COLOR_SCHEME": ["Mod+Alt+T"],
   "OPEN_PALETTE": ["Mod+Shift+P", "F1"],

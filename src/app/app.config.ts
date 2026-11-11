@@ -1,4 +1,5 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { ClipboardApi, TauriClipboardApi } from './core/backend/clipboard-api';
 import { FileDialogApi, TauriFileDialogApi } from './core/backend/file-dialog-api';
 import { TauriWindowApi, WindowApi } from './core/backend/window-api';
 import { TauriThemeApi, ThemeApi } from './core/theme/theme-api';
@@ -12,6 +13,7 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     { provide: WindowApi, useClass: TauriWindowApi },
     { provide: QueryApi, useClass: TauriQueryApi },
+    { provide: ClipboardApi, useClass: TauriClipboardApi },
     { provide: SchemaApi, useClass: TauriSchemaApi },
     { provide: ConnectionsApi, useClass: TauriConnectionsApi },
     { provide: SessionApi, useClass: TauriSessionApi },

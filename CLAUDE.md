@@ -20,11 +20,12 @@
   Abbruch auf dem Server und Zeitlimit (Prompt 005); **große Ergebnisse** bleiben in Rust (Speicher, darüber
   Datei), das Gitter holt nur den sichtbaren Ausschnitt (Prompt 006); **Zellen** je Art dargestellt (NULL, leer,
   Zahl, Bool, Binär), entschärft, mit Typ im Spaltenkopf und Bereichsauswahl (Prompt 007); **Schema-Baum** der aktiven Verbindung mit Filter, Aktionen am
-  Knoten und Quoting je Dialekt (Prompt 008);
+  Knoten und Quoting je Dialekt (Prompt 008); **Kopieren als** TSV, CSV, JSON, Markdown, HTML, INSERT, IN, WHERE
+  aus dem Gitter, geschrieben von Rust (Prompt 009);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - **Noch nichts davon**: Bearbeiten, Export. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–008),
+  erledigt: 001–009),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -60,7 +61,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                keymap.ts (Vorgabe + eigene Belegung, Reserviertes), shortcut.ts (Notation),
                                keyboard-dispatcher.ts (der eine keydown-Handler), ActionService (Root)
   app/core/backend/            call.ts (einzige Stelle mit invoke()), WindowApi (set_window_chrome),
-                               FileDialogApi (native Öffnen-/Speichern-Dialoge: einzige Quelle für Pfade)
+                               FileDialogApi (native Öffnen-/Speichern-Dialoge: einzige Quelle für Pfade),
+                               ClipboardApi (copy_result, copy_text: die Zwischenablage gehört Rust)
   app/core/connections/        Profile (Modell), ConnectionsApi, ConnectionsStore (Root: Profile, Zustände, aktive
                                Verbindung, Passwortabfrage)
   app/core/errors/             AppError + toAppError (spiegelt src-tauri/src/error.rs)
@@ -82,14 +84,15 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/shortcuts/      Kürzel-Editor und -Übersicht (ShortcutDialog, shortcut-logic.ts)
   app/features/results/        ResultGrid (GuiExpert Table), result-model.ts (rein: Spalten, Breiten,
                                WindowAreaModel mit Seiten-Cache), cell-format.ts (rein: Zelle → Text + Klasse,
-                               entschärfen, kürzen; Katalog cell-format.cases.json)
+                               entschärfen, kürzen; Katalog cell-format.cases.json), CopyService (Root) +
+                               copy-logic.ts (rein: Auswahl → Zeilen/Spalten, Formate)
   app/features/tabs/           TabsStore (Root: Tabs, Sicherung, Dateien), QueryTab (Tab mit Ausführung, kein
                                Injectable), QueryPane (Editor + Ergebnis eines Tabs), TabBar,
                                tab-logic.ts (rein: Titel, Ids, Reihenfolge), run-state.ts (Läufe, Meldungen,
                                Statuszeile)
   app/features/themes/         Farbschema-Galerie (ThemePicker, ThemeThumb, theme-picker-logic.ts),
                                Schema-Editor (ThemeEditor, theme-editor-logic.ts rein: Ids, Import, Kontrast)
-  app/shared/                  Splitter (+ splitter-logic.ts), ContextMenu (APG-Menü)
+  app/shared/                  Splitter (+ splitter-logic.ts), ContextMenu (APG-Menü), confirm.ts (Rückfrage)
   testing/fake-apis.ts         Fake-Fassaden für Tests
 src-tauri/                     Rust
   src/lib.rs                   Builder: Plugins (store, window-state), State, Commands
@@ -100,6 +103,8 @@ src-tauri/                     Rust
   src/db/mod.rs                Profile, DbKind, TlsMode, Session-Trait, Laufzeit, Fehler in Worten
   src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
   src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink (rein, getestet)
+  src/extract.rs               Formate (TSV, CSV, JSON, Markdown, HTML, INSERT, IN, WHERE), Literale je Dialekt (rein)
+  src/copy.rs                  Auswahl eines Ergebnisses als Text: Zeilenbereiche, Spalten, Abbruch, Grenze (rein)
   src/db/meta.rs               Metadaten aus dem Systemkatalog (gebundene Parameter), quote() je Dialekt
   src/db/value.rs              Cell, ColKind, QueryResult (verlustfrei über die Brücke)
   src/db/manager.rs            ConnectionManager: Sitzungen, Schlüsselbund-Regeln, Abbruch

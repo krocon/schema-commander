@@ -1,5 +1,6 @@
 //! The command layer: thin, the logic lives in pure modules (`db`, `themes`).
 
+use crate::copy::{self, Copied, Selection};
 use crate::db::Profile;
 use crate::db::manager::{ConnectionInfo, ConnectionManager};
 use crate::db::meta;
@@ -7,6 +8,7 @@ use crate::db::profiles::LoadedProfiles;
 use crate::db::secrets::Secret;
 use crate::db::value::Column;
 use crate::error::{AppError, AppResult, ErrorCode};
+use crate::extract::{Format, Options};
 use crate::results::{Progress, ResultStore, StoreSink};
 use crate::session::{LoadedSession, SessionDir, SessionFile};
 use crate::textfile::{self, TextFile};
@@ -159,6 +161,77 @@ pub fn free_results(store: State<'_, ResultStore>, result_ids: Vec<u64>) {
     for id in result_ids {
         store.free(id);
     }
+}
+
+/// The clipboard of the OS, and the flag that stops a copy that runs. One clipboard for the life of the app:
+/// under X11 and Wayland what was copied is only there while its owner lives.
+#[derive(Default)]
+pub struct ClipState {
+    clipboard: parking_lot::Mutex<Option<arboard::Clipboard>>,
+    stop: std::sync::atomic::AtomicBool,
+}
+
+impl ClipState {
+    fn put(&self, text: String, html: Option<String>) -> AppResult<()> {
+        let fail = |e: arboard::Error| AppError::new(ErrorCode::Io, format!("clipboard: {e}"));
+        let mut guard = self.clipboard.lock();
+        if guard.is_none() {
+            *guard = Some(arboard::Clipboard::new().map_err(fail)?);
+        }
+        let Some(clipboard) = guard.as_mut() else {
+            return Ok(());
+        };
+        match html {
+            Some(html) => clipboard.set_html(html, Some(text)).map_err(fail),
+            None => clipboard.set_text(text).map_err(fail),
+        }
+    }
+}
+
+/// Copies a part of a result to the clipboard in a format (prompt 009). The rows never pass the WebView.
+/// An HTML table is also there as plain text (TSV) for targets that take no HTML.
+#[tauri::command(async)]
+pub fn copy_result(
+    store: State<'_, ResultStore>,
+    clip: State<'_, ClipState>,
+    result_id: u64,
+    selection: Selection,
+    format: Format,
+    options: Options,
+) -> AppResult<Copied> {
+    use std::sync::atomic::Ordering;
+    clip.stop.store(false, Ordering::Relaxed);
+    let stop = || clip.stop.load(Ordering::Relaxed);
+    let (text, copied) = copy::render(
+        &store,
+        result_id,
+        &selection,
+        format,
+        options.clone(),
+        &stop,
+    )?;
+    if format == Format::Html {
+        let (plain, _) = copy::render(&store, result_id, &selection, Format::Tsv, options, &stop)?;
+        clip.put(plain, Some(text))?;
+    } else {
+        clip.put(text, None)?;
+    }
+    Ok(copied)
+}
+
+/// Stops the copy that runs.
+#[tauri::command(async)]
+pub fn cancel_copy(clip: State<'_, ClipState>) {
+    clip.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Puts a short text of the app itself on the clipboard (a name from the schema tree).
+#[tauri::command(async)]
+pub fn copy_text(clip: State<'_, ClipState>, text: String) -> AppResult<()> {
+    if text.len() > 1024 * 1024 {
+        return Err(AppError::new(ErrorCode::TooLarge, "too much text"));
+    }
+    clip.put(text, None)
 }
 
 /// The schemas of an open connection (prompt 008).
