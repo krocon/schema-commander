@@ -847,5 +847,14 @@ export class FakeExportApi extends ExportApi {
 }
 
 function hit(kind: NameHit['kind'], schema: string, name: string, detail = ''): NameHit {
-  return { kind, schema, name, parent: null, detail, quoted: `${schema}.${name}`, marks: [0] };
+  return {
+    kind,
+    schema,
+    name,
+    parent: null,
+    detail,
+    quoted: `${schema}.${name}`,
+    quotedName: name,
+    marks: [0],
+  };
 }

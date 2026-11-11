@@ -45,6 +45,11 @@ export class SchemaStore {
   readonly showSystem = computed(() => this.settings.settings().showSystemSchemas);
   readonly connectionId = this.connections.activeId;
   readonly state = computed(() => this.states()[this.connectionId()] ?? EMPTY_STATE);
+
+  /** What is known of any connection (the completion asks for the one of its tab). */
+  stateOf(id: string): SchemaState {
+    return this.states()[id] ?? EMPTY_STATE;
+  }
   readonly rows = computed(() => flatten(this.state(), this.showSystem(), this.filter()));
   readonly activeRow = computed(() => {
     const id = this.activeId();

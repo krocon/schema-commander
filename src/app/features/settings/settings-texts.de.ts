@@ -44,6 +44,7 @@ export const SETTINGS_DE: Translation<typeof SETTINGS_EN> = {
     editorWordWrap: 'Lange Zeilen umbrechen',
     editorLineNumbers: 'Zeilennummern',
     editorSuggest: 'Beim Tippen vorschlagen',
+    completionKeywordCase: 'Schlüsselwörter der Vervollständigung',
     resultFontSize: 'Schriftgröße (px)',
     resultRowHeight: 'Zeilenhöhe (px)',
     nullText: 'NULL zeigen als',
@@ -70,7 +71,9 @@ export const SETTINGS_DE: Translation<typeof SETTINGS_EN> = {
     editorTabWidth: 'Spalten, die ein Tabulatorzeichen einnimmt.',
     editorWordWrap: '',
     editorLineNumbers: '',
-    editorSuggest: 'Wörter des Textes werden beim Tippen angeboten.',
+    editorSuggest:
+      'Tabellen, Spalten und Schlüsselwörter, die an der Stelle passen; Strg+Leertaste fragt jederzeit danach.',
+    completionKeywordCase: '',
     resultFontSize: '',
     resultRowHeight: '',
     nullText: 'Nur die Darstellung im Gitter; Kopie und Export haben ihre eigene Einstellung.',
@@ -94,6 +97,7 @@ export const SETTINGS_DE: Translation<typeof SETTINGS_EN> = {
   choices: {
     language: { system: 'Wie das System', en: 'English', de: 'Deutsch' },
     editorLineNumbers: { absolute: 'Absolut', relative: 'Relativ zum Cursor', off: 'Aus' },
+    completionKeywordCase: { upper: 'SELECT', lower: 'select' },
     nullText: { NULL: 'NULL', '∅': '∅', '(null)': '(null)', '': 'leer' },
     resultPlacement: { bottom: 'Unter dem Editor', right: 'Neben dem Editor' },
     copyNullAs: { '': 'leer', NULL: 'NULL', '\\N': '\\N' },

@@ -1,6 +1,11 @@
 import type { EditliciousEditorElement } from 'editlicious-editor';
 
-export type { EdCaret, EdChange, EditliciousEditorElement } from 'editlicious-editor';
+export type {
+  CompletionContext,
+  EdCaret,
+  EdChange,
+  EditliciousEditorElement,
+} from 'editlicious-editor';
 
 /**
  * `<editlicious-editor>` is not bundled: the package is an ES module that finds its worker and its

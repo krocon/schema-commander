@@ -656,6 +656,13 @@ export class App implements OnInit, OnDestroy {
         () => !this.running() && !!tab(),
       ),
       this.actions.register(
+        'EXPAND_STAR',
+        async () => {
+          if (!(await tab()?.expandStar())) this.ownNotice.set(APP_TEXTS.noStar);
+        },
+        () => !!tab(),
+      ),
+      this.actions.register(
         'RUN_SCRIPT',
         () => tab()?.runScript(),
         () => !this.running() && !!tab(),

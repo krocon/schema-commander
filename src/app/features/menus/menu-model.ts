@@ -121,6 +121,8 @@ export const MENU_BAR: readonly TopMenu[] = [
       COPY_AS,
       'CANCEL_COPY',
       '-',
+      'EXPAND_STAR',
+      '-',
       'HISTORY_PREV',
       'HISTORY_NEXT',
     ],

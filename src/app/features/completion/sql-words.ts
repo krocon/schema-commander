@@ -1,0 +1,284 @@
+import { Dialect } from '../editor/sql-split';
+
+/**
+ * The words of SQL the completion offers (prompt 021): what a statement starts with, what goes on behind a
+ * clause, types and built-in functions per dialect. Not a grammar – the common words, so that the list is
+ * short and the first entry is usually the right one.
+ */
+export const STATEMENTS = [
+  'SELECT',
+  'INSERT INTO',
+  'UPDATE',
+  'DELETE FROM',
+  'WITH',
+  'CREATE TABLE',
+  'CREATE VIEW',
+  'CREATE INDEX',
+  'ALTER TABLE',
+  'DROP TABLE',
+  'TRUNCATE TABLE',
+  'EXPLAIN',
+  'BEGIN',
+  'COMMIT',
+  'ROLLBACK',
+];
+
+/** What can follow, by the clause the caret is in. */
+const AFTER: Readonly<Record<string, readonly string[]>> = {
+  SELECT: ['FROM', 'AS', 'INTO'],
+  FROM: [
+    'WHERE',
+    'JOIN',
+    'LEFT JOIN',
+    'INNER JOIN',
+    'RIGHT JOIN',
+    'FULL JOIN',
+    'CROSS JOIN',
+    'GROUP BY',
+    'ORDER BY',
+    'LIMIT',
+    'AS',
+    'UNION',
+  ],
+  JOIN: ['ON', 'USING', 'AS', 'JOIN', 'LEFT JOIN', 'WHERE'],
+  ON: ['AND', 'OR', 'WHERE', 'JOIN', 'LEFT JOIN', 'INNER JOIN', 'GROUP BY', 'ORDER BY'],
+  WHERE: [
+    'AND',
+    'OR',
+    'GROUP BY',
+    'ORDER BY',
+    'LIMIT',
+    'IN',
+    'IS NULL',
+    'IS NOT NULL',
+    'LIKE',
+    'BETWEEN',
+    'NOT',
+    'EXISTS',
+    'RETURNING',
+  ],
+  'GROUP BY': ['HAVING', 'ORDER BY', 'LIMIT'],
+  HAVING: ['AND', 'OR', 'ORDER BY', 'LIMIT'],
+  'ORDER BY': ['ASC', 'DESC', 'LIMIT', 'OFFSET', 'NULLS FIRST', 'NULLS LAST'],
+  GROUP: ['BY'],
+  ORDER: ['BY'],
+  UPDATE: ['SET'],
+  SET: ['WHERE', 'FROM', 'RETURNING'],
+  INTO: ['VALUES', 'SELECT', 'DEFAULT VALUES'],
+  'INSERT COLUMNS': ['VALUES', 'SELECT'],
+  VALUES: ['RETURNING', 'ON CONFLICT'],
+  DELETE: ['FROM'],
+  INSERT: ['INTO'],
+  INNER: ['JOIN'],
+  LEFT: ['JOIN', 'OUTER JOIN'],
+  RIGHT: ['JOIN', 'OUTER JOIN'],
+  FULL: ['JOIN', 'OUTER JOIN'],
+  CROSS: ['JOIN'],
+  NATURAL: ['JOIN'],
+  OUTER: ['JOIN'],
+  '': [
+    'TABLE',
+    'VIEW',
+    'INDEX',
+    'SCHEMA',
+    'DATABASE',
+    'SEQUENCE',
+    'FUNCTION',
+    'PROCEDURE',
+    'TRIGGER',
+  ],
+};
+
+/** Words a dialect does not know, or writes differently. */
+const NOT_IN: Readonly<Record<Dialect, readonly string[]>> = {
+  postgres: [],
+  mysql: ['FULL JOIN', 'RETURNING', 'NULLS FIRST', 'NULLS LAST', 'ON CONFLICT'],
+  sqlserver: ['LIMIT', 'RETURNING', 'NULLS FIRST', 'NULLS LAST', 'ON CONFLICT', 'USING'],
+  sqlite: [],
+};
+const ALSO: Readonly<Record<Dialect, Readonly<Record<string, readonly string[]>>>> = {
+  postgres: { WHERE: ['ILIKE'], FROM: ['LATERAL'] },
+  mysql: { VALUES: ['ON DUPLICATE KEY UPDATE'], FROM: ['STRAIGHT_JOIN'] },
+  sqlserver: {
+    FROM: ['CROSS APPLY', 'OUTER APPLY'],
+    'ORDER BY': ['OFFSET', 'FETCH NEXT'],
+    SET: ['OUTPUT'],
+    SELECT: ['TOP'],
+  },
+  sqlite: { VALUES: ['ON CONFLICT'] },
+};
+
+export function keywordsAfter(clause: string, dialect: Dialect): string[] {
+  const words = [...(AFTER[clause] ?? AFTER['WHERE']), ...(ALSO[dialect][clause] ?? [])];
+  return words.filter((w) => !NOT_IN[dialect].includes(w));
+}
+
+/** Words that can stand where a value is expected. */
+export const VALUE_WORDS = ['NULL', 'CASE', 'NOT', 'EXISTS', 'TRUE', 'FALSE', 'DISTINCT', 'CAST'];
+
+const TYPES: Readonly<Record<Dialect, readonly string[]>> = {
+  postgres: [
+    'integer',
+    'bigint',
+    'smallint',
+    'numeric',
+    'text',
+    'varchar',
+    'boolean',
+    'date',
+    'timestamp',
+    'timestamptz',
+    'time',
+    'interval',
+    'uuid',
+    'jsonb',
+    'json',
+    'bytea',
+    'real',
+    'double precision',
+    'serial',
+    'bigserial',
+  ],
+  mysql: [
+    'int',
+    'bigint',
+    'smallint',
+    'tinyint',
+    'decimal',
+    'varchar',
+    'char',
+    'text',
+    'longtext',
+    'date',
+    'datetime',
+    'timestamp',
+    'time',
+    'json',
+    'blob',
+    'double',
+    'float',
+    'boolean',
+  ],
+  sqlserver: [
+    'int',
+    'bigint',
+    'smallint',
+    'tinyint',
+    'bit',
+    'decimal',
+    'numeric',
+    'money',
+    'nvarchar',
+    'varchar',
+    'nchar',
+    'char',
+    'date',
+    'datetime2',
+    'datetimeoffset',
+    'time',
+    'uniqueidentifier',
+    'varbinary',
+    'float',
+    'real',
+  ],
+  sqlite: ['INTEGER', 'TEXT', 'REAL', 'NUMERIC', 'BLOB'],
+};
+
+export const typesOf = (dialect: Dialect): readonly string[] => TYPES[dialect];
+
+/** A built-in function: its name and what its arguments are. */
+export interface Builtin {
+  readonly name: string;
+  readonly signature: string;
+}
+
+const f = (signature: string): Builtin => ({
+  name: signature.slice(0, signature.indexOf('(')),
+  signature,
+});
+
+const COMMON = [
+  'count(*)',
+  'sum(expression)',
+  'avg(expression)',
+  'min(expression)',
+  'max(expression)',
+  'coalesce(value, …)',
+  'nullif(a, b)',
+  'lower(text)',
+  'upper(text)',
+  'trim(text)',
+  'replace(text, from, to)',
+  'round(number, digits)',
+  'abs(number)',
+].map(f);
+
+const BUILTINS: Readonly<Record<Dialect, readonly Builtin[]>> = {
+  postgres: [
+    ...COMMON,
+    ...[
+      'now()',
+      'length(text)',
+      'substring(text from start for count)',
+      'concat(value, …)',
+      'string_agg(expression, delimiter)',
+      'array_agg(expression)',
+      'date_trunc(field, timestamp)',
+      'extract(field from timestamp)',
+      'to_char(value, format)',
+      'generate_series(start, stop)',
+      'row_number()',
+      'jsonb_build_object(key, value, …)',
+    ].map(f),
+  ],
+  mysql: [
+    ...COMMON,
+    ...[
+      'now()',
+      'length(text)',
+      'char_length(text)',
+      'substring(text, start, count)',
+      'concat(value, …)',
+      'group_concat(expression)',
+      'ifnull(value, fallback)',
+      'date_format(date, format)',
+      'date_add(date, INTERVAL n unit)',
+      'datediff(a, b)',
+      'row_number()',
+      'json_extract(document, path)',
+    ].map(f),
+  ],
+  sqlserver: [
+    ...COMMON,
+    ...[
+      'getdate()',
+      'sysdatetime()',
+      'len(text)',
+      'substring(text, start, count)',
+      'concat(value, …)',
+      'string_agg(expression, delimiter)',
+      'isnull(value, fallback)',
+      'dateadd(part, n, date)',
+      'datediff(part, a, b)',
+      'format(value, format)',
+      'convert(type, value)',
+      'row_number()',
+    ].map(f),
+  ],
+  sqlite: [
+    ...COMMON,
+    ...[
+      'length(text)',
+      'substr(text, start, count)',
+      'group_concat(expression, delimiter)',
+      'ifnull(value, fallback)',
+      'date(value, modifier, …)',
+      'datetime(value, modifier, …)',
+      'strftime(format, value)',
+      'json_extract(document, path)',
+      'row_number()',
+    ].map(f),
+  ],
+};
+
+export const builtinsOf = (dialect: Dialect): readonly Builtin[] => BUILTINS[dialect];

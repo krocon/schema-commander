@@ -11,8 +11,10 @@ export interface Settings {
   readonly editorTabWidth: number;
   readonly editorWordWrap: boolean;
   readonly editorLineNumbers: LineNumbers;
-  /** Suggest words while typing. */
+  /** Suggest while typing (prompt 021: what fits at the caret; without a connection keywords and words). */
   readonly editorSuggest: boolean;
+  /** Keywords the completion writes: `SELECT` or `select`. */
+  readonly completionKeywordCase: 'upper' | 'lower';
   /** The result grid: font size and row height in px. */
   readonly resultFontSize: number;
   readonly resultRowHeight: number;
@@ -99,7 +101,8 @@ export const DEFAULT_SETTINGS: Settings = {
   editorTabWidth: 4,
   editorWordWrap: false,
   editorLineNumbers: 'absolute',
-  editorSuggest: false,
+  editorSuggest: true,
+  completionKeywordCase: 'upper',
   resultFontSize: 12,
   resultRowHeight: 22,
   nullText: 'NULL',
@@ -172,6 +175,7 @@ export function mergeSettings(saved: unknown): Settings {
         ? s['editorLineNumbers']
         : 'absolute',
     editorSuggest: bool('editorSuggest'),
+    completionKeywordCase: s['completionKeywordCase'] === 'lower' ? 'lower' : 'upper',
     resultFontSize: within('resultFontSize', 9, 24),
     resultRowHeight: within('resultRowHeight', 16, 60),
     nullText: (NULL_TEXTS as readonly unknown[]).includes(s['nullText'])

@@ -4,6 +4,7 @@ import type { ActionGroup, ActionId } from './action-catalog';
 export const ACTION_LABELS_DE: Readonly<Record<ActionId, string>> = {
   RUN_STATEMENT: 'Auswahl oder Anweisung unter dem Cursor ausführen',
   RUN_SCRIPT: 'Ganzes Skript ausführen',
+  EXPAND_STAR: '* zur Spaltenliste aufklappen',
   SHOW_MESSAGES: 'Meldungen zeigen',
   TOGGLE_DIGIT_GROUPING: 'Ergebnis: Tausendertrennung ein/aus',
   TOGGLE_CONFIRM_DANGEROUS: 'Rückfrage bei zerstörenden Anweisungen ein/aus',

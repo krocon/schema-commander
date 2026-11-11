@@ -128,6 +128,8 @@ pub struct NameHit {
     pub detail: String,
     /// The name as it is written in SQL, with its schema (a column: only its own name).
     pub quoted: String,
+    /// The name alone as it is written in SQL (the completion writes it so inside its own schema).
+    pub quoted_name: String,
     /// The characters of `name` that matched (indices of characters, not of bytes).
     pub marks: Vec<u32>,
 }
@@ -496,6 +498,7 @@ pub fn search(index: &NameIndex, input: &str, context: &Context, kind: DbKind) -
             } else {
                 format!("{}.{}", quote(&e.schema, kind), quote(&e.name, kind))
             },
+            quoted_name: quote(&e.name, kind),
             marks,
         })
         .collect();
@@ -896,6 +899,7 @@ mod tests {
         assert_eq!(names(&i, "c:orders."), ["id"]);
         let hits = search(&i, "odd", &Context::default(), DbKind::Postgres);
         assert_eq!(hits.hits[0].quoted, "shop.\"Odd Name\"");
+        assert_eq!(hits.hits[0].quoted_name, "\"Odd Name\"");
         let column = search(&i, "c:order_id", &Context::default(), DbKind::Postgres);
         assert_eq!(column.hits[0].quoted, "order_id");
         assert_eq!(column.hits[0].parent.as_deref(), Some("items"));

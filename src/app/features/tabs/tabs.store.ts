@@ -3,6 +3,8 @@ import { closeQuestion, txOpen } from './tx-logic';
 import { GuardedStatement } from '../guard/guard-logic';
 import { GuardService } from '../guard/guard.service';
 import { HistoryService, RanStatement } from '../history/history.service';
+import { CompletionService } from '../completion/completion.service';
+import { changesSchema } from '../schema/schema-logic';
 import { SchemaStore } from '../schema/schema.store';
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FileDialogApi } from '../../core/backend/file-dialog-api';
@@ -67,6 +69,7 @@ export class TabsStore {
   private readonly connections = inject(ConnectionsStore);
   private readonly settings = inject(SettingsService);
   private readonly schema = inject(SchemaStore);
+  private readonly completion = inject(CompletionService);
   private readonly history = inject(HistoryService);
   private readonly guard = inject(GuardService);
   private readonly confirm = inject(ConfirmService);
@@ -80,8 +83,11 @@ export class TabsStore {
       if (!profile) return Promise.resolve(null);
       return this.guard.ask({ connection: profile, statements, total });
     },
-    ran: (connection: string, statements: readonly string[]) =>
-      this.schema.ran(connection, statements),
+    ran: (connection: string, statements: readonly string[]) => {
+      this.schema.ran(connection, statements);
+      // what the completion read of tables may be stale after DDL
+      if (statements.some(changesSchema)) this.completion.forget();
+    },
     options: () => {
       const s = this.settings.settings();
       return {
