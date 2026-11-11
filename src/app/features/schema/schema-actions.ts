@@ -1,3 +1,4 @@
+import { TableViews } from '../filter/table-views.service';
 import { Injectable, inject } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
 import { ObjectDetailsService } from '../details/details.service';
@@ -83,6 +84,7 @@ export function allows(action: NodeAction, row: TreeRow | null): boolean {
 export class SchemaActions {
   private readonly store = inject(SchemaStore);
   private readonly tabs = inject(TabsStore);
+  private readonly tables = inject(TableViews);
   private readonly connections = inject(ConnectionsStore);
   private readonly copier = inject(CopyService);
   private readonly exporter = inject(ExportService);
@@ -130,9 +132,13 @@ export class SchemaActions {
         });
         return;
       case 'SCHEMA_OPEN_DATA': {
-        const sql = selectTemplate(kind, qualified);
-        const tab = this.tabs.newTab(sql, { title: row.label, customTitle: true });
-        await tab.run(sql, 'app');
+        if (!row.object) return;
+        await this.tables.open(
+          this.connections.activeId(),
+          row.schema?.name ?? null,
+          row.object.name,
+          row.label,
+        );
         return;
       }
       case 'SCHEMA_SELECT_TEMPLATE':

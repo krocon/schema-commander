@@ -4,6 +4,7 @@ import { MAX_RECENT_OBJECTS } from '../../core/settings/settings.models';
 import { SettingsService } from '../../core/settings/settings.service';
 import { ObjectDetailsService } from '../details/details.service';
 import { selectTemplate } from '../schema/schema-logic';
+import { TableViews } from '../filter/table-views.service';
 import { SavedStore } from '../saved/saved.store';
 import { SchemaStore } from '../schema/schema.store';
 import { TabsStore } from '../tabs/tabs.store';
@@ -22,6 +23,7 @@ export class GotoService {
   private readonly schema = inject(SchemaStore);
   private readonly settings = inject(SettingsService);
   private readonly saved = inject(SavedStore);
+  private readonly tables = inject(TableViews);
 
   async run(hit: GotoHit, wanted: GotoVariant, connectionId: string): Promise<void> {
     if (hit.kind === 'tab' && hit.id) {
@@ -64,13 +66,7 @@ export class GotoService {
       this.connections.profiles().find((p) => p.id === connectionId)?.kind ?? 'sqlite';
     switch (variant) {
       case 'default': {
-        const sql = selectTemplate(dialect, object.quoted);
-        const tab = this.tabs.newTab(sql, {
-          title: object.name,
-          customTitle: true,
-          connection: connectionId,
-        });
-        await tab.run(sql, 'app');
+        await this.tables.open(connectionId, object.schema || null, object.name, object.name);
         return;
       }
       case 'details':

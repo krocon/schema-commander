@@ -3,12 +3,16 @@ import { Channel } from '@tauri-apps/api/core';
 import { call } from '../backend/call';
 import {
   BoundValue,
+  BuiltQuery,
   CellValuePart,
   RowWindow,
   RunEvent,
   RunOutcome,
+  TableQuery,
   TxState,
   Verdict,
+  ViewSpec,
+  ViewedResult,
 } from './query.models';
 
 /** What lets a guarded statement run (prompt 012). */
@@ -95,6 +99,19 @@ export abstract class QueryApi {
   abstract saveCellValue(resultId: number, row: number, col: number, path: string): Promise<number>;
   /** Puts the whole text of a cell on the clipboard; resolves with its characters. */
   abstract copyCellValue(resultId: number, row: number, col: number): Promise<number>;
+  /**
+   * The statement of a table view (prompt 027), built by the backend: names quoted, every value a
+   * placeholder. Run it with `run(…, built.sql, …, { params: built.params })`. Rejects with
+   * `unsupported` for a query that is none (a condition without its values, a free condition with `;`).
+   */
+  abstract tableQuery(connectionId: string, query: TableQuery): Promise<BuiltQuery>;
+  /**
+   * A result seen through a text filter and in an order – done in the store, the query is not touched.
+   * Resolves with a view that is read like a result and must be freed like one. A job: `cancelView`
+   * stops it (`cancelled`); `too_large` says a result is too big to sort here.
+   */
+  abstract resultView(jobId: number, resultId: number, spec: ViewSpec): Promise<ViewedResult>;
+  abstract cancelView(jobId: number): Promise<void>;
 }
 
 @Injectable()
@@ -178,5 +195,17 @@ export class TauriQueryApi extends QueryApi {
 
   copyCellValue(resultId: number, row: number, col: number): Promise<number> {
     return call('copy_cell_value', { resultId, row, col });
+  }
+
+  tableQuery(connectionId: string, query: TableQuery): Promise<BuiltQuery> {
+    return call('table_query', { id: connectionId, query });
+  }
+
+  resultView(jobId: number, resultId: number, spec: ViewSpec): Promise<ViewedResult> {
+    return call('result_view', { jobId, resultId, spec });
+  }
+
+  cancelView(jobId: number): Promise<void> {
+    return call('cancel_job', { jobId });
   }
 }

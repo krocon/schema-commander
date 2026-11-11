@@ -95,6 +95,13 @@ export interface Settings {
   readonly valuePanelVisible: boolean;
   readonly valuePanelWidth: number;
   readonly valueWrap: boolean;
+  /**
+   * The filter and order used last per table (prompt 027), by `connection|schema.table`, the latest
+   * first. Read forgivingly by `readSpec` of the filter logic.
+   */
+  readonly tableFilters: Readonly<Record<string, TableSpecStored>>;
+  /** The row for filtering a result locally is shown. */
+  readonly filterBarVisible: boolean;
   /** Look for parameters in statements and ask for their values (prompt 025). */
   readonly paramsEnabled: boolean;
   /**
@@ -103,6 +110,10 @@ export interface Settings {
    */
   readonly paramForms: Readonly<Record<string, readonly string[]>>;
 }
+
+/** A stored filter of a table: the shape of `TableSpec` of the filter logic, checked when it is read. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type TableSpecStored = any;
 
 /** A snippet: typed as `prefix`, it becomes `body` (placeholders `${1:name}`, `$0`). */
 export interface OwnSnippet {
@@ -168,6 +179,8 @@ export const DEFAULT_SETTINGS: Settings = {
   valuePanelVisible: false,
   valuePanelWidth: 380,
   valueWrap: true,
+  tableFilters: {},
+  filterBarVisible: false,
   paramsEnabled: true,
   paramForms: {},
   activeConnection: 'demo',
@@ -278,6 +291,17 @@ export function mergeSettings(saved: unknown): Settings {
     valuePanelVisible: bool('valuePanelVisible'),
     valuePanelWidth: within('valuePanelWidth', 200, 4000),
     valueWrap: bool('valueWrap'),
+    tableFilters:
+      s['tableFilters'] &&
+      typeof s['tableFilters'] === 'object' &&
+      !Array.isArray(s['tableFilters'])
+        ? (Object.fromEntries(
+            Object.entries(s['tableFilters'] as Record<string, unknown>)
+              .filter(([key, spec]) => key.length <= 600 && !!spec && typeof spec === 'object')
+              .slice(0, 200),
+          ) as Record<string, TableSpecStored>)
+        : {},
+    filterBarVisible: bool('filterBarVisible'),
     paramsEnabled: bool('paramsEnabled'),
     paramForms:
       s['paramForms'] && typeof s['paramForms'] === 'object' && !Array.isArray(s['paramForms'])

@@ -62,6 +62,20 @@ const COPY_AS: MenuDef = {
   ],
 };
 
+/** Conditions from the cell under the cursor (prompt 027). */
+const FILTER_CELL: MenuDef = {
+  sub: () => T.filterCell,
+  items: [
+    'FILTER_CELL_EQ',
+    'FILTER_CELL_NE',
+    'FILTER_CELL_GT',
+    'FILTER_CELL_LT',
+    'FILTER_CELL_NULL',
+    '-',
+    'FILTER_RESET',
+  ],
+};
+
 /** Datei, Bearbeiten, Ansicht, Abfrage, Verbindung, Werkzeuge, Fenster, Hilfe – as the prompt asks. */
 export const MENU_BAR: readonly TopMenu[] = [
   {
@@ -150,6 +164,7 @@ export const MENU_BAR: readonly TopMenu[] = [
       'SIDEBAR_HISTORY',
       'SIDEBAR_SAVED',
       'TOGGLE_VALUE_PANEL',
+      'TOGGLE_FILTER_BAR',
       '-',
       {
         sub: () => T.layout,
@@ -202,6 +217,8 @@ export const MENU_BAR: readonly TopMenu[] = [
       'TX_ROLLBACK',
       '-',
       'SHOW_MESSAGES',
+      '-',
+      FILTER_CELL,
       '-',
       'OPEN_HISTORY',
       'TOGGLE_HISTORY',
@@ -286,6 +303,7 @@ export const RESULT_MENU: readonly MenuDef[] = [
   'COPY_CELL_VALUE',
   'SAVE_CELL_VALUE',
   'TOGGLE_VALUE_PANEL',
+  FILTER_CELL,
   COPY_AS,
   '-',
   'EXPORT_RESULT',

@@ -148,3 +148,13 @@
   font-size: 10px;
   font-weight: 400;
 }
+
+/* the mark of a sort key in a column head (prompt 027) */
+.sc-result .sc-head-sort {
+  margin-left: 4px;
+  color: var(--accent);
+  font-size: 10px;
+}
+.sc-result .sc-head {
+  cursor: pointer;
+}

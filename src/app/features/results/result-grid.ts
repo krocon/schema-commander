@@ -45,6 +45,7 @@ import { RESULTS_TEXTS } from './results-texts';
         [debounceMouseClickDelay]="0"
         [(tableApi)]="api"
         (focusChanged)="onFocus()"
+        (mouseClicked)="onMouse($event)"
       />
     } @else {
       <p class="message">{{ t.loadingRows }}</p>
@@ -82,6 +83,10 @@ export class ResultGrid implements OnDestroy {
    * copies its selection itself, and the actions for results leave it alone.
    */
   readonly local = input<RowWindow | null>(null);
+  /** The sort keys to mark in the heads; read when a result is shown (prompt 027). */
+  readonly marks = input<readonly { column: number; desc: boolean; rank: number }[]>([]);
+  /** A head was clicked: the column of the result, and whether a modifier asks to add it to the keys. */
+  readonly headClick = output<{ readonly column: number; readonly additive: boolean }>();
   /** The cell the cursor is on: `[row, column]`; `null` when a new result has none yet (prompt 026). */
   readonly active = output<readonly [number, number] | null>();
 
@@ -178,6 +183,20 @@ export class ResultGrid implements OnDestroy {
     this.body?.dispose();
   }
 
+  /** A click on a head sorts (grid column 0 is the row number: it sorts nothing). */
+  protected onMouse(event: {
+    areaIdent?: string;
+    columnIndex: number;
+    originalEvent?: MouseEvent;
+  }): void {
+    if (event.areaIdent !== 'header' || event.columnIndex < 1 || this.local()) return;
+    const e = event.originalEvent;
+    this.headClick.emit({
+      column: event.columnIndex - 1,
+      additive: !!e && (e.shiftKey || e.metaKey || e.ctrlKey),
+    });
+  }
+
   /** The cursor of the table moved (the table says so outside of Angular's turn: only an output here). */
   protected onFocus(): void {
     const cell = this.api()?.getActiveCell();
@@ -227,6 +246,15 @@ export class ResultGrid implements OnDestroy {
     const rows = untracked(() => this.rows());
     body.setRowCount(Math.max(rows, first.length));
     this.body = body;
-    this.model.set(resultModel(result.columns, first, body, Math.max(rows, 1000), this.options));
+    this.model.set(
+      resultModel(
+        result.columns,
+        first,
+        body,
+        Math.max(rows, 1000),
+        this.options,
+        untracked(() => this.marks()),
+      ),
+    );
   }
 }
