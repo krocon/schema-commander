@@ -45,6 +45,7 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | A23 | Ergebnisse leben in Rust (`results.rs`: Zeilen als JSON + Offsets, 32 MB im Speicher, darüber Datei im Cache); das Gitter holt Fenster über ein eigenes `AreaModel`; es wird immer zu Ende gelesen, kein Server-Cursor | Design 006 E1–E7 |
 | A24 | Metadaten nur über `Session::ask` mit gebundenen Parametern (`db/meta.rs`); Namen quotet allein `meta::quote`, jeder Knoten bringt `quoted` mit; der Zwischenspeicher liegt im Frontend (`SchemaStore`) | Design 008 E1, E3, E7 |
 | A25 | Der Schema-Baum ist eine eigene virtuelle Liste mit den Rollen eines APG-Baums, keine GuiExpert Table | Design 008 E8 |
+| A26 | Formate zum Kopieren und Exportieren schreibt Rust (`extract.rs`); die Zwischenablage gehört Rust (`arboard`, drei schmale Commands), Zeilen gehen nie durch die WebView | Design 009 E1–E2 |
 | A10 | Oberflächentexte vorerst deutsch in den Komponenten | übernommene Galerie ist deutsch; Kataloge de/en kommen mit dem Prompt „Einstellungen und Sprache“ |
 
 ## Offene Architekturfragen (entscheidet der jeweilige Prompt)
@@ -63,6 +64,7 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | `@tauri-apps/plugin-store` / `tauri-plugin-store` | Einstellungen als JSON-Datei | wie log-commander |
 | `tauri-plugin-window-state` | Fensterposition und -größe | wie log-commander |
 | `@guiexpert/table`, `@guiexpert/angular-table` | Ergebnisgitter (später Baum, Listen) | Vorgabe; virtuelles Scrollen in beide Richtungen |
+| `arboard` (ohne Bild-Feature, `wayland-data-control`) | Zwischenablage aus Rust: Text und HTML | Design 009 E1; kein Plugin mit breiter Oberfläche |
 | `editlicious-editor` | SQL-Editor | Vorgabe; große Texte, SQL-Grammatik, 13 Schemata |
 | `tauri-plugin-dialog`, `@tauri-apps/plugin-dialog` | native Öffnen-/Speichern-Dialoge (Schema-Import/-Export, später SQL-Dateien, Export) | wie log-commander; nur `dialog:allow-open`, `dialog:allow-save` |
 | `tempfile` (dev) | Dateitests in Rust | Standard |
