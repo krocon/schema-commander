@@ -49,9 +49,30 @@ export interface EditBuffer {
   readonly redo: readonly Step[];
   /** The row whose statement stopped the last writing, to mark it. */
   readonly failed: string | null;
+  /**
+   * Where the rows of the buffer are from: connection, table and result, as one text (`originOf`). Set
+   * with the first change. Changes are only ever written where they were made.
+   */
+  readonly origin: string | null;
 }
 
-export const EMPTY_BUFFER: EditBuffer = { rows: {}, undo: [], redo: [], failed: null };
+export const EMPTY_BUFFER: EditBuffer = {
+  rows: {},
+  undo: [],
+  redo: [],
+  failed: null,
+  origin: null,
+};
+
+/** What tells where rows are from. */
+export function originOf(
+  connection: string,
+  schema: string | null,
+  table: string,
+  resultId: number,
+): string {
+  return JSON.stringify([connection, schema, table, resultId]);
+}
 /** Steps kept for undo. */
 export const MAX_UNDO = 500;
 /** Rows written at once at most (`MAX_UPDATE_ROWS` in edit.rs). */
@@ -62,10 +83,15 @@ const CUT_FROM = 1000;
 const keyText = (cell: Cell | undefined): string | null =>
   cell === null || cell === undefined || typeof cell === 'object' ? null : String(cell);
 
-/** What identifies a row: the values of its key; `null` if a part of the key is NULL or no plain value. */
+/**
+ * What identifies a row: the values of its key; `null` if a part of the key is NULL, no plain value, or
+ * a text so long that the row may hold it cut (two rows could look the same, and the cut text finds none).
+ */
 export function rowKey(cells: readonly Cell[], pk: readonly number[]): string | null {
   const values = pk.map((i) => keyText(cells[i]));
-  return pk.length > 0 && values.every((v) => v !== null) ? JSON.stringify(values) : null;
+  return pk.length > 0 && values.every((v) => v !== null && v.length < CUT_FROM)
+    ? JSON.stringify(values)
+    : null;
 }
 
 /** Whether a new value is what the cell holds anyway. */
@@ -110,6 +136,7 @@ export function setCell(
     undo: [...buffer.undo, step].slice(-MAX_UNDO),
     redo: [],
     failed: buffer.failed === key ? null : buffer.failed,
+    origin: buffer.origin,
   };
 }
 
@@ -191,6 +218,7 @@ export function planOf(
   lock: boolean,
   schema: string | null,
   table: string,
+  dialect: Dialect = 'sqlite',
 ): { plan: UpdatePlan; keys: string[] } {
   const keys = Object.keys(buffer.rows).sort((a, b) => buffer.rows[a].row - buffer.rows[b].row);
   const rows = keys.map((key): RowUpdate => {
@@ -200,7 +228,7 @@ export function planOf(
       .sort((a, b) => a - b);
     const lockable = (c: number) => {
       const cell = edit.original[c];
-      if (columns[c].kind === 'float') return false;
+      if (columns[c].kind === 'float' || !comparable(dialect, columns[c].typeName)) return false;
       if (cell !== null && typeof cell === 'object') return false;
       return !(typeof cell === 'string' && cell.length >= CUT_FROM);
     };
@@ -219,6 +247,21 @@ export function planOf(
     };
   });
   return { plan: { schema, table, rows }, keys };
+}
+
+/** The database of a connection, as far as the lock cares. */
+export type Dialect = 'postgres' | 'mysql' | 'sqlserver' | 'sqlite';
+
+/** Types a database cannot compare with `=` (or never finds equal to a text): no lock on them. */
+const NO_EQUALS: Readonly<Record<Dialect, RegExp>> = {
+  postgres: /^(json|xml|point|line|lseg|box|path|polygon|circle)(\[\])?$/i,
+  mysql: /^(json|geometry)$/i,
+  sqlserver: /^(text|ntext|image|xml)$/i,
+  sqlite: /^$/,
+};
+
+export function comparable(dialect: Dialect, typeName: string): boolean {
+  return !NO_EQUALS[dialect].test(typeName.trim());
 }
 
 // --- may this be edited, and is this a value? ---------------------------------------------------------

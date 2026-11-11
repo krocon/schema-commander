@@ -13,6 +13,7 @@ import { QueryTab } from '../tabs/query-tab';
 import { TabsStore } from '../tabs/tabs.store';
 import {
   EMPTY_BUFFER,
+  EditBuffer,
   EditMarks,
   MAX_EDIT_ROWS,
   NewValue,
@@ -21,6 +22,7 @@ import {
   editCount,
   editability,
   marksOf,
+  originOf,
   maxLength,
   planOf,
   redoEdit,
@@ -45,6 +47,8 @@ export interface Editing {
   /** Index of the result column. */
   readonly column: number;
   readonly key: string;
+  /** Where the row is from (`originOf`): the value is only taken while the tab still shows that. */
+  readonly origin: string;
   readonly original: readonly Cell[];
   readonly meta: QueryColumn;
   readonly info: ColumnInfo | undefined;
@@ -140,10 +144,43 @@ export class EditService {
     return tab ? editCount(tab.edits()) : { cells: 0, rows: 0 };
   }
 
+  /** Where the rows a tab shows are from; `null` if it shows no table view. */
+  private originNow(tab: QueryTab): string | null {
+    const view = tab.tableView();
+    const current = this.copier.current();
+    if (!view || !current || tab !== this.tabs.active()) return null;
+    return originOf(tab.connectionId(), view.schema, view.table, current.result.resultId);
+  }
+
+  /** Whether the changes of a tab were made in what it shows now (an empty buffer belongs anywhere). */
+  private belongs(tab: QueryTab): boolean {
+    const origin = tab.edits().origin;
+    return origin === null || origin === this.originNow(tab);
+  }
+
+  /** Changes a cell of the buffer; the first change notes where the rows are from. */
+  private change(tab: QueryTab, origin: string, f: (b: EditBuffer) => EditBuffer): void {
+    tab.edits.update((b) => {
+      const next = f(b.origin === null ? { ...b, origin } : b);
+      // a buffer that is empty again belongs nowhere
+      return Object.keys(next.rows).length === 0 && next.undo.length === 0 && next.redo.length === 0
+        ? EMPTY_BUFFER
+        : next;
+    });
+  }
+
   /** The result and the cell the user is at, if the tab is the one in front and can be edited. */
   private async place(tab: QueryTab) {
     const current = this.copier.current();
     if (!current || tab !== this.tabs.active()) return null;
+    if (this.busy()) {
+      this.say(this.t.busy);
+      return null;
+    }
+    if (!this.belongs(tab)) {
+      this.say(this.t.stale);
+      return null;
+    }
     const columns = current.result.columns;
     const state = this.state(tab, columns);
     if ('reason' in state) {
@@ -169,7 +206,9 @@ export class EditService {
       this.say(this.t.noRowKey);
       return null;
     }
-    return { resultId: current.result.resultId, columns, row, column, original, key };
+    const origin = this.originNow(tab);
+    if (origin === null) return null;
+    return { resultId: current.result.resultId, columns, row, column, original, key, origin };
   }
 
   /** Opens the edit row for the cell of the cursor. */
@@ -197,6 +236,7 @@ export class EditService {
       row: p.row,
       column: p.column,
       key: p.key,
+      origin: p.origin,
       original: p.original,
       meta,
       info,
@@ -215,9 +255,13 @@ export class EditService {
   commit(value: NewValue): string | null {
     const e = this.editing();
     if (!e) return null;
+    if (this.busy()) return this.t.busy;
+    // the rows were read anew (or the tab shows something else) since the field was opened: its row and
+    // column are not those of what is on screen any more
+    if (e.origin !== this.originNow(e.tab) || !this.belongs(e.tab)) return this.t.staleCell;
     const problem = validate(value, e.meta, e.info);
     if (problem) return this.problemText(problem, e.meta.typeName);
-    e.tab.edits.update((b) => setCell(b, e.key, e.row, e.original, e.column, value));
+    this.change(e.tab, e.origin, (b) => setCell(b, e.key, e.row, e.original, e.column, value));
     this.cancel();
     return null;
   }
@@ -240,27 +284,33 @@ export class EditService {
       this.infoOf(tab)?.find((c) => c.name === meta.name),
     );
     if (problem) return this.say(this.problemText(problem, meta.typeName));
-    tab.edits.update((b) => setCell(b, p.key, p.row, p.original, p.column, value));
+    this.change(tab, p.origin, (b) => setCell(b, p.key, p.row, p.original, p.column, value));
   }
 
   undo(tab: QueryTab): void {
-    tab.edits.update(undoEdit);
+    if (!this.busy()) tab.edits.update(undoEdit);
   }
 
   redo(tab: QueryTab): void {
-    tab.edits.update(redoEdit);
+    if (!this.busy()) tab.edits.update(redoEdit);
   }
 
   /** Takes the change of the cell of the cursor back. */
   async resetCell(tab: QueryTab): Promise<void> {
     const p = await this.place(tab);
-    if (p) tab.edits.update((b) => setCell(b, p.key, p.row, p.original, p.column, null));
+    if (p) this.change(tab, p.origin, (b) => setCell(b, p.key, p.row, p.original, p.column, null));
   }
 
   /** Takes the changes of the row of the cursor back. */
   async resetRowAtCursor(tab: QueryTab): Promise<void> {
     const p = await this.place(tab);
-    if (p) tab.edits.update((b) => resetRow(b, p.key));
+    if (p) this.change(tab, p.origin, (b) => resetRow(b, p.key));
+  }
+
+  /** Forgets all changes of a tab – after a question, when the user asks for it (they cannot be undone). */
+  async discardAsked(tab: QueryTab): Promise<void> {
+    if (this.busy()) return this.say(this.t.busy);
+    if (await this.tabs.dropEdits([tab])) this.discard(tab);
   }
 
   /** Forgets all changes of a tab. */
@@ -279,6 +329,11 @@ export class EditService {
       this.say(this.t.nothing);
       return null;
     }
+    // changes are written where they were made, nowhere else
+    if (!this.belongs(tab)) {
+      this.say(this.t.stale);
+      return null;
+    }
     const state = this.state(tab, current.result.columns);
     if ('reason' in state) {
       this.say(this.t.reasons[state.reason]);
@@ -291,6 +346,7 @@ export class EditService {
       this.settings.settings().editLock,
       view.schema,
       view.table,
+      this.connections.profiles().find((p) => p.id === tab.connectionId())?.kind ?? 'sqlite',
     );
     if (built.plan.rows.length > MAX_EDIT_ROWS) {
       this.say(this.t.tooMany(MAX_EDIT_ROWS));
@@ -350,6 +406,14 @@ export class EditService {
         tokens,
         this.settings.settings().statementTimeoutSec * 1000,
       );
+      if (applied.blocked) {
+        this.say(this.t.txOpen);
+        return false;
+      }
+      if (applied.unknown) {
+        this.say(this.t.unknownOutcome);
+        return false;
+      }
       if (applied.failed === null && !applied.error && applied.done === sqls.length) {
         this.discard(tab);
         this.say(this.t.written(applied.done));
@@ -368,9 +432,7 @@ export class EditService {
       return false;
     } catch (e) {
       const error = toAppError(e);
-      this.say(
-        error.code === 'unsupported' ? this.t.txOpen : this.t.notWritten(describeError(error)),
-      );
+      this.say(this.t.notWritten(describeError(error)));
       return false;
     } finally {
       this.busy.set(false);

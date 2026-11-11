@@ -1406,7 +1406,7 @@ export class App implements OnInit, OnDestroy {
       ),
       register(
         'EDIT_DISCARD',
-        related((t) => this.edit.discard(t)),
+        related((t) => this.edit.discardAsked(t)),
         edited,
       ),
       register(

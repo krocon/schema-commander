@@ -40,7 +40,7 @@ describe('EditService', () => {
     query = new FakeQueryApi();
     schema = new FakeSchemaApi();
     const connections = new FakeConnectionsApi();
-    connections.profiles = [DEMO_PROFILE];
+    connections.profiles = [DEMO_PROFILE, { ...DEMO_PROFILE, id: 'other', name: 'Other' }];
     TestBed.configureTestingModule({
       providers: [
         { provide: SessionApi, useValue: new FakeSessionApi() },
@@ -201,11 +201,6 @@ describe('EditService', () => {
     await edit.save(tab);
     expect(tabs.notice()).toContain('Zeile 1');
     expect(tabs.notice()).toContain('check failed');
-    // a transaction of the user's own is open in the tab
-    query.applyAnswer = null;
-    query.applyError = { code: 'unsupported', message: 'a transaction is open on this tab' };
-    await edit.save(tab);
-    expect(tabs.notice()).toContain('Transaktion offen');
     expect(edit.count(tab).cells).toBe(2);
   });
 
@@ -233,6 +228,121 @@ describe('EditService', () => {
     expect(await again).toBe(true);
     expect(query.applied.at(-1)!.confirmations).toHaveLength(1);
     expect(query.applied.at(-1)!.confirmations[0]).toContain('token');
+  });
+
+  // --- review 031 -----------------------------------------------------------------------------------
+
+  it('leaves the tab where it is when the user keeps the changes instead of going to another table', async () => {
+    const tab = await table();
+    await edit.begin(tab);
+    edit.commit({ kind: 'value', text: 'mine' });
+    const confirm = TestBed.inject(ConfirmService);
+    const asked = query.tableQueries.length;
+    // following a foreign key, back, forward: another table in the same tab
+    const going = tab.openTable({ schema: 'public', table: 'customer', spec: EMPTY_SPEC });
+    await settle();
+    expect(confirm.request()?.title).toBe('Änderungen verwerfen?');
+    // while the question is open nothing has changed yet
+    expect(tab.tableView()).toMatchObject({ table: 'orders' });
+    confirm.answer(false);
+    await going;
+    expect(tab.tableView()).toMatchObject({ table: 'orders' });
+    expect(query.tableQueries.length).toBe(asked);
+    expect(edit.count(tab).cells).toBe(1);
+    // and writing still writes to the table the changes were made in
+    await edit.save(tab);
+    expect(query.applied.at(-1)!.plan.table).toBe('orders');
+  });
+
+  it('never writes changes into another table or another connection than they were made in', async () => {
+    const tab = await table();
+    await edit.begin(tab);
+    edit.commit({ kind: 'value', text: 'mine' });
+    // the tab shows another table while the buffer still holds rows of the first (however that came)
+    tab.tableView.set({ schema: 'public', table: 'customer', spec: EMPTY_SPEC });
+    expect(await edit.save(tab)).toBe(false);
+    expect(query.applied).toHaveLength(0);
+    expect(tabs.notice()).toContain('andere Tabelle');
+    tab.tableView.set({ schema: 'public', table: 'orders', spec: EMPTY_SPEC });
+    tab.connectionId.set('elsewhere');
+    expect(await edit.save(tab)).toBe(false);
+    expect(query.applied).toHaveLength(0);
+  });
+
+  it('does not let the connection of a tab change under changes that are not written', async () => {
+    const tab = await table();
+    await edit.begin(tab);
+    edit.commit({ kind: 'value', text: 'mine' });
+    const connections = TestBed.inject(ConnectionsStore);
+    connections.activate('other');
+    await settle();
+    expect(tab.connectionId()).toBe('demo');
+    expect(tabs.notice()).toContain('nicht geschrieben');
+    expect(edit.count(tab).cells).toBe(1);
+    // without changes the tab goes to the other connection – and is no table view of the old one any more
+    tabs.notice.set(null);
+    edit.discard(tab);
+    connections.activate('other');
+    await settle();
+    expect(tab.connectionId()).toBe('other');
+    expect(tab.tableView()).toBeNull();
+  });
+
+  it('does not take the value of an edit row whose rows are gone', async () => {
+    const tab = await table();
+    await edit.begin(tab);
+    expect(edit.editing()).not.toBeNull();
+    // the table is read again while the field is open (a filter, a click on a head)
+    await tab.applyTable({ ...EMPTY_SPEC, limit: 200 });
+    expect(edit.commit({ kind: 'value', text: 'late' })).not.toBeNull();
+    expect(edit.count(tab).cells).toBe(0);
+  });
+
+  it('takes no changes while it writes, so none is lost with the buffer', async () => {
+    const tab = await table();
+    await edit.begin(tab);
+    edit.commit({ kind: 'value', text: 'one' });
+    let open!: () => void;
+    const gate = new Promise<void>((r) => (open = r));
+    const apply = query.editApply.bind(query);
+    query.editApply = async (...args: Parameters<typeof apply>) => {
+      await gate;
+      return apply(...args);
+    };
+    const saving = edit.save(tab);
+    await settle();
+    expect(edit.busy()).toBe(true);
+    cursor = [1, 1];
+    await edit.begin(tab);
+    expect(edit.editing()).toBeNull();
+    await edit.setAtCursor(tab, { kind: 'default' });
+    edit.undo(tab);
+    expect(edit.count(tab)).toEqual({ cells: 1, rows: 1 });
+    open();
+    expect(await saving).toBe(true);
+    expect(query.applied.at(-1)!.plan.rows).toHaveLength(1);
+  });
+
+  it('says what stopped the writing: an open transaction, an outcome nobody knows', async () => {
+    const tab = await table();
+    await edit.begin(tab);
+    edit.commit({ kind: 'value', text: 'x' });
+    query.applyAnswer = { done: 0, blocked: true, tx: 'active' };
+    expect(await edit.save(tab)).toBe(false);
+    expect(tabs.notice()).toContain('Transaktion offen');
+    query.applyAnswer = {
+      done: 0,
+      unknown: true,
+      error: { code: 'connection_failed', message: 'gone' },
+    };
+    expect(await edit.save(tab)).toBe(false);
+    expect(tabs.notice()).toContain('nicht bekannt');
+    expect(edit.count(tab).cells).toBe(1);
+    // any other refusal of the backend is said as it is, not as „a transaction is open“
+    query.applyAnswer = null;
+    query.applyError = { code: 'unsupported', message: 'too many values in one statement' };
+    await edit.save(tab);
+    expect(tabs.notice()).not.toContain('Transaktion offen');
   });
 
   it('shows what would be written, and asks before unwritten changes are lost', async () => {

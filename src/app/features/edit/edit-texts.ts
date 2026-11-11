@@ -52,6 +52,14 @@ export const EDIT_EN = {
   failed: (row: number, why: string) => `Row ${row}: ${why} Nothing was written.`,
   notWritten: (why: string) => `Nothing was written: ${why}`,
   txOpen: 'A transaction is open in this tab: commit or roll it back first.',
+  unknownOutcome:
+    'The connection was lost while committing: whether the rows are written is not known. Read the table again and look.',
+  stale:
+    'These changes were made in another table, connection or result than the tab shows now. They can only be discarded.',
+  staleCell: 'The rows have been read anew since this cell was opened: open it again.',
+  busy: 'The changes are being written.',
+  blocksSwitch:
+    'Changes are not written yet: write or discard them before the tab changes its connection.',
   previewTitle: (rows: number) =>
     rows === 1 ? '1 statement will be written' : `${rows} statements will be written`,
   previewNote:

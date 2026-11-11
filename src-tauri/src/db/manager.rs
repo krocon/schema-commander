@@ -126,6 +126,10 @@ pub struct Applied {
     pub conflict: bool,
     /// What the database said, when a statement or the commit failed.
     pub error: Option<AppError>,
+    /// A transaction of the user's own is open on the session: nothing was tried.
+    pub blocked: bool,
+    /// The connection was lost while committing: whether the rows are written is not known.
+    pub unknown: bool,
     pub tx: TxState,
 }
 
@@ -656,12 +660,6 @@ impl ConnectionManager {
         let mut session = open.session.lock();
         open.stop.store(false, Ordering::Relaxed);
         let stop = || open.stop.load(Ordering::Relaxed);
-        if *open.tx.lock() != TxState::Idle {
-            return Err(AppError::new(
-                ErrorCode::Unsupported,
-                "a transaction is open on this tab",
-            ));
-        }
         let limits = Limits {
             max_rows: 1,
             timeout,
@@ -671,8 +669,19 @@ impl ConnectionManager {
             failed: None,
             conflict: false,
             error: None,
+            blocked: false,
+            unknown: false,
             tx: TxState::Idle,
         };
+        // the server says whether a transaction is open – not what was noted after the last statement
+        // (a BEGIN inside one would nest on SQL Server, and commit the user's work elsewhere)
+        let before = session.transaction_state(&|| false);
+        *open.tx.lock() = before;
+        if before != TxState::Idle {
+            applied.blocked = true;
+            applied.tx = before;
+            return Ok(applied);
+        }
         let mut problem = session
             .query(super::begin_statement(profile.kind), Limits::rows(1), &stop)
             .err();
@@ -708,23 +717,37 @@ impl ConnectionManager {
         };
         if session.is_open()
             && let Err(e) = session.query(end, Limits::rows(1), &|| false)
+            && end == "COMMIT"
         {
+            // the connection gone in the middle of the commit: nobody knows whether it happened
+            applied.unknown = !session.is_open();
             // a commit that fails (a deferred constraint) wrote nothing: say why, and make sure of it
-            if end == "COMMIT" {
-                problem = Some(e);
+            problem = Some(e);
+            if session.is_open() {
                 let _ = session.query("ROLLBACK", Limits::rows(1), &|| false);
             }
         }
-        if end == "ROLLBACK" || problem.is_some() {
-            applied.done = 0;
-        }
-        applied.error = problem;
         let lost = !session.is_open();
         applied.tx = if lost {
             TxState::Idle
         } else {
             session.transaction_state(&|| false)
         };
+        // committed means: no transaction is left. One that is (a session that opens them itself, a
+        // BEGIN that nested) would take the rows with it when it ends – so it ends now, and nothing is
+        // called written
+        if end == "COMMIT" && problem.is_none() && !lost && applied.tx != TxState::Idle {
+            let _ = session.query("ROLLBACK", Limits::rows(1), &|| false);
+            applied.tx = session.transaction_state(&|| false);
+            problem = Some(AppError::new(
+                ErrorCode::Unsupported,
+                "the transaction did not end with the commit; it was rolled back",
+            ));
+        }
+        if end == "ROLLBACK" || problem.is_some() {
+            applied.done = 0;
+        }
+        applied.error = problem;
         *open.tx.lock() = applied.tx;
         drop(session);
         if lost {
@@ -1155,9 +1178,23 @@ mod tests {
         let id = protected(&m, dir.path(), Protection::Free);
         // the tab has a transaction of its own open: that is the user's, nothing is written into it
         run_tab(&m, &id, "a", "UPDATE t SET a = 5 WHERE a = 1", true);
-        let refused = m.apply_updates(&id, Some("a"), &updates(&[(2, 20, 2)]), &[], None);
-        assert_eq!(refused.unwrap_err().code, ErrorCode::Unsupported);
+        let refused = m
+            .apply_updates(&id, Some("a"), &updates(&[(2, 20, 2)]), &[], None)
+            .unwrap();
+        assert!(refused.blocked);
+        assert_eq!((refused.done, refused.tx), (0, TxState::Active));
         assert_eq!(m.tx_state(&id, Some("a")), TxState::Active);
+        // … also when it was opened in a way the app did not notice (review 031): the server is asked
+        m.end_transaction(&id, Some("a"), false).unwrap();
+        run_tab(&m, &id, "a", "SAVEPOINT quiet", false);
+        *m.session_of(&id, Some("a")).unwrap().1.tx.lock() = TxState::Idle;
+        let hidden = m
+            .apply_updates(&id, Some("a"), &updates(&[(2, 20, 2)]), &[], None)
+            .unwrap();
+        assert!(
+            hidden.blocked,
+            "a savepoint outside a transaction opens one in SQLite"
+        );
         m.end_transaction(&id, Some("a"), false).unwrap();
 
         // a connection that only reads writes nothing

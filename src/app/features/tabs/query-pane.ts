@@ -637,7 +637,10 @@ export class QueryPane implements OnInit, OnDestroy {
   protected readonly relations = inject(RelationsService);
   protected readonly edit = inject(EditService);
   /** The changes that are not written yet: the grid shows them instead of what was read. */
-  protected readonly edits = computed(() => this.edit.marks(this.tab()));
+  protected readonly edits = computed(() =>
+    // a local order or filter shows the rows elsewhere than where they were edited: no marks there
+    this.tab().localView() ? null : this.edit.marks(this.tab()),
+  );
   /** The columns whose cells lead to another table: those of the foreign keys of a table view. */
   protected readonly links = computed(() => {
     const columns = this.result()?.columns;

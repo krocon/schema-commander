@@ -95,7 +95,7 @@ import { EditService } from './edit.service';
         >
           {{ t.redo }}
         </button>
-        <button type="button" (click)="edit.discard(tab())">{{ t.discard }}</button>
+        <button type="button" (click)="edit.discardAsked(tab())">{{ t.discard }}</button>
       </div>
     }
   `,

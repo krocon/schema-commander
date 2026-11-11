@@ -46,6 +46,9 @@ describe('edit-buffer', () => {
     expect(rowKey([null, 'x'], [0])).toBeNull();
     expect(rowKey([{ bytes: 1, hex: 'ff' }], [0])).toBeNull();
     expect(rowKey([1], [])).toBeNull();
+    // a text so long that the row may hold it cut is no key (review 031)
+    expect(rowKey(['x'.repeat(1000)], [0])).toBeNull();
+    expect(rowKey(['x'.repeat(999)], [0])).not.toBeNull();
   });
 
   it('collects changes per row and counts them', () => {
@@ -154,6 +157,24 @@ describe('edit-buffer', () => {
     expect(editCount(setCell(EMPTY_BUFFER, '["1"]', 0, long, 1, v(long[1] as string))).cells).toBe(
       1,
     );
+  });
+
+  it('does not lock on types the database cannot compare (review 031)', () => {
+    const cols = [
+      col('id', 'int', 'int4'),
+      col('doc', 'other', 'JSON'),
+      col('body', 'text', 'Text'),
+    ];
+    const row: Cell[] = [1, '{"a":1}', 'long text'];
+    let b = setCell(EMPTY_BUFFER, '["1"]', 0, row, 1, v('{}'));
+    b = setCell(b, '["1"]', 0, row, 2, v('new'));
+    const expectOn = (dialect: 'postgres' | 'mysql' | 'sqlserver' | 'sqlite') =>
+      planOf(b, cols, PK, true, null, 't', dialect).plan.rows[0].expect.map((c) => c.column);
+    expect(expectOn('postgres')).toEqual(['body']);
+    expect(expectOn('mysql')).toEqual(['body']);
+    // SQL Server's `text` is the old type without `=`
+    expect(expectOn('sqlserver')).toEqual(['doc']);
+    expect(expectOn('sqlite')).toEqual(['doc', 'body']);
   });
 
   it('remembers which row failed until it is changed again', () => {

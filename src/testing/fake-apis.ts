@@ -490,6 +490,8 @@ export class FakeQueryApi extends QueryApi {
       failed: null,
       conflict: false,
       error: null,
+      blocked: false,
+      unknown: false,
       tx: 'idle',
       ...this.applyAnswer,
     });

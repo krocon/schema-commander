@@ -36,6 +36,10 @@ conflict, error, tx }`. `UpdatePlan { schema, table, rows: [{ key, set, expect }
   inzwischen geändert → **nichts** geschrieben, auch die erste nicht; Anweisung, die zwei Zeilen träfe → Konflikt;
   Fehler der Datenbank → Rollback; offene Transaktion des Tabs → abgelehnt; „nur lesen“ → abgelehnt; „nachfragen“ →
   ohne oder mit nur einem Teil der Bestätigungen nichts, mit allen geschrieben.
+- **Gegen echte Server**, nach dem Review auch: `character(10)` als Schlüssel und Wert und `bit(4)` in
+  PostgreSQL (alle Zeichen kommen an, die Nachbarzeile `A` bleibt), `datetime`/`smalldatetime` in SQL Server unter
+  `SET LANGUAGE Deutsch` (der 4. März bleibt der 4. März, die Sperre auf den alten Wert greift). Ganze
+  Treiber-Suite: 32 Tests grün.
 - **Gegen echte Server** (PostgreSQL, MySQL, MariaDB, SQL Server): mehrere Zellen mit Sperre (eine alte `NULL`)
   → eine Zeile; dieselbe Sperre noch einmal → keine Zeile; `NULL` und `DEFAULT`; Zeile, die es nicht gibt → keine;
   **derselbe Wert noch einmal** → trotzdem eine Zeile (auch MySQL); Text mit `'`, `\`, `"`, Umlaut, Emoji und
@@ -50,6 +54,40 @@ conflict, error, tx }`. `UpdatePlan { schema, table, rows: [{ key, set, expect }
   Konflikt → Puffer bleibt, Meldung.
 - **Review durch einen zweiten Agenten**: siehe unten.
 - `pnpm check` grün.
+
+## Review (zweiter Agent, nur lesend: Datenverlust, falsches WHERE, Transaktionsgrenzen)
+
+Gefunden wurden drei schwere und fünf mittlere Fehler. Alle sind behoben, jeweils mit rotem Test zuerst.
+
+| Befund | Behoben |
+|---|---|
+| **H1** Antwortete man beim Wechsel der Tabelle im Tab (Fremdschlüssel folgen, Zurück/Vor) auf „Änderungen verwerfen?“ mit Nein, zeigte der Tab schon die neue Tabelle – der Puffer gehörte aber zur alten. `Mod+S` hätte auf die **falsche Tabelle** geschrieben | Gefragt wird, **bevor** sich am Tab etwas ändert (`openTable`, `runTable`, `runAll`). Dazu trägt der Puffer einen **Stempel** (Verbindung, Tabelle, Ergebnis), gesetzt bei der ersten Änderung: Geschrieben und bearbeitet wird nur, wenn er zu dem passt, was der Tab zeigt |
+| **H2** Wechselte der Tab die Verbindung, blieben Tabellen-Ansicht und Puffer – Schreiben wäre auf die **andere Datenbank** gegangen | Mit offenen Änderungen wechselt der Tab die Verbindung nicht (Hinweis). Ohne: Der Tab ist danach keine Tabellen-Ansicht mehr |
+| **H3** PostgreSQL: Der Treiber nennt `character(n)` `CHAR` und `bit(n)` `BIT`; der Cast darauf behält **ein Zeichen** – Wert gekürzt, falsche Zeile getroffen (betraf seit 027 auch den Filter) | Cast auf `bpchar` bzw. `varbit`; Test gegen PostgreSQL mit `character(10)` als Schlüssel und Wert |
+| **M1** Eine offene Bearbeitungszeile überlebte das Neu-Lesen; `Enter` schrieb ihre Zelle in den neuen Zusammenhang | Die Zeile kennt ihr Ergebnis; ein Wert für Zeilen, die es nicht mehr gibt, wird nicht genommen |
+| **M2** Änderungen während des Schreibens gingen mit dem Puffer verloren, gemeldet als „geschrieben“ | Während des Schreibens nimmt der Puffer nichts an |
+| **M3** SQL Server las `2024-03-04 10:00` für `datetime` je nach Sprache der Anmeldung als 3. April | Für `datetime`/`smalldatetime` geht der Wert mit `T` (ISO 8601); Test unter `SET LANGUAGE Deutsch` |
+| **M4** Ganze Zahlen mit 19 Stellen liefen in SQLite über Gleitkomma (falsche Zeile möglich) | ganze Zahlen werden bis 64 Bit als solche gebunden |
+| **M5** Ob eine Transaktion offen ist, wurde dem Merker geglaubt; nach `COMMIT` wurde nicht geprüft, dass sie zu ist | Vor `BEGIN` wird der Server gefragt; bleibt nach `COMMIT` eine Transaktion offen, wird sie zurückgerollt und nichts als geschrieben gemeldet |
+| L2/L6 Verbindungsverlust beim `COMMIT` hieß „nichts geschrieben“; jeder abgelehnte Plan hieß „Transaktion offen“ | eigene Meldungen: „nicht bekannt, ob geschrieben“; „Transaktion offen“ nur, wenn es so ist |
+| L3 Sperre auf Typen ohne `=` (`json`, `xml`, altes `text` …) | je Datenbank von der Sperre ausgenommen |
+| L4/L5 Marken bei lokaler Sicht an falscher Zeile; gekürzte Text-Schlüssel | keine Marken bei lokaler Sicht; Zeilen mit Schlüsseltext ab 1000 Zeichen sind nicht bearbeitbar |
+| L9 „Verwerfen“ ohne Rückfrage | fragt |
+
+**Bleibt, wie es ist – für Marc zu wissen:**
+
+- **MySQL-Tabellen ohne Transaktionen** (MyISAM, Aria): `ROLLBACK` nimmt dort nichts zurück. Scheitert die dritte
+  Anweisung, sind die ersten zwei geschrieben, gemeldet wird „nichts geschrieben“. Nicht erkannt.
+- **Manueller Commit-Modus**: Schon das `SELECT` der Tabellen-Ansicht öffnet dort eine Transaktion; geschrieben
+  wird erst nach Commit oder Rollback (die Meldung sagt es). Ohne offene Transaktion committet das Schreiben
+  selbst, auch im manuellen Modus.
+- **`Cmd+Q` auf macOS** geht vermutlich nicht durch die Rückfrage beim Schließen (nicht nachgeprüft; gilt dann
+  auch für offene Transaktionen seit 013).
+- Die Sperre vergleicht mit dem, was die Datenbank unter `=` versteht: Bei Kollationen ohne Groß/Klein entgeht ihr
+  `abc` → `ABC`; MySQL vergleicht Dezimalzahlen als Text gebunden nur auf etwa 15 Stellen.
+- Falsche Konflikte mit der Meldung „jemand anderes“: ein `BEFORE`-Trigger, der die Zeile verwirft; ein Trigger,
+  der ein Ergebnis liefert. Sicher (Rollback), aber die Meldung nennt den falschen Grund.
+- Der Puffer liegt nur im Speicher: Ein Absturz verliert ihn.
 
 ## Nicht umgesetzt, nicht geprüft
 

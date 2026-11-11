@@ -1,4 +1,5 @@
 import { EMPTY_BUFFER, editCount } from '../edit/edit-buffer';
+import { EMPTY_NAV } from '../relations/relation-logic';
 import { EDIT_TEXTS } from '../edit/edit-texts';
 import { TableView, remember, tableKey } from '../filter/filter-logic';
 import { ParamService } from '../params/param.service';
@@ -174,8 +175,19 @@ export class TabsStore {
         queueMicrotask(() => this.connections.activate(old));
         return;
       }
+      if (editCount(tab.edits()).cells > 0) {
+        // the changes belong to rows of the old connection: they are written or dropped first
+        const old = tab.connectionId();
+        this.notice.set(EDIT_TEXTS.blocksSwitch);
+        queueMicrotask(() => this.connections.activate(old));
+        return;
+      }
       tab.leaveSession();
       tab.connectionId.set(id);
+      // what the tab shows as a table is a table of the old connection: no table view of the new one
+      tab.edits.set(EMPTY_BUFFER);
+      tab.tableView.set(null);
+      tab.nav.set(EMPTY_NAV);
     });
     effect(() => {
       const tab = this.active();

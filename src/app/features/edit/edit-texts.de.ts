@@ -54,6 +54,14 @@ export const EDIT_DE: Translation<typeof EDIT_EN> = {
   failed: (row, why) => `Zeile ${row}: ${why} Nichts wurde geschrieben.`,
   notWritten: (why) => `Nichts wurde geschrieben: ${why}`,
   txOpen: 'In diesem Tab ist eine Transaktion offen: erst Commit oder Rollback.',
+  unknownOutcome:
+    'Die Verbindung ging beim Commit verloren: Ob die Zeilen geschrieben sind, ist nicht bekannt. Die Tabelle neu lesen und nachsehen.',
+  stale:
+    'Diese Änderungen wurden in einer anderen Tabelle, Verbindung oder einem anderen Ergebnis gemacht, als der Tab jetzt zeigt (andere Tabelle). Sie lassen sich nur verwerfen.',
+  staleCell: 'Die Zeilen wurden neu gelesen, seit diese Zelle geöffnet wurde: noch einmal öffnen.',
+  busy: 'Die Änderungen werden gerade geschrieben.',
+  blocksSwitch:
+    'Änderungen sind noch nicht geschrieben: erst schreiben oder verwerfen, bevor der Tab die Verbindung wechselt.',
   previewTitle: (rows) =>
     rows === 1 ? '1 Anweisung wird geschrieben' : `${rows} Anweisungen werden geschrieben`,
   previewNote:

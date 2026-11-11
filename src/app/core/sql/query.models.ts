@@ -294,5 +294,9 @@ export interface Applied {
   /** It changed no row or several: the row is not what it was when it was read. */
   readonly conflict: boolean;
   readonly error: { readonly code: string; readonly message: string } | null;
+  /** A transaction of the user's own is open on the session: nothing was tried. */
+  readonly blocked: boolean;
+  /** The connection was lost while committing: whether the rows are written is not known. */
+  readonly unknown: boolean;
   readonly tx: TxState;
 }
