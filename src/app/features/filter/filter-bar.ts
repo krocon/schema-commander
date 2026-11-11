@@ -315,6 +315,8 @@ export class FilterBar {
       whereSql: this.where(),
       order: view.spec.order,
       limit: this.limit(),
+      // reached over a key: the conditions narrow those rows further
+      keys: view.spec.keys ?? null,
     });
   }
 

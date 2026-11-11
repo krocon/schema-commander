@@ -169,3 +169,10 @@
   background: var(--hit-current-bg);
   color: var(--hit-current-text);
 }
+
+/* a cell of a foreign key: it leads to a row of another table (prompt 030) */
+.sc-result .ge-table-col-div.sc-fk .ge-table-label,
+.sc-result .ge-table-col-div.sc-fk {
+  text-decoration: underline dotted var(--accent);
+  text-underline-offset: 3px;
+}

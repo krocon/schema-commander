@@ -180,6 +180,39 @@ export const ACTIONS = [
   },
   { id: 'COLUMNS_FIT', label: 'Result: fit all column widths', group: 'View', scope: 'global' },
   { id: 'COLUMNS_RESET', label: 'Result: reset the columns', group: 'View', scope: 'global' },
+  // Following foreign keys (prompt 030)
+  {
+    id: 'FK_FOLLOW',
+    label: 'Relations: go to the referenced row',
+    group: 'Navigation',
+    scope: 'result',
+  },
+  {
+    id: 'FK_FOLLOW_TAB',
+    label: 'Relations: referenced row in a new tab',
+    group: 'Navigation',
+    scope: 'global',
+  },
+  {
+    id: 'FK_PEEK',
+    label: 'Relations: look at the referenced row',
+    group: 'Navigation',
+    scope: 'result',
+  },
+  {
+    id: 'FK_REFERENCED_BY',
+    label: 'Relations: referenced by …',
+    group: 'Navigation',
+    scope: 'result',
+  },
+  { id: 'NAV_BACK', label: 'Relations: back', group: 'Navigation', scope: 'result' },
+  { id: 'NAV_FORWARD', label: 'Relations: forward', group: 'Navigation', scope: 'result' },
+  {
+    id: 'FK_DEFINE',
+    label: 'Relations: define a relation …',
+    group: 'Navigation',
+    scope: 'global',
+  },
   // The figures of a selection (prompt 028)
   {
     id: 'SUMMARIZE_COLUMN',

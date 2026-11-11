@@ -117,6 +117,10 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
   readonly layoutChange = output<ColumnLayout>();
   /** The cells a search found. */
   readonly hits = input<HitMarks | null>(null);
+  /** The columns of the result whose cells are links to another table (prompt 030). */
+  readonly links = input<ReadonlySet<number> | null>(null);
+  /** A link was clicked with `Ctrl`/`Cmd`: follow it. */
+  readonly follow = output<void>();
 
   protected readonly settings = inject(SettingsService);
   private readonly copier = inject(CopyService);
@@ -168,6 +172,12 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
       const hits = this.hits();
       if (!this.model()) return;
       this.body?.setHits(hits);
+      this.api()?.repaint();
+    });
+    effect(() => {
+      const links = this.links();
+      if (!this.model()) return;
+      this.body?.setLinks(links);
       this.api()?.repaint();
     });
     effect(() => {
@@ -248,10 +258,18 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
     columnIndex: number;
     originalEvent?: MouseEvent;
   }): void {
-    if (event.areaIdent !== 'header' || event.columnIndex < 1 || this.local()) return;
+    if (event.columnIndex < 1 || this.local()) return;
     const column = this.body?.resultColumn(event.columnIndex) ?? -1;
     if (column < 0) return;
     const e = event.originalEvent;
+    if (event.areaIdent === 'body') {
+      // Ctrl/Cmd+click on a cell of a foreign key follows it (the click has put the cursor there)
+      if (e && (e.metaKey || e.ctrlKey) && this.links()?.has(column)) {
+        setTimeout(() => this.follow.emit());
+      }
+      return;
+    }
+    if (event.areaIdent !== 'header') return;
     this.headClick.emit({
       column,
       additive: !!e && (e.shiftKey || e.metaKey || e.ctrlKey),
@@ -447,6 +465,7 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
     body.setFormat(untracked(() => this.format()));
     body.setShown(this.resolved.shown);
     body.setHits(untracked(() => this.hits()));
+    body.setLinks(untracked(() => this.links()));
     const rows = untracked(() => this.rows());
     body.setRowCount(Math.max(rows, first.length));
     this.body = body;

@@ -1,5 +1,6 @@
 import { BuiltQuery, QueryColumn, ViewSpec } from '../../core/sql/query.models';
 import { ResultFind } from '../find/result-find';
+import { EMPTY_NAV, NavState, navReplace } from '../relations/relation-logic';
 import { ColumnLayout, EMPTY_LAYOUT, ResultGridHandle } from '../results/column-layout';
 import {
   EMPTY_VIEW,
@@ -155,6 +156,8 @@ export class QueryTab {
   readonly paramValues = signal<Readonly<Record<string, ParamValue>>>({});
   /** The statements of the last run that had parameters: to run them again with the same values. */
   private lastStatements: readonly string[] | null = null;
+  /** The table views the user came along in this tab, following foreign keys (prompt 030). */
+  readonly nav = signal<NavState>(EMPTY_NAV);
   /** Searching in the result of this tab (prompt 029). */
   readonly find: ResultFind;
   /** How the columns of the results of this tab are laid out; a table view has a layout of its table. */
@@ -629,6 +632,8 @@ export class QueryTab {
     ]);
     // the run has started: from here on the tab shows this view
     this.tableView.set(view);
+    // the place on the path shows this filter now (another table without the path ends the path)
+    this.nav.update((nav) => navReplace(nav, view));
     await run;
   }
 

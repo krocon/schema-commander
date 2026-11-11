@@ -81,14 +81,17 @@ export class TabsStore {
     connections: this.connections,
     notify: (message: string) => this.notice.set(message),
     params: this.params,
-    tableApplied: (connection: string, view: TableView) =>
+    tableApplied: (connection: string, view: TableView) => {
+      // reached over a key: where the user came from, nothing to remember for the table
+      if (view.spec.keys) return;
       this.settings.update({
         tableFilters: remember(
           this.settings.settings().tableFilters,
           tableKey(connection, view),
           view.spec,
         ),
-      }),
+      });
+    },
     record: (ran: RanStatement) => this.history.record(ran),
     confirmRun: (connection: string, statements: readonly GuardedStatement[], total: number) => {
       const profile = this.connections.profiles().find((p) => p.id === connection);

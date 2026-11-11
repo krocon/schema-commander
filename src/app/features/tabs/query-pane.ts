@@ -28,6 +28,8 @@ import { errorObjectText, errorReport } from './run-state';
 import { TabsStore } from './tabs.store';
 import { FilterBar } from '../filter/filter-bar';
 import { FindBar } from '../find/find-bar';
+import { RelationPath } from '../relations/relation-path';
+import { RelationsService } from '../relations/relations.service';
 import { ColumnLayout } from '../results/column-layout';
 import { ColumnLayouts } from '../results/column-layouts.service';
 import { sortMarks, toggleLocalSort, toggleServerOrder } from '../filter/filter-logic';
@@ -49,7 +51,7 @@ const EDITOR_MIN_W = 160;
  */
 @Component({
   selector: 'app-query-pane',
-  imports: [FilterBar, FindBar, ResultGrid, SplitterComponent, SqlEditor, ValuePanel],
+  imports: [FilterBar, FindBar, RelationPath, ResultGrid, SplitterComponent, SqlEditor, ValuePanel],
   host: {
     '[class.side]': 'side()',
     '[class.no-result]': '!settings.settings().resultVisible && !maximized()',
@@ -150,6 +152,9 @@ const EDITOR_MIN_W = 160;
           [local]="settings.settings().filterBarVisible"
         />
       }
+      @if (pathShown()) {
+        <app-relation-path [tab]="tab()" />
+      }
       @if (tab().find.open() && filterBar()) {
         <app-find-bar
           [find]="tab().find"
@@ -193,6 +198,8 @@ const EDITOR_MIN_W = 160;
                     [marks]="marks()"
                     [layout]="layout()"
                     [hits]="hits()"
+                    [links]="links()"
+                    (follow)="relations.follow(tab(), 'here')"
                     (layoutChange)="setLayout($event)"
                     (active)="onActive(r, $event)"
                     (headClick)="onHeadClick(r, $event)"
@@ -266,6 +273,8 @@ const EDITOR_MIN_W = 160;
                     [marks]="marks()"
                     [layout]="layout()"
                     [hits]="hits()"
+                    [links]="links()"
+                    (follow)="relations.follow(tab(), 'here')"
                     (layoutChange)="setLayout($event)"
                     (active)="onActive(r, $event)"
                     (headClick)="onHeadClick(r, $event)"
@@ -607,6 +616,19 @@ export class QueryPane implements OnInit, OnDestroy {
 
   private readonly editor = viewChild(SqlEditor);
   protected readonly grid = viewChild(ResultGrid);
+  protected readonly relations = inject(RelationsService);
+  /** The columns whose cells lead to another table: those of the foreign keys of a table view. */
+  protected readonly links = computed(() => {
+    const columns = this.result()?.columns;
+    return columns && this.tab().tableView() ? this.relations.links(this.tab(), columns) : null;
+  });
+  /** The path is worth a row: the tab went somewhere, or shows only the rows of some keys. */
+  protected readonly pathShown = computed(
+    () =>
+      this.tab().shown() !== 'messages' &&
+      !!this.tab().tableView() &&
+      (this.tab().nav().entries.length > 1 || !!this.tab().tableView()?.spec.keys),
+  );
   private readonly layouts = inject(ColumnLayouts);
   /** How the columns of the result are laid out: of the table of a table view, else of this tab. */
   protected readonly layout = computed(() => this.layouts.of(this.tab()));
@@ -648,6 +670,11 @@ export class QueryPane implements OnInit, OnDestroy {
       untracked(() => {
         if (!this.settings.settings().resultVisible) this.settings.update({ resultVisible: true });
       });
+    });
+    effect(() => {
+      // a table view: its foreign keys are read once, so its cells can say where they lead
+      const tab = this.tab();
+      if (tab.tableView()) void this.relations.ensure(tab);
     });
     effect((onCleanup) => {
       // the app moves the cursor of the grid from outside (search, go to row, column list)

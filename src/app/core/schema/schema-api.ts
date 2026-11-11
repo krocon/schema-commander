@@ -9,6 +9,7 @@ import {
   ObjectKind,
   SchemaInfo,
   TableInfo,
+  TableRelations,
 } from './schema.models';
 
 /**
@@ -22,6 +23,8 @@ export abstract class SchemaApi {
   abstract objects(connectionId: string, schema: string): Promise<ObjectInfo[]>;
   /** Columns, indexes, keys and triggers of a table or view. */
   abstract table(connectionId: string, schema: string, table: string): Promise<TableInfo>;
+  /** The foreign keys of a table and those that point to it (prompt 030). */
+  abstract relations(connectionId: string, schema: string, table: string): Promise<TableRelations>;
   /** Tables and views whose name holds `text`, in all schemas but the system's (at most 200). */
   abstract search(connectionId: string, text: string): Promise<Found[]>;
   /** Everything about one object and its DDL; `detail` tells overloaded routines apart. */
@@ -53,6 +56,10 @@ export class TauriSchemaApi extends SchemaApi {
 
   table(connectionId: string, schema: string, table: string): Promise<TableInfo> {
     return call('meta_table', { id: connectionId, schema, table });
+  }
+
+  relations(connectionId: string, schema: string, table: string): Promise<TableRelations> {
+    return call('meta_relations', { id: connectionId, schema, table });
   }
 
   search(connectionId: string, text: string): Promise<Found[]> {

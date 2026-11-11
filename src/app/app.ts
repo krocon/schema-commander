@@ -42,6 +42,9 @@ import { SavedStore } from './features/saved/saved.store';
 import { SnippetDialog } from './features/snippets/snippet-dialog';
 import { StatsPopover } from './features/stats/stats-popover';
 import { ColumnsPopover } from './features/find/columns-popover';
+import { RelationsDialog } from './features/relations/relations-dialog';
+import { QueryTab } from './features/tabs/query-tab';
+import { RelationsService } from './features/relations/relations.service';
 import { QueryColumn } from './core/sql/query.models';
 import { FIND_TEXTS } from './features/find/find-texts';
 import {
@@ -129,6 +132,7 @@ const SIDEBAR_MIN = 140;
     SnippetDialog,
     StatsPopover,
     ColumnsPopover,
+    RelationsDialog,
     DetailsDialog,
     MenuBar,
     SettingsDialog,
@@ -435,6 +439,9 @@ const SIDEBAR_MIN = 140;
     @if (stats.summary()) {
       <app-stats-popover />
     }
+    @if (relations.dialog()) {
+      <app-relations-dialog />
+    }
     @if (columnsOf(); as c) {
       <app-columns-popover
         [columns]="c.columns"
@@ -647,6 +654,7 @@ export class App implements OnInit, OnDestroy {
   private readonly values = inject(ValueService);
   protected readonly stats = inject(StatsService);
   protected readonly layouts = inject(ColumnLayouts);
+  protected readonly relations = inject(RelationsService);
   /** The column list is open. */
   private readonly columnsOpen = signal(false);
   /** What the column list shows: the columns of the result in front and their layout. */
@@ -1339,7 +1347,48 @@ export class App implements OnInit, OnDestroy {
       tab()?.find.show(field);
     };
     const register = this.actions.register.bind(this.actions);
+    // following foreign keys (prompt 030): in a table view, where the table of every column is known
+    const table = () => has() && !!tab()?.tableView();
+    const related = (run: (t: QueryTab) => unknown) => () => {
+      const t = tab();
+      if (t) void run(t);
+    };
     return [
+      register(
+        'FK_FOLLOW',
+        related((t) => this.relations.follow(t, 'here')),
+        table,
+      ),
+      register(
+        'FK_FOLLOW_TAB',
+        related((t) => this.relations.follow(t, 'tab')),
+        table,
+      ),
+      register(
+        'FK_PEEK',
+        related((t) => this.relations.follow(t, 'peek')),
+        table,
+      ),
+      register(
+        'FK_REFERENCED_BY',
+        related((t) => this.relations.referencedBy(t)),
+        table,
+      ),
+      register(
+        'NAV_BACK',
+        related((t) => this.relations.back(t)),
+        () => this.relations.canBack(tab() ?? null),
+      ),
+      register(
+        'NAV_FORWARD',
+        related((t) => this.relations.forward(t)),
+        () => this.relations.canForward(tab() ?? null),
+      ),
+      register(
+        'FK_DEFINE',
+        related((t) => this.relations.define(t)),
+        table,
+      ),
       register('FIND_IN_RESULT', find('text'), has),
       register('FIND_NEXT', step(1), hits),
       register('FIND_PREV', step(-1), hits),

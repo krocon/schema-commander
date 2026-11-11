@@ -160,6 +160,7 @@ const LOCAL_KEYS: readonly string[] = [
   'paramForms',
   'tableFilters',
   'columnLayouts',
+  'virtualRelations',
 ];
 
 export const EXPORT_FORMAT = 'schema-commander-settings';

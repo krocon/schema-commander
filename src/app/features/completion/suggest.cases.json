@@ -1,640 +1,358 @@
 [
- {
-  "sql": "SELECT * FROM ▮",
-  "first": [
-   "customer",
-   "order_items",
-   "orders",
-   "open_orders",
-   "Odd Name",
-   "archive.orders",
-   "archive",
-   "shop"
-  ]
- },
- {
-  "sql": "SELECT * FROM archive.▮",
-  "first": [
-   "orders"
-  ],
-  "notHas": [
-   "customer"
-  ]
- },
- {
-  "sql": "WITH big AS (SELECT id FROM orders) SELECT * FROM ▮",
-  "first": [
-   "big",
-   "customer"
-  ]
- },
- {
-  "sql": "DELETE FROM ▮",
-  "first": [
-   "customer"
-  ],
-  "has": [
-   "orders"
-  ]
- },
- {
-  "sql": "UPDATE ▮",
-  "first": [
-   "customer"
-  ]
- },
- {
-  "sql": "INSERT INTO ▮",
-  "first": [
-   "customer"
-  ]
- },
- {
-  "sql": "SELECT * FROM orders, ▮",
-  "first": [
-   "customer"
-  ]
- },
- {
-  "sql": "SELECT * FROM ▮",
-  "insert": {
-   "Odd Name": "\"Odd Name\"",
-   "archive.orders": "archive.orders"
+  {
+    "sql": "SELECT * FROM ▮",
+    "first": [
+      "customer",
+      "order_items",
+      "orders",
+      "open_orders",
+      "Odd Name",
+      "archive.orders",
+      "archive",
+      "shop"
+    ]
   },
-  "dialects": [
-   "postgres",
-   "sqlite"
-  ]
- },
- {
-  "sql": "SELECT * FROM ▮",
-  "insert": {
-   "Odd Name": "`Odd Name`"
+  {
+    "sql": "SELECT * FROM archive.▮",
+    "first": ["orders"],
+    "notHas": ["customer"]
   },
-  "dialects": [
-   "mysql"
-  ]
- },
- {
-  "sql": "SELECT * FROM ▮",
-  "insert": {
-   "Odd Name": "[Odd Name]"
+  {
+    "sql": "WITH big AS (SELECT id FROM orders) SELECT * FROM ▮",
+    "first": ["big", "customer"]
   },
-  "dialects": [
-   "sqlserver"
-  ]
- },
- {
-  "sql": "SELECT o.▮ FROM orders o JOIN customer c ON c.id = o.customer_id",
-  "exact": [
-   "id",
-   "customer_id",
-   "total",
-   "note"
-  ]
- },
- {
-  "sql": "SELECT c.▮ FROM orders o JOIN customer c ON c.id = o.customer_id",
-  "exact": [
-   "id",
-   "name"
-  ]
- },
- {
-  "sql": "SELECT orders.▮ FROM orders",
-  "exact": [
-   "id",
-   "customer_id",
-   "total",
-   "note"
-  ]
- },
- {
-  "sql": "SELECT shop.orders.▮ FROM shop.orders",
-  "exact": [
-   "id",
-   "customer_id",
-   "total",
-   "note"
-  ]
- },
- {
-  "sql": "SELECT archive.orders.▮ FROM archive.orders",
-  "exact": [
-   "id",
-   "old"
-  ]
- },
- {
-  "sql": "SELECT x.▮ FROM (SELECT id, total AS sum FROM orders) x",
-  "exact": [
-   "id",
-   "sum"
-  ]
- },
- {
-  "sql": "WITH big (a, b) AS (SELECT id, total FROM orders) SELECT big.▮ FROM big",
-  "exact": [
-   "a",
-   "b"
-  ]
- },
- {
-  "sql": "SELECT * FROM orders o WHERE o.▮",
-  "exact": [
-   "id",
-   "customer_id",
-   "total",
-   "note"
-  ]
- },
- {
-  "sql": "SELECT * FROM orders o WHERE EXISTS (SELECT 1 FROM customer c WHERE c.id = o.▮)",
-  "exact": [
-   "id",
-   "customer_id",
-   "total",
-   "note"
-  ]
- },
- {
-  "sql": "SELECT shop.▮",
-  "first": [
-   "customer",
-   "order_items",
-   "orders"
-  ]
- },
- {
-  "sql": "SELECT customer.▮",
-  "exact": [
-   "id",
-   "name"
-  ]
- },
- {
-  "sql": "SELECT zzz.▮ FROM orders",
-  "exact": []
- },
- {
-  "sql": "SELECT ▮ FROM orders",
-  "first": [
-   "id",
-   "customer_id",
-   "total",
-   "note",
-   "orders"
-  ]
- },
- {
-  "sql": "SELECT ▮ FROM orders o JOIN customer c ON c.id = o.customer_id",
-  "first": [
-   "o.id",
-   "customer_id",
-   "total",
-   "note",
-   "c.id",
-   "name",
-   "o",
-   "c"
-  ]
- },
- {
-  "sql": "SELECT ▮ FROM orders o JOIN customer c ON c.id = o.customer_id",
-  "insert": {
-   "o.id": "o.id",
-   "name": "name"
+  {
+    "sql": "DELETE FROM ▮",
+    "first": ["customer"],
+    "has": ["orders"]
+  },
+  {
+    "sql": "UPDATE ▮",
+    "first": ["customer"]
+  },
+  {
+    "sql": "INSERT INTO ▮",
+    "first": ["customer"]
+  },
+  {
+    "sql": "SELECT * FROM orders, ▮",
+    "first": ["customer"]
+  },
+  {
+    "sql": "SELECT * FROM ▮",
+    "insert": {
+      "Odd Name": "\"Odd Name\"",
+      "archive.orders": "archive.orders"
+    },
+    "dialects": ["postgres", "sqlite"]
+  },
+  {
+    "sql": "SELECT * FROM ▮",
+    "insert": {
+      "Odd Name": "`Odd Name`"
+    },
+    "dialects": ["mysql"]
+  },
+  {
+    "sql": "SELECT * FROM ▮",
+    "insert": {
+      "Odd Name": "[Odd Name]"
+    },
+    "dialects": ["sqlserver"]
+  },
+  {
+    "sql": "SELECT o.▮ FROM orders o JOIN customer c ON c.id = o.customer_id",
+    "exact": ["id", "customer_id", "total", "note"]
+  },
+  {
+    "sql": "SELECT c.▮ FROM orders o JOIN customer c ON c.id = o.customer_id",
+    "exact": ["id", "name"]
+  },
+  {
+    "sql": "SELECT orders.▮ FROM orders",
+    "exact": ["id", "customer_id", "total", "note"]
+  },
+  {
+    "sql": "SELECT shop.orders.▮ FROM shop.orders",
+    "exact": ["id", "customer_id", "total", "note"]
+  },
+  {
+    "sql": "SELECT archive.orders.▮ FROM archive.orders",
+    "exact": ["id", "old"]
+  },
+  {
+    "sql": "SELECT x.▮ FROM (SELECT id, total AS sum FROM orders) x",
+    "exact": ["id", "sum"]
+  },
+  {
+    "sql": "WITH big (a, b) AS (SELECT id, total FROM orders) SELECT big.▮ FROM big",
+    "exact": ["a", "b"]
+  },
+  {
+    "sql": "SELECT * FROM orders o WHERE o.▮",
+    "exact": ["id", "customer_id", "total", "note"]
+  },
+  {
+    "sql": "SELECT * FROM orders o WHERE EXISTS (SELECT 1 FROM customer c WHERE c.id = o.▮)",
+    "exact": ["id", "customer_id", "total", "note"]
+  },
+  {
+    "sql": "SELECT shop.▮",
+    "first": ["customer", "order_items", "orders"]
+  },
+  {
+    "sql": "SELECT customer.▮",
+    "exact": ["id", "name"]
+  },
+  {
+    "sql": "SELECT zzz.▮ FROM orders",
+    "exact": []
+  },
+  {
+    "sql": "SELECT ▮ FROM orders",
+    "first": ["id", "customer_id", "total", "note", "orders"]
+  },
+  {
+    "sql": "SELECT ▮ FROM orders o JOIN customer c ON c.id = o.customer_id",
+    "first": ["o.id", "customer_id", "total", "note", "c.id", "name", "o", "c"]
+  },
+  {
+    "sql": "SELECT ▮ FROM orders o JOIN customer c ON c.id = o.customer_id",
+    "insert": {
+      "o.id": "o.id",
+      "name": "name"
+    }
+  },
+  {
+    "sql": "SELECT * FROM orders WHERE ▮",
+    "first": ["id", "customer_id", "total", "note"],
+    "has": ["count", "coalesce", "NULL", "order_total"]
+  },
+  {
+    "sql": "SELECT ▮",
+    "has": ["count", "NULL", "CASE"],
+    "notHas": ["id"]
+  },
+  {
+    "sql": "UPDATE orders SET ▮",
+    "first": ["id", "customer_id", "total", "note"]
+  },
+  {
+    "sql": "SELECT * FROM \"Odd Name\" WHERE ▮",
+    "insert": {
+      "Größe 1": "\"Größe 1\"",
+      "select": "\"select\""
+    },
+    "dialects": ["postgres", "sqlite"]
+  },
+  {
+    "sql": "SELECT * FROM `Odd Name` WHERE ▮",
+    "insert": {
+      "Größe 1": "`Größe 1`"
+    },
+    "dialects": ["mysql"]
+  },
+  {
+    "sql": "SELECT * FROM [Odd Name] WHERE ▮",
+    "insert": {
+      "Größe 1": "[Größe 1]"
+    },
+    "dialects": ["sqlserver"]
+  },
+  {
+    "sql": "WITH big AS (SELECT id, total FROM orders) SELECT ▮ FROM big",
+    "first": ["id", "total", "big"]
+  },
+  {
+    "sql": "SELECT ▮ FROM order_items",
+    "first": ["order_id", "product", "qty"]
+  },
+  {
+    "sql": "SELECT note, count(*) AS n FROM orders GROUP BY ▮",
+    "first": ["note", "n", "id", "customer_id", "total"]
+  },
+  {
+    "sql": "SELECT o.id, c.name AS customer FROM orders o JOIN customer c ON c.id = o.customer_id ORDER BY ▮",
+    "first": ["id", "customer", "customer_id", "total"]
+  },
+  {
+    "sql": "INSERT INTO orders (▮",
+    "first": ["id, customer_id, total, note", "id", "customer_id", "total", "note"]
+  },
+  {
+    "sql": "INSERT INTO customer (▮",
+    "first": ["id, name", "id", "name"]
+  },
+  {
+    "sql": "INSERT INTO shop.orders (id, ▮",
+    "has": ["total"]
+  },
+  {
+    "sql": "SELECT * FROM orders o JOIN ▮",
+    "first": [
+      "customer c ON c.id = o.customer_id",
+      "order_items oi ON oi.order_id = o.id",
+      "customer"
+    ]
+  },
+  {
+    "sql": "SELECT * FROM customer c JOIN ▮",
+    "first": ["orders o ON o.customer_id = c.id"]
+  },
+  {
+    "sql": "SELECT * FROM orders o LEFT JOIN ▮",
+    "first": ["customer c ON c.id = o.customer_id"]
+  },
+  {
+    "sql": "SELECT * FROM order_items JOIN ▮",
+    "first": ["orders o ON o.id = order_items.order_id"]
+  },
+  {
+    "sql": "SELECT * FROM orders o JOIN customer c ON c.id = o.customer_id JOIN ▮",
+    "first": ["order_items oi ON oi.order_id = o.id"],
+    "notHas": ["customer c ON c.id = o.customer_id"]
+  },
+  {
+    "sql": "SELECT * FROM orders c JOIN ▮",
+    "first": ["customer c2 ON c2.id = c.customer_id"]
+  },
+  {
+    "sql": "▮",
+    "first": ["SELECT", "INSERT INTO", "UPDATE", "DELETE FROM", "WITH"]
+  },
+  {
+    "sql": "SELECT * FROM orders ▮",
+    "first": ["WHERE", "JOIN", "LEFT JOIN"]
+  },
+  {
+    "sql": "SELECT * FROM orders WHERE id = 1 ▮",
+    "first": ["AND", "OR", "GROUP BY", "ORDER BY"]
+  },
+  {
+    "sql": "SELECT id FROM orders ORDER BY id ▮",
+    "first": ["ASC", "DESC"]
+  },
+  {
+    "sql": "SELECT id FROM orders GROUP ▮",
+    "exact": ["BY"]
+  },
+  {
+    "sql": "SELECT * FROM orders o LEFT ▮",
+    "first": ["JOIN"]
+  },
+  {
+    "sql": "UPDATE orders ▮",
+    "exact": ["SET"]
+  },
+  {
+    "sql": "INSERT INTO orders (id) ▮",
+    "first": ["VALUES", "SELECT"]
+  },
+  {
+    "sql": "SELECT * FROM orders ▮",
+    "has": ["LIMIT"],
+    "dialects": ["postgres", "mysql", "sqlite"]
+  },
+  {
+    "sql": "SELECT * FROM orders ▮",
+    "notHas": ["LIMIT"],
+    "has": ["CROSS APPLY"],
+    "dialects": ["sqlserver"]
+  },
+  {
+    "sql": "SELECT * FROM orders WHERE id = 1 ▮",
+    "has": ["RETURNING"],
+    "dialects": ["postgres", "sqlite"]
+  },
+  {
+    "sql": "SELECT * FROM orders WHERE id = 1 ▮",
+    "notHas": ["RETURNING"],
+    "dialects": ["mysql", "sqlserver"]
+  },
+  {
+    "sql": "▮",
+    "first": ["select", "insert into"],
+    "lower": true
+  },
+  {
+    "sql": "SELECT * FROM orders WHERE ▮",
+    "has": ["null", "case"],
+    "notHas": ["NULL"],
+    "lower": true
+  },
+  {
+    "sql": "CREATE TABLE t (id ▮",
+    "has": ["integer", "text", "timestamptz"],
+    "dialects": ["postgres"]
+  },
+  {
+    "sql": "CREATE TABLE t (id ▮",
+    "has": ["int", "varchar", "datetime"],
+    "dialects": ["mysql"]
+  },
+  {
+    "sql": "CREATE TABLE t (id ▮",
+    "has": ["int", "nvarchar", "datetime2"],
+    "dialects": ["sqlserver"]
+  },
+  {
+    "sql": "CREATE TABLE t (id ▮",
+    "exact": ["INTEGER", "TEXT", "REAL", "NUMERIC", "BLOB"],
+    "dialects": ["sqlite"]
+  },
+  {
+    "sql": "SELECT CAST(total AS ▮) FROM orders",
+    "has": ["numeric"],
+    "dialects": ["postgres"]
+  },
+  {
+    "sql": "CALL ▮",
+    "exact": ["order_total"],
+    "dialects": ["postgres", "mysql"]
+  },
+  {
+    "sql": "EXEC ▮",
+    "exact": ["order_total"],
+    "dialects": ["sqlserver"]
+  },
+  {
+    "sql": "SELECT ▮ FROM orders",
+    "has": ["string_agg", "date_trunc"],
+    "notHas": ["group_concat", "getdate"],
+    "dialects": ["postgres"]
+  },
+  {
+    "sql": "SELECT ▮ FROM orders",
+    "has": ["group_concat", "ifnull"],
+    "notHas": ["string_agg", "getdate"],
+    "dialects": ["mysql"]
+  },
+  {
+    "sql": "SELECT ▮ FROM orders",
+    "has": ["getdate", "isnull"],
+    "notHas": ["group_concat", "date_trunc"],
+    "dialects": ["sqlserver"]
+  },
+  {
+    "sql": "SELECT ▮ FROM orders",
+    "has": ["strftime", "ifnull"],
+    "notHas": ["getdate", "date_trunc"],
+    "dialects": ["sqlite"]
+  },
+  {
+    "sql": "SELECT 'a ▮",
+    "exact": []
+  },
+  {
+    "sql": "SELECT id -- ▮",
+    "exact": []
+  },
+  {
+    "sql": "SELECT id AS ▮ FROM orders",
+    "exact": []
+  },
+  {
+    "sql": "SELECT * FROM orders AS ▮",
+    "exact": []
   }
- },
- {
-  "sql": "SELECT * FROM orders WHERE ▮",
-  "first": [
-   "id",
-   "customer_id",
-   "total",
-   "note"
-  ],
-  "has": [
-   "count",
-   "coalesce",
-   "NULL",
-   "order_total"
-  ]
- },
- {
-  "sql": "SELECT ▮",
-  "has": [
-   "count",
-   "NULL",
-   "CASE"
-  ],
-  "notHas": [
-   "id"
-  ]
- },
- {
-  "sql": "UPDATE orders SET ▮",
-  "first": [
-   "id",
-   "customer_id",
-   "total",
-   "note"
-  ]
- },
- {
-  "sql": "SELECT * FROM \"Odd Name\" WHERE ▮",
-  "insert": {
-   "Größe 1": "\"Größe 1\"",
-   "select": "\"select\""
-  },
-  "dialects": [
-   "postgres",
-   "sqlite"
-  ]
- },
- {
-  "sql": "SELECT * FROM `Odd Name` WHERE ▮",
-  "insert": {
-   "Größe 1": "`Größe 1`"
-  },
-  "dialects": [
-   "mysql"
-  ]
- },
- {
-  "sql": "SELECT * FROM [Odd Name] WHERE ▮",
-  "insert": {
-   "Größe 1": "[Größe 1]"
-  },
-  "dialects": [
-   "sqlserver"
-  ]
- },
- {
-  "sql": "WITH big AS (SELECT id, total FROM orders) SELECT ▮ FROM big",
-  "first": [
-   "id",
-   "total",
-   "big"
-  ]
- },
- {
-  "sql": "SELECT ▮ FROM order_items",
-  "first": [
-   "order_id",
-   "product",
-   "qty"
-  ]
- },
- {
-  "sql": "SELECT note, count(*) AS n FROM orders GROUP BY ▮",
-  "first": [
-   "note",
-   "n",
-   "id",
-   "customer_id",
-   "total"
-  ]
- },
- {
-  "sql": "SELECT o.id, c.name AS customer FROM orders o JOIN customer c ON c.id = o.customer_id ORDER BY ▮",
-  "first": [
-   "id",
-   "customer",
-   "customer_id",
-   "total"
-  ]
- },
- {
-  "sql": "INSERT INTO orders (▮",
-  "first": [
-   "id, customer_id, total, note",
-   "id",
-   "customer_id",
-   "total",
-   "note"
-  ]
- },
- {
-  "sql": "INSERT INTO customer (▮",
-  "first": [
-   "id, name",
-   "id",
-   "name"
-  ]
- },
- {
-  "sql": "INSERT INTO shop.orders (id, ▮",
-  "has": [
-   "total"
-  ]
- },
- {
-  "sql": "SELECT * FROM orders o JOIN ▮",
-  "first": [
-   "customer c ON c.id = o.customer_id",
-   "order_items oi ON oi.order_id = o.id",
-   "customer"
-  ]
- },
- {
-  "sql": "SELECT * FROM customer c JOIN ▮",
-  "first": [
-   "orders o ON o.customer_id = c.id"
-  ]
- },
- {
-  "sql": "SELECT * FROM orders o LEFT JOIN ▮",
-  "first": [
-   "customer c ON c.id = o.customer_id"
-  ]
- },
- {
-  "sql": "SELECT * FROM order_items JOIN ▮",
-  "first": [
-   "orders o ON o.id = order_items.order_id"
-  ]
- },
- {
-  "sql": "SELECT * FROM orders o JOIN customer c ON c.id = o.customer_id JOIN ▮",
-  "first": [
-   "order_items oi ON oi.order_id = o.id"
-  ],
-  "notHas": [
-   "customer c ON c.id = o.customer_id"
-  ]
- },
- {
-  "sql": "SELECT * FROM orders c JOIN ▮",
-  "first": [
-   "customer c2 ON c2.id = c.customer_id"
-  ]
- },
- {
-  "sql": "▮",
-  "first": [
-   "SELECT",
-   "INSERT INTO",
-   "UPDATE",
-   "DELETE FROM",
-   "WITH"
-  ]
- },
- {
-  "sql": "SELECT * FROM orders ▮",
-  "first": [
-   "WHERE",
-   "JOIN",
-   "LEFT JOIN"
-  ]
- },
- {
-  "sql": "SELECT * FROM orders WHERE id = 1 ▮",
-  "first": [
-   "AND",
-   "OR",
-   "GROUP BY",
-   "ORDER BY"
-  ]
- },
- {
-  "sql": "SELECT id FROM orders ORDER BY id ▮",
-  "first": [
-   "ASC",
-   "DESC"
-  ]
- },
- {
-  "sql": "SELECT id FROM orders GROUP ▮",
-  "exact": [
-   "BY"
-  ]
- },
- {
-  "sql": "SELECT * FROM orders o LEFT ▮",
-  "first": [
-   "JOIN"
-  ]
- },
- {
-  "sql": "UPDATE orders ▮",
-  "exact": [
-   "SET"
-  ]
- },
- {
-  "sql": "INSERT INTO orders (id) ▮",
-  "first": [
-   "VALUES",
-   "SELECT"
-  ]
- },
- {
-  "sql": "SELECT * FROM orders ▮",
-  "has": [
-   "LIMIT"
-  ],
-  "dialects": [
-   "postgres",
-   "mysql",
-   "sqlite"
-  ]
- },
- {
-  "sql": "SELECT * FROM orders ▮",
-  "notHas": [
-   "LIMIT"
-  ],
-  "has": [
-   "CROSS APPLY"
-  ],
-  "dialects": [
-   "sqlserver"
-  ]
- },
- {
-  "sql": "SELECT * FROM orders WHERE id = 1 ▮",
-  "has": [
-   "RETURNING"
-  ],
-  "dialects": [
-   "postgres",
-   "sqlite"
-  ]
- },
- {
-  "sql": "SELECT * FROM orders WHERE id = 1 ▮",
-  "notHas": [
-   "RETURNING"
-  ],
-  "dialects": [
-   "mysql",
-   "sqlserver"
-  ]
- },
- {
-  "sql": "▮",
-  "first": [
-   "select",
-   "insert into"
-  ],
-  "lower": true
- },
- {
-  "sql": "SELECT * FROM orders WHERE ▮",
-  "has": [
-   "null",
-   "case"
-  ],
-  "notHas": [
-   "NULL"
-  ],
-  "lower": true
- },
- {
-  "sql": "CREATE TABLE t (id ▮",
-  "has": [
-   "integer",
-   "text",
-   "timestamptz"
-  ],
-  "dialects": [
-   "postgres"
-  ]
- },
- {
-  "sql": "CREATE TABLE t (id ▮",
-  "has": [
-   "int",
-   "varchar",
-   "datetime"
-  ],
-  "dialects": [
-   "mysql"
-  ]
- },
- {
-  "sql": "CREATE TABLE t (id ▮",
-  "has": [
-   "int",
-   "nvarchar",
-   "datetime2"
-  ],
-  "dialects": [
-   "sqlserver"
-  ]
- },
- {
-  "sql": "CREATE TABLE t (id ▮",
-  "exact": [
-   "INTEGER",
-   "TEXT",
-   "REAL",
-   "NUMERIC",
-   "BLOB"
-  ],
-  "dialects": [
-   "sqlite"
-  ]
- },
- {
-  "sql": "SELECT CAST(total AS ▮) FROM orders",
-  "has": [
-   "numeric"
-  ],
-  "dialects": [
-   "postgres"
-  ]
- },
- {
-  "sql": "CALL ▮",
-  "exact": [
-   "order_total"
-  ],
-  "dialects": [
-   "postgres",
-   "mysql"
-  ]
- },
- {
-  "sql": "EXEC ▮",
-  "exact": [
-   "order_total"
-  ],
-  "dialects": [
-   "sqlserver"
-  ]
- },
- {
-  "sql": "SELECT ▮ FROM orders",
-  "has": [
-   "string_agg",
-   "date_trunc"
-  ],
-  "notHas": [
-   "group_concat",
-   "getdate"
-  ],
-  "dialects": [
-   "postgres"
-  ]
- },
- {
-  "sql": "SELECT ▮ FROM orders",
-  "has": [
-   "group_concat",
-   "ifnull"
-  ],
-  "notHas": [
-   "string_agg",
-   "getdate"
-  ],
-  "dialects": [
-   "mysql"
-  ]
- },
- {
-  "sql": "SELECT ▮ FROM orders",
-  "has": [
-   "getdate",
-   "isnull"
-  ],
-  "notHas": [
-   "group_concat",
-   "date_trunc"
-  ],
-  "dialects": [
-   "sqlserver"
-  ]
- },
- {
-  "sql": "SELECT ▮ FROM orders",
-  "has": [
-   "strftime",
-   "ifnull"
-  ],
-  "notHas": [
-   "getdate",
-   "date_trunc"
-  ],
-  "dialects": [
-   "sqlite"
-  ]
- },
- {
-  "sql": "SELECT 'a ▮",
-  "exact": []
- },
- {
-  "sql": "SELECT id -- ▮",
-  "exact": []
- },
- {
-  "sql": "SELECT id AS ▮ FROM orders",
-  "exact": []
- },
- {
-  "sql": "SELECT * FROM orders AS ▮",
-  "exact": []
- }
 ]

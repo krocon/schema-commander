@@ -102,6 +102,8 @@ export interface Settings {
   readonly tableFilters: Readonly<Record<string, TableSpecStored>>;
   /** The row for filtering a result locally is shown. */
   readonly filterBarVisible: boolean;
+  /** Relations the user defined where the database has no foreign key (prompt 030), per connection. */
+  readonly virtualRelations: Readonly<Record<string, readonly unknown[]>>;
   /** The column layout per table of a table view (prompt 029), by `tableKey`; read with `mergeLayout`. */
   readonly columnLayouts: Readonly<Record<string, ColumnLayoutStored>>;
   /** The figures of a selection the status line shows (prompt 028): keys of `MEASURES`. */
@@ -186,6 +188,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tableFilters: {},
   filterBarVisible: false,
   columnLayouts: {},
+  virtualRelations: {},
   statsMeasures: ['cells', 'sum', 'mean', 'min', 'max'],
   paramsEnabled: true,
   paramForms: {},
@@ -308,6 +311,16 @@ export function mergeSettings(saved: unknown): Settings {
           ) as Record<string, TableSpecStored>)
         : {},
     filterBarVisible: bool('filterBarVisible'),
+    virtualRelations:
+      s['virtualRelations'] &&
+      typeof s['virtualRelations'] === 'object' &&
+      !Array.isArray(s['virtualRelations'])
+        ? (Object.fromEntries(
+            Object.entries(s['virtualRelations'] as Record<string, unknown>)
+              .filter(([key, list]) => key.length <= 200 && Array.isArray(list))
+              .slice(0, 500),
+          ) as Record<string, readonly unknown[]>)
+        : {},
     columnLayouts:
       s['columnLayouts'] &&
       typeof s['columnLayouts'] === 'object' &&

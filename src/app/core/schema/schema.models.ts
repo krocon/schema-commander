@@ -108,3 +108,21 @@ export interface NameContext {
   /** `schema.name` of what was chosen lately, the latest first. */
   readonly recent: readonly string[];
 }
+
+/** Mirrors `ForeignKey` in src-tauri/src/db/relations.rs: columns of a table and what they point to. */
+export interface ForeignKey {
+  /** The name of the constraint; `''` for a relation the user defined (prompt 030). */
+  readonly name: string;
+  readonly schema: string;
+  readonly table: string;
+  readonly columns: readonly string[];
+  readonly refSchema: string;
+  readonly refTable: string;
+  readonly refColumns: readonly string[];
+}
+
+/** Mirrors `Relations`: the keys a table has, and those that point to it. */
+export interface TableRelations {
+  readonly outgoing: readonly ForeignKey[];
+  readonly incoming: readonly ForeignKey[];
+}
