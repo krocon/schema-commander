@@ -34,6 +34,7 @@ export function visibleRange(
 
 const MENU: readonly { id: NodeAction; label: string; separator?: boolean }[] = [
   { id: 'SCHEMA_OPEN_DATA', label: 'Daten öffnen' },
+  { id: 'SCHEMA_EXPORT_TABLE', label: 'Exportieren …' },
   { id: 'SCHEMA_INSERT_NAME', label: 'Name in den Editor einfügen', separator: true },
   { id: 'SCHEMA_COPY_NAME', label: 'Name kopieren' },
   { id: 'SCHEMA_COPY_QUALIFIED', label: 'Qualifizierten Namen kopieren' },

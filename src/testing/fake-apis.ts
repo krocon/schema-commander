@@ -1,3 +1,4 @@
+import { ExportApi, ExportSpec, Exported } from '../app/core/backend/export-api';
 import {
   ConnectionInfo,
   LoadedProfiles as LoadedConnections,
@@ -477,5 +478,86 @@ export class FakeHistoryApi extends HistoryApi {
           : e.id !== scope.id,
     );
     return Promise.resolve(before - this.entries.length);
+  }
+}
+
+/**
+ * An export that writes nothing: it remembers what was asked, reports progress once and resolves when
+ * `finish()` is called (or at once, unless `hold` is set). `fail` makes it reject.
+ */
+export class FakeExportApi extends ExportApi {
+  readonly results: {
+    jobId: number;
+    resultId: number;
+    rows: unknown;
+    path: string;
+    spec: ExportSpec;
+  }[] = [];
+  readonly queries: {
+    jobId: number;
+    connectionId: string;
+    sql: string;
+    path: string;
+    spec: ExportSpec;
+  }[] = [];
+  readonly cancelled: number[] = [];
+  readonly revealed: string[] = [];
+  readonly previews: ExportSpec[] = [];
+  fail: { code: string; message: string } | null = null;
+  hold = false;
+  done: Exported = { rows: 5, bytes: 120, truncated: false, cutCells: 0 };
+  private settle: (() => void) | null = null;
+
+  /** Lets a held export end. */
+  finish(): void {
+    this.settle?.();
+  }
+
+  private async run(onProgress: (rows: number) => void): Promise<Exported> {
+    onProgress(1024);
+    if (this.hold) await new Promise<void>((resolve) => (this.settle = resolve));
+    if (this.fail) throw this.fail;
+    return this.done;
+  }
+
+  exportResult(
+    jobId: number,
+    resultId: number,
+    rows: readonly (readonly [number, number])[],
+    path: string,
+    spec: ExportSpec,
+    onProgress: (rows: number) => void,
+  ): Promise<Exported> {
+    this.results.push({ jobId, resultId, rows, path, spec });
+    return this.run(onProgress);
+  }
+
+  exportQuery(
+    jobId: number,
+    connectionId: string,
+    sql: string,
+    path: string,
+    spec: ExportSpec,
+    onProgress: (rows: number) => void,
+  ): Promise<Exported> {
+    this.queries.push({ jobId, connectionId, sql, path, spec });
+    return this.run(onProgress);
+  }
+
+  cancel(jobId: number): Promise<void> {
+    this.cancelled.push(jobId);
+    this.fail = { code: 'cancelled', message: 'cancelled' };
+    this.finish();
+    return Promise.resolve();
+  }
+
+  preview(_resultId: number, spec: ExportSpec): Promise<string> {
+    this.previews.push(spec);
+    return Promise.resolve(`preview as ${spec.format}`);
+  }
+
+  reveal(path: string): Promise<void> {
+    this.revealed.push(path);
+    return Promise.resolve();
   }
 }

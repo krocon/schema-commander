@@ -22,11 +22,12 @@
   Zahl, Bool, Binär), entschärft, mit Typ im Spaltenkopf und Bereichsauswahl (Prompt 007); **Schema-Baum** der aktiven Verbindung mit Filter, Aktionen am
   Knoten und Quoting je Dialekt (Prompt 008); **Kopieren als** TSV, CSV, JSON, Markdown, HTML, INSERT, IN, WHERE
   aus dem Gitter, geschrieben von Rust (Prompt 009); **Verlauf** aller Anweisungen mit Suche, abschaltbar und
-  endgültig löschbar (Prompt 010);
+  endgültig löschbar (Prompt 010); **Export** in Dateien (CSV, TSV, JSON, NDJSON, INSERT, Markdown, HTML,
+  Excel, gzip) als Job mit Fortschritt und Abbruch (Prompt 011);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
-- **Noch nichts davon**: Bearbeiten, Export. Alle Features aus
+- **Noch nichts davon**: Bearbeiten, Import. Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–010),
+  erledigt: 001–011),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -63,7 +64,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                keyboard-dispatcher.ts (der eine keydown-Handler), ActionService (Root)
   app/core/backend/            call.ts (einzige Stelle mit invoke()), WindowApi (set_window_chrome),
                                FileDialogApi (native Öffnen-/Speichern-Dialoge: einzige Quelle für Pfade),
-                               ClipboardApi (copy_result, copy_text: die Zwischenablage gehört Rust)
+                               ClipboardApi (copy_result, copy_text: die Zwischenablage gehört Rust),
+                               ExportApi (export_result, export_query, cancel_job, reveal_export)
   app/core/connections/        Profile (Modell), ConnectionsApi, ConnectionsStore (Root: Profile, Zustände, aktive
                                Verbindung, Passwortabfrage)
   app/core/errors/             AppError + toAppError (spiegelt src-tauri/src/error.rs)
@@ -80,6 +82,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/editor/         SqlEditor (<editlicious-editor scheme="none">), editlicious.ts (Laden),
                                editor-colors.ts (Farben des Editors aus unseren Tokens),
                                sql-split.ts (rein: Skripte je Dialekt zerlegen, Katalog sql-split.cases.json)
+  app/features/export/         ExportDialog, ExportService (Root: ein Job, Statuszeile), export-logic.ts (rein)
   app/features/history/        HistoryDialog (Listbox, Vorschau), HistoryService (Root: aufzeichnen, blättern),
                                history-logic.ts (rein)
   app/features/palette/        Befehlspalette (CommandPalette, palette-logic.ts rein: unscharfe Suche)
@@ -108,6 +111,7 @@ src-tauri/                     Rust
   src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
   src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink (rein, getestet)
   src/history.rs               Verlauf: history.sqlite, Suche, Aufbewahrung, endgültiges Löschen (rein, getestet)
+  src/export.rs                Dateien schreiben: FileWriter (Text, gzip, xlsx), from_store, FileSink (rein, getestet)
   src/extract.rs               Formate (TSV, CSV, JSON, Markdown, HTML, INSERT, IN, WHERE), Literale je Dialekt (rein)
   src/copy.rs                  Auswahl eines Ergebnisses als Text: Zeilenbereiche, Spalten, Abbruch, Grenze (rein)
   src/db/meta.rs               Metadaten aus dem Systemkatalog (gebundene Parameter), quote() je Dialekt

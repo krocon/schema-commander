@@ -24,6 +24,8 @@ pub enum Format {
     Html,
     /// The values of the first column, one per line.
     Values,
+    /// One JSON object per line (export, prompt 011).
+    Ndjson,
 }
 
 /// How to write. Everything has a default, so a caller names only what it wants different.
@@ -42,6 +44,10 @@ pub struct Options {
     pub table: String,
     /// Whose literals and names `INSERT`, `IN` and `WHERE` are written in.
     pub dialect: DbKind,
+    /// Rows per `INSERT` statement; 1 = a statement per row.
+    pub batch: u32,
+    /// Keep the line break behind the last line (a file) instead of dropping it (the clipboard).
+    pub final_newline: bool,
 }
 
 impl Default for Options {
@@ -53,6 +59,8 @@ impl Default for Options {
             crlf: false,
             table: "table_name".to_string(),
             dialect: DbKind::Postgres,
+            batch: 1,
+            final_newline: false,
         }
     }
 }
@@ -91,6 +99,11 @@ fn plain_number(text: &str) -> bool {
 fn binary(cell: &Value) -> Option<(u64, &str)> {
     let map = cell.as_object()?;
     Some((map.get("bytes")?.as_u64()?, map.get("hex")?.as_str()?))
+}
+
+/// A cell as plain text; `None` for NULL.
+pub fn plain_text(cell: &Value) -> Option<String> {
+    text(cell)
 }
 
 /// A cell as plain text; `None` for NULL.
@@ -330,8 +343,11 @@ impl Extractor {
                 }
                 out.push_str(self.eol());
             }
-            Format::Json => {
-                out.push_str(if first { "\n  {" } else { ",\n  {" });
+            Format::Json | Format::Ndjson => {
+                if self.format == Format::Json {
+                    out.push_str(if first { "\n  " } else { ",\n  " });
+                }
+                out.push('{');
                 for (i, key) in json_keys(&self.columns).iter().enumerate() {
                     if i > 0 {
                         out.push_str(", ");
@@ -350,6 +366,9 @@ impl Extractor {
                     out.push_str(&written.to_string());
                 }
                 out.push('}');
+                if self.format == Format::Ndjson {
+                    out.push('\n');
+                }
             }
             Format::Markdown => {
                 out.push('|');
@@ -370,23 +389,36 @@ impl Extractor {
                 out.push_str("</tr>\n");
             }
             Format::Insert => {
-                out.push_str("INSERT INTO ");
-                out.push_str(&self.options.table);
-                out.push_str(" (");
-                for (i, c) in self.columns.iter().enumerate() {
-                    if i > 0 {
-                        out.push_str(", ");
+                let batch = u64::from(self.options.batch.max(1));
+                let starts = self.rows.is_multiple_of(batch);
+                if starts {
+                    if batch > 1 && !first {
+                        out.push_str(";\n");
                     }
-                    out.push_str(&self.name(c));
+                    out.push_str("INSERT INTO ");
+                    out.push_str(&self.options.table);
+                    out.push_str(" (");
+                    for (i, c) in self.columns.iter().enumerate() {
+                        if i > 0 {
+                            out.push_str(", ");
+                        }
+                        out.push_str(&self.name(c));
+                    }
+                    out.push_str(if batch > 1 {
+                        ") VALUES\n  ("
+                    } else {
+                        ") VALUES ("
+                    });
+                } else {
+                    out.push_str(",\n  (");
                 }
-                out.push_str(") VALUES (");
                 for (i, c) in self.columns.iter().enumerate() {
                     if i > 0 {
                         out.push_str(", ");
                     }
                     out.push_str(&literal(cell(i), c.kind, dialect));
                 }
-                out.push_str(");\n");
+                out.push_str(if batch > 1 { ")" } else { ");\n" });
             }
             Format::Inlist => {
                 let Some(c) = self.columns.first() else {
@@ -447,10 +479,25 @@ impl Extractor {
                     out.push_str("1 = 0");
                 }
             }
-            Format::Tsv | Format::Csv | Format::Markdown | Format::Insert | Format::Values => {
+            Format::Insert if self.options.batch > 1 => {
+                if self.rows > 0 {
+                    out.push(';');
+                    if self.options.final_newline {
+                        out.push('\n');
+                    }
+                }
+            }
+            Format::Tsv
+            | Format::Csv
+            | Format::Markdown
+            | Format::Insert
+            | Format::Values
+            | Format::Ndjson => {
                 // the last line break is not part of what is pasted into a cell or a query
-                while out.ends_with(['\n', '\r']) {
-                    out.pop();
+                if !self.options.final_newline {
+                    while out.ends_with(['\n', '\r']) {
+                        out.pop();
+                    }
                 }
             }
         }
@@ -821,6 +868,55 @@ mod tests {
         assert_eq!(
             extract(Format::Where, Options::default(), cols, &[]),
             "WHERE 1 = 0"
+        );
+    }
+
+    #[test]
+    fn ndjson_is_an_object_per_line() {
+        let options = Options {
+            final_newline: true,
+            ..Options::default()
+        };
+        let text = extract(Format::Ndjson, options, columns(), &nasty());
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 5);
+        assert!(text.ends_with("}\n"));
+        let second: Value = serde_json::from_str(lines[1]).unwrap();
+        assert_eq!(second["name"], json!("tab\there, \"quoted\"\nnew line"));
+        assert_eq!(second["price"], Value::Null);
+    }
+
+    #[test]
+    fn insert_in_batches_writes_several_rows_per_statement() {
+        let options = Options {
+            batch: 2,
+            table: "t".into(),
+            final_newline: true,
+            ..Options::default()
+        };
+        let cols = vec![col("id", ColKind::Int), col("name", ColKind::Text)];
+        let rows: Vec<Vec<Value>> = (1..=5)
+            .map(|i| vec![json!(i), json!(format!("n{i}"))])
+            .collect();
+        assert_eq!(
+            extract(Format::Insert, options.clone(), cols.clone(), &rows),
+            "INSERT INTO t (id, name) VALUES\n  (1, 'n1'),\n  (2, 'n2');\n\
+             INSERT INTO t (id, name) VALUES\n  (3, 'n3'),\n  (4, 'n4');\n\
+             INSERT INTO t (id, name) VALUES\n  (5, 'n5');\n"
+        );
+        assert_eq!(extract(Format::Insert, options, cols, &[]), "");
+    }
+
+    #[test]
+    fn a_file_keeps_its_last_line_break() {
+        let options = Options {
+            final_newline: true,
+            header: false,
+            ..Options::default()
+        };
+        assert_eq!(
+            extract(Format::Csv, options, columns(), &nasty()[..1]),
+            "1,plain,12.50,true\n"
         );
     }
 

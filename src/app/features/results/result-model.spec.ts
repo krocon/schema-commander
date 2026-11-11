@@ -160,6 +160,29 @@ describe('WindowAreaModel', () => {
     expect(grown.getValueAt(120, 2)).toBe('row 120');
   });
 
+  it('asks once for a page that comes back shorter than the result says', async () => {
+    // the store has 3 rows, the result claims 500
+    const s = store(3);
+    const loaded = vi.fn();
+    const model = new WindowAreaModel(s.fetch, loaded, []);
+    model.setRowCount(500);
+    expect(model.getValueAt(100, 1)).toBe('');
+    await s.flush();
+    // every repaint asks for the cell again: the page is not fetched again and again
+    for (let i = 0; i < 5; i++) {
+      expect(model.getValueAt(100, 1)).toBe('');
+      await s.flush();
+    }
+    expect(s.asked).toEqual([0]);
+    expect(loaded).toHaveBeenCalledTimes(1);
+    // rows that are there are shown
+    expect(model.getValueAt(2, 2)).toBe('row 2');
+    // when the result grows, the page is asked for again
+    model.setRowCount(600);
+    model.getValueAt(100, 1);
+    expect(s.asked).toEqual([0, 0]);
+  });
+
   it('asks nothing more once it is disposed and survives a result that is gone', async () => {
     const gone = () => Promise.reject({ code: 'unknown_result', message: 'x' });
     const model = new WindowAreaModel(gone, () => undefined, []);

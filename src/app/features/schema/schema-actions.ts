@@ -1,5 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
+import { ExportService } from '../export/export.service';
 import { CopyService } from '../results/copy.service';
 import { TabsStore } from '../tabs/tabs.store';
 import {
@@ -15,6 +16,7 @@ import { SchemaStore } from './schema.store';
 /** What can be done with a node of the schema tree (prompt 008); each is an action of the app. */
 export type NodeAction =
   | 'SCHEMA_OPEN_DATA'
+  | 'SCHEMA_EXPORT_TABLE'
   | 'SCHEMA_INSERT_NAME'
   | 'SCHEMA_COPY_NAME'
   | 'SCHEMA_COPY_QUALIFIED'
@@ -24,6 +26,7 @@ export type NodeAction =
 
 export const NODE_ACTIONS: readonly NodeAction[] = [
   'SCHEMA_OPEN_DATA',
+  'SCHEMA_EXPORT_TABLE',
   'SCHEMA_INSERT_NAME',
   'SCHEMA_COPY_NAME',
   'SCHEMA_COPY_QUALIFIED',
@@ -63,6 +66,7 @@ export function allows(action: NodeAction, row: TreeRow | null): boolean {
     case 'SCHEMA_COPY_QUALIFIED':
       return row?.kind === 'object';
     case 'SCHEMA_OPEN_DATA':
+    case 'SCHEMA_EXPORT_TABLE':
     case 'SCHEMA_SELECT_TEMPLATE':
       return isRelation(row);
     case 'SCHEMA_INSERT_TEMPLATE':
@@ -77,6 +81,7 @@ export class SchemaActions {
   private readonly tabs = inject(TabsStore);
   private readonly connections = inject(ConnectionsStore);
   private readonly copier = inject(CopyService);
+  private readonly exporter = inject(ExportService);
 
   /** Whether `action` can run on the active row of the tree. */
   can(action: NodeAction): boolean {
@@ -98,6 +103,15 @@ export class SchemaActions {
         return;
       case 'SCHEMA_COPY_QUALIFIED':
         await this.copier.copyText(qualified);
+        return;
+      case 'SCHEMA_EXPORT_TABLE':
+        this.exporter.request.set({
+          kind: 'query',
+          connectionId: this.connections.activeId(),
+          sql: `SELECT * FROM ${qualified}`,
+          name: row.label,
+          table: qualified,
+        });
         return;
       case 'SCHEMA_OPEN_DATA': {
         const sql = selectTemplate(kind, qualified);

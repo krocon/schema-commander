@@ -8,6 +8,7 @@ use crate::db::profiles::LoadedProfiles;
 use crate::db::secrets::Secret;
 use crate::db::value::Column;
 use crate::error::{AppError, AppResult, ErrorCode};
+use crate::export;
 use crate::extract::{Format, Options};
 use crate::history::{self, History};
 use crate::results::{Progress, ResultStore, StoreSink};
@@ -233,6 +234,184 @@ pub fn copy_text(clip: State<'_, ClipState>, text: String) -> AppResult<()> {
         return Err(AppError::new(ErrorCode::TooLarge, "too much text"));
     }
     clip.put(text, None)
+}
+
+/// Long work that can be stopped (prompt 011): each job has an id the frontend chose, and a flag. Also
+/// remembers which files the app wrote, so only those can be shown in the file manager.
+#[derive(Default)]
+pub struct Jobs {
+    running: parking_lot::Mutex<std::collections::HashMap<u64, JobHandle>>,
+    written: parking_lot::Mutex<std::collections::HashSet<PathBuf>>,
+}
+
+struct JobHandle {
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// The connection a statement of the job runs on.
+    connection: Option<String>,
+}
+
+impl Jobs {
+    fn start(
+        &self,
+        id: u64,
+        connection: Option<String>,
+    ) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.running.lock().insert(
+            id,
+            JobHandle {
+                stop: stop.clone(),
+                connection,
+            },
+        );
+        stop
+    }
+
+    fn end(&self, id: u64) {
+        self.running.lock().remove(&id);
+    }
+}
+
+fn export_target(path: &str) -> AppResult<PathBuf> {
+    let path = PathBuf::from(path);
+    if !path.is_absolute() || path.file_name().is_none() {
+        return Err(AppError::new(ErrorCode::Io, "the target is no full path"));
+    }
+    Ok(path)
+}
+
+/// Writes rows of a result in the store to a file (prompt 011). `path` comes from the save dialog, which
+/// has asked before replacing a file. `on_progress` hears the rows written so far.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn export_result(
+    store: State<'_, ResultStore>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    result_id: u64,
+    rows: Vec<(u64, u64)>,
+    path: String,
+    spec: export::Spec,
+    on_progress: Channel<u64>,
+) -> AppResult<export::Exported> {
+    use std::sync::atomic::Ordering;
+    let path = export_target(&path)?;
+    let stop = jobs.start(job_id, None);
+    let result = export::from_store(
+        &store,
+        result_id,
+        &rows,
+        &path,
+        &spec,
+        &|n| {
+            let _ = on_progress.send(n);
+        },
+        &|| stop.load(Ordering::Relaxed),
+    );
+    jobs.end(job_id);
+    if result.is_ok() {
+        jobs.written.lock().insert(path);
+    }
+    result
+}
+
+/// Runs a statement and writes its rows straight into a file: nothing is kept, nothing is shown.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn export_query(
+    manager: State<'_, ConnectionManager>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    id: String,
+    sql: String,
+    path: String,
+    spec: export::Spec,
+    on_progress: Channel<u64>,
+) -> AppResult<export::Exported> {
+    let path = export_target(&path)?;
+    jobs.start(job_id, Some(id.clone()));
+    let report = |n: u64| {
+        let _ = on_progress.send(n);
+    };
+    let mut sink = export::FileSink::new(&path, spec, &report);
+    let ran = manager.run_into(&id, &sql, None, &mut sink);
+    jobs.end(job_id);
+    // the statement failed or was stopped: the sink is dropped and takes its file with it
+    ran?;
+    let done = sink.finish()?;
+    jobs.written.lock().insert(path);
+    Ok(done)
+}
+
+/// Stops a job (its statement on the server too).
+#[tauri::command(async)]
+pub fn cancel_job(manager: State<'_, ConnectionManager>, jobs: State<'_, Jobs>, job_id: u64) {
+    let connection = {
+        let running = jobs.running.lock();
+        let Some(job) = running.get(&job_id) else {
+            return;
+        };
+        job.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        job.connection.clone()
+    };
+    if let Some(id) = connection {
+        manager.cancel(&id);
+    }
+}
+
+/// The first rows of a result as the export would write them (Excel: as tab-separated text).
+#[tauri::command(async)]
+pub fn export_preview(
+    store: State<'_, ResultStore>,
+    result_id: u64,
+    spec: export::Spec,
+) -> AppResult<String> {
+    let format = match spec.format {
+        export::FileFormat::Csv => Format::Csv,
+        export::FileFormat::Json => Format::Json,
+        export::FileFormat::Ndjson => Format::Ndjson,
+        export::FileFormat::Insert => Format::Insert,
+        export::FileFormat::Markdown => Format::Markdown,
+        export::FileFormat::Html => Format::Html,
+        export::FileFormat::Tsv | export::FileFormat::Xlsx => Format::Tsv,
+    };
+    let selection = Selection {
+        rows: vec![(0, 4)],
+        columns: spec.columns.clone(),
+    };
+    let (text, _) = copy::render(&store, result_id, &selection, format, spec.options, &|| {
+        false
+    })?;
+    Ok(text.chars().take(4000).collect())
+}
+
+/// Shows a file the app wrote in the file manager of the OS. Any other path is refused.
+#[tauri::command(async)]
+pub fn reveal_export(jobs: State<'_, Jobs>, path: String) -> AppResult<()> {
+    let path = PathBuf::from(path);
+    if !jobs.written.lock().contains(&path) || !path.exists() {
+        return Err(AppError::new(
+            ErrorCode::NotFound,
+            "this file is not one the app wrote",
+        ));
+    }
+    let mut command = if cfg!(target_os = "macos") {
+        let mut c = std::process::Command::new("open");
+        c.arg("-R").arg(&path);
+        c
+    } else if cfg!(target_os = "windows") {
+        let mut c = std::process::Command::new("explorer");
+        c.arg(format!("/select,{}", path.display()));
+        c
+    } else {
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg(path.parent().unwrap_or(&path));
+        c
+    };
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| AppError::new(ErrorCode::Io, format!("file manager: {e}")))
 }
 
 /// Notes a statement that ran in the history (prompt 010). Whether a connection is noted at all is the

@@ -90,6 +90,11 @@ export class WindowAreaModel extends AreaModel {
   private readonly pages = new Map<number, RowWindow>();
   private format: CellFormat = PLAIN_FORMAT;
   private readonly pending = new Set<number>();
+  /**
+   * Pages that came back with fewer rows than the result claims, and the row count they were asked at: they
+   * are not asked for again until the result grows – else every repaint would fetch, and every answer repaint.
+   */
+  private readonly short = new Map<number, number>();
   private disposed = false;
 
   constructor(
@@ -121,6 +126,7 @@ export class WindowAreaModel extends AreaModel {
   dispose(): void {
     this.disposed = true;
     this.pages.clear();
+    this.short.clear();
   }
 
   override getRowCount(): number {
@@ -175,12 +181,16 @@ export class WindowAreaModel extends AreaModel {
 
   private request(page: number): void {
     if (this.pending.has(page) || this.disposed) return;
+    if (this.short.get(page) === this.count) return;
     this.pending.add(page);
     this.fetch(page * PAGE_ROWS, PAGE_ROWS).then(
       (rows) => {
         this.pending.delete(page);
         if (this.disposed) return;
         this.pages.set(page, rows);
+        const wanted = Math.min(PAGE_ROWS, this.count - page * PAGE_ROWS);
+        if (rows.length < wanted) this.short.set(page, this.count);
+        else this.short.delete(page);
         for (const old of pagesToDrop([...this.pages.keys()], page, MAX_PAGES)) {
           this.pages.delete(old);
         }

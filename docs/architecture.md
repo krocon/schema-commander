@@ -47,6 +47,7 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | A25 | Der Schema-Baum ist eine eigene virtuelle Liste mit den Rollen eines APG-Baums, keine GuiExpert Table | Design 008 E8 |
 | A26 | Formate zum Kopieren und Exportieren schreibt Rust (`extract.rs`); die Zwischenablage gehört Rust (`arboard`, drei schmale Commands), Zeilen gehen nie durch die WebView | Design 009 E1–E2 |
 | A27 | Verlauf in eigener SQLite-Datei (`history.rs`), Suche mit `LIKE`, Löschen mit `secure_delete` + `VACUUM`; was nicht gemerkt werden soll, verlässt das Frontend nicht | Design 010 E1–E6 |
+| A28 | Export schreibt Rust zeilenweise (`export.rs`: Speicher oder `FileSink` am Treiber), neben das Ziel und benennt um; Jobs mit Id, Fortschritt über `Channel`, Abbruch | Design 011 E2, E6, E8 |
 | A10 | Oberflächentexte vorerst deutsch in den Komponenten | übernommene Galerie ist deutsch; Kataloge de/en kommen mit dem Prompt „Einstellungen und Sprache“ |
 
 ## Offene Architekturfragen (entscheidet der jeweilige Prompt)
@@ -65,6 +66,8 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | `@tauri-apps/plugin-store` / `tauri-plugin-store` | Einstellungen als JSON-Datei | wie log-commander |
 | `tauri-plugin-window-state` | Fensterposition und -größe | wie log-commander |
 | `@guiexpert/table`, `@guiexpert/angular-table` | Ergebnisgitter (später Baum, Listen) | Vorgabe; virtuelles Scrollen in beide Richtungen |
+| `rust_xlsxwriter` (`constant_memory`) | Excel-Dateien zeilenweise schreiben | Design 011 E4; reines Rust, MIT/Apache-2.0 |
+| `flate2` | gzip für exportierte Textdateien | Design 011 E5; war schon im Abhängigkeitsbaum |
 | `arboard` (ohne Bild-Feature, `wayland-data-control`) | Zwischenablage aus Rust: Text und HTML | Design 009 E1; kein Plugin mit breiter Oberfläche |
 | `editlicious-editor` | SQL-Editor | Vorgabe; große Texte, SQL-Grammatik, 13 Schemata |
 | `tauri-plugin-dialog`, `@tauri-apps/plugin-dialog` | native Öffnen-/Speichern-Dialoge (Schema-Import/-Export, später SQL-Dateien, Export) | wie log-commander; nur `dialog:allow-open`, `dialog:allow-save` |

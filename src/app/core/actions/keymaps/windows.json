@@ -17,6 +17,7 @@
   "OPEN_HISTORY": ["Mod+Shift+H"],
   "HISTORY_PREV": ["Mod+Alt+ArrowUp"],
   "HISTORY_NEXT": ["Mod+Alt+ArrowDown"],
+  "EXPORT_RESULT": ["Mod+Shift+E"],
   "TOGGLE_SIDEBAR": ["Mod+B"],
   "COLOR_SCHEME": ["Mod+Alt+T"],
   "OPEN_PALETTE": ["Mod+Shift+P", "F1"],
