@@ -1,6 +1,7 @@
 import { Injectable, effect, signal } from '@angular/core';
 import { isTauri } from '@tauri-apps/api/core';
 import { LazyStore } from '@tauri-apps/plugin-store';
+import { setLanguage, systemLanguage } from '../i18n/i18n';
 import { DEFAULT_SETTINGS, Settings, mergeKeymap, mergeSettings } from './settings.models';
 
 const STORE_KEY = 'settings';
@@ -18,6 +19,11 @@ export class SettingsService {
   readonly keymapNotice = signal<string | null>(null);
 
   constructor() {
+    // the language of every text follows the setting, at once (prompt 017)
+    effect(() => {
+      const wanted = this.settings().language;
+      setLanguage(wanted === 'system' ? systemLanguage() : wanted);
+    });
     effect(() => {
       const settings = this.settings();
       if (this.loaded()) this.scheduleSave(settings);
