@@ -239,6 +239,48 @@ impl ResultStore {
     }
 
     /// Forgets a result and removes its file. Unknown ids are fine (freed twice).
+    /// Calls `f` with the stored JSON of each row `from..to` (the cells whole, nothing cut), a chunk at a
+    /// time so that windows can be read meanwhile. `f` returns `false` to stop.
+    pub fn each_row(
+        &self,
+        id: u64,
+        from: u64,
+        to: u64,
+        f: &mut dyn FnMut(&str) -> bool,
+    ) -> AppResult<()> {
+        const CHUNK: u64 = 1_000;
+        let data = self.get(id)?;
+        let mut at = from;
+        loop {
+            let mut data = data.lock();
+            let end = to.min(data.rows());
+            if at >= end {
+                return Ok(());
+            }
+            let upto = (at + CHUNK).min(end);
+            let bytes = data.read(at, upto).map_err(io)?;
+            let base = data.offsets[at as usize];
+            let bounds: Vec<(usize, usize)> = (at..upto)
+                .map(|row| {
+                    (
+                        (data.offsets[row as usize] - base) as usize,
+                        (data.offsets[row as usize + 1] - base) as usize,
+                    )
+                })
+                .collect();
+            drop(data);
+            for (start, end) in bounds {
+                let text = std::str::from_utf8(&bytes[start..end]).map_err(|e| {
+                    AppError::new(ErrorCode::Io, format!("a stored row is damaged: {e}"))
+                })?;
+                if !f(text) {
+                    return Ok(());
+                }
+            }
+            at = upto;
+        }
+    }
+
     pub fn free(&self, id: u64) {
         self.results.lock().remove(&id);
     }

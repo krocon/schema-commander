@@ -2,8 +2,10 @@
 //! shows a window of the data.
 
 pub mod commands;
+pub mod copy;
 pub mod db;
 pub mod error;
+pub mod extract;
 pub mod menu;
 pub mod results;
 pub mod session;
@@ -40,6 +42,7 @@ pub fn run() {
             app.manage(db::manager::ConnectionManager::new(file, store));
             app.manage(session::SessionDir::new(app.path().app_data_dir()?));
             app.manage(results::ResultStore::new(&app.path().app_cache_dir()?));
+            app.manage(commands::ClipState::default());
             // A frontend that never applies a scheme must not leave the window hidden.
             let handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -57,6 +60,9 @@ pub fn run() {
             commands::close_connection,
             commands::run_query,
             commands::cancel_query,
+            commands::copy_result,
+            commands::cancel_copy,
+            commands::copy_text,
             commands::meta_schemas,
             commands::meta_objects,
             commands::meta_table,
