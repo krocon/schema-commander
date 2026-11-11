@@ -4,6 +4,7 @@ import {
   Profile,
 } from '../app/core/connections/connection.models';
 import { ConnectionsApi } from '../app/core/connections/connections-api';
+import { LoadedSession, SessionApi, SessionFile, TextFile } from '../app/core/session/session-api';
 import { QueryApi } from '../app/core/sql/query-api';
 import { QueryResult } from '../app/core/sql/query.models';
 import { FileDialogApi } from '../app/core/backend/file-dialog-api';
@@ -179,5 +180,47 @@ export class FakeFileDialogApi extends FileDialogApi {
   saveFile(title: string, defaultName: string): Promise<string | null> {
     this.asked.push(`${title}: ${defaultName}`);
     return Promise.resolve(this.path);
+  }
+}
+
+/** The session and the texts of the tabs in memory; `disk` are the files of the user by path. */
+export class FakeSessionApi extends SessionApi {
+  session: SessionFile = { version: 1, tabs: [], active: null };
+  notice: string | null = null;
+  readonly texts = new Map<string, string>();
+  readonly disk = new Map<string, TextFile>();
+  readonly saves: SessionFile[] = [];
+  /** Encodings that refuse a text (`encoding_failed`). */
+  readonly refuses = new Set<string>();
+
+  load(): Promise<LoadedSession> {
+    return Promise.resolve({ session: this.session, notice: this.notice });
+  }
+  save(session: SessionFile): Promise<void> {
+    this.session = session;
+    this.saves.push(session);
+    return Promise.resolve();
+  }
+  loadText(id: string): Promise<string> {
+    return Promise.resolve(this.texts.get(id) ?? '');
+  }
+  saveText(id: string, text: string): Promise<void> {
+    this.texts.set(id, text);
+    return Promise.resolve();
+  }
+  deleteText(id: string): Promise<void> {
+    this.texts.delete(id);
+    return Promise.resolve();
+  }
+  readFile(path: string): Promise<TextFile> {
+    const file = this.disk.get(path);
+    return file ? Promise.resolve(file) : Promise.reject({ code: 'not_found', message: path });
+  }
+  writeFile(path: string, text: string, encoding: string): Promise<void> {
+    if (this.refuses.has(encoding)) {
+      return Promise.reject({ code: 'encoding_failed', message: 'cannot hold the text' });
+    }
+    this.disk.set(path, { text, encoding });
+    return Promise.resolve();
   }
 }

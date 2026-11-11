@@ -36,6 +36,7 @@ export class ConnectionsStore {
   /** The password dialog is open for this connection. */
   readonly passwordRequest = signal<PasswordRequest | null>(null);
   private passwordWaiters: ((password: string | null) => void)[] = [];
+  private readonly activated: ((id: string) => void)[] = [];
   /** A connection attempt per id, so two callers share one. */
   private readonly opening = new Map<string, Promise<boolean>>();
 
@@ -65,8 +66,16 @@ export class ConnectionsStore {
     if (this.activeId() === DEMO_ID) void this.connect(DEMO_ID);
   }
 
+  /** Makes a connection the active one and tells who listens (the tab in front takes it). */
   activate(id: string): void {
-    if (this.profiles().some((p) => p.id === id)) this.settings.update({ activeConnection: id });
+    if (!this.profiles().some((p) => p.id === id)) return;
+    this.settings.update({ activeConnection: id });
+    for (const listener of this.activated) listener(id);
+  }
+
+  /** Called right away, in the same turn, whenever a connection is made the active one. */
+  onActivated(listener: (id: string) => void): void {
+    this.activated.push(listener);
   }
 
   /**
