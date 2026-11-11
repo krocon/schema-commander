@@ -45,7 +45,7 @@ pub fn run() {
     let builder = tauri::Builder::default();
     // Windows and Linux have no menu bar yet (prompt 018).
     #[cfg(target_os = "macos")]
-    let builder = builder.menu(menu::macos_menu);
+    let builder = builder.menu(|app| menu::macos_menu(app, "en"));
     builder
         // Native file dialogs: the only way a path gets into a command (design 001 E4).
         .plugin(tauri_plugin_dialog::init())
@@ -124,6 +124,7 @@ pub fn run() {
             commands::read_text_file,
             commands::write_text_file,
             commands::set_window_chrome,
+            commands::set_language,
             commands::load_themes,
             commands::save_themes,
             commands::import_theme,
