@@ -214,6 +214,9 @@ pub fn convert(record: &Record, plan: &LoadPlan) -> Result<RowInsert, String> {
             value = None;
         }
         if let Some(v) = value.as_mut() {
+            if v.len() > edit::MAX_VALUE_BYTES {
+                return Err(format!("{}: the value is too long", m.target.name));
+            }
             if m.decimal_comma && m.target.kind == ValueKind::Number {
                 *v = decimal_point(v);
             }
@@ -726,6 +729,15 @@ mod tests {
             Some("2026-01-05")
         );
         assert_eq!(decimal_point("1 234.5"), "1234.5");
+        // a value no statement would take is a problem of its row, not of the import
+        let long = "x".repeat(edit::MAX_VALUE_BYTES + 1);
+        assert!(
+            convert(
+                &record(&[Some(&long)]),
+                &plan(vec![map(0, "a", ValueKind::Text)])
+            )
+            .is_err()
+        );
     }
 
     #[test]

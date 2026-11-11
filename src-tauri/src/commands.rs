@@ -845,6 +845,31 @@ pub fn load_table_ddl(
     crate::db::load::create_table(manager.kind_of(&id)?, schema.as_deref(), &table, &columns)
 }
 
+/// Runs the `CREATE TABLE` of an import, as the user left it: one statement that defines something –
+/// anything else is refused – through the guard of the connection (`confirmation` from
+/// `confirm_statements`).
+#[tauri::command(async)]
+pub fn load_create_table(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    sql: String,
+    confirmation: Option<String>,
+    allow_dangerous: bool,
+) -> AppResult<()> {
+    if manager.verdict(&id, &sql, allow_dangerous)?.class != crate::db::guard::Class::Ddl {
+        return Err(AppError::new(
+            ErrorCode::PermissionDenied,
+            "only a statement that creates the table runs here",
+        ));
+    }
+    manager.admit(&id, &sql, confirmation.as_deref(), allow_dangerous)?;
+    manager.ask(&id, |session, _, stop| {
+        session
+            .query(&sql, crate::db::Limits::rows(1), stop)
+            .map(|_| ())
+    })
+}
+
 /// The statements an import stands for, to ask the guard about: the `INSERT` (of one row), and before
 /// it the `DELETE` that empties the table, if the plan wants that.
 fn import_sqls(

@@ -140,6 +140,7 @@ pub fn run() {
             commands::edit_apply,
             commands::load_preview,
             commands::load_table_ddl,
+            commands::load_create_table,
             commands::load_statements,
             commands::load_run,
             commands::meta_details,

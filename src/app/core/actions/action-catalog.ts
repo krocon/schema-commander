@@ -285,6 +285,8 @@ export const ACTIONS = [
   // Export (prompt 011)
   { id: 'EXPORT_RESULT', label: 'Export result …', group: 'File', scope: 'global' },
   { id: 'CANCEL_EXPORT', label: 'Cancel export', group: 'File', scope: 'global' },
+  // Import of a file into a table (prompt 033)
+  { id: 'IMPORT_DATA', label: 'Import data from a file …', group: 'File', scope: 'global' },
   {
     id: 'REVEAL_EXPORT',
     label: 'Show the exported file in the file manager',
@@ -491,6 +493,12 @@ export const ACTIONS = [
     scope: 'global',
   },
   { id: 'SCHEMA_EXPORT_TABLE', label: 'Export table …', group: 'Schema', scope: 'global' },
+  {
+    id: 'SCHEMA_IMPORT_TABLE',
+    label: 'Import a file into the table …',
+    group: 'Schema',
+    scope: 'global',
+  },
   { id: 'SCHEMA_DETAILS', label: 'Object details and DDL …', group: 'Schema', scope: 'global' },
   { id: 'SCHEMA_OPEN_DATA', label: 'Open the data of the table', group: 'Schema', scope: 'global' },
   {

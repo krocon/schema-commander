@@ -236,9 +236,15 @@ fn castable(type_name: &str) -> Option<String> {
         Some(at) => t.split_at(at),
         None => (t.as_str(), ""),
     };
-    Some(match base {
-        "char" | "character" | "bpchar" => format!("bpchar{brackets}"),
-        "bit" => format!("varbit{brackets}"),
+    // … and a cast to a text or bit type **with** a size cuts what is longer without a word: cast to the
+    // type without it, so the column itself refuses the value
+    let sized = base.find('(').map(|at| &base[..at]);
+    Some(match (base, sized) {
+        ("char" | "character" | "bpchar", _) | (_, Some("char" | "character" | "bpchar")) => {
+            format!("bpchar{brackets}")
+        }
+        ("bit", _) | (_, Some("bit" | "bit varying" | "varbit")) => format!("varbit{brackets}"),
+        (_, Some("character varying" | "varchar")) => format!("varchar{brackets}"),
         _ => t,
     })
 }
@@ -1258,9 +1264,9 @@ mod tests {
             ("CHAR[]", "bpchar[]"),
             ("BIT", "varbit"),
             ("character", "bpchar"),
-            ("char(10)", "char(10)"),
+            ("char(10)", "bpchar"),
             ("VARCHAR", "varchar"),
-            ("bit(8)", "bit(8)"),
+            ("bit(8)", "varbit"),
         ] {
             let q = query(vec![Condition {
                 type_name: name.into(),
@@ -1371,7 +1377,7 @@ mod tests {
             ("INT4", "int4"),
             ("timestamptz", "timestamptz"),
             ("NUMERIC(12,2)", "numeric(12,2)"),
-            ("varchar(40)", "varchar(40)"),
+            ("varchar(40)", "varchar"),
             ("TIMESTAMP WITH TIME ZONE", "timestamp with time zone"),
             ("double precision", "double precision"),
             ("int4[]", "int4[]"),
@@ -1452,5 +1458,26 @@ mod tests {
         assert_eq!(pg.params[0], Bind::Text("\\'; DROP TABLE t; --".into()));
         let plain = build(DbKind::Postgres, &query(vec![cond("c", Op::Eq, &["it's"])])).unwrap();
         assert!(plain.display.ends_with("c = 'it''s'"));
+    }
+    #[test]
+    fn a_cast_never_cuts_a_value_to_the_size_of_its_type() {
+        // the catalog names types with their size (`character varying(20)`): an explicit cast to that
+        // would cut a longer text without a word – the column itself must say no
+        for (named, cast) in [
+            ("character varying(20)", "varchar"),
+            ("varchar(5)", "varchar"),
+            ("character(3)", "bpchar"),
+            ("char(3)", "bpchar"),
+            ("bpchar(3)", "bpchar"),
+            ("bit(8)", "varbit"),
+            ("bit varying(8)", "varbit"),
+            ("varbit(8)", "varbit"),
+            ("character varying(20)[]", "varchar[]"),
+            ("numeric(12,2)", "numeric(12,2)"),
+            ("timestamp without time zone", "timestamp without time zone"),
+            ("character varying", "character varying"),
+        ] {
+            assert_eq!(castable(named).as_deref(), Some(cast), "{named}");
+        }
     }
 }

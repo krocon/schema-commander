@@ -2,6 +2,7 @@ import { TableViews } from '../filter/table-views.service';
 import { Injectable, inject } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
 import { ObjectDetailsService } from '../details/details.service';
+import { DataImportService } from '../data-import/data-import.service';
 import { ExportService } from '../export/export.service';
 import { CopyService } from '../results/copy.service';
 import { TabsStore } from '../tabs/tabs.store';
@@ -20,6 +21,7 @@ export type NodeAction =
   | 'SCHEMA_DETAILS'
   | 'SCHEMA_OPEN_DATA'
   | 'SCHEMA_EXPORT_TABLE'
+  | 'SCHEMA_IMPORT_TABLE'
   | 'SCHEMA_INSERT_NAME'
   | 'SCHEMA_COPY_NAME'
   | 'SCHEMA_COPY_QUALIFIED'
@@ -31,6 +33,7 @@ export const NODE_ACTIONS: readonly NodeAction[] = [
   'SCHEMA_DETAILS',
   'SCHEMA_OPEN_DATA',
   'SCHEMA_EXPORT_TABLE',
+  'SCHEMA_IMPORT_TABLE',
   'SCHEMA_INSERT_NAME',
   'SCHEMA_COPY_NAME',
   'SCHEMA_COPY_QUALIFIED',
@@ -74,6 +77,7 @@ export function allows(action: NodeAction, row: TreeRow | null): boolean {
     case 'SCHEMA_EXPORT_TABLE':
     case 'SCHEMA_SELECT_TEMPLATE':
       return isRelation(row);
+    case 'SCHEMA_IMPORT_TABLE':
     case 'SCHEMA_INSERT_TEMPLATE':
     case 'SCHEMA_UPDATE_TEMPLATE':
       return isRelation(row) && row?.object?.kind === 'table';
@@ -88,6 +92,7 @@ export class SchemaActions {
   private readonly connections = inject(ConnectionsStore);
   private readonly copier = inject(CopyService);
   private readonly exporter = inject(ExportService);
+  private readonly importer = inject(DataImportService);
   private readonly details = inject(ObjectDetailsService);
 
   /** Whether `action` can run on the active row of the tree. */
@@ -130,6 +135,10 @@ export class SchemaActions {
           name: row.label,
           table: qualified,
         });
+        return;
+      case 'SCHEMA_IMPORT_TABLE':
+        if (!row.object) return;
+        this.importer.open(row.schema?.name ?? null, row.object.name);
         return;
       case 'SCHEMA_OPEN_DATA': {
         if (!row.object) return;

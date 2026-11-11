@@ -26,6 +26,8 @@ import {
   tableOf,
   tablePlaceholder,
 } from './features/results/copy-logic';
+import { DataImportDialog } from './features/data-import/data-import-dialog';
+import { DataImportService } from './features/data-import/data-import.service';
 import { ExportDialog } from './features/export/export-dialog';
 import { ExportService } from './features/export/export.service';
 import { FormatMode } from './core/format/format-api';
@@ -121,6 +123,7 @@ const SIDEBAR_MIN = 140;
     ConnectionList,
     ContextMenu,
     ExportDialog,
+    DataImportDialog,
     GuardDialog,
     HistoryDialog,
     HistoryPanel,
@@ -520,6 +523,11 @@ const SIDEBAR_MIN = 140;
         <app-export-dialog [source]="source" (closed)="exporter.request.set(null)" />
       }
     }
+    @if (dataImporter.request(); as target) {
+      @defer (on immediate) {
+        <app-data-import-dialog [target]="target" (closed)="dataImporter.close()" />
+      }
+    }
     @if (importOpen()) {
       @defer (on immediate) {
         <app-import-dialog (closed)="importOpen.set(false)" />
@@ -654,6 +662,7 @@ export class App implements OnInit, OnDestroy {
   /** The mark of the active connection: its label and how it is protected. */
   protected readonly badge = computed(() => badgeText(this.connections.active()));
   protected readonly exporter = inject(ExportService);
+  protected readonly dataImporter = inject(DataImportService);
   protected readonly formatter = inject(FormatService);
   protected readonly saved = inject(SavedStore);
   protected readonly paramService = inject(ParamService);
@@ -1001,6 +1010,11 @@ export class App implements OnInit, OnDestroy {
         'EXPORT_RESULT',
         () => this.exportResult(),
         () => this.copier.current() !== null && !this.exporter.running(),
+      ),
+      this.actions.register(
+        'IMPORT_DATA',
+        () => this.dataImporter.open(),
+        () => this.connections.activeState().kind === 'open' && !this.dataImporter.running(),
       ),
       this.actions.register(
         'CANCEL_EXPORT',

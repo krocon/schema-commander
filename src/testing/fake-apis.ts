@@ -8,6 +8,14 @@ import {
 import { FormatApi, FormatDialect, FormatMode, FormatStyle } from '../app/core/format/format-api';
 import { ExportApi, ExportSpec, Exported } from '../app/core/backend/export-api';
 import {
+  DataImportApi,
+  Guess,
+  FilePreview,
+  LoadPlan,
+  Loaded,
+  SourceOptions,
+} from '../app/core/import/data-import-api';
+import {
   ConnectionInfo,
   LoadedProfiles as LoadedConnections,
   Profile,
@@ -1398,3 +1406,111 @@ export const EMPTY_STATS: ResultStats = {
   top: [],
   topPartial: false,
 };
+
+/**
+ * An import that reads and writes nothing: it remembers what was asked, reports progress once and
+ * resolves when `finish()` is called (or at once, unless `hold` is set). `fail` makes it reject.
+ */
+export class FakeDataImportApi extends DataImportApi {
+  readonly previews: { path: string; options: SourceOptions; nulls: readonly string[] }[] = [];
+  readonly runs: {
+    jobId: number;
+    connectionId: string;
+    path: string;
+    options: SourceOptions;
+    plan: LoadPlan;
+    errorPath: string | null;
+    confirmations: readonly (string | null)[];
+  }[] = [];
+  readonly created: { sql: string; confirmation: string | null }[] = [];
+  readonly cancelled: number[] = [];
+  readonly revealed: string[] = [];
+  fail: { code: string; message: string } | null = null;
+  hold = false;
+  start: FilePreview = {
+    detected: { format: 'csv', delimiter: ';', encoding: 'utf-8', header: true, gzip: false },
+    columns: ['ID', 'Note', 'extra'],
+    rows: [
+      ['1', '<b>bold</b>', 'x'],
+      ['2', null, 'y'],
+    ],
+    types: [
+      { kind: 'int', maxLen: 1, nullable: false },
+      { kind: 'text', maxLen: 11, nullable: true },
+      { kind: 'text', maxLen: 1, nullable: false },
+    ],
+    broken: 0,
+  };
+  done: Loaded = {
+    read: 2,
+    written: 2,
+    skipped: 0,
+    errors: [],
+    cancelled: false,
+    failed: false,
+    rolledBack: false,
+    errorFile: false,
+  };
+  private settle: (() => void) | null = null;
+
+  finish(): void {
+    this.settle?.();
+  }
+
+  preview(path: string, options: SourceOptions, nulls: readonly string[]): Promise<FilePreview> {
+    this.previews.push({ path, options, nulls });
+    return this.fail ? Promise.reject(this.fail) : Promise.resolve(this.start);
+  }
+
+  tableDdl(
+    _connectionId: string,
+    schema: string | null,
+    table: string,
+    columns: readonly (readonly [string, Guess])[],
+  ): Promise<string> {
+    return Promise.resolve(
+      `CREATE TABLE ${schema ? `${schema}.` : ''}${table} (${columns.map(([n, g]) => `${n} ${g.kind}`).join(', ')})`,
+    );
+  }
+
+  createTable(_connectionId: string, sql: string, confirmation: string | null): Promise<void> {
+    this.created.push({ sql, confirmation });
+    return this.fail ? Promise.reject(this.fail) : Promise.resolve();
+  }
+
+  statements(_connectionId: string, plan: LoadPlan): Promise<string[]> {
+    const insert = `INSERT INTO ${plan.table} VALUES (?)`;
+    return Promise.resolve(plan.clearFirst ? [`DELETE FROM ${plan.table}`, insert] : [insert]);
+  }
+
+  async run(
+    jobId: number,
+    connectionId: string,
+    path: string,
+    options: SourceOptions,
+    plan: LoadPlan,
+    errorPath: string | null,
+    confirmations: readonly (string | null)[],
+    _allowDangerous: boolean,
+    _timeoutMs: number,
+    onProgress: (records: number) => void,
+  ): Promise<Loaded> {
+    this.runs.push({ jobId, connectionId, path, options, plan, errorPath, confirmations });
+    onProgress(1);
+    if (this.hold) await new Promise<void>((resolve) => (this.settle = resolve));
+    if (this.fail) throw this.fail;
+    return this.done;
+  }
+
+  cancel(jobId: number): Promise<void> {
+    this.cancelled.push(jobId);
+    this.done = { ...this.done, cancelled: true, rolledBack: true, written: 0 };
+    this.finish();
+    return Promise.resolve();
+  }
+
+  reveal(path: string): Promise<void> {
+    this.revealed.push(path);
+    return Promise.resolve();
+  }
+}
