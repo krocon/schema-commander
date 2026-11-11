@@ -1510,3 +1510,79 @@ fn names_of_every_server() {
         ],
     );
 }
+
+// --- what a database says about a failed statement (prompt 022) -----------------------------------
+
+fn failure(s: &mut Box<dyn Session>, sql: &str) -> schema_commander_lib::error::AppError {
+    s.query(sql, Limits::rows(MAX_ROWS), &|| false)
+        .expect_err(sql)
+}
+
+#[test]
+#[ignore = "needs the database containers"]
+fn every_server_says_where_and_why_a_statement_failed() {
+    // PostgreSQL: the character, the SQLSTATE, DETAIL and HINT, the constraint
+    let mut s = open(&pg());
+    let e = failure(&mut s, "SELECT 'ä😀',\n  nmae FROM (SELECT 1 AS name) t");
+    let d = e.details.expect("details");
+    assert_eq!(d.sqlstate.as_deref(), Some("42703"));
+    // 12 characters, a line break and two blanks stand before `nmae`; the emoji is one character
+    assert_eq!(d.position, Some(16));
+    assert!(d.hint.is_some(), "{d:?}");
+    for sql in [
+        "DROP TABLE IF EXISTS sc_err_child",
+        "DROP TABLE IF EXISTS sc_err_parent",
+        "CREATE TABLE sc_err_parent (id int PRIMARY KEY)",
+        "CREATE TABLE sc_err_child (parent_id int CONSTRAINT sc_err_fk REFERENCES sc_err_parent (id))",
+    ] {
+        run(&mut s, sql);
+    }
+    let e = failure(&mut s, "INSERT INTO sc_err_child VALUES (7)");
+    let d = e.details.expect("details");
+    assert_eq!(d.sqlstate.as_deref(), Some("23503"));
+    assert!(
+        d.detail.as_deref().is_some_and(|t| t.contains("(7)")),
+        "{d:?}"
+    );
+    assert_eq!(d.constraint.as_deref(), Some("sc_err_fk"));
+    assert_eq!(d.table.as_deref(), Some("sc_err_child"));
+    assert_eq!(d.position, None);
+    run(&mut s, "DROP TABLE sc_err_child");
+    run(&mut s, "DROP TABLE sc_err_parent");
+
+    // MySQL and MariaDB: the text it stumbled over and its line
+    for p in [my(), maria()] {
+        let mut s = open(&p);
+        let e = failure(&mut s, "SELECT 1\nFROM dual\nWHERE 1 = = 2");
+        let d = e.details.expect("details");
+        assert_eq!(d.line, Some(3), "{d:?}");
+        assert!(
+            d.near.as_deref().is_some_and(|n| n.starts_with("= 2")),
+            "{d:?}"
+        );
+        assert!(
+            d.sqlstate.as_deref().is_some_and(|c| c.starts_with("1064")),
+            "{d:?}"
+        );
+        // an error without a place still has its number
+        let e = failure(&mut s, "SELECT * FROM sc_no_such_table");
+        let d = e.details.expect("details");
+        assert!(
+            d.sqlstate.as_deref().is_some_and(|c| c.starts_with("1146")),
+            "{d:?}"
+        );
+        assert_eq!(d.line, None);
+    }
+
+    // SQL Server: the number, the line of the batch and the name in quotes
+    let mut s = open(&ms());
+    let e = failure(&mut s, "SELECT 1\n\nFORM sys.objects");
+    let d = e.details.expect("details");
+    assert_eq!(d.line, Some(3), "{d:?}");
+    assert!(d.near.is_some(), "{d:?}");
+    assert_eq!(d.sqlstate.as_deref(), Some("102"));
+    let e = failure(&mut s, "SELECT nmae FROM sys.objects");
+    let d = e.details.expect("details");
+    assert_eq!(d.near.as_deref(), Some("nmae"));
+    assert_eq!(d.sqlstate.as_deref(), Some("207"));
+}

@@ -55,11 +55,57 @@ pub enum ErrorCode {
     Io,
 }
 
-/// Error returned by Tauri commands: `{ "code": "...", "message": "..." }`.
+/// What a database says about a failed statement beyond its message (prompt 022). Every part is
+/// optional: each database tells what it knows.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ErrorDetails {
+    /// `SQLSTATE` (PostgreSQL, MySQL) or the number of the error (SQL Server, MySQL), as text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sqlstate: Option<String>,
+    /// PostgreSQL's `DETAIL`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// PostgreSQL's `HINT`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
+    /// Where in the statement, counted in characters from 1 (PostgreSQL, SQLite).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub position: Option<u32>,
+    /// The line of the statement, from 1 (MySQL, SQL Server).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    /// The text the database stumbled over (MySQL: `near '…'`; SQL Server: the name in quotes).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub near: Option<String>,
+    /// PostgreSQL's `CONTEXT` (where in a function …).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub table: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub constraint: Option<String>,
+}
+
+impl ErrorDetails {
+    /// Nothing is known: the details are left out.
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// Error returned by Tauri commands: `{ "code": "...", "message": "...", "details": { … } }`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AppError {
     pub code: ErrorCode,
     pub message: String,
+    /// What the database told about a failed statement; absent for errors of the app itself.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<Box<ErrorDetails>>,
 }
 
 pub type AppResult<T> = Result<T, AppError>;
@@ -69,8 +115,54 @@ impl AppError {
         Self {
             code,
             message: message.into(),
+            details: None,
         }
     }
+
+    /// Adds what the database told; empty details are left out.
+    pub fn with(mut self, details: ErrorDetails) -> Self {
+        self.details = (!details.is_empty()).then(|| Box::new(details));
+        self
+    }
+}
+
+/// The text between the first pair of single quotes of a message (`Invalid column name 'nmae'.`).
+pub fn quoted_part(message: &str) -> Option<String> {
+    let start = message.find('\'')? + 1;
+    let end = start + message[start..].find('\'')?;
+    let part = &message[start..end];
+    (!part.trim().is_empty()).then(|| part.to_string())
+}
+
+/// What MySQL says where a syntax error is: `… near 'selec 1' at line 3`. The text may hold quotes of
+/// its own, so it ends at the last `' at line`.
+pub fn mysql_near(message: &str) -> (Option<String>, Option<u32>) {
+    let line = message.rfind(" at line ").and_then(|i| {
+        message[i + 9..]
+            .trim()
+            .trim_end_matches('.')
+            .parse::<u32>()
+            .ok()
+    });
+    let near = message.find("near '").and_then(|i| {
+        let rest = &message[i + 6..];
+        let end = rest.rfind("' at line").or_else(|| rest.rfind('\''))?;
+        (!rest[..end].is_empty()).then(|| rest[..end].to_string())
+    });
+    (near, line)
+}
+
+/// A byte offset into a text as a position in characters from 1 (SQLite counts bytes).
+pub fn char_position(sql: &str, byte_offset: usize) -> Option<u32> {
+    if byte_offset > sql.len() {
+        return None;
+    }
+    // an offset inside a character means that character
+    let mut end = byte_offset;
+    while !sql.is_char_boundary(end) {
+        end -= 1;
+    }
+    u32::try_from(sql[..end].chars().count() + 1).ok()
 }
 
 impl std::fmt::Display for AppError {
@@ -91,5 +183,60 @@ mod tests {
         let json = serde_json::to_value(&e).unwrap();
         assert_eq!(json["code"], "invalid_query");
         assert_eq!(json["message"], "near \"selec\": syntax error");
+        // an error of the app itself has no details at all
+        assert!(json.get("details").is_none());
+    }
+
+    #[test]
+    fn carries_what_the_database_told_and_leaves_out_what_it_did_not() {
+        let e = AppError::new(ErrorCode::InvalidQuery, "x").with(ErrorDetails {
+            sqlstate: Some("23503".into()),
+            detail: Some("Key (a)=(1) is not present in table \"t\".".into()),
+            position: Some(8),
+            constraint: Some("fk".into()),
+            ..Default::default()
+        });
+        let json = serde_json::to_value(&e).unwrap();
+        assert_eq!(json["details"]["sqlstate"], "23503");
+        assert_eq!(json["details"]["position"], 8);
+        assert_eq!(json["details"]["constraint"], "fk");
+        assert!(json["details"].get("hint").is_none());
+        // nothing known: no details
+        let none = AppError::new(ErrorCode::InvalidQuery, "x").with(ErrorDetails::default());
+        assert_eq!(none.details, None);
+    }
+
+    #[test]
+    fn reads_where_mysql_and_sql_server_stumbled() {
+        let m = "You have an error in your SQL syntax; check the manual that corresponds to your \
+                 MySQL server version for the right syntax to use near 'selec 'it''s' FROM t' at line 3";
+        assert_eq!(
+            mysql_near(m),
+            (Some("selec 'it''s' FROM t".into()), Some(3))
+        );
+        assert_eq!(mysql_near("Table 'shop.nope' doesn't exist"), (None, None));
+        assert_eq!(mysql_near("… near '' at line 1"), (None, Some(1)));
+        assert_eq!(
+            quoted_part("Invalid column name 'nmae'."),
+            Some("nmae".into())
+        );
+        assert_eq!(
+            quoted_part("Incorrect syntax near 'FORM'."),
+            Some("FORM".into())
+        );
+        assert_eq!(quoted_part("Divide by zero error encountered."), None);
+        assert_eq!(quoted_part("near ''"), None);
+    }
+
+    #[test]
+    fn turns_bytes_into_characters() {
+        let sql = "SELECT 'ä😀' FORM t";
+        // `FORM` starts behind 7 + 1 + 2 + 4 + 1 + 1 bytes
+        assert_eq!(char_position(sql, 16), Some(13));
+        assert_eq!(char_position(sql, 0), Some(1));
+        // inside the emoji: the emoji
+        assert_eq!(char_position(sql, 12), Some(10));
+        assert_eq!(char_position(sql, sql.len()), Some(19));
+        assert_eq!(char_position(sql, 999), None);
     }
 }

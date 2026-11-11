@@ -36,7 +36,15 @@ pub fn ms_error(profile: &Profile, e: &tiberius::error::Error) -> AppError {
         E::Server(t) => AppError::new(
             ErrorCode::InvalidQuery,
             format!("{} ({})", clean(t.message()), t.code()),
-        ),
+        )
+        // the line of the batch and the name the message quotes (prompt 022)
+        .with(crate::error::ErrorDetails {
+            sqlstate: Some(t.code().to_string()),
+            line: (t.line() > 0).then(|| t.line()),
+            near: crate::error::quoted_part(t.message()),
+            context: Some(t.procedure().to_string()).filter(|p| !p.is_empty()),
+            ..Default::default()
+        }),
         E::Tls(m) => AppError::new(ErrorCode::TlsFailed, format!("{on}: {}", clean(m))),
         E::Io { message, .. } => AppError::new(
             ErrorCode::ConnectionFailed,
