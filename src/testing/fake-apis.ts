@@ -3,6 +3,13 @@ import {
   LoadedProfiles as LoadedConnections,
   Profile,
 } from '../app/core/connections/connection.models';
+import {
+  ClipboardApi,
+  Copied,
+  CopyFormat,
+  CopyOptions,
+  CopySelection,
+} from '../app/core/backend/clipboard-api';
 import { ConnectionsApi } from '../app/core/connections/connections-api';
 import { LoadedSession, SessionApi, SessionFile, TextFile } from '../app/core/session/session-api';
 import { QueryApi } from '../app/core/sql/query-api';
@@ -362,5 +369,41 @@ export class FakeSchemaApi extends SchemaApi {
       }
     }
     return this.answer(`search ${text}`, found);
+  }
+}
+
+/** A clipboard that remembers what was asked of it. `fail` makes the next copy reject. */
+export class FakeClipboardApi extends ClipboardApi {
+  readonly texts: string[] = [];
+  readonly copies: {
+    resultId: number;
+    selection: CopySelection;
+    format: CopyFormat;
+    options: CopyOptions;
+  }[] = [];
+  cancelled = 0;
+  fail: { code: string; message: string } | null = null;
+
+  copyText(text: string): Promise<void> {
+    if (this.fail) return Promise.reject(this.fail);
+    this.texts.push(text);
+    return Promise.resolve();
+  }
+
+  copyResult(
+    resultId: number,
+    selection: CopySelection,
+    format: CopyFormat,
+    options: CopyOptions,
+  ): Promise<Copied> {
+    this.copies.push({ resultId, selection, format, options });
+    if (this.fail) return Promise.reject(this.fail);
+    const rows = selection.rows.reduce((n, [a, b]) => n + b - a + 1, 0) || 3;
+    return Promise.resolve({ rows, columns: selection.columns.length || 2, chars: 10 });
+  }
+
+  cancelCopy(): Promise<void> {
+    this.cancelled++;
+    return Promise.resolve();
   }
 }

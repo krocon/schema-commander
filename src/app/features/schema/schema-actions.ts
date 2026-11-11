@@ -1,5 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
+import { CopyService } from '../results/copy.service';
 import { TabsStore } from '../tabs/tabs.store';
 import {
   TreeRow,
@@ -75,6 +76,7 @@ export class SchemaActions {
   private readonly store = inject(SchemaStore);
   private readonly tabs = inject(TabsStore);
   private readonly connections = inject(ConnectionsStore);
+  private readonly copier = inject(CopyService);
 
   /** Whether `action` can run on the active row of the tree. */
   can(action: NodeAction): boolean {
@@ -92,10 +94,10 @@ export class SchemaActions {
         this.tabs.active()?.insert(row.kind === 'object' ? qualified : name);
         return;
       case 'SCHEMA_COPY_NAME':
-        await this.copy(name);
+        await this.copier.copyText(name);
         return;
       case 'SCHEMA_COPY_QUALIFIED':
-        await this.copy(qualified);
+        await this.copier.copyText(qualified);
         return;
       case 'SCHEMA_OPEN_DATA': {
         const sql = selectTemplate(kind, qualified);
@@ -118,14 +120,6 @@ export class SchemaActions {
           tab?.insert(updateSnippet(qualified, table.columns), true);
         }
       }
-    }
-  }
-
-  private async copy(text: string): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // no clipboard (no permission, no focus): nothing to copy to
     }
   }
 }

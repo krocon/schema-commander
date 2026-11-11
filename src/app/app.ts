@@ -9,6 +9,11 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { ActionId } from './core/actions/action-catalog';
+import { COPY_FORMATS, isCopyFormat, orderedFormats } from './features/results/copy-logic';
+import { CopyService } from './features/results/copy.service';
+import { ConfirmDialog, ConfirmService } from './shared/confirm';
+import { ContextMenu, MenuItem } from './shared/context-menu';
 import { NODE_ACTIONS, SchemaActions } from './features/schema/schema-actions';
 import { SchemaStore } from './features/schema/schema.store';
 import { SchemaTree } from './features/schema/schema-tree';
@@ -46,7 +51,9 @@ const SIDEBAR_MIN = 140;
   imports: [
     CommandPalette,
     ConnectionDialog,
+    ConfirmDialog,
     ConnectionList,
+    ContextMenu,
     PasswordDialog,
     SchemaTree,
     QueryPane,
@@ -163,6 +170,9 @@ const SIDEBAR_MIN = 140;
     </div>
     <footer class="status" role="status">
       <span>{{ status() }}</span>
+      @if (copier.busy()) {
+        <button type="button" class="status-button" (click)="copier.cancel()">Abbrechen</button>
+      }
       <span class="spacer"></span>
       @if (tabs.active(); as tab) {
         @if (tab.filePath()) {
@@ -173,6 +183,19 @@ const SIDEBAR_MIN = 140;
         }
       }
     </footer>
+    @if (copier.menu(); as m) {
+      <app-context-menu
+        label="Kopieren als"
+        [items]="copyItems()"
+        [x]="m.x"
+        [y]="m.y"
+        (picked)="copyAs($event)"
+        (closed)="copier.menu.set(null)"
+      />
+    }
+    @if (confirm.request(); as question) {
+      <app-confirm-dialog [request]="question" (answered)="confirm.answer($event)" />
+    }
     @if (notice(); as message) {
       <div class="notice" role="alert">
         <span>{{ message }}</span>
@@ -245,8 +268,20 @@ export class App implements OnInit, OnDestroy {
 
   protected readonly running = computed(() => this.tabs.active()?.running() ?? false);
   protected readonly status = computed(() => {
+    const copied = this.copier.message();
+    if (copied !== null) return copied;
     const tab = this.tabs.active();
     return tab ? runStatus(tab.runs(), tab.elapsedMs()) : '';
+  });
+  protected readonly copier = inject(CopyService);
+  protected readonly confirm = inject(ConfirmService);
+  /** The formats of "copy as", the one used last on top. */
+  protected readonly copyItems = computed<MenuItem[]>(() => {
+    const last = this.settings.settings().lastCopyFormat;
+    return orderedFormats(isCopyFormat(last) ? last : null).map((f) => ({
+      id: f.id,
+      label: f.label,
+    }));
   });
   protected readonly encoding = computed(() =>
     encodingLabel(this.tabs.active()?.encoding() ?? null),
@@ -370,6 +405,31 @@ export class App implements OnInit, OnDestroy {
           () => this.schemaActions.can(id),
         ),
       ),
+      this.actions.register(
+        'COPY_RESULT',
+        () => this.copier.copy(),
+        () => this.copier.can(),
+      ),
+      this.actions.register(
+        'COPY_AS',
+        () => this.copier.openMenu(),
+        () => this.copier.can(),
+      ),
+      ...COPY_FORMATS.filter((f) => f.id !== 'tsv').map((f) =>
+        this.actions.register(
+          `COPY_AS_${f.id.toUpperCase()}` as ActionId,
+          () => this.copier.copy(f.id),
+          () => this.copier.can(),
+        ),
+      ),
+      this.actions.register('TOGGLE_COPY_HEADER', () =>
+        this.settings.update({ copyHeader: !this.settings.settings().copyHeader }),
+      ),
+      this.actions.register(
+        'CANCEL_COPY',
+        () => this.copier.cancel(),
+        () => this.copier.busy(),
+      ),
       this.actions.register('TOGGLE_DIGIT_GROUPING', () =>
         this.settings.update({ groupDigits: !this.settings.settings().groupDigits }),
       ),
@@ -427,6 +487,11 @@ export class App implements OnInit, OnDestroy {
       }),
     ];
     return () => offs.forEach((off) => off());
+  }
+
+  protected copyAs(format: string): void {
+    this.copier.menu.set(null);
+    if (isCopyFormat(format)) void this.copier.copy(format);
   }
 
   /** Shows the sidebar if need be and puts the focus into the filter of the schema tree. */

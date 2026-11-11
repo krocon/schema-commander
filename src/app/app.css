@@ -148,3 +148,12 @@
   border-radius: var(--radius);
   box-shadow: 0 4px 16px rgb(0 0 0 / 40%);
 }
+
+.status-button {
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}

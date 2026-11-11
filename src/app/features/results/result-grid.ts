@@ -4,6 +4,8 @@ import { TableApi, TableModelIf } from '@guiexpert/table';
 import { ResultRef, RowWindow } from '../../core/sql/query.models';
 import { SettingsService } from '../../core/settings/settings.service';
 import { CellFormat } from './cell-format';
+import { selectionOf } from './copy-logic';
+import { CopyService } from './copy.service';
 import { PAGE_ROWS, WindowAreaModel, resultModel, resultOptions } from './result-model';
 
 /**
@@ -12,6 +14,10 @@ import { PAGE_ROWS, WindowAreaModel, resultModel, resultOptions } from './result
  */
 @Component({
   selector: 'app-result-grid',
+  host: {
+    '(copy)': 'onCopy($event)',
+    '(contextmenu)': 'onContextMenu($event)',
+  },
   imports: [TableSignalComponent],
   template: `
     @if (model(); as m) {
@@ -53,6 +59,9 @@ export class ResultGrid implements OnDestroy {
     input.required<(resultId: number, from: number, count: number) => Promise<RowWindow>>();
 
   private readonly settings = inject(SettingsService);
+  private readonly copier = inject(CopyService);
+  /** Ends telling the copy service what is selected here. */
+  private unregister: (() => void) | null = null;
   protected readonly options = resultOptions();
   /** A new result is a new model: the table starts over. `null` while its first rows are read. */
   protected readonly model = signal<TableModelIf | null>(null);
@@ -88,13 +97,35 @@ export class ResultGrid implements OnDestroy {
     return { groupDigits: this.settings.settings().groupDigits };
   }
 
+  /** `Mod+C` in the grid: the selection, tab-separated. */
+  protected onCopy(event: ClipboardEvent): void {
+    event.preventDefault();
+    void this.copier.copy();
+  }
+
+  protected onContextMenu(event: MouseEvent): void {
+    event.preventDefault();
+    this.copier.openMenu(event.clientX, event.clientY);
+  }
+
   ngOnDestroy(): void {
+    this.unregister?.();
     this.generation++;
     this.body?.dispose();
   }
 
   private async show(result: ResultRef): Promise<void> {
     const generation = ++this.generation;
+    this.unregister?.();
+    const selection = this.options.getSelectionModel?.();
+    selection?.clear();
+    this.unregister = this.copier.register(result.resultId, () =>
+      selectionOf(
+        selection?.getRanges() ?? [],
+        selection?.isAllSelected() ?? false,
+        result.columns.length,
+      ),
+    );
     this.body?.dispose();
     this.body = null;
     this.model.set(null);
