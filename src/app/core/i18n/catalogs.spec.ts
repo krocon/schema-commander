@@ -13,6 +13,7 @@ import '../../features/connections/connection-texts';
 import '../../features/connections/import-texts';
 import '../../features/details/details-texts';
 import '../../features/editor/editor-texts';
+import '../../features/data-import/data-import-texts';
 import '../../features/export/export-texts';
 import '../../features/filter/filter-texts';
 import '../../features/format/format-texts';
@@ -45,6 +46,8 @@ const SAME = new Set<string>([
   '…',
   'Alt',
   'CSV',
+  'CSV / TSV',
+  'CSV, TSV, JSON, NDJSON',
   'Commit',
   'DEFAULT',
   'DBeaver (data-sources.json)',
@@ -103,7 +106,7 @@ const SAME = new Set<string>([
   '~/.pgpass (PostgreSQL)',
 ]);
 
-const CATALOG_FILES = 36;
+const CATALOG_FILES = 37;
 const SAMPLE_ARGS: unknown[] = [2, 'x', 3, 4];
 
 function walk(path: string, en: unknown, de: unknown, problems: string[], same: string[]): void {

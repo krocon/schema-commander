@@ -12,6 +12,7 @@ export const SCHEMA_DE: Translation<typeof SCHEMA_EN> = {
   menuLabel: 'Aktionen für das Objekt',
   openData: 'Daten öffnen',
   exportTable: 'Exportieren …',
+  importTable: 'Datei importieren …',
   insertName: 'Name in den Editor einfügen',
   copyName: 'Name kopieren',
   copyQualified: 'Qualifizierten Namen kopieren',

@@ -41,6 +41,12 @@ fn decode_1252(bytes: &[u8]) -> String {
         .collect()
 }
 
+/// Bytes of Windows-1252 as text (every byte is a character there): for readers that take a file piece
+/// by piece (the import, prompt 033).
+pub fn decode_windows_1252(bytes: &[u8]) -> String {
+    decode_1252(bytes)
+}
+
 fn encode_1252(text: &str) -> Option<Vec<u8>> {
     text.chars()
         .map(|c| match c as u32 {

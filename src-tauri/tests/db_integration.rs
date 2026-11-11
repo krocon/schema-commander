@@ -2506,3 +2506,498 @@ fn a_failed_insert_can_be_tried_again_from_a_savepoint() {
         run(&mut s, "DROP TABLE sc_save");
     }
 }
+
+// ── Import of a file into a table (prompt 033) ───────────────────────────────
+
+use schema_commander_lib::data_import::{Source, SourceOptions};
+use schema_commander_lib::db::load::{
+    DateOrder, LoadPlan, Loaded, Mapping, OnError, TargetColumn, load,
+};
+use schema_commander_lib::export::{FileFormat, FileSink, Spec};
+
+/// The mapping of the test tables, with the types as the catalog of the server names them.
+fn load_plan(s: &mut Box<dyn Session>, kind: DbKind, table: &str, local: bool) -> LoadPlan {
+    let schema = match kind {
+        DbKind::Postgres => "public",
+        DbKind::Mysql => "shop",
+        DbKind::Sqlserver => "dbo",
+        DbKind::Sqlite => "main",
+    };
+    let info = meta::table(s.as_mut(), kind, schema, table, &|| false).unwrap();
+    let mappings = info
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let value_kind = match c.name.as_str() {
+                "id" | "amount" => ValueKind::Number,
+                // also MySQL's `tinyint(1)`: its driver calls that a boolean, an export writes `true`
+                "ok" => ValueKind::Bool,
+                _ => ValueKind::Text,
+            };
+            Mapping {
+                source: Some(i),
+                fixed: None,
+                target: TargetColumn {
+                    name: c.name.clone(),
+                    kind: value_kind,
+                    type_name: c.type_name.clone(),
+                },
+                trim: false,
+                // the file of the test is written the German way; an export is not
+                decimal_comma: local && value_kind == ValueKind::Number,
+                date_order: (local && c.name == "day").then_some(DateOrder::Dmy),
+            }
+        })
+        .collect();
+    LoadPlan {
+        schema: Some(schema.into()),
+        table: table.into(),
+        mappings,
+        null_texts: vec!["NULL".into()],
+        empty_is_null: true,
+        clear_first: false,
+        on_error: OnError::Abort,
+        whole_transaction: true,
+    }
+}
+
+fn load_file(
+    s: &mut Box<dyn Session>,
+    kind: DbKind,
+    path: &std::path::Path,
+    plan: &LoadPlan,
+    errors: Option<&std::path::Path>,
+    stop: &(dyn Fn() -> bool + Sync),
+) -> Loaded {
+    load_file_seen(s, kind, path, plan, errors, &|_| {}, stop)
+}
+
+fn load_file_seen(
+    s: &mut Box<dyn Session>,
+    kind: DbKind,
+    path: &std::path::Path,
+    plan: &LoadPlan,
+    errors: Option<&std::path::Path>,
+    progress: &dyn Fn(u64),
+    stop: &(dyn Fn() -> bool + Sync),
+) -> Loaded {
+    let mut source = Source::open(path, &SourceOptions::default()).unwrap();
+    load(
+        s.as_mut(),
+        kind,
+        &mut source,
+        plan,
+        errors,
+        None,
+        progress,
+        stop,
+    )
+    .unwrap()
+}
+
+/// Loads a file with good and bad rows into a table of every server – leaving bad rows out, and all or
+/// nothing –, then writes the table to a file with the export (prompt 011) and loads that into a second
+/// table: both hold the same.
+#[test]
+#[ignore]
+fn a_file_is_loaded_into_a_table_and_comes_back_the_same() {
+    const GOOD: u64 = 3_000;
+    for (p, product) in [
+        (pg(), "postgres"),
+        (my(), "mysql"),
+        (maria(), "mariadb"),
+        (ms(), "sqlserver"),
+    ] {
+        let kind = p.kind;
+        let mut s = open(&p);
+        let (text, long, boolean) = match kind {
+            DbKind::Sqlserver => ("nvarchar(20)", "nvarchar(max)", "bit"),
+            DbKind::Mysql => ("varchar(20)", "text", "tinyint(1)"),
+            _ => ("varchar(20)", "text", "boolean"),
+        };
+        for table in ["sc_load", "sc_load2"] {
+            run(&mut s, &format!("DROP TABLE IF EXISTS {table}"));
+            run(
+                &mut s,
+                &format!(
+                    "CREATE TABLE {table} (id int NOT NULL PRIMARY KEY, name {text} NOT NULL, \
+                     amount decimal(12,2), day date, ok {boolean}, note {long})"
+                ),
+            );
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("in.csv");
+        let mut csv = String::from("id;name;amount;day;ok;note\n");
+        for i in 1..=GOOD {
+            csv.push_str(&format!(
+                "{i};name {i};{},{:02};{:02}.{:02}.2026;{};\"note; with \"\"quotes\"\"\nand a second line {i}\"\n",
+                i * 3,
+                i % 100,
+                i % 28 + 1,
+                i % 12 + 1,
+                i % 2,
+            ));
+        }
+        // rows that try, and rows without values
+        csv.push_str("900001;O'Hara;1.234,50;05.03.2026;1;\"'); DROP TABLE sc_load; --\"\n");
+        csv.push_str("900002;\"Zoë ä€ ß\";;;;NULL\n");
+        // rows the table refuses: no name, a name too long, a key twice, no such day, no number
+        // (two lines each for the 3000 rows before them: these are the lines 6004 … 6008)
+        csv.push_str("900003;;1,00;05.03.2026;1;no name\n");
+        csv.push_str("900004;this name is longer than twenty characters;1,00;05.03.2026;1;x\n");
+        csv.push_str("1;again;1,00;05.03.2026;1;x\n");
+        csv.push_str("900006;day;1,00;31.02.2026;1;x\n");
+        csv.push_str("900007;amount;abc;05.03.2026;1;x\n");
+        csv.push_str("900008;last;7,25;01.01.2026;0;the last one\n");
+        std::fs::write(&file, &csv).unwrap();
+        let good = GOOD + 3;
+
+        // all or nothing: a bad row, and the table is as it was
+        let whole = load_plan(&mut s, kind, "sc_load", true);
+        let failed = load_file(&mut s, kind, &file, &whole, None, &|| false);
+        assert!(failed.failed && failed.rolled_back, "{product}: {failed:?}");
+        assert_eq!(failed.written, 0, "{product}");
+        assert_eq!(
+            rows(&run(&mut s, "SELECT COUNT(*) FROM sc_load")),
+            json!([[0]]),
+            "{product}"
+        );
+
+        // leaving out what the table refuses: the rest is there, the bad rows are in the error file
+        let errors = dir.path().join("errors.tsv");
+        let skipping = LoadPlan {
+            on_error: OnError::Skip,
+            ..whole.clone()
+        };
+        let done = load_file(&mut s, kind, &file, &skipping, Some(&errors), &|| false);
+        assert_eq!(
+            (done.read, done.written, done.skipped),
+            (good + 5, good, 5),
+            "{product}: {:?}",
+            done.errors
+        );
+        assert!(done.error_file && !done.failed, "{product}");
+        let noted = std::fs::read_to_string(&errors).unwrap();
+        // (a value that cannot be converted is noted when it is read, a row the table refuses when its
+        // block was written: the file is not in the order of the lines)
+        let mut lines: Vec<u64> = noted
+            .lines()
+            .skip(1)
+            .map(|l| l.split('\t').next().unwrap().parse().unwrap())
+            .collect();
+        lines.sort_unstable();
+        assert_eq!(lines, [6004, 6005, 6006, 6007, 6008], "{product}: {noted}");
+        assert!(noted.contains("900004;this name is longer"), "{product}");
+        assert_eq!(
+            rows(&run(&mut s, "SELECT COUNT(*) FROM sc_load")),
+            json!([[good]]),
+            "{product}"
+        );
+        // the values arrived as they are – and nothing of them ran
+        let special = run(
+            &mut s,
+            "SELECT name, CAST(amount AS char(20)), note FROM sc_load WHERE id IN (900001, 900002) ORDER BY id",
+        );
+        let special = rows(&special);
+        assert_eq!(special[0][0], "O'Hara", "{product}");
+        assert_eq!(
+            special[0][1].as_str().unwrap().trim(),
+            "1234.50",
+            "{product}"
+        );
+        assert_eq!(special[0][2], "'); DROP TABLE sc_load; --", "{product}");
+        assert_eq!(special[1][0], "Zoë ä€ ß", "{product}");
+        assert!(
+            special[1][1].is_null() && special[1][2].is_null(),
+            "{product}"
+        );
+        let multi = run(&mut s, "SELECT note FROM sc_load WHERE id = 7");
+        assert_eq!(
+            rows(&multi)[0][0],
+            "note; with \"quotes\"\nand a second line 7",
+            "{product}"
+        );
+
+        // the round trip: export the table, load the export into a second one
+        let out = dir.path().join("out.csv");
+        let spec = Spec {
+            format: FileFormat::Csv,
+            options: Default::default(),
+            bom: false,
+            gzip: false,
+            columns: Vec::new(),
+        };
+        let quiet = |_: u64| {};
+        let mut sink = FileSink::new(&out, spec, &quiet);
+        s.execute(
+            "SELECT id, name, amount, day, ok, note FROM sc_load ORDER BY id",
+            Limits::rows(MAX_ROWS),
+            &mut sink,
+            &|| false,
+        )
+        .unwrap();
+        sink.finish().unwrap();
+        let back = LoadPlan {
+            null_texts: Vec::new(),
+            ..load_plan(&mut s, kind, "sc_load2", false)
+        };
+        let again = load_file(&mut s, kind, &out, &back, None, &|| false);
+        assert_eq!(
+            (again.read, again.written, again.failed),
+            (good, good, false),
+            "{product}: {:?}",
+            again.errors
+        );
+        let all = "SELECT id, name, amount, day, ok, note FROM";
+        assert_eq!(
+            rows(&run(&mut s, &format!("{all} sc_load ORDER BY id"))),
+            rows(&run(&mut s, &format!("{all} sc_load2 ORDER BY id"))),
+            "{product}"
+        );
+
+        // emptying first and stopping on the way, block by block: what was written so far stays, and
+        // the report says how much
+        // (stopped once the first blocks are through: the progress says so)
+        let far = AtomicBool::new(false);
+        let seen = |n: u64| {
+            if n >= 600 {
+                far.store(true, Ordering::Relaxed);
+            }
+        };
+        let blocks = LoadPlan {
+            clear_first: true,
+            whole_transaction: false,
+            ..back.clone()
+        };
+        let stopped = load_file_seen(&mut s, kind, &out, &blocks, None, &seen, &|| {
+            far.load(Ordering::Relaxed)
+        });
+        assert!(stopped.cancelled && !stopped.rolled_back, "{product}");
+        assert!(
+            stopped.written >= 600 && stopped.written < good,
+            "{product}: {stopped:?}"
+        );
+        let mut s = if s.is_open() { s } else { open(&p) };
+        assert_eq!(
+            rows(&run(&mut s, "SELECT COUNT(*) FROM sc_load2")),
+            json!([[stopped.written]]),
+            "{product}"
+        );
+        // … and in one transaction nothing of it: the rows that were there are there again
+        let before = stopped.written;
+        far.store(false, Ordering::Relaxed);
+        let whole_stop = LoadPlan {
+            clear_first: true,
+            ..back
+        };
+        let undone = load_file_seen(&mut s, kind, &out, &whole_stop, None, &seen, &|| {
+            far.load(Ordering::Relaxed)
+        });
+        assert!(undone.cancelled && undone.rolled_back, "{product}");
+        let mut s = if s.is_open() { s } else { open(&p) };
+        assert_eq!(
+            rows(&run(&mut s, "SELECT COUNT(*) FROM sc_load2")),
+            json!([[before]]),
+            "{product}"
+        );
+        run(&mut s, "DROP TABLE sc_load");
+        run(&mut s, "DROP TABLE sc_load2");
+    }
+}
+
+/// A large file goes through block by block: the rows that arrive are the rows of the file (count and
+/// sums), read as a stream and written 200 at a time.
+#[test]
+#[ignore]
+fn a_large_file_is_loaded_block_by_block() {
+    use std::io::Write;
+    const ROWS: u64 = 500_000;
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("big.csv");
+    {
+        let mut out = std::io::BufWriter::new(std::fs::File::create(&file).unwrap());
+        writeln!(out, "id,name,amount,day,ok,note").unwrap();
+        for i in 1..=ROWS {
+            writeln!(
+                out,
+                "{i},name {i},{}.{:02},2026-{:02}-{:02},{},note {i}",
+                i % 1000,
+                i % 100,
+                i % 12 + 1,
+                i % 28 + 1,
+                i % 2
+            )
+            .unwrap();
+        }
+    }
+    let p = pg();
+    let mut s = open(&p);
+    run(&mut s, "DROP TABLE IF EXISTS sc_load");
+    run(
+        &mut s,
+        "CREATE TABLE sc_load (id int NOT NULL PRIMARY KEY, name varchar(20) NOT NULL, \
+         amount decimal(12,2), day date, ok boolean, note text)",
+    );
+    let plan = LoadPlan {
+        whole_transaction: false,
+        ..load_plan(&mut s, p.kind, "sc_load", false)
+    };
+    let started = Instant::now();
+    let done = load_file(&mut s, p.kind, &file, &plan, None, &|| false);
+    eprintln!("{ROWS} rows in {:?}", started.elapsed());
+    assert_eq!((done.read, done.written, done.skipped), (ROWS, ROWS, 0));
+    assert_eq!(
+        rows(&run(
+            &mut s,
+            "SELECT COUNT(*), CAST(SUM(id) AS text), CAST(SUM(amount) AS text) FROM sc_load"
+        )),
+        json!([[ROWS, (ROWS * (ROWS + 1) / 2).to_string(), "249997500.00"]])
+    );
+    run(&mut s, "DROP TABLE sc_load");
+}
+
+/// Review 033: a table without transactions (MyISAM, Aria) is not loaded "all or nothing", and a row
+/// that fails does not leave the rows before it in the table twice.
+#[test]
+#[ignore]
+fn a_table_without_transactions_is_loaded_row_by_row() {
+    for (p, product) in [(my(), "mysql"), (maria(), "mariadb")] {
+        let kind = p.kind;
+        let mut s = open(&p);
+        run(&mut s, "DROP TABLE IF EXISTS sc_load");
+        // no key: nothing but the import itself keeps a row from being there twice
+        run(
+            &mut s,
+            "CREATE TABLE sc_load (id int NOT NULL, name varchar(5) NOT NULL) ENGINE=MyISAM",
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("in.csv");
+        std::fs::write(&file, "id,name\n1,a\n2,b\n3,much too long\n4,d\n").unwrap();
+        let info = meta::table(s.as_mut(), kind, "shop", "sc_load", &|| false).unwrap();
+        let plan = LoadPlan {
+            schema: Some("shop".into()),
+            table: "sc_load".into(),
+            mappings: info
+                .columns
+                .iter()
+                .enumerate()
+                .map(|(i, c)| Mapping {
+                    source: Some(i),
+                    fixed: None,
+                    target: TargetColumn {
+                        name: c.name.clone(),
+                        kind: if i == 0 {
+                            ValueKind::Number
+                        } else {
+                            ValueKind::Text
+                        },
+                        type_name: c.type_name.clone(),
+                    },
+                    trim: false,
+                    decimal_comma: false,
+                    date_order: None,
+                })
+                .collect(),
+            null_texts: Vec::new(),
+            empty_is_null: true,
+            clear_first: false,
+            on_error: OnError::Abort,
+            whole_transaction: true,
+        };
+        let mut source = Source::open(&file, &SourceOptions::default()).unwrap();
+        let refused = load(
+            s.as_mut(),
+            kind,
+            &mut source,
+            &plan,
+            None,
+            None,
+            &|_| {},
+            &|| false,
+        );
+        assert!(
+            refused.is_err(),
+            "{product}: all or nothing cannot be promised"
+        );
+        let skipping = LoadPlan {
+            on_error: OnError::Skip,
+            ..plan
+        };
+        let done = load_file(&mut s, kind, &file, &skipping, None, &|| false);
+        assert_eq!(
+            (done.written, done.skipped),
+            (3, 1),
+            "{product}: {:?}",
+            done.errors
+        );
+        assert_eq!(
+            rows(&run(&mut s, "SELECT id FROM sc_load ORDER BY id")),
+            json!([[1], [2], [4]]),
+            "{product}"
+        );
+        run(&mut s, "DROP TABLE sc_load");
+    }
+}
+
+/// Review 033: SQL Server reads a day for a `datetime` the same, whatever the language of the login.
+#[test]
+#[ignore]
+fn sqlserver_reads_a_day_the_same_in_every_language() {
+    let p = ms();
+    let mut s = open(&p);
+    run(&mut s, "DROP TABLE IF EXISTS sc_load");
+    run(
+        &mut s,
+        "CREATE TABLE sc_load (id int NOT NULL PRIMARY KEY, at datetime, short smalldatetime)",
+    );
+    run(&mut s, "SET LANGUAGE German");
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("in.csv");
+    std::fs::write(
+        &file,
+        "id,at,short\n1,2026-03-05,2026-03-05 10:30\n2,2026-12-31 23:59:58,2026-03-05\n",
+    )
+    .unwrap();
+    let info = meta::table(s.as_mut(), p.kind, "dbo", "sc_load", &|| false).unwrap();
+    let plan = LoadPlan {
+        schema: Some("dbo".into()),
+        table: "sc_load".into(),
+        mappings: info
+            .columns
+            .iter()
+            .enumerate()
+            .map(|(i, c)| Mapping {
+                source: Some(i),
+                fixed: None,
+                target: TargetColumn {
+                    name: c.name.clone(),
+                    kind: if i == 0 {
+                        ValueKind::Number
+                    } else {
+                        ValueKind::Text
+                    },
+                    type_name: c.type_name.clone(),
+                },
+                trim: false,
+                decimal_comma: false,
+                date_order: None,
+            })
+            .collect(),
+        null_texts: Vec::new(),
+        empty_is_null: true,
+        clear_first: false,
+        on_error: OnError::Abort,
+        whole_transaction: true,
+    };
+    let done = load_file(&mut s, p.kind, &file, &plan, None, &|| false);
+    assert_eq!((done.written, done.failed), (2, false), "{:?}", done.errors);
+    assert_eq!(
+        rows(&run(
+            &mut s,
+            "SELECT MONTH(at), DAY(at), MONTH(short), DAY(short), DATEPART(minute, short) FROM sc_load ORDER BY id"
+        )),
+        json!([[3, 5, 3, 5, 30], [12, 31, 3, 5, 0]])
+    );
+    run(&mut s, "DROP TABLE sc_load");
+}

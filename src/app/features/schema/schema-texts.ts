@@ -13,6 +13,7 @@ export const SCHEMA_EN = {
   menuLabel: 'Actions for the object',
   openData: 'Open data',
   exportTable: 'Export …',
+  importTable: 'Import a file …',
   insertName: 'Insert name into the editor',
   copyName: 'Copy name',
   copyQualified: 'Copy qualified name',

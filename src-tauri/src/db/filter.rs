@@ -193,14 +193,6 @@ fn castable(type_name: &str) -> Option<String> {
     if !word(&mut i, true) {
         return None;
     }
-    let mut words = 1;
-    while i < b.len() && b[i] == b' ' {
-        i += 1;
-        if words == 4 || !word(&mut i, false) {
-            return None;
-        }
-        words += 1;
-    }
     let digits = |i: &mut usize| -> bool {
         let start = *i;
         while *i < b.len() && b[*i].is_ascii_digit() {
@@ -208,21 +200,44 @@ fn castable(type_name: &str) -> Option<String> {
         }
         (1..=4).contains(&(*i - start))
     };
-    if i < b.len() && b[i] == b'(' {
-        i += 1;
-        if !digits(&mut i) {
+    // `(12)` or `(12,2)`
+    let size = |i: &mut usize| -> Option<bool> {
+        if *i >= b.len() || b[*i] != b'(' {
+            return Some(false);
+        }
+        *i += 1;
+        if !digits(i) {
             return None;
         }
-        if i < b.len() && b[i] == b',' {
-            i += 1;
-            if !digits(&mut i) {
+        if *i < b.len() && b[*i] == b',' {
+            *i += 1;
+            if !digits(i) {
                 return None;
             }
         }
-        if i >= b.len() || b[i] != b')' {
+        if *i >= b.len() || b[*i] != b')' {
             return None;
         }
+        *i += 1;
+        Some(true)
+    };
+    // the catalog writes the precision of a time behind the first word: `timestamp(3) without time zone`
+    let sized = size(&mut i)?;
+    let mut words = 1;
+    while i < b.len() && b[i] == b' ' {
         i += 1;
+        let start = i;
+        if words == 4 || !word(&mut i, false) {
+            return None;
+        }
+        // … and behind it only the words of those types: anything else there is not a type name
+        if sized && !matches!(&t[start..i], "with" | "without" | "time" | "zone" | "local") {
+            return None;
+        }
+        words += 1;
+    }
+    if !sized {
+        size(&mut i)?;
     }
     while b[i..].starts_with(b"[]") {
         i += 2;
@@ -236,9 +251,15 @@ fn castable(type_name: &str) -> Option<String> {
         Some(at) => t.split_at(at),
         None => (t.as_str(), ""),
     };
-    Some(match base {
-        "char" | "character" | "bpchar" => format!("bpchar{brackets}"),
-        "bit" => format!("varbit{brackets}"),
+    // … and a cast to a text or bit type **with** a size cuts what is longer without a word: cast to the
+    // type without it, so the column itself refuses the value
+    let sized = base.find('(').map(|at| &base[..at]);
+    Some(match (base, sized) {
+        ("char" | "character" | "bpchar", _) | (_, Some("char" | "character" | "bpchar")) => {
+            format!("bpchar{brackets}")
+        }
+        ("bit", _) | (_, Some("bit" | "bit varying" | "varbit")) => format!("varbit{brackets}"),
+        (_, Some("character varying" | "varchar")) => format!("varchar{brackets}"),
         _ => t,
     })
 }
@@ -259,16 +280,33 @@ fn mssql_datetime(raw: &str, type_name: &str) -> Option<String> {
         b.get(from..to)
             .is_some_and(|d| d.iter().all(u8::is_ascii_digit))
     };
-    let shaped = b.len() >= 19
+    let day = b.len() >= 10
         && digits(0, 4)
         && b[4] == b'-'
         && digits(5, 7)
         && b[7] == b'-'
-        && digits(8, 10)
-        && b[10] == b' '
+        && digits(8, 10);
+    if !day {
+        return None;
+    }
+    // a day alone: `20260305` is read the same by everyone, `2026-03-05` is not
+    if b.len() == 10 {
+        return Some(format!("{}{}{}", &t[..4], &t[5..7], &t[8..10]));
+    }
+    let minutes = b.len() >= 16
+        && (b[10] == b' ' || b[10] == b'T')
         && digits(11, 13)
         && b[13] == b':'
-        && digits(14, 16)
+        && digits(14, 16);
+    if !minutes {
+        return None;
+    }
+    // a time without seconds gets them: the form with `T` needs them
+    if b.len() == 16 {
+        return Some(format!("{}T{}:00", &t[..10], &t[11..]));
+    }
+    let shaped = b[10] == b' '
+        && b.len() >= 19
         && b[16] == b':'
         && digits(17, 19)
         && (b.len() == 19 || (b[19] == b'.' && b.len() > 20 && digits(20, b.len())));
@@ -1258,9 +1296,9 @@ mod tests {
             ("CHAR[]", "bpchar[]"),
             ("BIT", "varbit"),
             ("character", "bpchar"),
-            ("char(10)", "char(10)"),
+            ("char(10)", "bpchar"),
             ("VARCHAR", "varchar"),
-            ("bit(8)", "bit(8)"),
+            ("bit(8)", "varbit"),
         ] {
             let q = query(vec![Condition {
                 type_name: name.into(),
@@ -1371,7 +1409,7 @@ mod tests {
             ("INT4", "int4"),
             ("timestamptz", "timestamptz"),
             ("NUMERIC(12,2)", "numeric(12,2)"),
-            ("varchar(40)", "varchar(40)"),
+            ("varchar(40)", "varchar"),
             ("TIMESTAMP WITH TIME ZONE", "timestamp with time zone"),
             ("double precision", "double precision"),
             ("int4[]", "int4[]"),
@@ -1452,5 +1490,63 @@ mod tests {
         assert_eq!(pg.params[0], Bind::Text("\\'; DROP TABLE t; --".into()));
         let plain = build(DbKind::Postgres, &query(vec![cond("c", Op::Eq, &["it's"])])).unwrap();
         assert!(plain.display.ends_with("c = 'it''s'"));
+    }
+    #[test]
+    fn a_cast_never_cuts_a_value_to_the_size_of_its_type() {
+        // the catalog names types with their size (`character varying(20)`): an explicit cast to that
+        // would cut a longer text without a word – the column itself must say no
+        for (named, cast) in [
+            ("character varying(20)", "varchar"),
+            ("varchar(5)", "varchar"),
+            ("character(3)", "bpchar"),
+            ("char(3)", "bpchar"),
+            ("bpchar(3)", "bpchar"),
+            ("bit(8)", "varbit"),
+            ("bit varying(8)", "varbit"),
+            ("varbit(8)", "varbit"),
+            ("character varying(20)[]", "varchar[]"),
+            ("numeric(12,2)", "numeric(12,2)"),
+            ("timestamp without time zone", "timestamp without time zone"),
+            ("character varying", "character varying"),
+        ] {
+            assert_eq!(castable(named).as_deref(), Some(cast), "{named}");
+        }
+    }
+    /// Review 033: the catalog writes a precision in the middle of a type name; and SQL Server reads a
+    /// day without a time, or a time without seconds, for a `datetime` by the language of the login.
+    #[test]
+    fn types_and_days_as_the_catalog_and_files_write_them() {
+        for (named, cast) in [
+            (
+                "timestamp(3) without time zone",
+                "timestamp(3) without time zone",
+            ),
+            ("time(0) with time zone", "time(0) with time zone"),
+            ("character varying(20)", "varchar"),
+            ("numeric(12,2)[]", "numeric(12,2)[]"),
+        ] {
+            assert_eq!(castable(named).as_deref(), Some(cast), "{named}");
+        }
+        for evil in [
+            "int4) or (1",
+            "timestamp(3) without(2) time",
+            "a(1)(2)",
+            "x(1) ; drop",
+        ] {
+            assert_eq!(castable(evil), None, "{evil}");
+        }
+        for (raw, read) in [
+            ("2026-03-05", Some("20260305")),
+            ("2026-03-05 10:30", Some("2026-03-05T10:30:00")),
+            ("2026-03-05T10:30", Some("2026-03-05T10:30:00")),
+            ("2026-03-05 10:30:15", Some("2026-03-05T10:30:15")),
+            ("2026-03-05 10:30:15.250", Some("2026-03-05T10:30:15.250")),
+            ("2026-03-05T10:30:15", None),
+            ("05.03.2026", None),
+            ("soon", None),
+        ] {
+            assert_eq!(mssql_datetime(raw, "datetime").as_deref(), read, "{raw}");
+            assert_eq!(mssql_datetime(raw, "date"), None, "{raw}");
+        }
     }
 }

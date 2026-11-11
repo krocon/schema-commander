@@ -813,6 +813,170 @@ pub fn export_query(
     Ok(done)
 }
 
+/// A file that is to be loaded: it must be a full path (it comes from the open dialog).
+fn import_source(path: &str) -> AppResult<PathBuf> {
+    let path = PathBuf::from(path);
+    if !path.is_absolute() {
+        return Err(AppError::new(ErrorCode::Io, "the file is no full path"));
+    }
+    Ok(path)
+}
+
+/// What a file holds (prompt 033): format, delimiter, encoding and header as detected (or as `options`
+/// say), its columns, the first records and a type guessed for each column. Nothing is written.
+#[tauri::command(async)]
+pub fn load_preview(
+    path: String,
+    options: crate::data_import::SourceOptions,
+    nulls: Vec<String>,
+) -> AppResult<crate::data_import::Preview> {
+    crate::data_import::preview(&import_source(&path)?, &options, &nulls)
+}
+
+/// A `CREATE TABLE` proposed for the columns of a file. The window shows it; it runs like any statement.
+#[tauri::command(async)]
+pub fn load_table_ddl(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    schema: Option<String>,
+    table: String,
+    columns: Vec<(String, crate::data_import::Guess)>,
+) -> AppResult<String> {
+    crate::db::load::create_table(manager.kind_of(&id)?, schema.as_deref(), &table, &columns)
+}
+
+/// Runs the `CREATE TABLE` of an import, as the user left it: exactly one statement that creates a
+/// table – anything else, or anything more, is refused – through the guard of the connection
+/// (`confirmation` from `confirm_statements`).
+#[tauri::command(async)]
+pub fn load_create_table(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    sql: String,
+    confirmation: Option<String>,
+    timeout_ms: Option<u64>,
+) -> AppResult<()> {
+    if !crate::db::guard::is_create_table(&sql, manager.kind_of(&id)?) {
+        return Err(AppError::new(
+            ErrorCode::PermissionDenied,
+            "only one statement that creates a table runs here",
+        ));
+    }
+    manager.admit(&id, &sql, confirmation.as_deref(), false)?;
+    let limits = crate::db::Limits {
+        max_rows: 1,
+        timeout: timeout_ms
+            .filter(|ms| *ms > 0)
+            .map(std::time::Duration::from_millis),
+    };
+    manager.ask(&id, |session, _, stop| {
+        session.query(&sql, limits, stop).map(|_| ())
+    })
+}
+
+/// Whether two paths name the same file, whatever way they are written (`.`, links, the case of a
+/// file system that ignores it). `target` need not exist yet.
+fn same_file(source: &std::path::Path, target: &std::path::Path) -> bool {
+    let real = |p: &std::path::Path| {
+        p.canonicalize().ok().or_else(|| {
+            let parent = p.parent()?.canonicalize().ok()?;
+            Some(parent.join(p.file_name()?))
+        })
+    };
+    match (real(source), real(target)) {
+        (Some(a), Some(b)) => {
+            a == b || a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+        }
+        _ => source == target,
+    }
+}
+
+/// The statements an import stands for, to ask the guard about: the `INSERT` (of one row), and before
+/// it the `DELETE` that empties the table, if the plan wants that.
+fn import_sqls(
+    kind: crate::db::DbKind,
+    plan: &crate::db::load::LoadPlan,
+) -> AppResult<Vec<String>> {
+    let mut sqls = Vec::with_capacity(2);
+    if plan.clear_first {
+        sqls.push(crate::db::load::clear_statement(kind, plan)?);
+    }
+    sqls.push(crate::db::load::shape(kind, plan)?.sql);
+    Ok(sqls)
+}
+
+#[tauri::command(async)]
+pub fn load_statements(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    plan: crate::db::load::LoadPlan,
+) -> AppResult<Vec<String>> {
+    import_sqls(manager.kind_of(&id)?, &plan)
+}
+
+/// Loads a file into a table (prompt 033) as a job with progress that `cancel_job` stops. The
+/// statements are built here from the plan (the window never sends SQL) and pass the guard first
+/// (`confirmations[i]` for statement `i` of `load_statements`). Every value is bound. `error_path`
+/// comes from the save dialog.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn load_run(
+    manager: State<'_, ConnectionManager>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    id: String,
+    path: String,
+    options: crate::data_import::SourceOptions,
+    plan: crate::db::load::LoadPlan,
+    error_path: Option<String>,
+    confirmations: Option<Vec<Option<String>>>,
+    allow_dangerous: bool,
+    timeout_ms: Option<u64>,
+    on_progress: Channel<u64>,
+) -> AppResult<crate::db::load::Loaded> {
+    use std::sync::atomic::Ordering;
+    let path = import_source(&path)?;
+    let error_path = error_path.as_deref().map(export_target).transpose()?;
+    if error_path.as_ref().is_some_and(|e| same_file(&path, e)) {
+        return Err(AppError::new(
+            ErrorCode::Io,
+            "the error file must not be the file that is loaded",
+        ));
+    }
+    let kind = manager.kind_of(&id)?;
+    let tokens = confirmations.unwrap_or_default();
+    for (i, sql) in import_sqls(kind, &plan)?.iter().enumerate() {
+        let token = tokens.get(i).and_then(|t| t.as_deref());
+        manager.admit(&id, sql, token, allow_dangerous)?;
+    }
+    let mut source = crate::data_import::Source::open(&path, &options)?;
+    let timeout = timeout_ms
+        .filter(|ms| *ms > 0)
+        .map(std::time::Duration::from_millis);
+    let stop = jobs.start(job_id, Some(id.clone()));
+    let result = manager.ask(&id, |session, kind, stopped| {
+        crate::db::load::load(
+            session,
+            kind,
+            &mut source,
+            &plan,
+            error_path.as_deref(),
+            timeout,
+            &|n| {
+                let _ = on_progress.send(n);
+            },
+            &|| stop.load(Ordering::Relaxed) || stopped(),
+        )
+    });
+    jobs.end(job_id);
+    if let (Ok(done), Some(file)) = (&result, error_path)
+        && done.error_file
+    {
+        jobs.written.lock().insert(file);
+    }
+    result
+}
+
 /// What statements are and what they need on a connection before they may run (prompt 012).
 #[tauri::command(async)]
 pub fn check_statements(
@@ -1396,5 +1560,22 @@ mod tests {
         assert_eq!(code(format::FormatError::TooDeep), "format_too_deep");
         assert_eq!(code(format::FormatError::Unsafe), "format_unsafe");
         assert_eq!(code(format::FormatError::TooLarge), "too_large");
+    }
+    /// Review 033: the error file of an import must not be the file that is read, however its path
+    /// is written.
+    #[test]
+    fn knows_the_same_file_under_another_spelling() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("in.csv");
+        std::fs::write(&source, "a\n").unwrap();
+        assert!(same_file(&source, &dir.path().join(".").join("in.csv")));
+        assert!(same_file(&source, &dir.path().join("IN.csv")));
+        assert!(!same_file(&source, &dir.path().join("in.errors.tsv")));
+        #[cfg(unix)]
+        {
+            let link = dir.path().join("link.csv");
+            std::os::unix::fs::symlink(&source, &link).unwrap();
+            assert!(same_file(&source, &link));
+        }
     }
 }

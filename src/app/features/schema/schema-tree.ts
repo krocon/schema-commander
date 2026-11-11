@@ -39,6 +39,7 @@ const MENU: readonly { id: NodeAction; label: () => string; separator?: boolean 
   { id: 'SCHEMA_DETAILS', label: () => actionLabel('SCHEMA_DETAILS') },
   { id: 'SCHEMA_OPEN_DATA', label: () => SCHEMA_TEXTS.openData },
   { id: 'SCHEMA_EXPORT_TABLE', label: () => SCHEMA_TEXTS.exportTable },
+  { id: 'SCHEMA_IMPORT_TABLE', label: () => SCHEMA_TEXTS.importTable },
   { id: 'SCHEMA_INSERT_NAME', label: () => SCHEMA_TEXTS.insertName, separator: true },
   { id: 'SCHEMA_COPY_NAME', label: () => SCHEMA_TEXTS.copyName },
   { id: 'SCHEMA_COPY_QUALIFIED', label: () => SCHEMA_TEXTS.copyQualified },

@@ -4,6 +4,7 @@
 pub mod app_menu;
 pub mod commands;
 pub mod copy;
+pub mod data_import;
 pub mod db;
 pub mod error;
 pub mod export;
@@ -137,6 +138,11 @@ pub fn run() {
             commands::meta_relations,
             commands::edit_preview,
             commands::edit_apply,
+            commands::load_preview,
+            commands::load_table_ddl,
+            commands::load_create_table,
+            commands::load_statements,
+            commands::load_run,
             commands::meta_details,
             commands::names_refresh,
             commands::names_query,
