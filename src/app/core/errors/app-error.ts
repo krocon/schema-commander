@@ -6,6 +6,7 @@ export type ErrorCode =
   | 'too_large'
   | 'not_found'
   | 'invalid_session'
+  | 'unknown_result'
   | 'encoding_failed'
   | 'connection_failed'
   | 'auth_failed'
@@ -35,6 +36,7 @@ const CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'too_large',
   'not_found',
   'invalid_session',
+  'unknown_result',
   'encoding_failed',
   'connection_failed',
   'auth_failed',
@@ -74,6 +76,7 @@ const TEXTS: Readonly<Record<ErrorCode, string>> = {
   too_large: 'Die Datei ist zu groß.',
   not_found: 'Nicht gefunden.',
   invalid_session: 'Die gespeicherte Sitzung ist ungültig.',
+  unknown_result: 'Dieses Ergebnis gibt es nicht mehr.',
   encoding_failed: 'Die Kodierung der Datei kann nicht alle Zeichen des Textes darstellen.',
   connection_failed: 'Die Verbindung ist fehlgeschlagen.',
   auth_failed: 'Die Anmeldung wurde abgelehnt.',
@@ -109,6 +112,7 @@ export function describeError(e: unknown): string {
     'permission_denied',
     'not_found',
     'invalid_session',
+    'unknown_result',
     'encoding_failed',
     'invalid_profile',
     'keychain_unavailable',

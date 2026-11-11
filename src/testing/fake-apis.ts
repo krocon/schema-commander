@@ -6,7 +6,7 @@ import {
 import { ConnectionsApi } from '../app/core/connections/connections-api';
 import { LoadedSession, SessionApi, SessionFile, TextFile } from '../app/core/session/session-api';
 import { QueryApi } from '../app/core/sql/query-api';
-import { QueryResult } from '../app/core/sql/query.models';
+import { Cell, QueryColumn, RowWindow, RunEvent, RunOutcome } from '../app/core/sql/query.models';
 import { FileDialogApi } from '../app/core/backend/file-dialog-api';
 import { WindowApi } from '../app/core/backend/window-api';
 import { LoadedThemes, ThemeApi } from '../app/core/theme/theme-api';
@@ -22,40 +22,88 @@ export class FakeWindowApi extends WindowApi {
   }
 }
 
-/** Answers every statement with `result`, or rejects with `error` when set. */
+/**
+ * Answers every statement with `rows` of `columns` (kept as a result that windows can be read of), or rejects
+ * with `error` when set.
+ */
 export class FakeQueryApi extends QueryApi {
   readonly statements: { connection: string; sql: string }[] = [];
   readonly cancelled: string[] = [];
-  /** Outcomes of the next calls, the first one first (`null` = success); then `error`, then `result`. */
+  /** Outcomes of the next calls, the first one first (`null` = success); then `error`, then the rows. */
   readonly errors: unknown[] = [];
   error: unknown = null;
-  result: QueryResult = {
-    columns: [
-      { name: 'id', kind: 'int', typeName: 'INTEGER' },
-      { name: 'name', kind: 'text', typeName: 'TEXT' },
-    ],
-    rows: [
-      [1, 'Ada'],
-      [2, null],
-    ],
-    truncated: false,
-    rowsAffected: null,
-    elapsedMs: 3,
-  };
-
+  columns: QueryColumn[] = [
+    { name: 'id', kind: 'int', typeName: 'INTEGER' },
+    { name: 'name', kind: 'text', typeName: 'TEXT' },
+  ];
+  rows: Cell[][] = [
+    [1, 'Ada'],
+    [2, null],
+  ];
+  /** Set for a statement without a result. */
+  rowsAffected: number | null = null;
+  truncated = false;
   /** The time limits the statements were sent with. */
   readonly timeouts: number[] = [];
+  /** The results in the store by id. */
+  readonly results = new Map<number, Cell[][]>();
+  readonly freed: number[] = [];
+  readonly windows: { resultId: number; from: number; count: number }[] = [];
+  private nextId = 1;
 
-  run(connection: string, sql: string, timeoutMs = 0): Promise<QueryResult> {
+  run(
+    connection: string,
+    sql: string,
+    timeoutMs = 0,
+    onEvent?: (event: RunEvent) => void,
+  ): Promise<RunOutcome> {
     this.statements.push({ connection, sql });
     this.timeouts.push(timeoutMs);
     // `null` in `errors` = this call succeeds
     const next = this.errors.length > 0 ? this.errors.shift() : this.error;
-    return next ? Promise.reject(next) : Promise.resolve(this.result);
+    if (next) return Promise.reject(next);
+    if (this.rowsAffected !== null) {
+      return Promise.resolve({
+        resultId: null,
+        columns: [],
+        rows: 0,
+        truncated: false,
+        rowsAffected: this.rowsAffected,
+        elapsedMs: 3,
+      });
+    }
+    const resultId = this.nextId++;
+    this.results.set(resultId, this.rows);
+    onEvent?.({ kind: 'started', resultId, columns: this.columns });
+    onEvent?.({ kind: 'rows', rows: this.rows.length });
+    return Promise.resolve({
+      resultId,
+      columns: this.columns,
+      rows: this.rows.length,
+      truncated: this.truncated,
+      rowsAffected: null,
+      elapsedMs: 3,
+    });
   }
 
   cancel(connection: string): Promise<void> {
     this.cancelled.push(connection);
+    return Promise.resolve();
+  }
+
+  window(resultId: number, from: number, count: number): Promise<RowWindow> {
+    this.windows.push({ resultId, from, count });
+    const rows = this.results.get(resultId);
+    return rows
+      ? Promise.resolve(rows.slice(from, from + count))
+      : Promise.reject({ code: 'unknown_result', message: `no result ${resultId}` });
+  }
+
+  free(resultIds: readonly number[]): Promise<void> {
+    for (const id of resultIds) {
+      this.results.delete(id);
+      this.freed.push(id);
+    }
     return Promise.resolve();
   }
 }

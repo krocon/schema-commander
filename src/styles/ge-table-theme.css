@@ -93,6 +93,19 @@
   padding-inline: 8px;
 }
 
+/* the row number of a result (features/results/result-model.ts) */
+.ge-table .ge-table-col-div.sc-rownum {
+  text-align: end;
+  color: var(--text-dim);
+  background: var(--bg-gutter);
+  font-family: var(--font-mono);
+  font-weight: 400;
+}
+
+.ge-table .ge-table-col-div.sc-rownum .ge-table-label {
+  padding-inline: 8px;
+}
+
 /* numbers of a result are right-aligned (features/results/result-model.ts) */
 .ge-table .ge-table-col-div.sc-num {
   text-align: end;

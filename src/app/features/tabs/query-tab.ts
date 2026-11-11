@@ -3,7 +3,7 @@ import { ConnectionsStore } from '../../core/connections/connections.store';
 import { describeError, toAppError } from '../../core/errors/app-error';
 import { TabMeta } from '../../core/session/session-api';
 import { QueryApi } from '../../core/sql/query-api';
-import { QueryResult } from '../../core/sql/query.models';
+import { RowWindow, RunEvent, RunOutcome } from '../../core/sql/query.models';
 import { EdCaret } from '../editor/editlicious';
 import {
   LogEntry,
@@ -156,6 +156,7 @@ export class QueryTab {
     const latest = () => id === this.runId;
     const connection = this.connectionId();
     const options = this.services.options();
+    this.freeAll();
     this.runs.set(sqls.map(pending));
     this.shown.set(0);
     this.startTimer();
@@ -185,17 +186,25 @@ export class QueryTab {
             stop = message ? 'failed' : 'cancelled';
             continue;
           }
-          const result = await this.runOnce(connection, sql, options.timeoutMs);
-          const hasRows = result.rowsAffected === null;
-          const keep = !hasRows || kept < MAX_KEPT_RESULTS;
+          const keep = kept < MAX_KEPT_RESULTS;
+          const outcome = await this.runOnce(connection, sql, options.timeoutMs, (event) => {
+            // rows can be looked at while the rest is still read
+            if (event.kind === 'rows') set(index, { rows: event.rows });
+            else if (keep) set(index, { result: event, rows: 0 });
+          });
+          const hasRows = outcome.resultId !== null;
           if (hasRows && keep) kept++;
+          if (outcome.resultId !== null && (!keep || !latest())) this.free([outcome.resultId]);
           set(index, {
             kind: 'done',
-            result: keep ? result : null,
-            rows: hasRows ? result.rows.length : null,
-            rowsAffected: result.rowsAffected,
-            truncated: result.truncated,
-            elapsedMs: result.elapsedMs,
+            result:
+              keep && outcome.resultId !== null
+                ? { resultId: outcome.resultId, columns: outcome.columns }
+                : null,
+            rows: hasRows ? outcome.rows : null,
+            rowsAffected: outcome.rowsAffected,
+            truncated: outcome.truncated,
+            elapsedMs: outcome.elapsedMs,
           });
         } catch (e) {
           const error = toAppError(e);
@@ -206,6 +215,8 @@ export class QueryTab {
           ) {
             connections.markClosed(connection);
           }
+          // a statement that did not end well leaves no result behind (the backend freed it)
+          set(index, { result: null, rows: null });
           if (error.code === 'cancelled') {
             set(index, { kind: 'cancelled', elapsedMs });
             stop = 'cancelled';
@@ -233,16 +244,44 @@ export class QueryTab {
   }
 
   /** The connection was open in the store but the backend lost it: open it again, once. */
-  private async runOnce(connection: string, sql: string, timeoutMs: number): Promise<QueryResult> {
+  private async runOnce(
+    connection: string,
+    sql: string,
+    timeoutMs: number,
+    onEvent: (event: RunEvent) => void,
+  ): Promise<RunOutcome> {
     const { api, connections } = this.services;
     try {
-      return await api.run(connection, sql, timeoutMs);
+      return await api.run(connection, sql, timeoutMs, onEvent);
     } catch (e) {
       if (toAppError(e).code !== 'not_connected') throw e;
       connections.markClosed(connection);
       if (!(await connections.connect(connection))) throw e;
-      return api.run(connection, sql, timeoutMs);
+      return api.run(connection, sql, timeoutMs, onEvent);
     }
+  }
+
+  /** The tab goes: its statement is stopped and its results leave the store. */
+  dispose(): void {
+    this.cancel();
+    this.runId++;
+    this.stopTimer();
+    this.freeAll();
+    this.runs.set([]);
+  }
+
+  /** Rows `from..from + count` of a result of this tab. */
+  window(resultId: number, from: number, count: number): Promise<RowWindow> {
+    return this.services.api.window(resultId, from, count);
+  }
+
+  /** The results of the last run leave the store of the backend. */
+  private freeAll(): void {
+    this.free(this.runs().flatMap((r) => (r.result ? [r.result.resultId] : [])));
+  }
+
+  private free(ids: readonly number[]): void {
+    if (ids.length > 0) void this.services.api.free(ids).catch(() => undefined);
   }
 
   /** Writes the outcome of a statement into the messages. */
