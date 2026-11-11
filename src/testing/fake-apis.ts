@@ -6,6 +6,8 @@ import {
 import { ConnectionsApi } from '../app/core/connections/connections-api';
 import { LoadedSession, SessionApi, SessionFile, TextFile } from '../app/core/session/session-api';
 import { QueryApi } from '../app/core/sql/query-api';
+import { SchemaApi } from '../app/core/schema/schema-api';
+import { Found, ObjectInfo, SchemaInfo, TableInfo } from '../app/core/schema/schema.models';
 import { Cell, QueryColumn, RowWindow, RunEvent, RunOutcome } from '../app/core/sql/query.models';
 import { FileDialogApi } from '../app/core/backend/file-dialog-api';
 import { WindowApi } from '../app/core/backend/window-api';
@@ -275,5 +277,90 @@ export class FakeSessionApi extends SessionApi {
     }
     this.disk.set(path, { text, encoding });
     return Promise.resolve();
+  }
+}
+
+/**
+ * A database of two schemas: `public` (current: `customer`, `orders`, a view, a routine) and
+ * `pg_catalog` (system). Calls are counted; `fail` makes the next calls reject; `hold()` keeps answers back
+ * until `release()`.
+ */
+export class FakeSchemaApi extends SchemaApi {
+  readonly calls: string[] = [];
+  fail: { code: string; message: string } | null = null;
+  schemaList: SchemaInfo[] = [
+    { name: 'archive', quoted: 'archive', system: false, current: false },
+    { name: 'pg_catalog', quoted: 'pg_catalog', system: true, current: false },
+    { name: 'public', quoted: 'public', system: false, current: true },
+  ];
+  objectList: Record<string, ObjectInfo[]> = {
+    public: [
+      { kind: 'table', name: 'customer', quoted: 'customer', detail: '', rows: 1200 },
+      { kind: 'table', name: 'orders', quoted: 'orders', detail: '', rows: 2_500_000 },
+      { kind: 'view', name: 'big_orders', quoted: 'big_orders', detail: '', rows: null },
+      { kind: 'routine', name: 'twice', quoted: 'twice', detail: 'n integer', rows: null },
+    ],
+    archive: [{ kind: 'table', name: 'Old Orders', quoted: '"Old Orders"', detail: '', rows: 7 }],
+    pg_catalog: [{ kind: 'table', name: 'pg_class', quoted: 'pg_class', detail: '', rows: 400 }],
+  };
+  tableInfo: TableInfo = {
+    columns: [
+      { name: 'id', quoted: 'id', typeName: 'integer', nullable: false, default: null, key: 'pk' },
+      {
+        name: 'customer_id',
+        quoted: 'customer_id',
+        typeName: 'integer',
+        nullable: false,
+        default: null,
+        key: 'fk',
+      },
+      { name: 'note', quoted: 'note', typeName: 'text', nullable: true, default: null, key: '' },
+    ],
+    indexes: [{ name: 'orders_pkey', detail: 'primary btree (id)' }],
+    keys: [{ name: 'orders_pkey', detail: 'PRIMARY KEY (id)' }],
+    triggers: [],
+  };
+  private gate: Promise<void> | null = null;
+  private open: (() => void) | null = null;
+
+  hold(): void {
+    this.gate = new Promise((resolve) => (this.open = resolve));
+  }
+
+  release(): void {
+    this.open?.();
+    this.gate = null;
+  }
+
+  private async answer<T>(call: string, value: T): Promise<T> {
+    this.calls.push(call);
+    const fail = this.fail;
+    if (this.gate) await this.gate;
+    if (fail) throw fail;
+    return value;
+  }
+
+  schemas(): Promise<SchemaInfo[]> {
+    return this.answer('schemas', this.schemaList);
+  }
+
+  objects(_id: string, schema: string): Promise<ObjectInfo[]> {
+    return this.answer(`objects ${schema}`, this.objectList[schema] ?? []);
+  }
+
+  table(_id: string, schema: string, table: string): Promise<TableInfo> {
+    return this.answer(`table ${schema}.${table}`, this.tableInfo);
+  }
+
+  search(_id: string, text: string): Promise<Found[]> {
+    const found: Found[] = [];
+    for (const [schema, list] of Object.entries(this.objectList)) {
+      for (const o of list) {
+        if (o.kind !== 'routine' && o.name.toLowerCase().includes(text.toLowerCase())) {
+          found.push({ schema, kind: o.kind, name: o.name, quoted: o.quoted });
+        }
+      }
+    }
+    return this.answer(`search ${text}`, found);
   }
 }

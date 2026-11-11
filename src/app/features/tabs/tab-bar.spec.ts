@@ -1,9 +1,11 @@
+import { SchemaApi } from '../../core/schema/schema-api';
 import { TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   FakeConnectionsApi,
   FakeFileDialogApi,
   FakeQueryApi,
+  FakeSchemaApi,
   FakeSessionApi,
 } from '../../../testing/fake-apis';
 import { FileDialogApi } from '../../core/backend/file-dialog-api';
@@ -25,6 +27,7 @@ describe('TabBar', () => {
         { provide: FileDialogApi, useValue: new FakeFileDialogApi() },
         { provide: ConnectionsApi, useValue: new FakeConnectionsApi() },
         { provide: QueryApi, useValue: new FakeQueryApi() },
+        { provide: SchemaApi, useValue: new FakeSchemaApi() },
       ],
     });
     await TestBed.inject(ConnectionsStore).load();

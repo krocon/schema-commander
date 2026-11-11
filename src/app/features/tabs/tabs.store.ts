@@ -1,3 +1,4 @@
+import { SchemaStore } from '../schema/schema.store';
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FileDialogApi } from '../../core/backend/file-dialog-api';
 import { ConnectionsStore } from '../../core/connections/connections.store';
@@ -43,9 +44,12 @@ export class TabsStore {
   private readonly files = inject(FileDialogApi);
   private readonly connections = inject(ConnectionsStore);
   private readonly settings = inject(SettingsService);
+  private readonly schema = inject(SchemaStore);
   private readonly services = {
     api: inject(QueryApi),
     connections: this.connections,
+    ran: (connection: string, statements: readonly string[]) =>
+      this.schema.ran(connection, statements),
     options: () => {
       const s = this.settings.settings();
       return { stopOnError: s.stopOnError, timeoutMs: s.statementTimeoutSec * 1000 };

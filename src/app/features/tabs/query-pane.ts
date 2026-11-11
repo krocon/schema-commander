@@ -313,6 +313,7 @@ export class QueryPane implements OnInit, OnDestroy {
     getText: () => this.editor()?.getText() ?? Promise.resolve(this.startText()?.text ?? ''),
     setText: (text) => this.editor()?.setText(text) ?? Promise.resolve(),
     focus: () => this.editor()?.focus(),
+    insert: (text, snippet) => this.editor()?.insert(text, snippet) ?? Promise.resolve(),
     runCurrent: () => this.editor()?.runCurrent() ?? Promise.resolve(),
     runScript: () => this.editor()?.runScript() ?? Promise.resolve(),
   };

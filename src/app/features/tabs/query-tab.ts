@@ -22,6 +22,8 @@ export interface TabEditor {
   getText(): Promise<string>;
   setText(text: string): Promise<void>;
   focus(): void;
+  /** Puts text where the caret is (over the selection); a snippet has placeholders to tab through. */
+  insert(text: string, snippet: boolean): Promise<void>;
   /** Runs the selection if there is one, else the statement under the caret. */
   runCurrent(): Promise<void>;
   /** Runs the whole script. */
@@ -34,6 +36,8 @@ export interface TabServices {
   readonly connections: ConnectionsStore;
   /** How statements run right now (from the settings). */
   readonly options: () => RunOptions;
+  /** Statements ended well on a connection (the schema tree reads again after DDL). */
+  readonly ran?: (connection: string, statements: readonly string[]) => void;
 }
 
 export interface RunOptions {
@@ -129,6 +133,13 @@ export class QueryTab {
     this.editor?.focus();
   }
 
+  /** Puts text into the editor at the caret and goes there; nothing happens while it is not on screen. */
+  insert(text: string, snippet = false): void {
+    const editor = this.editor;
+    if (!editor) return;
+    void editor.insert(text, snippet).then(() => editor.focus());
+  }
+
   runCurrent(): void {
     void this.editor?.runCurrent();
   }
@@ -165,6 +176,7 @@ export class QueryTab {
       this.runs.update((all) => all.map((r, i) => (i === index ? { ...r, ...change } : r)));
     };
     let kept = 0;
+    const succeeded: string[] = [];
     let stop: 'failed' | 'cancelled' | null = null;
     try {
       for (let index = 0; index < sqls.length && latest(); index++) {
@@ -192,6 +204,7 @@ export class QueryTab {
             if (event.kind === 'rows') set(index, { rows: event.rows });
             else if (keep) set(index, { result: event, rows: 0 });
           });
+          succeeded.push(sql);
           const hasRows = outcome.resultId !== null;
           if (hasRows && keep) kept++;
           if (outcome.resultId !== null && (!keep || !latest())) this.free([outcome.resultId]);
@@ -228,6 +241,7 @@ export class QueryTab {
         if (latest()) this.note(index, started);
       }
     } finally {
+      if (succeeded.length > 0) this.services.ran?.(connection, succeeded);
       if (latest()) {
         this.runningOn = null;
         this.stopTimer();

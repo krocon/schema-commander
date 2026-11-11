@@ -151,6 +151,30 @@ fn cell(value: ValueRef<'_>) -> Cell {
 }
 
 impl Session for Lite {
+    fn ask(
+        &mut self,
+        sql: &str,
+        params: &[&str],
+        _timeout: Option<std::time::Duration>,
+        _stop: Stop,
+    ) -> AppResult<super::TextRows> {
+        // the catalog of a file is read in no time: no watcher
+        let mut stmt = self.conn.prepare(sql).map_err(invalid)?;
+        let count = stmt.column_count();
+        let mut cursor = stmt
+            .query(rusqlite::params_from_iter(params.iter()))
+            .map_err(invalid)?;
+        let mut rows = Vec::new();
+        while let Some(row) = cursor.next().map_err(invalid)? {
+            let mut cells = Vec::with_capacity(count);
+            for i in 0..count {
+                cells.push(cell(row.get_ref(i).map_err(invalid)?).plain());
+            }
+            rows.push(cells);
+        }
+        Ok(rows)
+    }
+
     fn execute(
         &mut self,
         sql: &str,
@@ -216,6 +240,12 @@ impl Session for Lite {
 }
 
 impl Lite {
+    /// Runs statements on the database of a test.
+    #[cfg(test)]
+    pub fn execute_batch_for_tests(&mut self, sql: &str) {
+        self.conn.execute_batch(sql).unwrap();
+    }
+
     fn run(
         conn: &Connection,
         sql: &str,
