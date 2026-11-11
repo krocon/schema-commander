@@ -64,7 +64,9 @@ import {
   TxState,
   Verdict,
   ViewSpec,
+  Applied,
   ResultStats,
+  UpdatePlan,
   SearchFound,
   SearchSpec,
   SeekKind,
@@ -437,6 +439,60 @@ export class FakeQueryApi extends QueryApi {
   cancelSearch(jobId: number): Promise<void> {
     this.cancelledSearches.push(jobId);
     return Promise.resolve();
+  }
+
+  /** Writing changed cells (prompt 031): what was asked, and how the "backend" answers. */
+  readonly previews: UpdatePlan[] = [];
+  readonly applied: {
+    connection: string;
+    session: string;
+    plan: UpdatePlan;
+    confirmations: readonly (string | null)[];
+  }[] = [];
+  /** `null` = every statement is written. */
+  applyAnswer: Partial<Applied> | null = null;
+  applyError: { code: string; message: string } | null = null;
+
+  /** One statement per row; its text names the cells, never their values. */
+  editPreview(_connection: string, plan: UpdatePlan): Promise<BuiltQuery[]> {
+    this.previews.push(plan);
+    const table = `${plan.schema ? `${plan.schema}.` : ''}${plan.table}`;
+    return Promise.resolve(
+      plan.rows.map((row) => {
+        const set = row.set.map((c) => c.column).join(', ');
+        const where = [...row.key, ...row.expect].map((c) => c.column).join(', ');
+        const text = (v: string | null) => (v === null ? 'NULL' : `'${v}'`);
+        return {
+          sql: `UPDATE ${table} SET ${set} WHERE ${where}`,
+          params: [...row.set, ...row.key, ...row.expect]
+            .filter((c) => c.value !== null && !('default' in c && c.default))
+            .map((c) => ({ kind: 'text' as const, value: c.value as string })),
+          display: `UPDATE ${table} SET ${row.set
+            .map((c) => `${c.column} = ${c.default ? 'DEFAULT' : text(c.value)}`)
+            .join(
+              ', ',
+            )} WHERE ${row.key.map((c) => `${c.column} = ${text(c.value)}`).join(' AND ')}`,
+        };
+      }),
+    );
+  }
+
+  editApply(
+    connection: string,
+    session: string,
+    plan: UpdatePlan,
+    confirmations: readonly (string | null)[],
+  ): Promise<Applied> {
+    this.applied.push({ connection, session, plan, confirmations });
+    if (this.applyError) return Promise.reject(this.applyError);
+    return Promise.resolve({
+      done: plan.rows.length,
+      failed: null,
+      conflict: false,
+      error: null,
+      tx: 'idle',
+      ...this.applyAnswer,
+    });
   }
 }
 

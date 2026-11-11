@@ -26,6 +26,13 @@
   --hit-text: #ffe9a8;
   --hit-current-bg: #e8b100;
   --hit-current-text: #14171c;
+  /* cells of the change buffer (prompts 031, 032): changed, new row, row to delete */
+  --cell-changed-bg: #4a3d0a;
+  --cell-changed-text: #ffe9a8;
+  --cell-new-bg: #123d24;
+  --cell-new-text: #b9f2cf;
+  --cell-deleted-bg: #4a1a1a;
+  --cell-deleted-text: #ffc9c9;
 
   --sql-comment: #8b95a3;
   --sql-keyword: #6cc4d8;
@@ -90,6 +97,12 @@
   --hit-text: #3d2f00;
   --hit-current-bg: #8f5f00;
   --hit-current-text: #ffffff;
+  --cell-changed-bg: #fff1b8;
+  --cell-changed-text: #3d2f00;
+  --cell-new-bg: #d5f5e1;
+  --cell-new-text: #0d3b20;
+  --cell-deleted-bg: #ffd9d9;
+  --cell-deleted-text: #5c1010;
 
   --sql-comment: #5f6b7a;
   --sql-keyword: #0b6e8c;

@@ -81,6 +81,12 @@ export const TOKENS: readonly TokenDef[] = [
     ['hit-text', 'Text in the hit'],
     ['hit-current-bg', 'Current hit'],
     ['hit-current-text', 'Text in the current hit'],
+    ['cell-changed-bg', 'Changed cell'],
+    ['cell-changed-text', 'Text in a changed cell'],
+    ['cell-new-bg', 'Cell of a new row'],
+    ['cell-new-text', 'Text in a new row'],
+    ['cell-deleted-bg', 'Cell of a row to delete'],
+    ['cell-deleted-text', 'Text in a row to delete'],
   ]),
   ...group('SQL', [
     ['sql-keyword', 'Keyword'],
