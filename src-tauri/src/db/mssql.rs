@@ -187,8 +187,50 @@ fn cell(data: &ColumnData<'static>, type_name: &str) -> Cell {
 
 /// The batch with a last statement that reports `@@ROWCOUNT`: tiberius does not pass on the row counts of
 /// the protocol. `@@ROWCOUNT` right after the user's statement is its count.
+///
+/// A statement that defines something (`CREATE …`, `ALTER …`) gets nothing added: the body of a trigger
+/// or a procedure runs to the end of its batch, so the addition would become part of it – stored with
+/// it and run with every call. Such a statement has no row count worth showing anyway.
 fn with_rowcount(sql: &str) -> String {
+    if defines(sql) {
+        return sql.to_string();
+    }
     format!("{sql}\n;SELECT @@ROWCOUNT AS [{ROWCOUNT}]")
+}
+
+/// Whether the first word of a batch, behind blanks and comments, is `CREATE` or `ALTER`.
+fn defines(sql: &str) -> bool {
+    let mut rest = sql;
+    loop {
+        rest = rest.trim_start();
+        if let Some(after) = rest.strip_prefix("--") {
+            rest = after.split_once('\n').map_or("", |(_, r)| r);
+        } else if let Some(after) = rest.strip_prefix("/*") {
+            // comments of T-SQL nest
+            let mut depth = 1usize;
+            let mut i = 0;
+            let bytes = after.as_bytes();
+            while i < bytes.len() && depth > 0 {
+                if bytes[i..].starts_with(b"/*") {
+                    depth += 1;
+                    i += 2;
+                } else if bytes[i..].starts_with(b"*/") {
+                    depth -= 1;
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            rest = after.get(i..).unwrap_or("");
+        } else {
+            break;
+        }
+    }
+    let word: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect();
+    word.eq_ignore_ascii_case("CREATE") || word.eq_ignore_ascii_case("ALTER")
 }
 
 /// Statements that must be alone in their batch (`CREATE VIEW`, `CREATE PROCEDURE` …) are refused with the
@@ -397,6 +439,24 @@ mod tests {
         let sql = with_rowcount("UPDATE t SET a = 1 -- note");
         // a trailing line comment must not swallow the added statement
         assert!(sql.contains("-- note\n;SELECT @@ROWCOUNT"));
+    }
+
+    #[test]
+    fn adds_nothing_to_a_statement_that_defines_something() {
+        // the body of a trigger or a procedure runs to the end of the batch: an added statement would
+        // become part of it and run with every call
+        for sql in [
+            "CREATE TRIGGER t ON x AFTER UPDATE AS BEGIN SET NOCOUNT ON; END",
+            "  create procedure p as select 1",
+            "-- a note\n/* and /* a nested */ one */\nALTER PROCEDURE p AS SELECT 2",
+            "CREATE OR ALTER VIEW v AS SELECT 1 AS a",
+            "CREATE TABLE t (a int)",
+        ] {
+            assert_eq!(with_rowcount(sql), sql, "{sql}");
+        }
+        // words that only start like them are statements like any other
+        assert!(with_rowcount("CREATED_AT_FIX: UPDATE t SET a = 1").contains("@@ROWCOUNT"));
+        assert!(with_rowcount("-- CREATE\nDELETE FROM t").contains("@@ROWCOUNT"));
     }
 
     #[test]

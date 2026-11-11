@@ -4,6 +4,7 @@
 //! Drivers after log-commander (its prompt 019): `sqlx-postgres`, `sqlx-mysql`, `tiberius`, `rusqlite` – pure
 //! Rust, TLS over rustls with the roots of the OS.
 
+pub mod details;
 pub mod guard;
 pub mod import;
 pub mod manager;

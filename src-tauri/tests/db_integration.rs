@@ -993,3 +993,421 @@ fn tls_modes_against_servers_without_tls() {
         assert!(!e.message.contains(PW));
     }
 }
+
+// --- object details and DDL (prompt 019) -----------------------------------------------------------
+
+use schema_commander_lib::db::details::{ObjectDetails, Section, details};
+
+fn detail(
+    s: &mut Box<dyn Session>,
+    kind: DbKind,
+    schema: &str,
+    name: &str,
+    object: ObjectKind,
+) -> ObjectDetails {
+    details(s.as_mut(), kind, schema, name, object, "", &|| false)
+        .unwrap_or_else(|e| panic!("{schema}.{name}: {e}"))
+}
+
+/// What must be the same after the DDL built the object again: every list but the sizes and dates.
+fn structure(d: &ObjectDetails) -> Vec<Section> {
+    d.sections
+        .iter()
+        .filter(|s| s.id != "stats")
+        .cloned()
+        .map(|mut s| {
+            if let Some(i) = s.columns.iter().position(|c| c == "size") {
+                s.columns.remove(i);
+                for row in &mut s.rows {
+                    row.remove(i);
+                }
+            }
+            s
+        })
+        .collect()
+}
+
+fn section<'a>(d: &'a ObjectDetails, id: &str) -> &'a Section {
+    d.sections.iter().find(|s| s.id == id).unwrap_or_else(|| {
+        panic!(
+            "no section {id} in {:?}",
+            d.sections.iter().map(|s| &s.id).collect::<Vec<_>>()
+        )
+    })
+}
+
+fn cells(s: &Section, column: &str) -> Vec<String> {
+    let i = s.columns.iter().position(|c| c == column).unwrap();
+    s.rows
+        .iter()
+        .map(|r| r[i].clone().unwrap_or_default())
+        .collect()
+}
+
+/// Runs DDL statement by statement (`;` at a line end); `whole` = one statement with a body.
+fn run_ddl(s: &mut Box<dyn Session>, ddl: &str, whole: bool) {
+    if whole {
+        run(s, ddl.trim().trim_end_matches(';'));
+        return;
+    }
+    for statement in ddl.split(";\n").map(str::trim).filter(|t| !t.is_empty()) {
+        run(s, statement);
+    }
+}
+
+#[test]
+#[ignore = "needs the database containers"]
+fn postgres_details_and_ddl_round_trip() {
+    let mut s = open(&pg());
+    for sql in [
+        "DROP SCHEMA IF EXISTS sc_det CASCADE",
+        "CREATE SCHEMA sc_det",
+        "CREATE TYPE sc_det.mood AS ENUM ('sad', 'ok', 'it''s fine')",
+        "CREATE DOMAIN sc_det.price AS numeric(10,2) DEFAULT 0 NOT NULL CONSTRAINT price_positive CHECK (VALUE >= 0)",
+        "CREATE SEQUENCE sc_det.ticket INCREMENT BY 5 START WITH 100 CACHE 10",
+        "CREATE FUNCTION sc_det.touch() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN NEW.title := NEW.title; RETURN NEW; END$$",
+        "CREATE FUNCTION sc_det.twice(n integer) RETURNS integer LANGUAGE sql IMMUTABLE AS 'SELECT n * 2'",
+        "CREATE TABLE sc_det.author (id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY, name text NOT NULL, \
+           mood sc_det.mood DEFAULT 'ok', CONSTRAINT author_name_unique UNIQUE (name))",
+        "CREATE TABLE sc_det.\"Book Shelf\" (id serial PRIMARY KEY, author_id integer NOT NULL \
+           REFERENCES sc_det.author (id) ON DELETE CASCADE ON UPDATE RESTRICT, \
+           title varchar(200) COLLATE \"C\" DEFAULT 'untitled', cost sc_det.price, \
+           \"Größe\" numeric(6,2), shout text GENERATED ALWAYS AS (upper(title)) STORED, \
+           CONSTRAINT shelf_cost CHECK (cost < 1000))",
+        "CREATE INDEX shelf_by_title ON sc_det.\"Book Shelf\" (lower(title)) WHERE title IS NOT NULL",
+        "CREATE TRIGGER shelf_touch BEFORE UPDATE ON sc_det.\"Book Shelf\" FOR EACH ROW EXECUTE FUNCTION sc_det.touch()",
+        "COMMENT ON TABLE sc_det.\"Book Shelf\" IS 'what''s on the shelf'",
+        "COMMENT ON COLUMN sc_det.\"Book Shelf\".title IS 'the title'",
+        "CREATE TABLE sc_det.log (at date NOT NULL, text text) PARTITION BY RANGE (at)",
+        "CREATE TABLE sc_det.log_2026 PARTITION OF sc_det.log FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')",
+        "CREATE VIEW sc_det.titles AS SELECT b.title, a.name FROM sc_det.\"Book Shelf\" b JOIN sc_det.author a ON a.id = b.author_id",
+        "CREATE MATERIALIZED VIEW sc_det.names AS SELECT name FROM sc_det.author",
+        "CREATE UNIQUE INDEX names_name ON sc_det.names (name)",
+    ] {
+        run(&mut s, sql);
+    }
+    let k = DbKind::Postgres;
+    // what the lists say
+    let shelf = detail(&mut s, k, "sc_det", "Book Shelf", ObjectKind::Table);
+    assert!(shelf.notes.is_empty(), "{:?}", shelf.notes);
+    let columns = section(&shelf, "columns");
+    assert_eq!(
+        cells(columns, "name"),
+        ["id", "author_id", "title", "cost", "Größe", "shout"]
+    );
+    assert_eq!(cells(columns, "key")[..2], ["pk", "fk"]);
+    assert_eq!(cells(columns, "comment")[2], "the title");
+    assert!(cells(columns, "extra")[5].starts_with("generated: upper"));
+    assert_eq!(
+        cells(section(&shelf, "indexes"), "name"),
+        ["Book Shelf_pkey", "shelf_by_title"]
+    );
+    let refs = section(&shelf, "references");
+    assert_eq!(cells(refs, "refName"), ["author"]);
+    assert_eq!(cells(refs, "onDelete"), ["cascade"]);
+    assert_eq!(cells(refs, "onUpdate"), ["restrict"]);
+    assert_eq!(cells(section(&shelf, "triggers"), "name"), ["shelf_touch"]);
+    assert_eq!(cells(section(&shelf, "usedBy"), "refName"), ["titles"]);
+    assert!(cells(section(&shelf, "stats"), "property").contains(&"totalSize".to_string()));
+    let author = detail(&mut s, k, "sc_det", "author", ObjectKind::Table);
+    assert_eq!(
+        cells(section(&author, "referencedBy"), "refName"),
+        ["Book Shelf"]
+    );
+    assert_eq!(
+        cells(section(&author, "columns"), "extra")[0],
+        "identity always"
+    );
+    let log = detail(&mut s, k, "sc_det", "log", ObjectKind::Table);
+    assert_eq!(cells(section(&log, "partitions"), "refName"), ["log_2026"]);
+    let view = detail(&mut s, k, "sc_det", "titles", ObjectKind::View);
+    assert_eq!(
+        cells(section(&view, "uses"), "refName"),
+        ["Book Shelf", "author"]
+    );
+    let function = detail(&mut s, k, "sc_det", "twice", ObjectKind::Routine);
+    let props = section(&function, "properties");
+    assert!(cells(props, "value").contains(&"immutable".to_string()));
+    assert!(
+        function
+            .ddl
+            .as_deref()
+            .unwrap()
+            .contains("CREATE OR REPLACE FUNCTION sc_det.twice")
+    );
+    let mood = detail(&mut s, k, "sc_det", "mood", ObjectKind::Type);
+    assert_eq!(
+        cells(section(&mood, "values"), "value"),
+        ["sad", "ok", "it's fine"]
+    );
+
+    // the DDL builds the same structure in an empty schema
+    let objects: [(&str, ObjectKind, bool); 11] = [
+        ("mood", ObjectKind::Type, false),
+        ("price", ObjectKind::Type, false),
+        ("ticket", ObjectKind::Sequence, false),
+        ("touch", ObjectKind::Routine, true),
+        ("twice", ObjectKind::Routine, true),
+        ("author", ObjectKind::Table, false),
+        ("Book Shelf", ObjectKind::Table, false),
+        ("log", ObjectKind::Table, false),
+        ("log_2026", ObjectKind::Table, false),
+        ("titles", ObjectKind::View, false),
+        ("names", ObjectKind::Matview, false),
+    ];
+    let before: Vec<ObjectDetails> = objects
+        .iter()
+        .map(|(name, object, _)| detail(&mut s, k, "sc_det", name, *object))
+        .collect();
+    for (d, (name, ..)) in before.iter().zip(&objects) {
+        assert!(d.ddl.is_some(), "no DDL for {name}");
+    }
+    run(&mut s, "DROP SCHEMA sc_det CASCADE");
+    run(&mut s, "CREATE SCHEMA sc_det");
+    for (d, (name, _, whole)) in before.iter().zip(&objects) {
+        let ddl = d.ddl.as_deref().unwrap();
+        // the foreign key and the view need the other tables: both come after them here
+        let _ = name;
+        run_ddl(&mut s, ddl, *whole);
+    }
+    for (old, (name, object, _)) in before.iter().zip(&objects) {
+        let new = detail(&mut s, k, "sc_det", name, *object);
+        assert_eq!(structure(old), structure(&new), "{name}");
+        assert_eq!(old.ddl, new.ddl, "{name}");
+    }
+    run(&mut s, "DROP SCHEMA sc_det CASCADE");
+}
+
+fn mysql_details_round_trip(p: &Profile, maria: bool) {
+    let mut s = open(p);
+    let k = DbKind::Mysql;
+    for sql in [
+        "DROP VIEW IF EXISTS d_titles",
+        "DROP TABLE IF EXISTS d_book",
+        "DROP TABLE IF EXISTS d_author",
+        "DROP FUNCTION IF EXISTS d_twice",
+        "DROP PROCEDURE IF EXISTS d_count",
+        "CREATE TABLE d_author (id int NOT NULL AUTO_INCREMENT, name varchar(100) NOT NULL COMMENT 'who', \
+           PRIMARY KEY (id), UNIQUE KEY d_author_name (name)) ENGINE=InnoDB COMMENT='the authors'",
+        "CREATE TABLE d_book (id int NOT NULL, author_id int NOT NULL, title varchar(200) DEFAULT 'untitled', \
+           `Größe` decimal(6,2), shout varchar(200) GENERATED ALWAYS AS (upper(title)) VIRTUAL, \
+           PRIMARY KEY (id), KEY d_book_by_title (title), \
+           CONSTRAINT d_book_author FOREIGN KEY (author_id) REFERENCES d_author (id) ON DELETE CASCADE) ENGINE=InnoDB",
+        "CREATE TRIGGER d_book_touch BEFORE UPDATE ON d_book FOR EACH ROW SET NEW.title = NEW.title",
+        "CREATE VIEW d_titles AS SELECT b.title, a.name FROM d_book b JOIN d_author a ON a.id = b.author_id",
+        "CREATE FUNCTION d_twice(n int) RETURNS int DETERMINISTIC RETURN n * 2",
+        "CREATE PROCEDURE d_count(OUT n int) BEGIN SELECT COUNT(*) INTO n FROM d_book; END",
+    ] {
+        run(&mut s, sql);
+    }
+    let book = detail(&mut s, k, "shop", "d_book", ObjectKind::Table);
+    let columns = section(&book, "columns");
+    assert_eq!(
+        cells(columns, "name"),
+        ["id", "author_id", "title", "Größe", "shout"]
+    );
+    assert_eq!(cells(columns, "key")[..2], ["pk", "fk"]);
+    assert!(
+        cells(columns, "extra")[4]
+            .to_lowercase()
+            .contains("generated")
+    );
+    let refs = section(&book, "references");
+    assert_eq!(cells(refs, "refName"), ["d_author"]);
+    assert_eq!(cells(refs, "onDelete"), ["cascade"]);
+    assert_eq!(cells(section(&book, "triggers"), "name"), ["d_book_touch"]);
+    assert!(cells(section(&book, "indexes"), "name").contains(&"d_book_by_title".to_string()));
+    let author = detail(&mut s, k, "shop", "d_author", ObjectKind::Table);
+    assert_eq!(
+        cells(section(&author, "referencedBy"), "refName"),
+        ["d_book"]
+    );
+    assert_eq!(cells(section(&author, "columns"), "comment")[1], "who");
+    assert!(cells(section(&author, "stats"), "value").contains(&"the authors".to_string()));
+    let view = detail(&mut s, k, "shop", "d_titles", ObjectKind::View);
+    if maria {
+        // MariaDB does not say what a view reads: noted, not fatal
+        assert!(view.notes.contains(&"uses".to_string()), "{:?}", view.notes);
+    } else {
+        assert_eq!(
+            cells(section(&view, "uses"), "refName"),
+            ["d_author", "d_book"]
+        );
+        assert_eq!(cells(section(&book, "usedBy"), "refName"), ["d_titles"]);
+    }
+    let procedure = detail(&mut s, k, "shop", "d_count", ObjectKind::Routine);
+    assert_eq!(cells(section(&procedure, "parameters"), "mode"), ["out"]);
+
+    let objects: [(&str, ObjectKind, bool); 5] = [
+        ("d_author", ObjectKind::Table, false),
+        ("d_book", ObjectKind::Table, false),
+        ("d_titles", ObjectKind::View, true),
+        ("d_twice", ObjectKind::Routine, true),
+        ("d_count", ObjectKind::Routine, true),
+    ];
+    let before: Vec<ObjectDetails> = objects
+        .iter()
+        .map(|(name, object, _)| detail(&mut s, k, "shop", name, *object))
+        .collect();
+    for sql in [
+        "DROP VIEW d_titles",
+        "DROP TABLE d_book",
+        "DROP TABLE d_author",
+        "DROP FUNCTION d_twice",
+        "DROP PROCEDURE d_count",
+    ] {
+        run(&mut s, sql);
+    }
+    for (d, (name, _, whole)) in before.iter().zip(&objects) {
+        let ddl = d
+            .ddl
+            .as_deref()
+            .unwrap_or_else(|| panic!("no DDL for {name}"));
+        run_ddl(&mut s, ddl, *whole);
+    }
+    for (old, (name, object, _)) in before.iter().zip(&objects) {
+        let new = detail(&mut s, k, "shop", name, *object);
+        assert_eq!(structure(old), structure(&new), "{name}");
+        assert_eq!(old.ddl, new.ddl, "{name}");
+    }
+    for sql in [
+        "DROP VIEW d_titles",
+        "DROP TABLE d_book",
+        "DROP TABLE d_author",
+        "DROP FUNCTION d_twice",
+        "DROP PROCEDURE d_count",
+    ] {
+        run(&mut s, sql);
+    }
+}
+
+#[test]
+#[ignore = "needs the database containers"]
+fn mysql_details_and_ddl_round_trip() {
+    mysql_details_round_trip(&my(), false);
+}
+
+#[test]
+#[ignore = "needs the database containers"]
+fn mariadb_details_and_ddl_round_trip() {
+    mysql_details_round_trip(&maria(), true);
+}
+
+/// SQL Server: batches end at `GO`; a batch that is a module (view, routine, trigger) is one statement.
+fn run_tsql(s: &mut Box<dyn Session>, ddl: &str) {
+    let mut batch = String::new();
+    let mut batches = Vec::new();
+    for line in ddl.lines() {
+        if line.trim() == "GO" {
+            batches.push(std::mem::take(&mut batch));
+        } else {
+            batch.push_str(line);
+            batch.push('\n');
+        }
+    }
+    batches.push(batch);
+    for batch in batches.iter().map(|b| b.trim()).filter(|b| !b.is_empty()) {
+        let module = [
+            "CREATE VIEW",
+            "CREATE PROC",
+            "CREATE FUNCTION",
+            "CREATE TRIGGER",
+        ]
+        .iter()
+        .any(|w| batch.to_uppercase().starts_with(w));
+        run_ddl(s, batch, module);
+    }
+}
+
+#[test]
+#[ignore = "needs the database containers"]
+fn sqlserver_details_and_ddl_round_trip() {
+    let mut s = open(&ms());
+    let k = DbKind::Sqlserver;
+    let drop = [
+        "IF OBJECT_ID('sc_det.titles') IS NOT NULL DROP VIEW sc_det.titles",
+        "IF OBJECT_ID('sc_det.twice') IS NOT NULL DROP FUNCTION sc_det.twice",
+        "IF OBJECT_ID('sc_det.[Book Shelf]') IS NOT NULL DROP TABLE sc_det.[Book Shelf]",
+        "IF OBJECT_ID('sc_det.author') IS NOT NULL DROP TABLE sc_det.author",
+        "IF OBJECT_ID('sc_det.ticket') IS NOT NULL DROP SEQUENCE sc_det.ticket",
+    ];
+    for sql in drop {
+        run(&mut s, sql);
+    }
+    for sql in [
+        "IF SCHEMA_ID('sc_det') IS NULL EXEC('CREATE SCHEMA sc_det')",
+        "CREATE SEQUENCE sc_det.ticket AS int START WITH 100 INCREMENT BY 5 MINVALUE 1 MAXVALUE 100000 NO CYCLE",
+        "CREATE TABLE sc_det.author (id int IDENTITY(10, 2) NOT NULL, name nvarchar(100) NOT NULL, \
+           CONSTRAINT author_pk PRIMARY KEY CLUSTERED (id), CONSTRAINT author_name UNIQUE NONCLUSTERED (name))",
+        "CREATE TABLE sc_det.[Book Shelf] (id int NOT NULL, author_id int NOT NULL, \
+           title nvarchar(200) NULL CONSTRAINT shelf_title DEFAULT ('untitled'), cost decimal(10, 2) NULL, \
+           [Größe] decimal(6, 2) NULL, shout AS (upper([title])) PERSISTED, at datetime2(3) NULL, \
+           CONSTRAINT shelf_pk PRIMARY KEY CLUSTERED (id), CONSTRAINT shelf_cost CHECK ([cost] < 1000), \
+           CONSTRAINT shelf_author FOREIGN KEY (author_id) REFERENCES sc_det.author (id) ON DELETE CASCADE)",
+        "CREATE NONCLUSTERED INDEX shelf_by_title ON sc_det.[Book Shelf] (title DESC) INCLUDE (cost) WHERE title IS NOT NULL",
+        "CREATE TRIGGER sc_det.shelf_touch ON sc_det.[Book Shelf] AFTER UPDATE AS BEGIN SET NOCOUNT ON; END",
+        "CREATE VIEW sc_det.titles AS SELECT b.title, a.name FROM sc_det.[Book Shelf] b JOIN sc_det.author a ON a.id = b.author_id",
+        "CREATE FUNCTION sc_det.twice(@n int) RETURNS int AS BEGIN RETURN @n * 2; END",
+    ] {
+        run(&mut s, sql);
+    }
+    let shelf = detail(&mut s, k, "sc_det", "Book Shelf", ObjectKind::Table);
+    assert!(shelf.notes.is_empty(), "{:?}", shelf.notes);
+    let columns = section(&shelf, "columns");
+    assert_eq!(
+        cells(columns, "name"),
+        ["id", "author_id", "title", "cost", "Größe", "shout", "at"]
+    );
+    assert_eq!(cells(columns, "key")[..2], ["pk", "fk"]);
+    assert!(cells(columns, "extra")[5].starts_with("computed:"));
+    assert_eq!(cells(columns, "type")[6], "datetime2(3)");
+    let refs = section(&shelf, "references");
+    assert_eq!(cells(refs, "refName"), ["author"]);
+    assert_eq!(cells(refs, "onDelete"), ["cascade"]);
+    assert_eq!(cells(section(&shelf, "triggers"), "name"), ["shelf_touch"]);
+    assert!(cells(section(&shelf, "usedBy"), "refName").contains(&"titles".to_string()));
+    let author = detail(&mut s, k, "sc_det", "author", ObjectKind::Table);
+    assert_eq!(
+        cells(section(&author, "referencedBy"), "refName"),
+        ["Book Shelf"]
+    );
+    assert_eq!(cells(section(&author, "columns"), "extra")[0], "identity");
+    let view = detail(&mut s, k, "sc_det", "titles", ObjectKind::View);
+    assert_eq!(
+        cells(section(&view, "uses"), "refName"),
+        ["author", "Book Shelf"]
+    );
+    let function = detail(&mut s, k, "sc_det", "twice", ObjectKind::Routine);
+    assert_eq!(cells(section(&function, "parameters"), "name"), ["@n"]);
+
+    let objects: [(&str, ObjectKind); 5] = [
+        ("ticket", ObjectKind::Sequence),
+        ("author", ObjectKind::Table),
+        ("Book Shelf", ObjectKind::Table),
+        ("titles", ObjectKind::View),
+        ("twice", ObjectKind::Routine),
+    ];
+    let before: Vec<ObjectDetails> = objects
+        .iter()
+        .map(|(name, object)| detail(&mut s, k, "sc_det", name, *object))
+        .collect();
+    for sql in drop {
+        run(&mut s, sql);
+    }
+    for (d, (name, _)) in before.iter().zip(&objects) {
+        run_tsql(
+            &mut s,
+            d.ddl
+                .as_deref()
+                .unwrap_or_else(|| panic!("no DDL for {name}")),
+        );
+    }
+    for (old, (name, object)) in before.iter().zip(&objects) {
+        let new = detail(&mut s, k, "sc_det", name, *object);
+        assert_eq!(structure(old), structure(&new), "{name}");
+        assert_eq!(old.ddl, new.ddl, "{name}");
+    }
+    for sql in drop {
+        run(&mut s, sql);
+    }
+}
