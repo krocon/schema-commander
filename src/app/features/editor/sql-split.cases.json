@@ -362,6 +362,15 @@
         "select f()",
         "select 'x;y'"
       ]
+    },
+    {
+      "name": "a backslash escapes the quote",
+      "dialect": "clickhouse",
+      "script": "select 'it\\'s; fine'; select `a;b` from t",
+      "statements": [
+        "select 'it\\'s; fine'",
+        "select `a;b` from t"
+      ]
     }
   ]
 }

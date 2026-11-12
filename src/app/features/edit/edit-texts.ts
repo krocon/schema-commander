@@ -12,6 +12,8 @@ export const EDIT_EN = {
     unknown: 'The columns of the table are still being read.',
     local: 'Reset the local order and filter first: rows are edited where the table stands.',
     running: 'The rows are still being read.',
+    unsupported:
+      'Rows of this database are not edited here: it has no transactions and no unique keys to tell rows apart.',
   },
   noCell: 'Choose a cell first.',
   noRowKey: 'The key of this row is NULL: it cannot be edited.',

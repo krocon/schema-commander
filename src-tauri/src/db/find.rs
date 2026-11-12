@@ -308,6 +308,7 @@ fn as_text(column: &str, kind: DbKind) -> String {
         DbKind::Sqlite => format!("CAST({column} AS TEXT)"),
         DbKind::Oracle => format!("TO_CHAR({column})"),
         DbKind::Duckdb => format!("CAST({column} AS VARCHAR)"),
+        DbKind::Clickhouse => format!("toString({column})"),
     }
 }
 
@@ -345,6 +346,7 @@ pub fn data_question(
             DbKind::Sqlserver => format!("@P{n}"),
             DbKind::Sqlite => format!("?{n}"),
             DbKind::Oracle => format!(":{n}"),
+            DbKind::Clickhouse => format!("{{p{n}:String}}"),
         }
     };
     let sensitive = spec.case_sensitive;
@@ -357,6 +359,7 @@ pub fn data_question(
         selected.push(match kind {
             DbKind::Sqlite => format!("substr({text}, 1, {VALUE_CHARS})"),
             DbKind::Oracle => format!("SUBSTR({text}, 1, {VALUE_CHARS})"),
+            DbKind::Clickhouse => format!("substringUTF8({text}, 1, {VALUE_CHARS})"),
             DbKind::Postgres | DbKind::Mysql | DbKind::Sqlserver | DbKind::Duckdb => {
                 format!("LEFT({text}, {VALUE_CHARS})")
             }
@@ -416,6 +419,31 @@ pub fn data_question(
             (DbKind::Sqlite, _) => {
                 format!("{text} = {} COLLATE NOCASE", place(spec.text.clone()))
             }
+            // no LIKE: its escapes are another story there, and a position says the same
+            (DbKind::Clickhouse, Mode::Contains) if sensitive => {
+                format!("position({text}, {}) > 0", place(spec.text.clone()))
+            }
+            (DbKind::Clickhouse, Mode::Contains) => format!(
+                "positionCaseInsensitiveUTF8({text}, {}) > 0",
+                place(spec.text.clone())
+            ),
+            (DbKind::Clickhouse, Mode::Exact) if sensitive => {
+                format!("{text} = {}", place(spec.text.clone()))
+            }
+            (DbKind::Clickhouse, Mode::Exact) => {
+                format!(
+                    "lowerUTF8({text}) = lowerUTF8({})",
+                    place(spec.text.clone())
+                )
+            }
+            (DbKind::Clickhouse, Mode::Regex) => format!(
+                "match({text}, {})",
+                place(if sensitive {
+                    spec.text.clone()
+                } else {
+                    format!("(?i){}", spec.text)
+                })
+            ),
             (DbKind::Duckdb, Mode::Contains) => {
                 let op = if sensitive { "LIKE" } else { "ILIKE" };
                 format!("{text} {op} {} ESCAPE '{ESCAPE}'", place(pattern.clone()))
@@ -635,6 +663,16 @@ fn columns_of(
             limit,
             stop,
         )?,
+        DbKind::Clickhouse => s.ask(
+            "SELECT c.table, c.name, c.type FROM system.columns c \
+             WHERE c.database = {p1:String} AND c.table NOT LIKE '.inner%' \
+               AND (c.database, c.table) IN (SELECT database, name FROM system.tables \
+                 WHERE engine NOT LIKE '%View' AND NOT is_temporary) \
+             ORDER BY c.table, c.position",
+            &[schema],
+            limit,
+            stop,
+        )?,
         DbKind::Duckdb => s.ask(
             "SELECT c.table_name, c.column_name, c.data_type FROM duckdb_columns() c \
              JOIN duckdb_tables() t ON t.database_name = c.database_name \
@@ -747,6 +785,11 @@ pub(super) fn source_questions(kind: DbKind, flavor: Flavor) -> Vec<&'static str
         DbKind::Sqlite => vec![
             "SELECT type, name, sql FROM sqlite_master \
              WHERE sql IS NOT NULL AND type IN ('view', 'trigger', 'table') AND ?1 = ?1",
+        ],
+        DbKind::Clickhouse => vec![
+            "SELECT if(engine LIKE '%View', 'view', 'table'), name, create_table_query \
+             FROM system.tables \
+             WHERE database = {p1:String} AND NOT is_temporary AND name NOT LIKE '.inner%'",
         ],
         // a table's statement holds its checks and defaults
         DbKind::Duckdb => vec![

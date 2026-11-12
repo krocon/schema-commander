@@ -142,8 +142,13 @@ export class EditService {
     tab: QueryTab,
     columns: readonly QueryColumn[],
   ):
-    { readonly pk: readonly number[] } | { readonly reason: ReadOnlyReason | 'local' | 'running' } {
+    | { readonly pk: readonly number[] }
+    | { readonly reason: ReadOnlyReason | 'local' | 'running' | 'unsupported' } {
     const view = tab.tableView();
+    // a database without transactions and unique keys: rows are read there, not edited (prompt 035d)
+    if (!this.connections.capabilities(tab.connectionId() ?? '').edit) {
+      return { reason: 'unsupported' };
+    }
     const profile = this.connections.profiles().find((p) => p.id === tab.connectionId());
     const base = editability(
       !!view,

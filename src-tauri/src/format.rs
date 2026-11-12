@@ -35,6 +35,8 @@ pub enum Dialect {
     Oracle,
     /// DuckDB (prompt 035c): the common rules.
     Duckdb,
+    /// ClickHouse (prompt 035d): backticks and backslash escapes, as MySQL writes them.
+    Clickhouse,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

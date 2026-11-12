@@ -254,6 +254,23 @@ pub fn diagram(
                 stop,
             ),
         ),
+        // tables and what they are sorted by; there are no keys to draw
+        DbKind::Clickhouse => (
+            s.ask(
+                "SELECT c.table, c.name, c.type, if(c.type LIKE 'Nullable(%', 'true', 'false'), \
+                   if(c.is_in_primary_key, 'true', 'false') \
+                 FROM system.columns c \
+                 WHERE c.database = {p1:String} AND c.table NOT LIKE '.inner%' \
+                   AND (c.database, c.table) IN (SELECT database, name FROM system.tables \
+                     WHERE engine NOT LIKE '%View' AND NOT is_temporary) \
+                 ORDER BY c.table, c.position",
+                one,
+                Some(TIMEOUT),
+                stop,
+            )?,
+            Vec::new(),
+            Ok(Vec::new()),
+        ),
         DbKind::Duckdb => (
             s.ask(
                 "SELECT c.table_name, c.column_name, c.data_type, \

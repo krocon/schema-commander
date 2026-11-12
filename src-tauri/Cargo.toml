@@ -41,6 +41,9 @@ oracledb = "=26.0.0-beta.5"
 # DuckDB (prompt 035c): the library is built in (C++, a few minutes of build time, about 50 MB in the
 # package); Parquet and JSON readers with it, so no extension has to be fetched.
 duckdb = { version = "=1.20000.1", features = ["bundled", "parquet", "json"] }
+# ClickHouse (prompt 035d) speaks HTTP: a small blocking client that is in the tree already (through
+# Tauri's tooling), with rustls and the ring provider like the other drivers.
+ureq = { version = "3.5", default-features = false, features = ["rustls"] }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "net", "sync", "io-util", "macros"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }

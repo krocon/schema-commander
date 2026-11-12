@@ -25,6 +25,7 @@ export const CONNECTION_EN = {
     sqlite: 'SQLite (file)',
     oracle: 'Oracle',
     duckdb: 'DuckDB',
+    clickhouse: 'ClickHouse',
   },
   password: 'Password',
   sshSecretTitle: 'SSH tunnel: password or passphrase',

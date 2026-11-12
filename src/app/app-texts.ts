@@ -45,6 +45,7 @@ export const APP_EN = {
   trust: 'Trust',
   txStillOpen:
     'The transaction is still open: commit or roll back first, then switch back to auto-commit.',
+  noTransactions: 'This database has no transactions: every statement is kept as it runs.',
   historyConnectionOn: 'The history records the statements of this connection again.',
   historyConnectionOff: 'The history no longer records statements of this connection.',
   historyOn: 'The history is switched on.',

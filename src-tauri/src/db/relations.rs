@@ -224,6 +224,8 @@ pub fn relations(
         DbKind::Sqlserver => fold(&s.ask(MSSQL, &[schema, table], Some(TIMEOUT), stop)?),
         DbKind::Sqlite => sqlite(s, schema, table, stop)?,
         DbKind::Duckdb => fold(&s.ask(DUCKDB, &[schema, table], Some(TIMEOUT), stop)?),
+        // ClickHouse has no foreign keys
+        DbKind::Clickhouse => Vec::new(),
         DbKind::Oracle => {
             fold(&s.ask(ORACLE, &[schema, table, schema, table], Some(TIMEOUT), stop)?)
         }

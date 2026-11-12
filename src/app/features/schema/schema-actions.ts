@@ -170,7 +170,13 @@ export class SchemaActions {
       action === 'SCHEMA_DUPLICATE_TABLE' ||
       action === 'SCHEMA_TRUNCATE_TABLE' ||
       action === 'SCHEMA_DROP_TABLE';
-    return !structure || this.connections.capabilities(this.connections.activeId() ?? '').structure;
+    const capabilities = this.connections.capabilities(this.connections.activeId() ?? '');
+    // what writes rows: import, test data, copying tables
+    const rows =
+      action === 'SCHEMA_IMPORT_TABLE' ||
+      action === 'SCHEMA_TESTDATA' ||
+      action === 'SCHEMA_TRANSFER';
+    return (!structure || capabilities.structure) && (!rows || capabilities.edit);
   }
 
   /** Runs `action` on a row (default: the active one). */

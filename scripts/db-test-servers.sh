@@ -9,6 +9,7 @@
 #   sh scripts/db-test-servers.sh down    # removes the containers
 #
 # SQL Server runs as linux/amd64 (emulated on Apple Silicon, about 30 s to start).
+# ClickHouse (prompt 035d): HTTP on 127.0.0.1:28123, user and database `shop`.
 # Oracle (prompt 035b): Oracle Database Free, service FREEPDB1, user SHOP – a large image (about 6 GB),
 # native on Apple Silicon. `up` starts it with the others; SC_DBTEST_ORACLE=0 leaves it out.
 set -eu
@@ -28,11 +29,14 @@ up)
     start-single-node --insecure >/dev/null
   docker run -d --rm --name sc-dbtest-tsdb -p 127.0.0.1:25433:5432 -e POSTGRES_PASSWORD="$pw" \
     timescale/timescaledb:latest-pg17 >/dev/null
-  want=6
+  docker run -d --rm --name sc-dbtest-ch -p 127.0.0.1:28123:8123 -e CLICKHOUSE_USER=shop \
+    -e CLICKHOUSE_PASSWORD="$pw" -e CLICKHOUSE_DB=shop -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 \
+    clickhouse/clickhouse-server:25.8 >/dev/null
+  want=7
   if [ "${SC_DBTEST_ORACLE:-1}" != "0" ]; then
     docker run -d --rm --name sc-dbtest-ora -p 127.0.0.1:21521:1521 -e ORACLE_PASSWORD="$pw" \
       -e APP_USER=shop -e APP_USER_PASSWORD="$pw" gvenzl/oracle-free:23-slim-faststart >/dev/null
-    want=7
+    want=8
   fi
   printf "waiting for the servers"
   for _ in $(seq 1 120); do
@@ -43,7 +47,8 @@ up)
     docker logs sc-dbtest-ms 2>&1 | grep -q "Recovery is complete" && ok=$((ok + 1))
     docker exec sc-dbtest-crdb cockroach sql --insecure -e "select 1" >/dev/null 2>&1 && ok=$((ok + 1))
     docker exec sc-dbtest-tsdb pg_isready -q -U postgres 2>/dev/null && ok=$((ok + 1))
-    if [ "$want" -eq 7 ]; then
+    curl -s http://127.0.0.1:28123/ping 2>/dev/null | grep -q Ok && ok=$((ok + 1))
+    if [ "$want" -eq 8 ]; then
       docker logs sc-dbtest-ora 2>&1 | grep -q "DATABASE IS READY TO USE" && ok=$((ok + 1))
     fi
     [ "$ok" -eq "$want" ] && { echo " ready"; exit 0; }
@@ -55,7 +60,7 @@ up)
   ;;
 down)
   docker rm -f sc-dbtest-pg sc-dbtest-my sc-dbtest-maria sc-dbtest-ms sc-dbtest-crdb sc-dbtest-tsdb \
-    sc-dbtest-ora \
+    sc-dbtest-ora sc-dbtest-ch \
     >/dev/null 2>&1 || true
   ;;
 *)

@@ -23,6 +23,7 @@ export const CONNECTION_DE: Translation<typeof CONNECTION_EN> = {
     sqlite: 'SQLite (Datei)',
     oracle: 'Oracle',
     duckdb: 'DuckDB',
+    clickhouse: 'ClickHouse',
   },
   password: 'Passwort',
   sshSecretTitle: 'SSH-Tunnel: Passwort oder Passphrase',

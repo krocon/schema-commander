@@ -311,6 +311,8 @@ pub fn type_for(to: DbKind, class: Class) -> (String, Option<&'static str>) {
                 Some("a type this app does not know: copied as text"),
             ),
         },
+        // only for the sake of a complete answer: `plan` refuses ClickHouse before it comes to this
+        DbKind::Clickhouse => own("String"),
         DbKind::Duckdb => match class {
             Class::SmallInt => own("SMALLINT"),
             Class::Int => own("INTEGER"),
@@ -571,6 +573,12 @@ pub fn plan(
     target: &Snapshot,
     request: &Request,
 ) -> AppResult<Plan> {
+    for kind in [from, to] {
+        if kind == DbKind::Clickhouse {
+            // a table there needs an engine and a sorting key no other database knows of
+            return Err(super::not_yet(kind, "copying tables"));
+        }
+    }
     if request.tables.is_empty() {
         return Err(invalid("choose at least one table"));
     }

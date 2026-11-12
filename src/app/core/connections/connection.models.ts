@@ -1,7 +1,8 @@
 import { CONNECTION_MODEL_TEXTS } from './connection-model-texts';
 
 /** Mirrors `DbKind` in src-tauri/src/db/mod.rs. */
-export type DbKind = 'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle' | 'duckdb';
+export type DbKind =
+  'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle' | 'duckdb' | 'clickhouse';
 
 /** An embedded database: a file of this computer (or memory) – no host, no login. */
 export function isFileKind(kind: DbKind): boolean {
@@ -112,6 +113,8 @@ export interface Capabilities {
   readonly access: boolean;
   /** The structure of a table can be edited, schemas can be compared. */
   readonly structure: boolean;
+  /** Rows can be changed in the grid and files imported. */
+  readonly edit: boolean;
 }
 
 /** What is assumed of a connection that has not said what it can do: everything. */
@@ -126,6 +129,7 @@ export const ALL_CAPABILITIES: Capabilities = {
   monitor: true,
   access: true,
   structure: true,
+  edit: true,
 };
 
 /** Mirrors `ConnectionInfo`. */
@@ -150,6 +154,8 @@ export const DB_KINDS: readonly {
   { kind: 'oracle', label: 'Oracle', port: 1521 },
   // a file, or `:memory:` to query Parquet, CSV and JSON files with (prompt 035c)
   { kind: 'duckdb', label: 'DuckDB', port: 0 },
+  // over HTTP (8123, with TLS usually 8443) (prompt 035d)
+  { kind: 'clickhouse', label: 'ClickHouse', port: 8123 },
   {
     kind: 'sqlite',
     // a getter: the language may change while the app runs

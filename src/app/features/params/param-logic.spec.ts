@@ -272,6 +272,10 @@ describe('writing a statement for the driver', () => {
     expect(bound('duckdb').sql).toBe(
       'select * from t where k = $1 and d >= CAST($2 AS DATE) and n = $3 and id in ($4, $5, $6) and p < CAST($7 AS DECIMAL(38,10)) and x is NULL and y in (NULL)',
     );
+    // ClickHouse: the placeholder names a type
+    expect(bound('clickhouse').sql).toBe(
+      'select * from t where k = {p1:Int64} and d >= {p2:String} and n = {p3:String} and id in ({p4:Int64}, {p5:Int64}, {p6:Int64}) and p < {p7:String} and x is NULL and y in (NULL)',
+    );
     // Oracle: numbered, no casts – the driver binds numbers and dates as what they are
     expect(bound('oracle').sql).toBe(
       'select * from t where k = :1 and d >= :2 and n = :3 and id in (:4, :5, :6) and p < :7 and x is NULL and y in (NULL)',

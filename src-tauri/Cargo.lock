@@ -4711,6 +4711,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "trash",
+ "ureq",
  "windows-native-keyring-store",
  "zeroize",
 ]

@@ -15,7 +15,7 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
 
 ## What works
 
-- Connections to PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, DuckDB and SQLite files: profiles in folders with colour tags,
+- Connections to PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, ClickHouse, DuckDB and SQLite files: profiles in folders with colour tags,
   passwords only in the keychain of your OS; a demo database in memory to try things out.
   Servers that speak PostgreSQL's protocol work as PostgreSQL connections – tested with CockroachDB and
   TimescaleDB: the app finds out who answers and adapts (cancel, transaction state, catalog).
@@ -23,7 +23,10 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   browse, filter, edit and search. Plans, the server monitor, rights and structure editing are not there for
   Oracle yet, and stopping a statement closes its session.
   DuckDB is built in: open a `.duckdb` file, or `:memory:` to query Parquet, CSV and JSON files where they lie
-  (`SELECT * FROM 'sales.parquet'`); nothing is downloaded, extensions are never loaded on their own
+  (`SELECT * FROM 'sales.parquet'`); nothing is downloaded, extensions are never loaded on their own.
+  ClickHouse is there to read and analyse: run, browse, filter, search, cancel – over its HTTP interface.
+  Editing rows in the grid, importing files and copying tables are not offered for it (it has no
+  transactions and no unique keys)
 - Query tabs, each with its own connection and result. Nothing ever asks „save?“: every text is backed up a
   moment after you type and is there again after a restart or a crash; `.sql` files keep their encoding
 - SQL editor with syntax highlighting; <kbd>Ctrl/⌘</kbd>+<kbd>Enter</kbd> runs the selection or the statement
