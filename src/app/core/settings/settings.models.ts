@@ -143,6 +143,8 @@ export interface Settings {
    * Where the user moved the tables of an ER diagram (prompt 037), per diagram (connection, schema,
    * table): the id of a table → `[x, y]`.
    */
+  /** What the user set for a table when generating test data (prompt 049), by connection/schema/table. */
+  readonly testdataTemplates: Readonly<Record<string, unknown>>;
   /** AI control over MCP (prompt 048): off unless the user turns it on; never part of an export. */
   readonly ai: AiSettings;
   /** Where the tools of the databases are, when the user said so (prompt 044): tool → full path. */
@@ -239,6 +241,7 @@ export const DEFAULT_SETTINGS: Settings = {
   columnLayouts: {},
   virtualRelations: {},
   ai: DEFAULT_AI,
+  testdataTemplates: {},
   toolPaths: {},
   diagramPlaces: {},
   statsMeasures: ['cells', 'sum', 'mean', 'min', 'max'],
@@ -438,6 +441,12 @@ export function mergeSettings(saved: unknown): Settings {
         : {},
     filterBarVisible: bool('filterBarVisible'),
     ai: readAi(s['ai']),
+    testdataTemplates:
+      s['testdataTemplates'] &&
+      typeof s['testdataTemplates'] === 'object' &&
+      !Array.isArray(s['testdataTemplates'])
+        ? (s['testdataTemplates'] as Record<string, unknown>)
+        : {},
     toolPaths: readToolPaths(s['toolPaths']),
     diagramPlaces: readDiagramPlaces(s['diagramPlaces']),
     virtualRelations:

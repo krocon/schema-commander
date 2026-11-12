@@ -89,10 +89,13 @@
   **KI-Steuerung über MCP** (standardmäßig aus): Sidecar `schema-commander-mcp` + Brücke auf 127.0.0.1 mit
   Token; Freigabe je Verbindung (aus, Struktur, lesen, Schreiben als Vorschlag), Grenzen für Zeilen, Zeichen
   und versteckte Spalten, Protokoll, Vorschlagsdialog (Prompt 048, `docs/mcp.md`);
+  **Testdaten erzeugen**: je Spalte ein Generator (vorgeschlagen aus Typ, Schlüssel, Name), wiederholbar über
+  einen Startwert, eindeutig ohne zu merken, Fremdschlüssel aus vorhandenen Zeilen; Vorschau, Schreiben als Job
+  über den Lader des Imports oder als CSV/INSERT-Datei (Prompt 049);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a, 036–048),
+  erledigt: 001–034, 035a, 036–049),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -166,6 +169,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/structure/          StructureApi (struct_load, struct_plan, struct_apply) + DTOs – spiegelt
                                db/structure.rs und die Tabelle aus db/compare.rs
   app/core/transfer/           TransferApi (transfer_plan, transfer_run) + DTOs – spiegelt db/transfer.rs
+  app/core/testdata/           TestdataApi (testdata_suggest, _preview, _statements, _run, _export) – spiegelt
+                               testdata.rs
   app/core/text/               places.ts (rein: Stelle des Editors ↔ Offset im Text; Spalten in Codepunkten)
   app/core/theme/              Farbschemata: tokens.ts (Katalog), themes/*.json, theme-logic.ts (rein),
                                ThemeService (Root: Auswahl, Vorschau, eigene Schemata), ThemeApi (themes.json),
@@ -255,6 +260,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                Tabelle, Operationen, Prüfung, Skript)
   app/features/transfer/       TransferDialog (Quelle, Ziel, Vorschau, Lauf, Bericht), TransferService (Root: ein
                                Job, Schutz des Ziels), transfer-logic.ts (rein)
+  app/features/testdata/       TestdataDialog (Generator je Spalte, Vorschau), TestdataService (Root: ein Job,
+                               Schutz, Datei, Vorlagen), testdata-logic.ts (rein: Felder der Generatoren, Vorlagen)
   app/features/themes/         Farbschema-Galerie (ThemePicker, ThemeThumb, theme-picker-logic.ts),
                                Schema-Editor (ThemeEditor, theme-editor-logic.ts rein: Ids, Import, Kontrast)
   app/features/value/          ValuePanel (neben dem Gitter, <editlicious-editor readonly>), ValueService (Root:
@@ -294,6 +301,9 @@ src-tauri/                     Rust
                                nächstes NULL (rein, getestet)
   src/stats.rs                 Kennzahlen einer Auswahl über den Ergebnisspeicher: exakte Dezimalsumme (`Dec`),
                                Min/Max, Spanne, häufigste Werte (rein, getestet)
+  src/testdata.rs              Testdaten: Generatoren je Spalte, Zufall je Zelle aus (Startwert, Spalte, Zeile),
+                               eindeutig über einen Gang durch den Bereich, Muster, Vorschlag aus dem Katalog; eine
+                               Quelle für den Lader (rein; testdata_tests.rs, auch 1 Mio. Zeilen)
   src/saved.rs                 gespeicherte Abfragen: .sql-Dateien mit Kopfkommentar, Pfadprüfung, Suche,
                                Fingerabdruck des Ordners (rein, getestet)
   src/history.rs               Verlauf: history.sqlite, Suche, Aufbewahrung, endgültiges Löschen (rein, getestet)
@@ -427,6 +437,10 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   `--`; das Passwort ist nie ein Argument und steht in keiner Zeile, die das Fenster bekommt; was ein Lauf
   schreibt, entfernt er, wenn er scheitert oder angehalten wird. Wiederherstellen entscheidet im Backend nach der
   Schutzstufe.
+- **Testdaten**: Der Generator ist rein und wiederholbar – nichts in ihm hängt an Zeit, Reihenfolge oder einem
+  Zustand über Zeilen hinweg (außer dem Gang über die Eltern). Eindeutig wird nie durch Merken. Geschrieben
+  wird nur über `load::load`; wohin ein Fremdschlüssel zeigt, sagt der Katalog. Geschützte Verbindungen lehnt
+  das Backend ab.
 - **KI-Steuerung (MCP)**: aus, bis der Nutzer sie einschaltet – dann erst gibt es Port und Datei. Was ein
   Assistent darf, entscheidet nur `mcp.rs` (Stufe je Verbindung); lesend heißt: von `guard::classify` als lesend
   eingestuft **und** auf einer Sitzung, die auf dem Server nur lesen darf. Schreibendes läuft nie aus einem

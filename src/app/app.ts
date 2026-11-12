@@ -40,6 +40,8 @@ import { McpDialog } from './features/mcp/mcp-dialog';
 import { McpProposalDialog } from './features/mcp/mcp-proposal-dialog';
 import { McpService } from './features/mcp/mcp.service';
 import { MCP_TEXTS } from './features/mcp/mcp-texts';
+import { TestdataDialog } from './features/testdata/testdata-dialog';
+import { TestdataService } from './features/testdata/testdata.service';
 import { MonitorDialog } from './features/monitor/monitor-dialog';
 import { MonitorService } from './features/monitor/monitor.service';
 import { TransferDialog } from './features/transfer/transfer-dialog';
@@ -153,6 +155,7 @@ const SIDEBAR_MIN = 140;
     PlanDialog,
     TransferDialog,
     MonitorDialog,
+    TestdataDialog,
     McpDialog,
     McpProposalDialog,
     AccessDialog,
@@ -633,6 +636,11 @@ const SIDEBAR_MIN = 140;
         />
       }
     }
+    @if (testdata.target(); as filled) {
+      @defer (on immediate) {
+        <app-testdata-dialog [target]="filled" (closed)="testdata.close()" />
+      }
+    }
     @if (monitor.connectionId(); as watched) {
       @defer (on immediate) {
         <app-monitor-dialog [connectionId]="watched" (closed)="monitor.close()" />
@@ -792,6 +800,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly plans = inject(PlanService);
   protected readonly transfer = inject(TransferService);
   protected readonly monitor = inject(MonitorService);
+  protected readonly testdata = inject(TestdataService);
   protected readonly mcp = inject(McpService);
   protected readonly mcpTexts = MCP_TEXTS;
   protected readonly access = inject(AccessService);

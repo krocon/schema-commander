@@ -22,6 +22,7 @@ export const SCHEMA_DE: Translation<typeof SCHEMA_EN> = {
   newTable: 'Neue Tabelle …',
   duplicateTable: 'Tabelle duplizieren …',
   truncateTable: 'Tabelle leeren …',
+  testdata: 'Testdaten erzeugen …',
   dropTable: 'Tabelle löschen …',
   insertName: 'Name in den Editor einfügen',
   copyName: 'Name kopieren',

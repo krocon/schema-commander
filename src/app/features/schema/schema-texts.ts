@@ -23,6 +23,7 @@ export const SCHEMA_EN = {
   newTable: 'New table …',
   duplicateTable: 'Duplicate table …',
   truncateTable: 'Empty table …',
+  testdata: 'Generate test data …',
   dropTable: 'Drop table …',
   insertName: 'Insert name into the editor',
   copyName: 'Copy name',

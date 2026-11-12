@@ -7,6 +7,7 @@ import { BackupApi, TauriBackupApi } from './core/backup/backup-api';
 import { PlanApi, TauriPlanApi } from './core/plan/plan-api';
 import { AccessApi, TauriAccessApi } from './core/access/access-api';
 import { McpApi, TauriMcpApi } from './core/mcp/mcp-api';
+import { TauriTestdataApi, TestdataApi } from './core/testdata/testdata-api';
 import { MonitorApi, TauriMonitorApi } from './core/monitor/monitor-api';
 import { TauriTransferApi, TransferApi } from './core/transfer/transfer-api';
 import { StructureApi, TauriStructureApi } from './core/structure/structure-api';
@@ -35,6 +36,7 @@ export const appConfig: ApplicationConfig = {
     { provide: PlanApi, useClass: TauriPlanApi },
     { provide: TransferApi, useClass: TauriTransferApi },
     { provide: MonitorApi, useClass: TauriMonitorApi },
+    { provide: TestdataApi, useClass: TauriTestdataApi },
     { provide: McpApi, useClass: TauriMcpApi },
     { provide: AccessApi, useClass: TauriAccessApi },
     { provide: BackupApi, useClass: TauriBackupApi },

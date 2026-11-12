@@ -71,6 +71,9 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   commented out
 - ER diagram of a schema, or of a table with its neighbours: arranged by itself, tables can be moved, zoom,
   search, three levels of detail; the same as lists beside it; export as SVG, Mermaid or DBML
+- Test data: fill a table with rows that look plausible – a generator per column, proposed from types, keys
+  and names; the same seed gives the same rows; unique columns and foreign keys are respected; into the table
+  as a job, or as a CSV file or INSERT script
 - AI control over MCP (off by default): an assistant on the same computer reads the structure, runs reading
   queries within limits and proposes statements you confirm – per connection, with a protocol of every call
   ([docs/mcp.md](docs/mcp.md))

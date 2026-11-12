@@ -42,7 +42,7 @@ pub enum Op {
 }
 
 /// What a value of a column is, as far as the window knows it from the result.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum ValueKind {
     Number,
