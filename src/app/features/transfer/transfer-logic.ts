@@ -23,6 +23,7 @@ export function defaultSchema(kind: DbKind, database: string): string {
     case 'sqlserver':
       return 'dbo';
     case 'sqlite':
+    case 'duckdb':
       return 'main';
     case 'oracle':
       // a schema is a user: the caller fills in the one of the connection

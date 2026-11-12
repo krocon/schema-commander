@@ -1,4 +1,9 @@
-import { SshHost, SshTarget, tlsUnchecked } from '../../core/connections/connection.models';
+import {
+  SshHost,
+  SshTarget,
+  isFileKind,
+  tlsUnchecked,
+} from '../../core/connections/connection.models';
 import { shownHostKey } from '../../core/connections/connections.store';
 import { toAppError } from '../../core/errors/app-error';
 import { stageOf } from './connection-logic';
@@ -99,7 +104,7 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
             (input)="patch({ name: name.value })"
           />
 
-          @if (draft().kind === 'sqlite') {
+          @if (isFile()) {
             <label for="conn-database">{{ t.file }}</label>
             <span class="row">
               <input
@@ -108,6 +113,7 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                 type="text"
                 autocomplete="off"
                 spellcheck="false"
+                [placeholder]="draft().kind === 'duckdb' ? t.duckdbMemory : ''"
                 [value]="draft().database"
                 [class.invalid]="shown('database')"
                 [attr.aria-invalid]="!!shown('database')"
@@ -493,19 +499,20 @@ export class ConnectionDialog implements OnInit {
   protected readonly unknownKey = signal<{ keyType: string; fingerprint: string } | null>(null);
   protected readonly urlProblem = signal<string | null>(null);
   protected readonly uncheckedTls = computed(
-    () => this.draft().kind !== 'sqlite' && tlsUnchecked(this.draft().tls),
+    () => !this.isFile() && tlsUnchecked(this.draft().tls),
   );
 
   protected readonly problems = computed(() => profileProblems(this.withName()));
   protected readonly firstProblem = computed(() =>
     this.tried() ? (Object.values(this.problems())[0] ?? null) : null,
   );
+  protected readonly isFile = computed(() => isFileKind(this.draft().kind));
   protected readonly namePlaceholder = computed(() => suggestedName(this.draft()));
   protected readonly portPlaceholder = computed(() => portPlaceholder(this.draft().kind));
   protected readonly portText = computed(() => portText(this.draft()));
   protected readonly tlsWarning = computed(() => {
     const d = this.draft();
-    return d.kind !== 'sqlite' && d.tls === 'off' && suggestedTls(d.host) === 'verify';
+    return !isFileKind(d.kind) && d.tls === 'off' && suggestedTls(d.host) === 'verify';
   });
 
   ngOnInit(): void {
@@ -638,8 +645,12 @@ export class ConnectionDialog implements OnInit {
   }
 
   protected async chooseFile(): Promise<void> {
-    const path = await this.files.openFile(this.t.chooseSqliteTitle, [
-      { name: 'SQLite', extensions: ['db', 'sqlite', 'sqlite3', 'db3'] },
+    const duck = this.draft().kind === 'duckdb';
+    const title = duck ? this.t.chooseDuckdbTitle : this.t.chooseSqliteTitle;
+    const path = await this.files.openFile(title, [
+      duck
+        ? { name: 'DuckDB', extensions: ['duckdb', 'db', 'ddb'] }
+        : { name: 'SQLite', extensions: ['db', 'sqlite', 'sqlite3', 'db3'] },
       { name: this.t.allFiles, extensions: ['*'] },
     ]);
     if (path !== null) this.patch({ database: path });

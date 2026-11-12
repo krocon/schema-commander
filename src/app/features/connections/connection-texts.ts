@@ -24,6 +24,7 @@ export const CONNECTION_EN = {
     sqlserver: 'SQL Server',
     sqlite: 'SQLite (file)',
     oracle: 'Oracle',
+    duckdb: 'DuckDB',
   },
   password: 'Password',
   sshSecretTitle: 'SSH tunnel: password or passphrase',

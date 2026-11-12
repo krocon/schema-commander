@@ -1,7 +1,12 @@
 import { CONNECTION_MODEL_TEXTS } from './connection-model-texts';
 
 /** Mirrors `DbKind` in src-tauri/src/db/mod.rs. */
-export type DbKind = 'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle';
+export type DbKind = 'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle' | 'duckdb';
+
+/** An embedded database: a file of this computer (or memory) – no host, no login. */
+export function isFileKind(kind: DbKind): boolean {
+  return kind === 'sqlite' || kind === 'duckdb';
+}
 
 /** Mirrors `TlsMode`: no TLS (servers on this machine), or TLS with certificate and host name checked. */
 export type TlsMode = 'off' | 'prefer' | 'require' | 'verify-ca' | 'verify';
@@ -143,6 +148,8 @@ export const DB_KINDS: readonly {
   { kind: 'sqlserver', label: 'SQL Server', port: 1433 },
   // the database of an Oracle profile is its service name (prompt 035b)
   { kind: 'oracle', label: 'Oracle', port: 1521 },
+  // a file, or `:memory:` to query Parquet, CSV and JSON files with (prompt 035c)
+  { kind: 'duckdb', label: 'DuckDB', port: 0 },
   {
     kind: 'sqlite',
     // a getter: the language may change while the app runs
@@ -167,7 +174,7 @@ export function emptyProfile(kind: DbKind = 'postgres'): Profile {
     id: '',
     name: '',
     kind,
-    host: kind === 'sqlite' ? '' : 'localhost',
+    host: isFileKind(kind) ? '' : 'localhost',
     port: 0,
     database: '',
     user:
@@ -199,7 +206,7 @@ export function isLocalHost(host: string): boolean {
 
 /** `host:port/database` (or the file) as shown under the name. */
 export function whereLabel(p: Profile): string {
-  if (p.kind === 'sqlite') return p.database.trim();
+  if (isFileKind(p.kind)) return p.database.trim();
   const port = p.port || defaultPort(p.kind);
   const db = p.database.trim();
   return `${p.user.trim()}@${p.host.trim()}:${port}${db ? '/' + db : ''}`;
@@ -207,7 +214,7 @@ export function whereLabel(p: Profile): string {
 
 /** Whether connecting may need a password. */
 export function usesPassword(p: Pick<Profile, 'kind'>): boolean {
-  return p.kind !== 'sqlite';
+  return !isFileKind(p.kind);
 }
 
 /** Mirrors `Source` in src-tauri/src/db/import.rs: where connections can be taken from (prompt 015). */

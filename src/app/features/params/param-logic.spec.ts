@@ -269,6 +269,9 @@ describe('writing a statement for the driver', () => {
       'select * from t where k = ?1 and d >= ?2 and n = ?3 and id in (?4, ?5, ?6) and p < ?7 and x is NULL and y in (NULL)',
     );
     expect(bound('sqlite').params.length).toBe(7);
+    expect(bound('duckdb').sql).toBe(
+      'select * from t where k = $1 and d >= CAST($2 AS DATE) and n = $3 and id in ($4, $5, $6) and p < CAST($7 AS DECIMAL(38,10)) and x is NULL and y in (NULL)',
+    );
     // Oracle: numbered, no casts – the driver binds numbers and dates as what they are
     expect(bound('oracle').sql).toBe(
       'select * from t where k = :1 and d >= :2 and n = :3 and id in (:4, :5, :6) and p < :7 and x is NULL and y in (NULL)',

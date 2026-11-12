@@ -97,7 +97,7 @@ import { ValueService } from './features/value/value.service';
 import { FORMAT_TEXTS } from './features/format/format-texts';
 import { CopyService } from './features/results/copy.service';
 import { ConfirmDialog, ConfirmRequest, ConfirmService } from './shared/confirm';
-import { tlsUnchecked } from './core/connections/connection.models';
+import { isFileKind, tlsUnchecked } from './core/connections/connection.models';
 import { HostKeyRequest } from './core/connections/connections.store';
 import { ContextMenu, MenuItem } from './shared/context-menu';
 import { NODE_ACTIONS, SchemaActions } from './features/schema/schema-actions';
@@ -275,7 +275,7 @@ const SIDEBAR_MIN = 140;
           @if (badge(); as b) {
             <span class="guard-badge" [attr.data-protection]="conn.protection">{{ b }}</span>
           }
-          @if (conn.kind !== 'sqlite' && uncheckedTls(conn.tls)) {
+          @if (!isFile(conn.kind) && uncheckedTls(conn.tls)) {
             <span class="guard-badge" [title]="t.tlsUncheckedHint">{{ t.tlsUnchecked }}</span>
           }
         }
@@ -786,6 +786,7 @@ export class App implements OnInit, OnDestroy {
   });
   protected readonly guard = inject(GuardService);
   protected readonly uncheckedTls = tlsUnchecked;
+  protected readonly isFile = isFileKind;
   protected readonly hostKeyQuestion = (hk: HostKeyRequest): ConfirmRequest => ({
     title: APP_TEXTS.hostKeyTitle,
     message: APP_TEXTS.hostKeyMessage(hk.host, hk.keyType, hk.fingerprint),

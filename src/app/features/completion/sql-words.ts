@@ -96,6 +96,7 @@ const NOT_IN: Readonly<Record<Dialect, readonly string[]>> = {
   sqlserver: ['LIMIT', 'RETURNING', 'NULLS FIRST', 'NULLS LAST', 'ON CONFLICT', 'USING'],
   sqlite: [],
   oracle: ['LIMIT', 'ON CONFLICT'],
+  duckdb: [],
 };
 const ALSO: Readonly<Record<Dialect, Readonly<Record<string, readonly string[]>>>> = {
   postgres: { WHERE: ['ILIKE'], FROM: ['LATERAL'] },
@@ -111,6 +112,12 @@ const ALSO: Readonly<Record<Dialect, Readonly<Record<string, readonly string[]>>
     FROM: ['CROSS APPLY', 'OUTER APPLY', 'LATERAL'],
     'ORDER BY': ['OFFSET', 'FETCH FIRST'],
     WHERE: ['CONNECT BY', 'START WITH'],
+  },
+  duckdb: {
+    WHERE: ['ILIKE'],
+    FROM: ['LATERAL', 'POSITIONAL JOIN', 'ASOF JOIN'],
+    'GROUP BY': ['ALL'],
+    SELECT: ['EXCLUDE', 'REPLACE'],
   },
 };
 
@@ -202,6 +209,23 @@ const TYPES: Readonly<Record<Dialect, readonly string[]>> = {
     'binary_double',
     'boolean',
     'json',
+  ],
+  duckdb: [
+    'INTEGER',
+    'BIGINT',
+    'HUGEINT',
+    'DOUBLE',
+    'DECIMAL',
+    'VARCHAR',
+    'BOOLEAN',
+    'DATE',
+    'TIME',
+    'TIMESTAMP',
+    'TIMESTAMPTZ',
+    'BLOB',
+    'JSON',
+    'UUID',
+    'INTERVAL',
   ],
 };
 
@@ -319,6 +343,24 @@ const BUILTINS: Readonly<Record<Dialect, readonly Builtin[]>> = {
       'regexp_like(text, pattern)',
       'add_months(date, count)',
       'months_between(date, date)',
+    ].map(f),
+  ],
+  duckdb: [
+    ...COMMON,
+    ...[
+      'now()',
+      'read_parquet(file)',
+      'read_csv(file)',
+      'read_json(file)',
+      'date_trunc(part, value)',
+      'strftime(value, format)',
+      'list(value)',
+      'unnest(list)',
+      'string_agg(value, separator)',
+      'regexp_matches(text, pattern)',
+      'length(text)',
+      'substring(text, start, count)',
+      'range(count)',
     ].map(f),
   ],
 };

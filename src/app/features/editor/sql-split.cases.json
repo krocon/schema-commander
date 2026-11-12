@@ -352,6 +352,16 @@
         "-- setup; really\n/* a; b */ begin null; end;",
         "commit"
       ]
+    },
+    {
+      "name": "dollar quotes keep their semicolons",
+      "dialect": "duckdb",
+      "script": "create macro f() as $$a;b$$; select f(); select 'x;y'",
+      "statements": [
+        "create macro f() as $$a;b$$",
+        "select f()",
+        "select 'x;y'"
+      ]
     }
   ]
 }

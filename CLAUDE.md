@@ -62,6 +62,8 @@
   **CockroachDB und TimescaleDB** über den PostgreSQL-Treiber, Fähigkeits-Flags je Verbindung (Prompt 035a);
   **Oracle** über den reinen Rust-Treiber `oracledb` (ohne Instant Client): verbinden, ausführen, Baum, Details,
   Tabellen-Ansicht, Bearbeiten, Suche; Plan, Monitor, Rechte und Struktur noch nicht (Prompt 035b);
+  **DuckDB** eingebettet (Datei oder `:memory:`, Parquet/CSV/JSON ohne Nachladen), alle Tabs eines Profils auf
+  einer Datenbank (Prompt 035c);
   **Suche auf dem Server**: ein Text in den Zeilen aller Tabellen und in Definitionen, als lesender Job (Prompt 036);
   **ER-Diagramm** eines Schemas oder einer Tabelle mit Nachbarn: eigene Anordnung, verschiebbar, Listenansicht,
   Export als SVG, Mermaid, DBML (Prompt 037);
@@ -97,7 +99,7 @@
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a, 035b, 036–049),
+  erledigt: 001–034, 035a–035c, 036–049),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -287,6 +289,8 @@ src-tauri/                     Rust
   src/db/mod.rs                Profile, DbKind, TlsMode, Session-Trait, Flavor und Capabilities (wer antwortet, was
                                er kann), Laufzeit, Fehler in Worten
   src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
+  src/db/duckdb.rs             DuckDB eingebettet: eine geteilte Datenbank je Profil, Typen (Listen, Structs),
+                               Abbruch, Transaktionszustand aus den Anweisungen; Tests ohne Server (duckdb_tests.rs)
   src/db/oracle.rs             Oracle über `oracledb`: Verbindung auf eigenem Thread, Auto-Commit, Typen, Fehler
                                mit Stelle; ein Abbruch kostet die Verbindung
   src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink; ganze Werte
@@ -393,6 +397,10 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
 - **Oracle**: Die Verbindung gehört dem Thread in `oracle.rs`, nichts sonst fasst sie an. Platzhalter sind `:1`,
   `:2` …; ein Datum wird als Datum gebunden, nie als Text (NLS). Eine Zeile je `INSERT`. Was es für Oracle noch
   nicht gibt, meldet `db::not_yet` und steht in den `Capabilities` – kein stiller Rückfall auf einen anderen Dialekt.
+- **DuckDB**: nie eine zweite Datenbank auf dieselbe Datei öffnen – Sitzungen sind Klone der einen (`SHARED`
+  in `duckdb.rs`). Vor jedem Lesen einer Zelle prüft `readable`, ob der Treiber den Typ kann (sonst endet er in
+  `unreachable!`). Erweiterungen werden nie von selbst geladen; ein Assistent bekommt dort keine Abfrage ausgeführt.
+  Datei-Datenbanken erkennt `DbKind::is_file` (Rust) bzw. `isFileKind` (Fenster), nie ein Vergleich mit SQLite.
 - **Verwandte Server** (CockroachDB, TimescaleDB): keine eigene `DbKind`. Abweichungen hängen am `Flavor` der
   Sitzung (`Session::flavor`), nie an einem Vergleich von Versionstexten außerhalb des Treibers.
 - **Bezeichner** quotet nur `meta::quote` in Rust; Knoten und DTOs bringen `quoted` mit. Katalogabfragen nur über

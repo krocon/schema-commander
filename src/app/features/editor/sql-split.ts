@@ -12,11 +12,12 @@ import { offsetAt, placeIn } from '../../core/text/places';
  * - **sqlserver**: `[bracket names]`; a line with only `GO` ends a **batch**. Statements of a batch are found
  *   at `;` for „under the caret“; a script runs batch by batch (`splitBatches`).
  * - **sqlite**: `CREATE TRIGGER … BEGIN … END` keeps its inner `;`.
+ * - **duckdb**: dollar quoting, as PostgreSQL.
  * - **oracle**: `q'[ … ]'` strings; PL/SQL (`BEGIN`, `DECLARE`, `CREATE … FUNCTION | PROCEDURE | PACKAGE |
  *   TRIGGER | TYPE`) keeps its `;` and ends at a line with only `/` – as in SQL*Plus. That line also ends
  *   any other statement.
  */
-export type Dialect = 'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle';
+export type Dialect = 'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle' | 'duckdb';
 
 export interface Statement {
   /** The statement without its terminator, trimmed. */
@@ -67,7 +68,7 @@ function skipToken(s: Scan): boolean {
     skipQuoted(s, c, escapes);
     return true;
   }
-  if (c === '`' && dialect !== 'postgres') {
+  if (c === '`' && dialect !== 'postgres' && dialect !== 'duckdb') {
     skipQuoted(s, '`', false);
     return true;
   }
@@ -88,7 +89,12 @@ function skipToken(s: Scan): boolean {
     skipBlockComment(s);
     return true;
   }
-  if (c === '$' && dialect === 'postgres' && !WORD.test(script[s.i - 1] ?? '')) {
+  // DuckDB knows dollar quotes too
+  if (
+    c === '$' &&
+    (dialect === 'postgres' || dialect === 'duckdb') &&
+    !WORD.test(script[s.i - 1] ?? '')
+  ) {
     const tag = /^\$(?:[\p{L}_][\p{L}\p{N}_]*)?\$/u.exec(script.slice(s.i, s.i + 80));
     if (tag) {
       const close = script.indexOf(tag[0], s.i + tag[0].length);
