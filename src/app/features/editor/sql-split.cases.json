@@ -329,6 +329,17 @@
       ]
     },
     {
+      "name": "a compound statement of SQL PL keeps its semicolons",
+      "dialect": "db2",
+      "script": "create procedure p(in n int) language sql begin declare i int default 0; again: loop set i = i + 1; if i > n then leave again; end if; end loop again; delete from t where a = case when i > 3 then 1 else 2 end; end; select 1 from sysibm.sysdummy1; begin atomic insert into t values (1); end; values 2",
+      "statements": [
+        "create procedure p(in n int) language sql begin declare i int default 0; again: loop set i = i + 1; if i > n then leave again; end if; end loop again; delete from t where a = case when i > 3 then 1 else 2 end; end",
+        "select 1 from sysibm.sysdummy1",
+        "begin atomic insert into t values (1); end",
+        "values 2"
+      ]
+    },
+    {
       "name": "a body in PSQL keeps its semicolons",
       "dialect": "firebird",
       "script": "execute block as declare n integer; begin n = 1; if (n = 1) then begin delete from t; end end; create or alter trigger tr for t before insert as begin new.id = case when new.id is null then 1 else new.id end; end; alter trigger tr inactive; select 1 from rdb$database; begin_work",

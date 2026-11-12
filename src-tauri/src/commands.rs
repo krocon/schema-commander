@@ -2862,6 +2862,7 @@ pub fn testdata_keys(
             crate::db::DbKind::Firebird => format!("CAST({column} AS VARCHAR(8191))"),
             crate::db::DbKind::Bigquery => format!("CAST({column} AS STRING)"),
             crate::db::DbKind::Snowflake => format!("TO_VARCHAR({column})"),
+            crate::db::DbKind::Db2 => format!("VARCHAR({column})"),
         };
         let sql = if kind == crate::db::DbKind::Sqlserver {
             format!(

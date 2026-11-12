@@ -238,7 +238,7 @@ fn index_rows(s: &mut dyn Session, kind: DbKind, schema: &str, stop: Stop) -> Ap
             Some(TIMEOUT),
             stop,
         ),
-        DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird | DbKind::Bigquery | DbKind::Snowflake => Err(super::not_yet(kind, "schema compare and structure editing")),
+        DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird | DbKind::Bigquery | DbKind::Snowflake | DbKind::Db2 => Err(super::not_yet(kind, "schema compare and structure editing")),
     }
 }
 
@@ -301,6 +301,7 @@ pub fn snapshot(
             | DbKind::Firebird
             | DbKind::Bigquery
             | DbKind::Snowflake
+            | DbKind::Db2
     ) {
         return Err(super::not_yet(kind, "schema compare and structure editing"));
     }
@@ -1623,7 +1624,7 @@ fn grouped(
                                     }
                                 }
                             }
-                            DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird | DbKind::Bigquery | DbKind::Snowflake => {
+                            DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird | DbKind::Bigquery | DbKind::Snowflake | DbKind::Db2 => {
                                 return Err(super::not_yet(kind, "schema compare and structure editing"));
                             }
                             DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => sqls.push(note(&format!(
@@ -1868,6 +1869,7 @@ fn written(
                 DbKind::Firebird => "Firebird",
                 DbKind::Bigquery => "BigQuery",
                 DbKind::Snowflake => "Snowflake",
+                DbKind::Db2 => "Db2",
             }
         )),
         note(

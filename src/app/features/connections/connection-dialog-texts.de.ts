@@ -101,6 +101,8 @@ export const CONNECTION_DIALOG_DE: Translation<typeof CONNECTION_DIALOG_EN> = {
     'Firebird braucht die Datenbank: ihren Pfad auf dem Server oder einen Alias.',
   firebirdNoCertificates:
     'Firebird kennt keine Zertifikate: „erforderlich“ (seine eigene Verschlüsselung) oder keine wählen.',
+  db2DatabaseMissing: 'Db2 braucht die Datenbank: ihren Namen oder Alias auf dem Server.',
+  db2TlsChecked: 'Db2: TLS wird entweder ganz geprüft („verify“) oder ist aus.',
   snowflakeHost: 'Snowflake erreicht man unter <account>.snowflakecomputing.com.',
   snowflakeDatabaseMissing: 'Snowflake braucht die Datenbank: Ihre Schemata zeigt der Baum.',
   bigqueryProjectMissing: 'BigQuery braucht die ID des Projekts.',

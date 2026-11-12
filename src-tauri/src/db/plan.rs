@@ -838,7 +838,8 @@ pub fn ask(kind: DbKind, flavor: Flavor, sql: &str, analyze: bool) -> AppResult<
             | DbKind::Trino
             | DbKind::Firebird
             | DbKind::Bigquery
-            | DbKind::Snowflake,
+            | DbKind::Snowflake
+            | DbKind::Db2,
             _,
             _,
         ) => {

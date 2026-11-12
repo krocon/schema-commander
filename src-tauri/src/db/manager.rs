@@ -408,6 +408,15 @@ impl ConnectionManager {
                         "a token or password is sent only over TLS (or to the jump host itself): switch TLS on",
                     ));
                 }
+                if profile.kind == DbKind::Db2 && profile.tls != super::TlsMode::Off {
+                    // the driver checks the certificate against the host it connects to – behind a
+                    // tunnel that is this machine, and it has no way to be told another name
+                    return Err(AppError::new(
+                        ErrorCode::InvalidProfile,
+                        "Db2 through an SSH tunnel: TLS cannot be checked there – switch TLS off (the \
+                         tunnel protects the way to the jump host) or connect directly",
+                    ));
+                }
                 let mut local = profile.clone();
                 local.host = "127.0.0.1".to_string();
                 local.port = tunnel.port();

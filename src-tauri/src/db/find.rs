@@ -311,6 +311,7 @@ fn as_text(column: &str, kind: DbKind) -> String {
         DbKind::Firebird => format!("CAST({column} AS VARCHAR(8191))"),
         DbKind::Bigquery => format!("CAST({column} AS STRING)"),
         DbKind::Snowflake => format!("TO_VARCHAR({column})"),
+        DbKind::Db2 => format!("VARCHAR({column})"),
         DbKind::Clickhouse => format!("toString({column})"),
     }
 }
@@ -353,6 +354,7 @@ pub fn data_question(
             DbKind::Mysql | DbKind::Trino => "?".to_owned(),
             DbKind::Firebird => "CAST(? AS VARCHAR(8191))".to_owned(),
             DbKind::Bigquery | DbKind::Snowflake => "?".to_owned(),
+            DbKind::Db2 => "CAST(? AS VARCHAR(4000))".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
             DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("?{n}"),
             DbKind::Oracle => format!(":{n}"),
@@ -372,7 +374,7 @@ pub fn data_question(
             }
             DbKind::Oracle => format!("SUBSTR({text}, 1, {VALUE_CHARS})"),
             DbKind::Firebird => format!("SUBSTRING({text} FROM 1 FOR {VALUE_CHARS})"),
-            DbKind::Bigquery | DbKind::Snowflake => {
+            DbKind::Bigquery | DbKind::Snowflake | DbKind::Db2 => {
                 format!("SUBSTR({text}, 1, {VALUE_CHARS})")
             }
             DbKind::Clickhouse => format!("substringUTF8({text}, 1, {VALUE_CHARS})"),
@@ -437,6 +439,24 @@ pub fn data_question(
             (DbKind::Sqlite | DbKind::Libsql | DbKind::D1, _) => {
                 format!("{text} = {} COLLATE NOCASE", place(spec.text.clone()))
             }
+            (DbKind::Db2, Mode::Contains) if sensitive => {
+                format!("LOCATE({}, {text}) > 0", place(spec.text.clone()))
+            }
+            (DbKind::Db2, Mode::Contains) => format!(
+                "LOCATE(LOWER({}), LOWER({text})) > 0",
+                place(spec.text.clone())
+            ),
+            (DbKind::Db2, Mode::Exact) if sensitive => {
+                format!("{text} = {}", place(spec.text.clone()))
+            }
+            (DbKind::Db2, Mode::Exact) => {
+                format!("LOWER({text}) = LOWER({})", place(spec.text.clone()))
+            }
+            (DbKind::Db2, Mode::Regex) => format!(
+                "REGEXP_LIKE({text}, {}, '{}')",
+                place(spec.text.clone()),
+                if sensitive { "c" } else { "i" }
+            ),
             (DbKind::Snowflake, Mode::Contains) if sensitive => {
                 format!("CONTAINS({text}, {})", place(spec.text.clone()))
             }
@@ -762,6 +782,17 @@ fn columns_of(
             limit,
             stop,
         )?,
+        // large objects are not searched: they are no text a function takes whole
+        DbKind::Db2 => s.ask(
+            "SELECT c.tabname, c.colname, c.typename FROM syscat.columns c \
+             JOIN syscat.tables t ON t.tabschema = c.tabschema AND t.tabname = c.tabname \
+             WHERE c.tabschema = ? AND t.type = 'T' \
+               AND c.typename NOT IN ('BLOB', 'CLOB', 'DBCLOB', 'XML', 'BINARY', 'VARBINARY') \
+             ORDER BY c.tabname, c.colno",
+            &[schema],
+            limit,
+            stop,
+        )?,
         DbKind::Snowflake => s.ask(
             "SELECT c.table_name, c.column_name, c.data_type FROM INFORMATION_SCHEMA.COLUMNS c \
              JOIN INFORMATION_SCHEMA.TABLES t \
@@ -939,6 +970,12 @@ pub(super) fn source_questions(kind: DbKind, flavor: Flavor) -> Vec<&'static str
         ],
         // a dataset is named in the statement, and these questions bind it: none here
         DbKind::Bigquery => Vec::new(),
+        DbKind::Db2 => vec![
+            "SELECT 'view', viewname, text FROM syscat.views WHERE viewschema = ?",
+            "SELECT 'routine', routinename, text FROM syscat.routines \
+             WHERE routineschema = ? AND text IS NOT NULL",
+            "SELECT 'trigger', trigname, text FROM syscat.triggers WHERE trigschema = ?",
+        ],
         DbKind::Snowflake => vec![
             "SELECT 'view', table_name, view_definition FROM INFORMATION_SCHEMA.VIEWS \
              WHERE table_schema = ?",

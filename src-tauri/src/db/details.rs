@@ -148,6 +148,7 @@ pub fn details(
         DbKind::Firebird => firebird::read(&mut r, name, object)?,
         DbKind::Bigquery => bigquery::read(&mut r, schema, name)?,
         DbKind::Snowflake => snowflake::read(&mut r, schema, name, object)?,
+        DbKind::Db2 => db2::read(&mut r, schema, name, object)?,
     };
     if ddl.is_none() {
         r.notes.push("ddl".into());
@@ -1658,6 +1659,59 @@ mod sqlite {
             .map(|row| format!("{};\n", at(row, 0).trim_end().trim_end_matches(';')))
             .collect();
         Ok(Some(statements.join("\n")))
+    }
+}
+
+mod db2 {
+    use super::*;
+    use crate::db::meta::DB2_TYPE;
+
+    /// From `SYSCAT`, the catalog views of Db2 for Linux, UNIX and Windows. Written from their
+    /// documentation, not run against a server (prompt 035l).
+    pub fn read(
+        r: &mut Reader,
+        schema: &str,
+        name: &str,
+        object: ObjectKind,
+    ) -> AppResult<Option<String>> {
+        r.section(
+            "columns",
+            &["name", "type", "nullable", "default", "comment"],
+            &format!(
+                "SELECT colname, {DB2_TYPE}, CASE nulls WHEN 'Y' THEN 'yes' ELSE 'no' END, \
+                   \"DEFAULT\", remarks \
+                 FROM syscat.columns WHERE tabschema = ? AND tabname = ? ORDER BY colno"
+            ),
+            &[schema, name],
+        )?;
+        if object == ObjectKind::View {
+            // the statement as it was given
+            let text = r.text(
+                "SELECT text FROM syscat.views WHERE viewschema = ? AND viewname = ?",
+                &[schema, name],
+            )?;
+            return Ok(text
+                .map(|t| t.trim().to_owned())
+                .filter(|t| !t.is_empty())
+                .map(|t| format!("{};\n", t.trim_end_matches(';'))));
+        }
+        r.section(
+            "indexes",
+            &["name", "columns", "unique"],
+            "SELECT indname, colnames, CASE uniquerule WHEN 'D' THEN 'no' ELSE 'yes' END \
+             FROM syscat.indexes WHERE tabschema = ? AND tabname = ? ORDER BY indname",
+            &[schema, name],
+        )?;
+        r.section(
+            "foreign keys",
+            &["name", "columns", "references", "referenced columns"],
+            "SELECT constname, TRIM(fk_colnames), TRIM(reftabschema) || '.' || TRIM(reftabname), \
+               TRIM(pk_colnames) \
+             FROM syscat.references WHERE tabschema = ? AND tabname = ? ORDER BY constname",
+            &[schema, name],
+        )?;
+        // Db2 writes the statement of a table only through its tool db2look
+        Ok(None)
     }
 }
 

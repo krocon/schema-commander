@@ -13,7 +13,8 @@ export type FormatDialect =
   | 'trino'
   | 'firebird'
   | 'bigquery'
-  | 'snowflake';
+  | 'snowflake'
+  | 'db2';
 
 /**
  * Mirrors `Mode`: lay the text out, pull it into one line, or only write its keywords in upper or lower

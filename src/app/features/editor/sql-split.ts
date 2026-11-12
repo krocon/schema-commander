@@ -17,6 +17,7 @@ import { offsetAt, placeIn } from '../../core/text/places';
  * - **firebird**: a procedure, function, trigger, package or `EXECUTE BLOCK` keeps the `;` of its body.
  * - **bigquery**: backslash escapes in strings and in backticks, no doubled quotes, strings of three
  *   quotes, `#` comments; a script runs whole (`splitForRun`).
+ * - **db2**: a compound statement of SQL PL (`BEGIN … END`, the body of a routine or trigger) keeps its `;`.
  * - **snowflake**: backslash escapes in strings, `//` comments, `$$ … $$` strings; a block of Snowflake
  *   Scripting (`[DECLARE …] BEGIN … END`, also as the body of a procedure without `$$`) keeps its `;`.
  * - **trino**: the common rules – a quote is escaped only by doubling it.
@@ -35,7 +36,8 @@ export type Dialect =
   | 'trino'
   | 'firebird'
   | 'bigquery'
-  | 'snowflake';
+  | 'snowflake'
+  | 'db2';
 
 export interface Statement {
   /** The statement without its terminator, trimmed. */
@@ -362,7 +364,7 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
         continue;
       }
     }
-    if (dialect === 'snowflake') {
+    if (dialect === 'snowflake' || dialect === 'db2') {
       const word = wordAt(script, i);
       if (word) {
         const first = script.slice(start, i).trim() === '';
@@ -371,7 +373,14 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
           word === 'BEGIN' &&
           !/^\s*(?:;|$|(?:TRANSACTION|WORK|NAME)\b)/i.test(script.slice(i + 5, i + 40));
         if (!trigger) {
-          if (word === 'DECLARE' && (first || prev === 'AS')) declaring = true;
+          if (dialect === 'db2') {
+            // SQL PL: the body of a routine or trigger follows its options without a word before
+            // it, and nothing else begins with BEGIN there
+            if (word === 'BEGIN') {
+              trigger = true;
+              depth = 1;
+            }
+          } else if (word === 'DECLARE' && (first || prev === 'AS')) declaring = true;
           else if (block && (first || prev === 'AS' || declaring)) {
             trigger = true;
             declaring = false;
@@ -414,7 +423,8 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
       }
       if (!/\s/.test(script[i])) {
         prev = '';
-        fresh = false;
+        // SQL PL: a label stands before its loop (`again: LOOP`)
+        fresh = dialect === 'db2' && trigger && script[i] === ':';
       }
     }
     // with a terminator of its own a script says itself where a statement ends

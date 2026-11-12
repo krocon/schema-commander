@@ -243,7 +243,10 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                 // ClickHouse takes it as an escape inside backticks too (review 035d 2)
                 if chars[i] == '\\'
                     && (quote != '`' || matches!(kind, DbKind::Clickhouse | DbKind::Bigquery))
-                    && !matches!(kind, DbKind::Oracle | DbKind::Trino | DbKind::Firebird)
+                    && !matches!(
+                        kind,
+                        DbKind::Oracle | DbKind::Trino | DbKind::Firebird | DbKind::Db2
+                    )
                     // Snowflake: a quote in a name is doubled, a backslash there is a character
                     && !(kind == DbKind::Snowflake && quote == '"')
                     && i + 1 < n
@@ -783,7 +786,7 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
         } else if has(WRITE_WORDS)
             || (kind == DbKind::Sqlserver && has(TSQL_WRITE_WORDS))
             || calls_writing_function(toks)
-            || (kind == DbKind::Oracle && has(&["NEXTVAL"]))
+            || (matches!(kind, DbKind::Oracle | DbKind::Db2) && has(&["NEXTVAL"]))
             || pairs("NEXT", "VALUE")
             || pairs("PREVIOUS", "VALUE")
         {
@@ -1112,6 +1115,8 @@ pub fn read_only_statement(kind: DbKind) -> Option<&'static str> {
         DbKind::Bigquery => None,
         // every statement is a request of its own; what a login may write its role decides
         DbKind::Snowflake => None,
+        // Db2 has no session that only reads; the classification is all there is
+        DbKind::Db2 => None,
     }
 }
 
@@ -1120,7 +1125,8 @@ mod tests {
     use super::*;
     use Class::{Dangerous, Ddl, Read, Write};
 
-    const ALL: [DbKind; 13] = [
+    const ALL: [DbKind; 14] = [
+        DbKind::Db2,
         DbKind::Postgres,
         DbKind::Mysql,
         DbKind::Sqlserver,
@@ -1155,6 +1161,28 @@ mod tests {
             );
         }
         assert_eq!(read_only_statement(DbKind::Libsql), None);
+    }
+
+    /// Db2 (prompt 035l).
+    #[test]
+    fn db2_statements_are_read_as_db2_reads_them() {
+        let k = DbKind::Db2;
+        assert_eq!(classify("SELECT * FROM T FETCH FIRST 5 ROWS ONLY", k), Read);
+        assert_eq!(classify("VALUES CURRENT TIMESTAMP", k), Read);
+        // a change that answers with rows is a change
+        assert_ne!(
+            classify("SELECT * FROM FINAL TABLE (INSERT INTO T VALUES (1))", k),
+            Read
+        );
+        assert_ne!(classify("SELECT * FROM OLD TABLE (DELETE FROM T)", k), Read);
+        assert_eq!(classify("VALUES NEXT VALUE FOR S", k), Write);
+        assert_eq!(classify("SELECT S.NEXTVAL FROM SYSIBM.SYSDUMMY1", k), Write);
+        assert_ne!(classify("CALL SYSPROC.ADMIN_CMD('REORG TABLE T')", k), Read);
+        assert_eq!(classify("TRUNCATE TABLE T IMMEDIATE", k), Dangerous);
+        assert_eq!(classify("DELETE FROM T", k), Dangerous);
+        // no backslash escape: the string ends at its quote
+        assert_ne!(classify("SELECT 'a\\' ; DROP TABLE T --'", k), Read);
+        assert_eq!(read_only_statement(k), None);
     }
 
     /// Snowflake (prompt 035k).

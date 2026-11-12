@@ -358,6 +358,7 @@ pub fn plan(kind: DbKind, request: &Request) -> AppResult<Plan> {
             | DbKind::Firebird
             | DbKind::Bigquery
             | DbKind::Snowflake
+            | DbKind::Db2
             | DbKind::D1
     ) {
         // no generator for its dialect yet (D1: no transaction to write the change in): nothing is written with another one's (review 035b 5)
