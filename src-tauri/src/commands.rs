@@ -826,6 +826,34 @@ pub fn meta_diagram(
     })
 }
 
+/// The plan of one statement (prompt 039). Without `analyze` nothing runs: the database only says how
+/// it would. With `analyze` the statement **runs** – it passes the guard like any statement
+/// (`confirmation`), inside a transaction that is rolled back, on a session of its own.
+#[tauri::command(async)]
+pub fn explain_plan(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    sql: String,
+    analyze: bool,
+    confirmation: Option<String>,
+    allow_dangerous: bool,
+    timeout_ms: Option<u64>,
+) -> AppResult<crate::db::plan::Plan> {
+    const SESSION: &str = "sc-plan";
+    if analyze {
+        manager.admit(&id, &sql, confirmation.as_deref(), allow_dangerous)?;
+    }
+    let timeout = timeout_ms
+        .filter(|ms| *ms > 0)
+        .map(std::time::Duration::from_millis);
+    let plan = manager.ask_in(&id, SESSION, |session, kind, stop| {
+        crate::db::plan::explain(session, kind, &sql, analyze, timeout, stop)
+    });
+    // whatever was set or begun on that session goes with it
+    manager.close_session(&id, SESSION);
+    plan
+}
+
 /// What a schema is made of (prompt 038): tables with columns, keys, indexes and checks, views,
 /// routines, triggers – read from the catalog. To compare, and to keep as a file.
 #[tauri::command(async)]

@@ -1,0 +1,68 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "cost_info": {
+      "query_cost": "1087.27"
+    },
+    "ordering_operation": {
+      "using_filesort": true,
+      "grouping_operation": {
+        "using_temporary_table": true,
+        "using_filesort": false,
+        "nested_loop": [
+          {
+            "table": {
+              "table_name": "b",
+              "access_type": "ALL",
+              "rows_examined_per_scan": 5000,
+              "rows_produced_per_join": 1666,
+              "filtered": "33.33",
+              "cost_info": {
+                "read_cost": "337.35",
+                "eval_cost": "166.65",
+                "prefix_cost": "504.00",
+                "data_read_per_join": "546K"
+              },
+              "used_columns": [
+                "id",
+                "author_id",
+                "price"
+              ],
+              "attached_condition": "(`shop`.`b`.`price` > 5.00)"
+            }
+          },
+          {
+            "table": {
+              "table_name": "a",
+              "access_type": "eq_ref",
+              "possible_keys": [
+                "PRIMARY"
+              ],
+              "key": "PRIMARY",
+              "used_key_parts": [
+                "id"
+              ],
+              "key_length": "4",
+              "ref": [
+                "shop.b.author_id"
+              ],
+              "rows_examined_per_scan": 1,
+              "rows_produced_per_join": 1666,
+              "filtered": "100.00",
+              "cost_info": {
+                "read_cost": "416.62",
+                "eval_cost": "166.65",
+                "prefix_cost": "1087.27",
+                "data_read_per_join": "273K"
+              },
+              "used_columns": [
+                "id",
+                "name"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

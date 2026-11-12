@@ -8,6 +8,7 @@ import {
 import { FormatApi, FormatDialect, FormatMode, FormatStyle } from '../app/core/format/format-api';
 import { AboutApi, AppInfo } from '../app/core/about/about-api';
 import { ExportApi, ExportSpec, Exported } from '../app/core/backend/export-api';
+import { Plan, PlanApi } from '../app/core/plan/plan-api';
 import {
   CompareApi,
   CompareItem,
@@ -1685,5 +1686,36 @@ export class FakeCompareApi extends CompareApi {
   ): Promise<string> {
     this.scripted.push({ source, target, picks, renames });
     return Promise.resolve(`-- makes ${target.schema} like ${source.schema}\n`);
+  }
+}
+
+/** Plans without a database: the plan it was given, and what was asked. */
+export class FakePlanApi extends PlanApi {
+  plan: Plan = {
+    nodes: [],
+    raw: '',
+    format: 'json',
+    analyzed: false,
+    totalMs: null,
+    known: true,
+    cut: false,
+  };
+  fail: { code: string; message: string } | null = null;
+  readonly asked: {
+    connectionId: string;
+    sql: string;
+    analyze: boolean;
+    confirmation: string | null;
+  }[] = [];
+
+  explain(
+    connectionId: string,
+    sql: string,
+    analyze: boolean,
+    confirmation: string | null,
+  ): Promise<Plan> {
+    this.asked.push({ connectionId, sql, analyze, confirmation });
+    if (this.fail) return Promise.reject(this.fail);
+    return Promise.resolve({ ...this.plan, analyzed: analyze });
   }
 }

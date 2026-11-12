@@ -67,6 +67,8 @@ export interface TabEditor {
   insert(text: string, snippet: boolean): Promise<void>;
   /** Runs the selection if there is one, else the statement under the caret. */
   runCurrent(): Promise<void>;
+  /** The selection, else the statement under the caret (prompt 039); `''`: none. */
+  currentStatement?(): Promise<string>;
   /** Runs the whole script. */
   runScript(): Promise<void>;
   /** Writes out the `*` at the caret as its columns; resolves with whether it did. */
@@ -301,6 +303,11 @@ export class QueryTab {
 
   runCurrent(): void {
     void this.editor?.runCurrent();
+  }
+
+  /** The selection, else the statement under the caret; `''` without an editor or a statement. */
+  currentStatement(): Promise<string> {
+    return this.editor?.currentStatement?.() ?? Promise.resolve('');
   }
 
   /** The caret goes to the place of the error that is marked in the text. */

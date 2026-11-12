@@ -3,6 +3,8 @@ import type { ActionGroup, ActionId } from './action-catalog';
 /** German names of the actions (prompt 017); the English ones are the source in `action-catalog.ts`. */
 export const ACTION_LABELS_DE: Readonly<Record<ActionId, string>> = {
   RUN_STATEMENT: 'Auswahl oder Anweisung unter dem Cursor ausführen',
+  EXPLAIN_PLAN: 'Plan der Anweisung zeigen',
+  EXPLAIN_ANALYZE: 'Plan mit Ausführung (führt die Anweisung aus) …',
   RUN_SCRIPT: 'Ganzes Skript ausführen',
   RUN_AGAIN: 'Mit denselben Parameterwerten erneut ausführen',
   EXPAND_STAR: '* zur Spaltenliste aufklappen',

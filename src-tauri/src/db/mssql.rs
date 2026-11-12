@@ -267,7 +267,8 @@ fn numeric(text: &str) -> Option<tiberius::numeric::Numeric> {
 /// added `SELECT`: error 111, or a syntax error (102, 156) at the added statement. All three are found when
 /// the batch is compiled – nothing of it ran, so it is safe to send it again without the addition.
 fn must_be_alone(e: &tiberius::error::Error) -> bool {
-    matches!(e, tiberius::error::Error::Server(t) if matches!(t.code(), 102 | 111 | 156))
+    // (1067: `SET SHOWPLAN_XML` wants to be alone too – prompt 039)
+    matches!(e, tiberius::error::Error::Server(t) if matches!(t.code(), 102 | 111 | 156 | 1067))
 }
 
 impl Ms {
@@ -323,6 +324,17 @@ impl Ms {
                     if current.len() == 1 && current[0].name == ROWCOUNT {
                         if let Some((_, ColumnData::I32(Some(n)))) = row.cells().next() {
                             affected = Some(u64::try_from(*n).unwrap_or(0));
+                        }
+                        continue;
+                    }
+                    // the plan of a statement that ran (`SET STATISTICS XML ON`, prompt 039) comes as a
+                    // result set of its own behind the statement's: handed on as a row of one cell
+                    if state == 2 && current.len() == 1 && current[0].name.contains("Showplan") {
+                        if let Some((_, data)) = row.cells().next()
+                            && !sink.row(vec![cell(data, &current[0].type_name)])
+                        {
+                            truncated = true;
+                            break;
                         }
                         continue;
                     }

@@ -1,0 +1,66 @@
+{
+  "query_optimization": {
+    "r_total_time_ms": 0.0775
+  },
+  "query_block": {
+    "select_id": 1,
+    "cost": 5.311696,
+    "r_loops": 1,
+    "r_total_time_ms": 3.974416667,
+    "filesort": {
+      "sort_key": "sum(b.price) desc",
+      "r_loops": 1,
+      "r_total_time_ms": 0.022375,
+      "r_used_priority_queue": false,
+      "r_output_rows": 170,
+      "r_buffer_size": "5KiB",
+      "r_sort_mode": "sort_key,rowid",
+      "temporary_table": {
+        "nested_loop": [
+          {
+            "table": {
+              "table_name": "b",
+              "access_type": "ALL",
+              "loops": 1,
+              "r_loops": 1,
+              "rows": 5000,
+              "r_rows": 5000,
+              "cost": 0.8386768,
+              "r_table_time_ms": 0.407458333,
+              "r_other_time_ms": 0.347,
+              "r_engine_stats": {
+                "pages_accessed": 16
+              },
+              "filtered": 100,
+              "r_filtered": 85,
+              "attached_condition": "b.price > 5"
+            }
+          },
+          {
+            "table": {
+              "table_name": "a",
+              "access_type": "eq_ref",
+              "possible_keys": ["PRIMARY"],
+              "key": "PRIMARY",
+              "key_length": "4",
+              "used_key_parts": ["id"],
+              "ref": ["shop.b.author_id"],
+              "loops": 5000,
+              "r_loops": 4250,
+              "rows": 1,
+              "r_rows": 1,
+              "cost": 4.4730192,
+              "r_table_time_ms": 1.15125,
+              "r_other_time_ms": 2.027916667,
+              "r_engine_stats": {
+                "pages_accessed": 4250
+              },
+              "filtered": 100,
+              "r_filtered": 100
+            }
+          }
+        ]
+      }
+    }
+  }
+}

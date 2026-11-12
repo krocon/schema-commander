@@ -3956,3 +3956,136 @@ fn a_migration_script_applied_leaves_no_difference() {
         );
     }
 }
+
+// ── Execution plans (prompt 039) ─────────────────────────────────────────────
+
+/// Every server shows a tree for a join – estimated, and with the times of a run where it has them;
+/// and a statement that writes, explained with a run, has changed nothing afterwards.
+#[test]
+#[ignore]
+fn every_server_explains_a_join_and_a_run_changes_nothing() {
+    use schema_commander_lib::db::plan::{PlanNode, explain};
+    fn all(nodes: &[PlanNode]) -> Vec<&PlanNode> {
+        let mut out = Vec::new();
+        for n in nodes {
+            out.push(n);
+            out.extend(all(&n.children));
+        }
+        out
+    }
+    for (p, product, schema) in [
+        (pg(), "postgres", "public"),
+        (crdb(), "cockroach", "public"),
+        (my(), "mysql", "shop"),
+        (maria(), "mariadb", "shop"),
+        (ms(), "sqlserver", "dbo"),
+    ] {
+        let kind = p.kind;
+        let mut s = open(&p);
+        let stop = &|| false;
+        let t = |name: &str| format!("{schema}.{name}");
+        run(&mut s, &format!("DROP TABLE IF EXISTS {}", t("sc_x_book")));
+        run(
+            &mut s,
+            &format!("DROP TABLE IF EXISTS {}", t("sc_x_author")),
+        );
+        run(
+            &mut s,
+            &format!(
+                "CREATE TABLE {} (id int NOT NULL PRIMARY KEY, name varchar(40) NOT NULL)",
+                t("sc_x_author")
+            ),
+        );
+        run(
+            &mut s,
+            &format!(
+                "CREATE TABLE {} (id int NOT NULL PRIMARY KEY, author_id int NOT NULL, price decimal(8,2))",
+                t("sc_x_book")
+            ),
+        );
+        run(
+            &mut s,
+            &format!("INSERT INTO {} VALUES (1, 'a'), (2, 'b')", t("sc_x_author")),
+        );
+        run(
+            &mut s,
+            &format!(
+                "INSERT INTO {} VALUES (1, 1, 9.5), (2, 1, 3), (3, 2, 7)",
+                t("sc_x_book")
+            ),
+        );
+        let join = format!(
+            "SELECT a.name, COUNT(*) AS n FROM {} b JOIN {} a ON a.id = b.author_id \
+             WHERE b.price > 5 GROUP BY a.name ORDER BY n DESC",
+            t("sc_x_book"),
+            t("sc_x_author")
+        );
+        let plan = explain(s.as_mut(), kind, &join, false, None, stop)
+            .unwrap_or_else(|e| panic!("{product}: {e}"));
+        assert!(plan.known && !plan.analyzed, "{product}: {}", plan.raw);
+        let nodes = all(&plan.nodes);
+        assert!(
+            nodes.len() >= 3,
+            "{product}: {} nodes\n{}",
+            nodes.len(),
+            plan.raw
+        );
+        assert!(
+            nodes
+                .iter()
+                .any(|n| n.object.contains("sc_x_book") || n.object == "b"),
+            "{product}: {:?}",
+            nodes.iter().map(|n| (&n.op, &n.object)).collect::<Vec<_>>()
+        );
+        // with a run: rows that came, and times that add up
+        let ran = explain(s.as_mut(), kind, &join, true, None, stop)
+            .unwrap_or_else(|e| panic!("{product}: {e}"));
+        assert!(ran.known && ran.analyzed, "{product}: {}", ran.raw);
+        let nodes = all(&ran.nodes);
+        assert!(
+            nodes.iter().any(|n| n.act_rows.is_some()),
+            "{product}: no rows of the run\n{}",
+            ran.raw
+        );
+        if kind == DbKind::Postgres && product == "postgres" {
+            let own: f64 = nodes.iter().filter_map(|n| n.self_ms).sum();
+            let root = ran.nodes[0].time_ms.unwrap();
+            assert!((own - root).abs() < 0.01, "{product}: {own} / {root}");
+        }
+        // a statement that writes, explained with a run: rolled back
+        let update = format!(
+            "UPDATE {} SET price = price + 100 WHERE author_id = 1",
+            t("sc_x_book")
+        );
+        let written = explain(s.as_mut(), kind, &update, true, None, stop)
+            .unwrap_or_else(|e| panic!("{product}: {e}"));
+        assert!(written.analyzed, "{product}");
+        assert_eq!(
+            rows(&run(
+                &mut s,
+                &format!("SELECT COUNT(*) FROM {} WHERE price > 100", t("sc_x_book"))
+            )),
+            json!([[0]]),
+            "{product}: the update stayed"
+        );
+        assert_eq!(s.transaction_state(stop), TxState::Idle, "{product}");
+        // two statements are refused before anything is sent
+        let two = format!("{join}; DELETE FROM {}", t("sc_x_book"));
+        assert!(
+            explain(s.as_mut(), kind, &two, true, None, stop).is_err(),
+            "{product}"
+        );
+        assert_eq!(
+            rows(&run(
+                &mut s,
+                &format!("SELECT COUNT(*) FROM {}", t("sc_x_book"))
+            )),
+            json!([[3]]),
+            "{product}"
+        );
+        // and the session shows results again, not plans
+        assert_eq!(rows(&run(&mut s, "SELECT 1")), json!([[1]]), "{product}");
+        run(&mut s, &format!("DROP TABLE {}", t("sc_x_book")));
+        run(&mut s, &format!("DROP TABLE {}", t("sc_x_author")));
+    }
+}
