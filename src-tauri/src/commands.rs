@@ -813,6 +813,35 @@ pub fn export_query(
     Ok(done)
 }
 
+/// Searches a text on the server (prompt 036): in the rows of tables and in definitions. A job that
+/// `cancel_job` stops; `on_event` hears every hit as it is found. Only statements that read run, built
+/// here; the text is bound.
+#[tauri::command(async)]
+pub fn find_on_server(
+    manager: State<'_, ConnectionManager>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    id: String,
+    spec: crate::db::find::FindSpec,
+    on_event: Channel<crate::db::find::FindEvent>,
+) -> AppResult<crate::db::find::FindReport> {
+    use std::sync::atomic::Ordering;
+    let stop = jobs.start(job_id, Some(id.clone()));
+    let result = manager.ask(&id, |session, kind, stopped| {
+        crate::db::find::find(
+            session,
+            kind,
+            &spec,
+            &|event| {
+                let _ = on_event.send(event);
+            },
+            &|| stop.load(Ordering::Relaxed) || stopped(),
+        )
+    });
+    jobs.end(job_id);
+    result
+}
+
 /// What the About dialog shows (prompt 034): name, version, build, platform. Nothing about the user.
 #[tauri::command(async)]
 pub fn app_info(app: AppHandle) -> crate::about::AppInfo {

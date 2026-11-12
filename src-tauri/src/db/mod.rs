@@ -7,6 +7,7 @@
 pub mod details;
 pub mod edit;
 pub mod filter;
+pub mod find;
 pub mod guard;
 pub mod import;
 pub mod load;

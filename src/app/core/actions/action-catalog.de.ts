@@ -128,6 +128,8 @@ export const ACTION_LABELS_DE: Readonly<Record<ActionId, string>> = {
   SCHEMA_FILTER: 'Im Schema filtern',
   TOGGLE_SYSTEM_SCHEMAS: 'Systemschemata ein-/ausblenden',
   SCHEMA_EXPORT_TABLE: 'Tabelle exportieren …',
+  SEARCH_SERVER: 'Auf dem Server suchen …',
+  SCHEMA_SEARCH: 'In diesem Schema oder dieser Tabelle suchen …',
   SCHEMA_IMPORT_TABLE: 'Datei in die Tabelle importieren …',
   SCHEMA_DETAILS: 'Objekt-Details und DDL …',
   SCHEMA_OPEN_DATA: 'Daten der Tabelle öffnen',

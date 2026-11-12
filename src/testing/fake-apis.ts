@@ -8,6 +8,7 @@ import {
 import { FormatApi, FormatDialect, FormatMode, FormatStyle } from '../app/core/format/format-api';
 import { AboutApi, AppInfo } from '../app/core/about/about-api';
 import { ExportApi, ExportSpec, Exported } from '../app/core/backend/export-api';
+import { FindApi, FindEvent, FindReport, FindSpec } from '../app/core/find/find-api';
 import {
   DataImportApi,
   Guess,
@@ -1563,5 +1564,51 @@ export class FakeAboutApi extends AboutApi {
     return this.fail
       ? Promise.reject({ code: 'not_found', message: '' })
       : Promise.resolve(this.text);
+  }
+}
+
+/**
+ * A search on the server that searches nothing: it tells the events it was given, then resolves – at
+ * once, or (with `hold`) when `finish()` is called. `cancel` ends it as cancelled.
+ */
+export class FakeFindApi extends FindApi {
+  readonly runs: { jobId: number; connectionId: string; spec: FindSpec }[] = [];
+  readonly cancelled: number[] = [];
+  events: FindEvent[] = [];
+  report: FindReport = {
+    tables: 0,
+    searched: 0,
+    skipped: 0,
+    rows: 0,
+    sources: 0,
+    cancelled: false,
+    lost: false,
+  };
+  fail: { code: string; message: string } | null = null;
+  hold = false;
+  private settle: (() => void) | null = null;
+
+  finish(): void {
+    this.settle?.();
+  }
+
+  async run(
+    jobId: number,
+    connectionId: string,
+    spec: FindSpec,
+    onEvent: (event: FindEvent) => void,
+  ): Promise<FindReport> {
+    this.runs.push({ jobId, connectionId, spec });
+    this.events.forEach(onEvent);
+    if (this.hold) await new Promise<void>((resolve) => (this.settle = resolve));
+    if (this.fail) throw this.fail;
+    return this.report;
+  }
+
+  cancel(jobId: number): Promise<void> {
+    this.cancelled.push(jobId);
+    this.report = { ...this.report, cancelled: true };
+    this.finish();
+    return Promise.resolve();
   }
 }
