@@ -1220,9 +1220,7 @@ fn transfer_plan_of(
     let from = manager.kind_of(source)?;
     let to = manager.kind_of(target)?;
     // a table copied into itself would read what it writes – and, emptied first, lose its rows
-    if source == target
-        && (from == crate::db::DbKind::Sqlite || request.source_schema == request.target_schema)
-    {
+    if source == target && (from.is_sqlite() || request.source_schema == request.target_schema) {
         return Err(AppError::new(
             ErrorCode::Unsupported,
             "source and target are the same schema: a table cannot be copied into itself",
@@ -2854,7 +2852,9 @@ pub fn testdata_keys(
             crate::db::DbKind::Postgres => format!("{column}::text"),
             crate::db::DbKind::Mysql => format!("CAST({column} AS CHAR)"),
             crate::db::DbKind::Sqlserver => format!("CAST({column} AS nvarchar(4000))"),
-            crate::db::DbKind::Sqlite => format!("CAST({column} AS TEXT)"),
+            crate::db::DbKind::Sqlite | crate::db::DbKind::Libsql => {
+                format!("CAST({column} AS TEXT)")
+            }
             crate::db::DbKind::Oracle => format!("TO_CHAR({column})"),
             crate::db::DbKind::Duckdb => format!("CAST({column} AS VARCHAR)"),
             crate::db::DbKind::Clickhouse => format!("toString({column})"),

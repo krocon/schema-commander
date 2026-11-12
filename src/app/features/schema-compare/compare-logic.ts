@@ -25,7 +25,7 @@ export function readSnapshot(text: string): SchemaSnapshot | null {
   }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
-  const kinds = ['postgres', 'mysql', 'sqlserver', 'sqlite'];
+  const kinds = ['postgres', 'mysql', 'sqlserver', 'sqlite', 'libsql'];
   if (typeof o['kind'] !== 'string' || !kinds.includes(o['kind'])) return null;
   if (typeof o['schema'] !== 'string' || !Array.isArray(o['tables'])) return null;
   return raw as SchemaSnapshot;

@@ -1,3 +1,4 @@
+import { dialectOf as sqlDialectOf } from '../../core/connections/connection.models';
 import {
   Component,
   ElementRef,
@@ -734,7 +735,7 @@ export class QueryPane implements OnInit, OnDestroy {
   /** The rules of the tab's database for splitting statements. */
   protected readonly dialect = computed<Dialect>(() => {
     const id = this.tab().connectionId();
-    return this.connections.profiles().find((p) => p.id === id)?.kind ?? 'sqlite';
+    return sqlDialectOf(this.connections.profiles().find((p) => p.id === id)?.kind ?? 'sqlite');
   });
   protected readonly time = clock;
   protected readonly outcome = outcomeText;

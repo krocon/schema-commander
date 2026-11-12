@@ -1,3 +1,4 @@
+import { dialectOf as sqlDialectOf } from '../../core/connections/connection.models';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -621,7 +622,7 @@ export class BackupDialog {
   }
 
   protected async simple(): Promise<void> {
-    const schema = this.kind() === 'sqlite' ? 'main' : this.simpleSchema().trim();
+    const schema = sqlDialectOf(this.kind()) === 'sqlite' ? 'main' : this.simpleSchema().trim();
     const path = await this.files.saveFile(
       this.t.saveTitle,
       fileName(schema || this.base(), { format: 'sql', gzip: false }, new Date()),

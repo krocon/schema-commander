@@ -140,7 +140,7 @@ pub fn details(
         DbKind::Postgres => pg::read(&mut r, schema, name, object, detail)?,
         DbKind::Mysql => mysql::read(&mut r, schema, name, object)?,
         DbKind::Sqlserver => mssql::read(&mut r, schema, name, object)?,
-        DbKind::Sqlite => sqlite::read(&mut r, schema, name, object)?,
+        DbKind::Sqlite | DbKind::Libsql => sqlite::read(&mut r, schema, name, object)?,
         DbKind::Oracle => oracle::read(&mut r, schema, name, object)?,
         DbKind::Duckdb => duckdb::read(&mut r, schema, name, object)?,
         DbKind::Clickhouse => clickhouse::read(&mut r, schema, name)?,

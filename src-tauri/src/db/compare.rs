@@ -230,7 +230,7 @@ fn index_rows(s: &mut dyn Session, kind: DbKind, schema: &str, stop: Stop) -> Ap
             stop,
         ),
         // only indexes that were created as such: those of constraints belong to the table
-        DbKind::Sqlite => s.ask(
+        DbKind::Sqlite | DbKind::Libsql => s.ask(
             "SELECT m.name, l.name, CASE WHEN l.\"unique\" = 1 THEN 'true' ELSE 'false' END, x.name \
              FROM sqlite_master m, pragma_index_list(m.name) l, pragma_index_info(l.name) x \
              WHERE m.type = 'table' AND l.origin = 'c' ORDER BY 1, 2, x.seqno",
@@ -251,7 +251,7 @@ fn default_rows(
     stop: Stop,
 ) -> AppResult<Option<TextRows>> {
     Ok(match kind {
-        DbKind::Sqlite => Some(s.ask(
+        DbKind::Sqlite | DbKind::Libsql => Some(s.ask(
             "SELECT m.name || '.' || p.name, p.dflt_value \
              FROM sqlite_master m, pragma_table_info(m.name) p \
              WHERE m.type = 'table' AND p.dflt_value IS NOT NULL",
@@ -1051,7 +1051,7 @@ impl Writer<'_> {
     }
 
     fn table(&self, table: &str) -> AppResult<String> {
-        if self.kind == DbKind::Sqlite || self.target_schema.is_empty() {
+        if self.kind.is_sqlite() || self.target_schema.is_empty() {
             self.q(table)
         } else {
             Ok(format!(
@@ -1074,7 +1074,7 @@ impl Writer<'_> {
     /// the target's.
     fn moved(&self, text: &str) -> String {
         let from = &self.source.schema;
-        if from.is_empty() || from == self.target_schema || self.kind == DbKind::Sqlite {
+        if from.is_empty() || from == self.target_schema || self.kind.is_sqlite() {
             return text.to_owned();
         }
         let to = match name(self.target_schema, self.kind) {
@@ -1119,7 +1119,7 @@ impl Writer<'_> {
                 format!("  CONSTRAINT {} {}", self.q(&c.name)?, self.check_clause(c))
             });
         }
-        if self.kind == DbKind::Sqlite {
+        if self.kind.is_sqlite() {
             // SQLite cannot add a key afterwards
             for k in &t.keys {
                 lines.push(format!("  {}", self.key_clause(k)?));
@@ -1177,7 +1177,7 @@ impl Writer<'_> {
                 self.q(self.target_schema)?,
                 self.q(&i.name)?
             ),
-            DbKind::Sqlite => format!("DROP INDEX {};", self.q(&i.name)?),
+            DbKind::Sqlite | DbKind::Libsql => format!("DROP INDEX {};", self.q(&i.name)?),
             _ => format!("DROP INDEX {} ON {};", self.q(&i.name)?, self.table(table)?),
         })
     }
@@ -1218,7 +1218,7 @@ impl Writer<'_> {
         Ok(format!(
             "ALTER TABLE {} ADD {}FOREIGN KEY ({}) REFERENCES {} ({});",
             self.table(table)?,
-            if k.name.is_empty() || k.name.starts_with("fk") && self.kind == DbKind::Sqlite {
+            if k.name.is_empty() || k.name.starts_with("fk") && self.kind.is_sqlite() {
                 String::new()
             } else {
                 format!("CONSTRAINT {} ", self.q(&k.name)?)
@@ -1458,7 +1458,7 @@ fn grouped(
                     for k in t
                         .keys
                         .iter()
-                        .filter(|_| t.definition.is_none() && kind != DbKind::Sqlite)
+                        .filter(|_| t.definition.is_none() && !kind.is_sqlite())
                     {
                         steps[LINK].push(w.add_key(&t.name, k)?);
                     }
@@ -1618,7 +1618,7 @@ fn grouped(
                             DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino => {
                                 return Err(super::not_yet(kind, "schema compare and structure editing"));
                             }
-                            DbKind::Sqlite => sqls.push(note(&format!(
+                            DbKind::Sqlite | DbKind::Libsql => sqls.push(note(&format!(
                                 "{}.{}: SQLite cannot change a column – the table must be rebuilt ({} → {})",
                                 table,
                                 item.name,
@@ -1633,7 +1633,7 @@ fn grouped(
                             why
                         };
                         if !sql.is_empty() {
-                            steps[COLUMNS].push(if why.is_empty() || kind == DbKind::Sqlite {
+                            steps[COLUMNS].push(if why.is_empty() || kind.is_sqlite() {
                                 sql
                             } else {
                                 danger(&sql, why)
@@ -1648,7 +1648,7 @@ fn grouped(
                     continue;
                 };
                 let pk = table_of(source, table).map(|t| t.pk).unwrap_or_default();
-                if item.state == State::OnlyLeft && kind != DbKind::Sqlite {
+                if item.state == State::OnlyLeft && !kind.is_sqlite() {
                     steps[CHECKS].push(format!(
                         "ALTER TABLE {} ADD PRIMARY KEY ({});",
                         w.table(table)?,
@@ -1698,7 +1698,7 @@ fn grouped(
                         .cloned()
                 };
                 if in_target && let Some(old) = find(&now, &item.right) {
-                    steps[UNLINK].push(if kind == DbKind::Sqlite {
+                    steps[UNLINK].push(if kind.is_sqlite() {
                         note(&format!(
                             "{table}: SQLite cannot drop a key – the table must be rebuilt"
                         ))
@@ -1707,7 +1707,7 @@ fn grouped(
                     });
                 }
                 if in_source && let Some(new) = find(source, &item.left) {
-                    steps[LINK].push(if kind == DbKind::Sqlite {
+                    steps[LINK].push(if kind.is_sqlite() {
                         note(&format!(
                             "{table}: SQLite cannot add a key to a table that exists ({})",
                             key_text(&new)
@@ -1721,7 +1721,7 @@ fn grouped(
                 let Some(table) = item.table.as_deref() else {
                     continue;
                 };
-                if kind == DbKind::Sqlite {
+                if kind.is_sqlite() {
                     steps[CHECKS].push(note(&format!(
                         "{table}: SQLite cannot change the checks of a table that exists"
                     )));
@@ -1784,10 +1784,9 @@ fn grouped(
                         "CREATE OR REPLACE VIEW {} AS\n{text};",
                         w.table(&item.name)?
                     )),
-                    (ItemKind::View | ItemKind::Trigger, DbKind::Sqlite) => Some(format!(
-                        "DROP {what} IF EXISTS {};\n{text};",
-                        w.q(&item.name)?
-                    )),
+                    (ItemKind::View | ItemKind::Trigger, DbKind::Sqlite | DbKind::Libsql) => Some(
+                        format!("DROP {what} IF EXISTS {};\n{text};", w.q(&item.name)?),
+                    ),
                     // the definition is the whole statement
                     (ItemKind::Routine, DbKind::Postgres) => Some(format!("{text};")),
                     (ItemKind::Trigger, DbKind::Postgres) => {
@@ -1849,7 +1848,7 @@ fn written(
                 DbKind::Postgres => "PostgreSQL",
                 DbKind::Mysql => "MySQL / MariaDB",
                 DbKind::Sqlserver => "SQL Server",
-                DbKind::Sqlite => "SQLite",
+                DbKind::Sqlite | DbKind::Libsql => "SQLite",
                 DbKind::Oracle => "Oracle",
                 DbKind::Duckdb => "DuckDB",
                 DbKind::Clickhouse => "ClickHouse",

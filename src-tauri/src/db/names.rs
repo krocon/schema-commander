@@ -618,7 +618,7 @@ pub fn read_objects(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<
             &[],
             stop,
         )?,
-        DbKind::Sqlite => {
+        DbKind::Sqlite | DbKind::Libsql => {
             let mut rows = Vec::new();
             for file in sqlite_files(s, stop)? {
                 // a schema cannot be bound: its name goes in quoted (as in `meta.rs`)
@@ -724,7 +724,7 @@ pub fn read_columns(
             &[],
             stop,
         )?,
-        DbKind::Sqlite => {
+        DbKind::Sqlite | DbKind::Libsql => {
             let mut rows = Vec::new();
             for file in sqlite_files(s, stop)? {
                 let quoted = super::meta::quote_always(&file, DbKind::Sqlite);

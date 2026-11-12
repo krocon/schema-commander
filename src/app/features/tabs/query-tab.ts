@@ -73,6 +73,7 @@ import {
   storeIds,
   subTabs,
 } from './result-tabs-logic';
+import { dialectOf as sqlDialectOf } from '../../core/connections/connection.models';
 
 /** What a tab needs of its editor; the pane of the tab registers it. */
 export interface TabEditor {
@@ -836,7 +837,7 @@ export class QueryTab {
   /** The database of a connection, for the rules its statements are read by. */
   private dialectOf(connection: string): Dialect {
     const kind = this.services.connections.profiles().find((p) => p.id === connection)?.kind;
-    return (kind ?? 'sqlite') as Dialect;
+    return sqlDialectOf(kind ?? 'sqlite') as Dialect;
   }
 
   /** Asks the backend to stop the statement that runs. */

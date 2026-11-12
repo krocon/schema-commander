@@ -834,8 +834,8 @@ pub fn ask(kind: DbKind, flavor: Flavor, sql: &str, analyze: bool) -> AppResult<
         (DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino, _, _) => {
             return Err(super::not_yet(kind, "the execution plan"));
         }
-        (DbKind::Sqlite, _, false) => one(format!("EXPLAIN QUERY PLAN {sql}")),
-        (DbKind::Sqlite, _, true) => {
+        (DbKind::Sqlite | DbKind::Libsql, _, false) => one(format!("EXPLAIN QUERY PLAN {sql}")),
+        (DbKind::Sqlite | DbKind::Libsql, _, true) => {
             return Err(AppError::new(
                 ErrorCode::Unsupported,
                 "SQLite gives no plan with times",
@@ -854,7 +854,7 @@ pub fn read(kind: DbKind, flavor: Flavor, rows: &[Vec<Cell>]) -> Plan {
             _ => None,
         }
     };
-    if kind == DbKind::Sqlite {
+    if kind.is_sqlite() {
         let parsed: Vec<(i64, i64, String)> = rows
             .iter()
             .filter_map(|row| match row.as_slice() {

@@ -81,7 +81,7 @@ pub fn class_of(kind: DbKind, type_name: &str) -> Class {
     if t.ends_with("[]") {
         return Class::Other;
     }
-    if kind == DbKind::Sqlite {
+    if kind.is_sqlite() {
         // SQLite has affinities, not types: what the name holds decides
         return match base.as_str() {
             "boolean" | "bool" => Class::Bool,
@@ -374,7 +374,7 @@ pub fn type_for(to: DbKind, class: Class) -> (String, Option<&'static str>) {
                 Some("a type this app does not know: copied as text"),
             ),
         },
-        DbKind::Sqlite => match class {
+        DbKind::Sqlite | DbKind::Libsql => match class {
             Class::SmallInt | Class::Int | Class::BigInt => own("INTEGER"),
             Class::Numeric(_) => (
                 "NUMERIC".to_owned(),
@@ -517,7 +517,7 @@ fn invalid(message: &str) -> AppError {
 
 fn qualified(kind: DbKind, schema: &str, table: &str) -> String {
     let q = |n: &str| super::meta::quote_always(n, kind);
-    if kind == DbKind::Sqlite || schema.is_empty() {
+    if kind.is_sqlite() || schema.is_empty() {
         q(table)
     } else {
         format!("{}.{}", q(schema), q(table))
@@ -729,7 +729,7 @@ pub fn plan(
                         .to_owned(),
                 );
             }
-            if request.with_keys && to != DbKind::Sqlite {
+            if request.with_keys && !to.is_sqlite() {
                 // PostgreSQL tells an index by its statement: its columns are read from it
                 let columns_of = |i: &compare::Index| match (&i.definition, i.columns.is_empty()) {
                     (Some(definition), true) => super::structure::index_columns(definition),
@@ -785,7 +785,7 @@ pub fn plan(
             qualified(from, &request.source_schema, &table.name)
         );
         let load = LoadPlan {
-            schema: (to != DbKind::Sqlite && !request.target_schema.is_empty())
+            schema: (!to.is_sqlite() && !request.target_schema.is_empty())
                 .then(|| request.target_schema.clone()),
             table: existing.map_or_else(|| table.name.clone(), |t| t.name.clone()),
             mappings,

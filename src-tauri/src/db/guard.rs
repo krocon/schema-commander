@@ -220,7 +220,7 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
             } else {
                 Tok::Quoted(body)
             });
-        } else if c == '[' && matches!(kind, DbKind::Sqlserver | DbKind::Sqlite) {
+        } else if c == '[' && matches!(kind, DbKind::Sqlserver | DbKind::Sqlite | DbKind::Libsql) {
             let start = i + 1;
             i += 1;
             while i < n {
@@ -652,7 +652,7 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
 
     if start == "PRAGMA" {
         // its value may be any word (`journal_mode = DELETE`): no statement hides in it
-        return Some(if kind == DbKind::Sqlite && read_pragma(toks) {
+        return Some(if kind.is_sqlite() && read_pragma(toks) {
             Class::Read
         } else if has(DDL_WORDS) {
             Class::Ddl
@@ -970,6 +970,9 @@ pub fn read_only_statement(kind: DbKind) -> Option<&'static str> {
         DbKind::Postgres => Some("SET default_transaction_read_only = on"),
         DbKind::Mysql => Some("SET SESSION TRANSACTION READ ONLY"),
         DbKind::Sqlite => Some("PRAGMA query_only = ON"),
+        // the server takes no such PRAGMA: the classification is all there is, and a reading call
+        // runs in a transaction that is rolled back
+        DbKind::Libsql => None,
         // SQL Server has no read-only session; the classification is all there is
         DbKind::Sqlserver => None,
         // Oracle has it only for one transaction (and reads a stale snapshot inside it): the
@@ -990,7 +993,7 @@ mod tests {
     use super::*;
     use Class::{Dangerous, Ddl, Read, Write};
 
-    const ALL: [DbKind; 8] = [
+    const ALL: [DbKind; 9] = [
         DbKind::Postgres,
         DbKind::Mysql,
         DbKind::Sqlserver,
@@ -999,7 +1002,29 @@ mod tests {
         DbKind::Duckdb,
         DbKind::Clickhouse,
         DbKind::Trino,
+        DbKind::Libsql,
     ];
+
+    /// libSQL (prompt 035g): classified as SQLite; read only is not a statement there.
+    #[test]
+    fn libsql_is_classified_like_sqlite() {
+        for sql in [
+            "SELECT 1",
+            "PRAGMA table_info(t)",
+            "PRAGMA journal_mode = WAL",
+            "INSERT INTO t VALUES (1)",
+            "DROP TABLE t",
+            "ATTACH DATABASE 'x' AS x",
+            "SELECT [a;b], `c` FROM t",
+        ] {
+            assert_eq!(
+                classify(sql, DbKind::Libsql),
+                classify(sql, DbKind::Sqlite),
+                "{sql}"
+            );
+        }
+        assert_eq!(read_only_statement(DbKind::Libsql), None);
+    }
 
     /// Trino (prompt 035f).
     #[test]

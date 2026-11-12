@@ -292,7 +292,7 @@ fn insert(
         }
     }
     let returns = match (returning, kind) {
-        (Some(column), DbKind::Postgres | DbKind::Sqlite | DbKind::Duckdb) => {
+        (Some(column), DbKind::Postgres | DbKind::Sqlite | DbKind::Libsql | DbKind::Duckdb) => {
             b.text(&format!("\nRETURNING {}", name(column, kind)?));
             true
         }

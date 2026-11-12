@@ -1,3 +1,4 @@
+import { dialectOf as sqlDialectOf } from '../../core/connections/connection.models';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
 import { describeError } from '../../core/errors/app-error';
@@ -206,7 +207,9 @@ export class SavedStore {
       const tab = this.tabs.active();
       if (!tab || tab.filePath() !== entry.path) return;
       const kind = this.connections.profiles().find((p) => p.id === tab.connectionId())?.kind;
-      const statements = splitForRun(saved.text, (kind ?? 'sqlite') as Dialect).map((s) => s.text);
+      const statements = splitForRun(saved.text, sqlDialectOf(kind ?? 'sqlite') as Dialect).map(
+        (s) => s.text,
+      );
       if (statements.length > 0) await tab.runAll(statements, 'user');
     } catch (e) {
       this.notice.set(describeError(e));

@@ -374,7 +374,7 @@ pub fn diagram(
             ),
         ),
         // the file that is open: SQLite has one namespace
-        DbKind::Sqlite => (
+        DbKind::Sqlite | DbKind::Libsql => (
             s.ask(
                 "SELECT m.name, p.name, p.type, CASE WHEN p.\"notnull\" = 0 THEN 'true' ELSE 'false' END, \
                    CASE WHEN p.pk > 0 THEN 'true' ELSE 'false' END \
@@ -406,7 +406,7 @@ pub fn diagram(
     };
     let (tables, cut) = tables_of(&columns, schema);
     let mut keys = keys;
-    if kind == DbKind::Sqlite {
+    if kind.is_sqlite() {
         // the namespace is the schema asked for; a key without target columns points to the primary
         // key of its target, column by column; names of tables are compared without their case
         let mut nth: std::collections::HashMap<(String, String), usize> =
