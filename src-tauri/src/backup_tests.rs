@@ -349,6 +349,8 @@ fn knows_a_backup_by_its_first_bytes() {
     assert!(file_kind(&dir.path().join("missing")).is_err());
 }
 
+// Only the tests with real processes use it, and those run on Unix.
+#[cfg(unix)]
 fn invocation(tool: Tool, args: &[&str]) -> Invocation {
     Invocation {
         tool,
