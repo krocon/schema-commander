@@ -51,6 +51,8 @@ export interface Settings {
   readonly activeConnection: string;
   /** Leave out the rest of a script after a statement failed (prompt 005). */
   readonly stopOnError: boolean;
+  /** The results of a run stay when the next one starts, each in a tab of its own (prompt 041). */
+  readonly keepResults: boolean;
   /** Time at most per statement in seconds; 0 = as long as it takes. */
   readonly statementTimeoutSec: number;
   /** Show numbers in the result with their digits in groups of three (prompt 007); never when copying. */
@@ -207,6 +209,7 @@ export const DEFAULT_SETTINGS: Settings = {
   paramForms: {},
   activeConnection: 'demo',
   stopOnError: true,
+  keepResults: false,
   statementTimeoutSec: 0,
   groupDigits: false,
   showSystemSchemas: false,
@@ -398,6 +401,8 @@ export function mergeSettings(saved: unknown): Settings {
         : {},
     stopOnError:
       typeof s['stopOnError'] === 'boolean' ? s['stopOnError'] : DEFAULT_SETTINGS.stopOnError,
+    keepResults:
+      typeof s['keepResults'] === 'boolean' ? s['keepResults'] : DEFAULT_SETTINGS.keepResults,
     groupDigits:
       typeof s['groupDigits'] === 'boolean' ? s['groupDigits'] : DEFAULT_SETTINGS.groupDigits,
     showSystemSchemas:

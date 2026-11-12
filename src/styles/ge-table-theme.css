@@ -212,3 +212,39 @@
   color: var(--cell-deleted-text);
   text-decoration: line-through;
 }
+
+/* rows of a comparison of two results (prompt 041): only left, only right, the cells that differ */
+.sc-result .ge-table-col-div.sc-diff-left {
+  background: var(--cell-deleted-bg);
+  color: var(--cell-deleted-text);
+}
+
+.sc-result .ge-table-col-div.sc-diff-right {
+  background: var(--cell-new-bg);
+  color: var(--cell-new-text);
+}
+
+.sc-result .ge-table-col-div.sc-diff-changed {
+  background: var(--cell-changed-bg);
+  color: var(--cell-changed-text);
+}
+
+.sc-result .ge-table-col-div.sc-diff-left .ge-table-label,
+.sc-result .ge-table-col-div.sc-diff-left.sc-null .ge-table-label {
+  color: var(--cell-deleted-text);
+}
+
+.sc-result .ge-table-col-div.sc-diff-right .ge-table-label,
+.sc-result .ge-table-col-div.sc-diff-right.sc-null .ge-table-label {
+  color: var(--cell-new-text);
+}
+
+.sc-result .ge-table-col-div.sc-diff-changed .ge-table-label,
+.sc-result .ge-table-col-div.sc-diff-changed.sc-null .ge-table-label {
+  color: var(--cell-changed-text);
+}
+
+/* a row whose key is there more than once: matched to nothing */
+.sc-result .ge-table-col-div.sc-diff-duplicate {
+  box-shadow: inset 0 -1px 0 0 var(--danger);
+}

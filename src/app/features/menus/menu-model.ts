@@ -120,6 +120,26 @@ const RESULT_COLUMNS: MenuDef = {
 };
 
 /** Finding things in a result (prompt 029). */
+/** The results of a tab: their tabs, pinning, comparing (prompt 041). */
+const RESULT_TABS: MenuDef = {
+  sub: () => T.resultTabs,
+  items: [
+    'RESULT_NEXT_TAB',
+    'RESULT_PREVIOUS_TAB',
+    '-',
+    'RESULT_PIN',
+    'RESULT_DETACH',
+    'RESULT_DETACH_BESIDE',
+    'RESULT_CLOSE_KEPT',
+    '-',
+    'COMPARE_RESULTS',
+    'RUN_AND_COMPARE',
+    'COMPARE_NEXT',
+    'COMPARE_PREVIOUS',
+    'COMPARE_ONLY_DIFFERENCES',
+  ],
+};
+
 const RESULT_FIND: MenuDef = {
   sub: () => T.resultFind,
   items: [
@@ -294,6 +314,7 @@ export const MENU_BAR: readonly TopMenu[] = [
       'TX_ROLLBACK',
       '-',
       'SHOW_MESSAGES',
+      RESULT_TABS,
       '-',
       FILTER_CELL,
       EDIT_CELLS,
@@ -396,6 +417,7 @@ export const RESULT_MENU: readonly MenuDef[] = [
   FILTER_CELL,
   RELATIONS,
   RESULT_FIND,
+  RESULT_TABS,
   RESULT_COLUMNS,
   'SUMMARIZE_COLUMN',
   'COPY_SELECTION_SUM',

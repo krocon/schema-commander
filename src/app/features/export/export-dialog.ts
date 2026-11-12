@@ -136,7 +136,7 @@ import { EXPORT_TEXTS } from './export-texts';
               {{ t.gzip }}
             </label>
           }
-          @if (source().kind === 'result') {
+          @if (canRerun()) {
             <label>
               <input #re type="checkbox" [checked]="rerun()" (change)="rerun.set(re.checked)" />
               {{ t.rerun }}
@@ -293,6 +293,11 @@ export class ExportDialog {
   protected readonly choices = signal<ExportChoices>(mergeChoices(undefined));
   protected readonly has = computed(() => formatHas(this.format()));
   protected readonly rerun = signal(false);
+  /** Running the statement again is offered for a result that has one (a comparison has none). */
+  protected readonly canRerun = computed(() => {
+    const source = this.source();
+    return source.kind === 'result' && source.sql.trim() !== '';
+  });
   protected readonly table = signal('');
   protected readonly picked = signal<ReadonlySet<number>>(new Set());
   protected readonly preview = signal('');

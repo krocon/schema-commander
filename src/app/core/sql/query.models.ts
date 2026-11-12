@@ -339,3 +339,67 @@ export interface Applied {
   readonly unknown: boolean;
   readonly tx: TxState;
 }
+
+/** Mirrors `CompareSpec` in src-tauri/src/result_compare.rs (prompt 041). */
+export interface CompareSpec {
+  readonly left: number;
+  readonly right: number;
+  /** Columns of the left result that say which rows belong together; none = by position. */
+  readonly keys: readonly number[];
+  /** Columns of the left result that are not compared. */
+  readonly ignore: readonly number[];
+  readonly trim: boolean;
+  readonly ignoreCase: boolean;
+  /** Numbers are equal when they are after rounding to so many decimals; `null` = as written. */
+  readonly decimals: number | null;
+}
+
+/** Mirrors `Pairing`: which column of the left result goes with which of the right one. */
+export interface ColumnPairing {
+  readonly pairs: readonly (readonly [number, number])[];
+  readonly leftOnly: readonly string[];
+  readonly rightOnly: readonly string[];
+  readonly byPosition: boolean;
+}
+
+/** Mirrors `CompareReport`. The outcome is a result (`resultId`) and a view of its rows that differ. */
+export interface CompareReport {
+  readonly resultId: number;
+  readonly columns: readonly QueryColumn[];
+  readonly rows: number;
+  readonly diffId: number;
+  readonly diffRows: number;
+  readonly leftRows: number;
+  readonly rightRows: number;
+  readonly same: number;
+  readonly changed: number;
+  readonly leftOnly: number;
+  readonly rightOnly: number;
+  readonly duplicateLeft: number;
+  readonly duplicateRight: number;
+  readonly duplicateKeys: readonly string[];
+  readonly changedByColumn: readonly { readonly name: string; readonly rows: number }[];
+  readonly leftColumnsOnly: readonly string[];
+  readonly rightColumnsOnly: readonly string[];
+  readonly byPosition: boolean;
+  readonly cut: boolean;
+}
+
+/** The first cell of a row of a comparison: what became of the row (mirrors the constants in Rust). */
+export const COMPARE_STATES = {
+  same: '≡',
+  onlyLeft: '←',
+  onlyRight: '→',
+  changedLeft: '≠←',
+  changedRight: '≠→',
+  duplicateLeft: '‼←',
+  duplicateRight: '‼→',
+} as const;
+/** Columns a comparison puts before those of the results: the state and the changed columns. */
+export const COMPARE_EXTRA_COLUMNS = 2;
+
+/** Mirrors `Usage` in src-tauri/src/results.rs. */
+export interface ResultUsage {
+  readonly bytes: number;
+  readonly onDisk: boolean;
+}

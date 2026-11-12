@@ -490,4 +490,22 @@ describe('TabsStore', () => {
     // a tab that is open keeps the mode it has
     expect(store.tabs()[0].manual()).toBe(true);
   });
+
+  it('moves the result on screen into a tab of its own, kept there (prompt 041)', async () => {
+    await start();
+    const from = store.active()!;
+    await from.runAll(['select * from a', 'select * from b']);
+    from.show(1);
+    const id = from.runs()[1].result!.resultId;
+    store.detachResult(false);
+    const to = store.active()!;
+    expect(to).not.toBe(from);
+    expect(to.startText).toBe('select * from b');
+    expect(to.shownKept()).toMatchObject({ pinned: true, title: 'b' });
+    expect(to.state()).toMatchObject({ kind: 'done', result: { resultId: id } });
+    // the tab it came from has it no more – and did not free it
+    expect(from.subTabs().map((t) => t.target)).toEqual([0]);
+    expect(from.kept()).toEqual([]);
+    expect(query.freed).toEqual([]);
+  });
 });

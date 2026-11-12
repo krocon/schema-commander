@@ -86,6 +86,16 @@ export function pagesToDrop(pages: readonly number[], around: number, max: numbe
 }
 
 /**
+ * Colours the cells of a row by what the row holds (prompt 041): `cell(c)` is the cell of column `c` of the
+ * result as it came from the backend, `column` the column asked for (`-1`: the row number). Answers with a
+ * class, or `null`.
+ */
+export type RowTint = (
+  cell: (column: number) => RowWindow[number][number] | undefined,
+  column: number,
+) => string | null;
+
+/**
  * The rows of a result in the store of the backend, as the body of the table (prompt 006): the table asks
  * for cells, this model answers from the pages it has and fetches the others. A cell of a page that is not
  * there yet is empty until it arrives (`onLoaded` repaints). Column 0 is the row number. The pages hold the
@@ -108,6 +118,7 @@ export class WindowAreaModel extends AreaModel {
   private hits: HitMarks | null = null;
   private links: ReadonlySet<number> | null = null;
   private edits: EditMarks | null = null;
+  private tint: RowTint | null = null;
   private editTexts = { null: 'NULL', default: 'DEFAULT' };
 
   /** Which result column each grid column shows (the caller builds a new table model). */
@@ -124,6 +135,19 @@ export class WindowAreaModel extends AreaModel {
   setEdits(edits: EditMarks | null, texts: { null: string; default: string }): void {
     this.edits = edits;
     this.editTexts = texts;
+  }
+
+  /** How rows are coloured by what they hold (prompt 041; the caller repaints). */
+  setTint(tint: RowTint | null): void {
+    this.tint = tint;
+  }
+
+  /** The class the tint gives a cell; `column`: of the result, `-1` for the row number. */
+  private tintAt(row: number, column: number): string | null {
+    if (!this.tint) return null;
+    const page = pageOf(row);
+    const cells = this.pages.get(page)?.[row - page * PAGE_ROWS];
+    return cells ? this.tint((c) => cells[c], column) : null;
   }
 
   /** The hits to mark from now on (the caller repaints). */
@@ -226,6 +250,8 @@ export class WindowAreaModel extends AreaModel {
     if (col === 0) {
       const head: string[] = gone ? ['sc-deleted'] : [];
       if (this.edits?.failed(row)) head.push('sc-edit-failed');
+      const tinted = this.tintAt(row, -1);
+      if (tinted) head.push(tinted);
       return head;
     }
     const edit = this.edits?.at(row, this.resultColumn(col));
@@ -240,6 +266,8 @@ export class WindowAreaModel extends AreaModel {
     }
     const cls = this.shown(row, col)?.cls;
     const out: string[] = cls ? [cls] : [];
+    const tinted = this.tintAt(row, this.resultColumn(col));
+    if (tinted) out.push(tinted);
     // a row that is to be deleted: struck through, whatever its cells hold
     if (gone) {
       out.push('sc-deleted');

@@ -91,6 +91,63 @@ export const ACTIONS = [
   { id: 'TOGGLE_COMMENT', label: 'Toggle line comment', group: 'Query', scope: 'global' },
   { id: 'CANCEL_FORMAT', label: 'Cancel formatting', group: 'Query', scope: 'global' },
   { id: 'SHOW_MESSAGES', label: 'Show messages', group: 'Query', scope: 'global' },
+  // Results as sub-tabs, pinning, comparing (prompt 041)
+  { id: 'RESULT_NEXT_TAB', label: 'Result: next result tab', group: 'Navigation', scope: 'global' },
+  {
+    id: 'RESULT_PREVIOUS_TAB',
+    label: 'Result: previous result tab',
+    group: 'Navigation',
+    scope: 'global',
+  },
+  {
+    id: 'RESULT_PIN',
+    label: 'Result: pin (keep over the next run)',
+    group: 'Query',
+    scope: 'global',
+  },
+  {
+    id: 'RESULT_CLOSE_KEPT',
+    label: 'Result: close the kept results of the tab',
+    group: 'Query',
+    scope: 'global',
+  },
+  {
+    id: 'RESULT_DETACH',
+    label: 'Result: move into a tab of its own',
+    group: 'Query',
+    scope: 'global',
+  },
+  {
+    id: 'RESULT_DETACH_BESIDE',
+    label: 'Result: move into a tab beside this one',
+    group: 'Query',
+    scope: 'global',
+  },
+  { id: 'COMPARE_RESULTS', label: 'Compare two results …', group: 'Query', scope: 'global' },
+  {
+    id: 'RUN_AND_COMPARE',
+    label: 'Run again and compare with the previous result',
+    group: 'Query',
+    scope: 'global',
+  },
+  {
+    id: 'COMPARE_NEXT',
+    label: 'Comparison: next difference',
+    group: 'Navigation',
+    scope: 'global',
+  },
+  {
+    id: 'COMPARE_PREVIOUS',
+    label: 'Comparison: previous difference',
+    group: 'Navigation',
+    scope: 'global',
+  },
+  {
+    id: 'COMPARE_ONLY_DIFFERENCES',
+    label: 'Comparison: only differences',
+    group: 'View',
+    scope: 'global',
+  },
   // Sorting and filtering (prompt 027)
   { id: 'TOGGLE_FILTER_BAR', label: 'Result: show the filter row', group: 'View', scope: 'global' },
   {

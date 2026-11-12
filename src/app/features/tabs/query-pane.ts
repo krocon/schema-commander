@@ -41,6 +41,10 @@ import { RowForm } from '../row-form/row-form';
 import { ActiveCell, ValueService } from '../value/value.service';
 import { VALUE_TEXTS } from '../value/value-texts';
 import { TABS_TEXTS } from './tabs-texts';
+import { locale } from '../../core/i18n/i18n';
+import { CompareBar } from '../result-compare/compare-bar';
+import { compareTint } from '../result-compare/compare-view-logic';
+import { Shown, bytesText, isKept } from './result-tabs-logic';
 
 const RESULT_MIN = 80;
 /** What the editor keeps at least, px. */
@@ -60,6 +64,7 @@ const EDITOR_MIN_W = 160;
     FindBar,
     RelationPath,
     ResultGrid,
+    CompareBar,
     SplitterComponent,
     SqlEditor,
     ValuePanel,
@@ -124,38 +129,111 @@ const EDITOR_MIN_W = 160;
       [style.height.px]="maximized() || side() ? null : resultH()"
       [style.width.px]="maximized() || !side() ? null : resultW()"
     >
-      @if (tab().runs().length > 1 || tab().log().length > 0) {
-        <div class="subtabs" role="tablist" [attr.aria-label]="t.results">
-          @for (run of tab().runs(); track $index) {
-            @if (tab().runs().length > 1) {
-              <button
-                type="button"
-                role="tab"
-                [class]="'sub ' + run.kind"
-                [attr.aria-selected]="tab().shown() === $index"
-                [tabindex]="tab().shown() === $index ? 0 : -1"
-                [title]="run.sql"
-                (click)="tab().shown.set($index)"
-                (keydown)="onSubKey($event)"
-              >
-                <span class="mark" aria-hidden="true">{{ mark(run) }}</span>
-                {{ $index + 1 }}
-                <span class="sr">{{ outcome(run) }}</span>
-              </button>
+      @if (subs().length > 1 || tab().kept().length > 0 || tab().log().length > 0) {
+        <div class="subtabs">
+          <div class="tabs" role="tablist" [attr.aria-label]="t.results">
+            @for (sub of subs(); track sub.target) {
+              @if (subs().length > 1 || sub.kept) {
+                @if (renaming() === sub.target) {
+                  <input
+                    class="rename"
+                    type="text"
+                    maxlength="80"
+                    [attr.aria-label]="t.renameResult"
+                    [value]="sub.title"
+                    (keydown)="onRenameKey($event)"
+                    (blur)="endRename(sub.target, $event)"
+                  />
+                } @else {
+                  <button
+                    type="button"
+                    role="tab"
+                    [class]="'sub ' + sub.kind"
+                    [class.kept]="sub.kept"
+                    [attr.aria-selected]="tab().shown() === sub.target"
+                    [tabindex]="tab().shown() === sub.target ? 0 : -1"
+                    [title]="
+                      (sub.sql || sub.title) +
+                      '
+' +
+                      t.renameHint
+                    "
+                    (click)="tab().show(sub.target)"
+                    (dblclick)="renaming.set(sub.target)"
+                    (keydown)="onSubKey($event)"
+                  >
+                    @if (sub.compare) {
+                      <span class="mark" aria-hidden="true">≠</span>
+                      <span class="sr">{{ t.compareMark }}</span>
+                    } @else if (sub.pinned) {
+                      <span class="mark pinned" aria-hidden="true">●</span>
+                      <span class="sr">{{ t.pinnedMark }}</span>
+                    } @else if (!sub.kept) {
+                      <span class="mark" aria-hidden="true">{{ mark(sub.kind) }}</span>
+                      {{ numberOf(sub.target) }}
+                    }
+                    <span class="name">{{ sub.title }}</span>
+                    @if (sub.rows !== null) {
+                      <span class="count">{{ count(sub.rows) }}</span>
+                    }
+                    @if (!sub.kept) {
+                      <span class="sr">{{ outcomeOf(sub.target) }}</span>
+                    }
+                  </button>
+                  @if (sub.kept) {
+                    <button
+                      type="button"
+                      class="close"
+                      tabindex="-1"
+                      [attr.aria-label]="t.closeResult"
+                      [title]="t.closeResult"
+                      (click)="closeKept(sub.target)"
+                    >
+                      ×
+                    </button>
+                  }
+                }
+              }
             }
+            <button
+              type="button"
+              role="tab"
+              class="sub"
+              [attr.aria-selected]="tab().shown() === 'messages'"
+              [tabindex]="tab().shown() === 'messages' ? 0 : -1"
+              (click)="tab().show('messages')"
+              (keydown)="onSubKey($event)"
+            >
+              {{ t.messages }}
+            </button>
+          </div>
+          @if (tab().kept().length > 0) {
+            <span class="usage">{{ usage() }}</span>
+            <button
+              type="button"
+              class="tool"
+              [title]="t.releaseKeptHint"
+              (click)="tab().closeKeptAll(true)"
+            >
+              {{ t.releaseKept }}
+            </button>
           }
-          <button
-            type="button"
-            role="tab"
-            class="sub"
-            [attr.aria-selected]="tab().shown() === 'messages'"
-            [tabindex]="tab().shown() === 'messages' ? 0 : -1"
-            (click)="tab().shown.set('messages')"
-            (keydown)="onSubKey($event)"
-          >
-            {{ t.messages }}
-          </button>
+          @if (tab().canPin()) {
+            <button
+              type="button"
+              class="tool"
+              [attr.aria-pressed]="tab().isPinned()"
+              [title]="tab().isPinned() ? t.unpinResult : t.pinResult"
+              [attr.aria-label]="tab().isPinned() ? t.unpinResult : t.pinResult"
+              (click)="tab().togglePin()"
+            >
+              <span aria-hidden="true">{{ tab().isPinned() ? '●' : '○' }}</span>
+            </button>
+          }
         </div>
+      }
+      @if (tab().shownKept()?.compare; as compare) {
+        <app-compare-bar [tab]="tab()" [compare]="compare" />
       }
       @if (filterBar()) {
         <app-filter-bar
@@ -216,6 +294,7 @@ const EDITOR_MIN_W = 160;
                     [hits]="hits()"
                     [links]="links()"
                     [edits]="edits()"
+                    [tint]="tint()"
                     (editCell)="edit.begin(tab())"
                     (pasted)="edit.paste(tab(), $event)"
                     (follow)="relations.follow(tab(), 'here')"
@@ -305,6 +384,7 @@ const EDITOR_MIN_W = 160;
                     [hits]="hits()"
                     [links]="links()"
                     [edits]="edits()"
+                    [tint]="tint()"
                     (editCell)="edit.begin(tab())"
                     (pasted)="edit.paste(tab(), $event)"
                     (follow)="relations.follow(tab(), 'here')"
@@ -410,9 +490,16 @@ const EDITOR_MIN_W = 160;
       display: flex;
       gap: 2px;
       padding: 2px 6px 0;
-      overflow-x: auto;
       background: var(--bg-panel);
       border-bottom: 1px solid var(--border);
+    }
+    /* the tabs scroll; what stands beside them (kept results, pin) stays in sight */
+    .subtabs .tabs {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      gap: 2px;
+      overflow-x: auto;
       scrollbar-width: none;
     }
     .sub {
@@ -424,6 +511,58 @@ const EDITOR_MIN_W = 160;
     }
     .sub[aria-selected='true'] {
       background: var(--bg-app);
+      color: var(--text);
+    }
+    .sub .count {
+      margin-left: 5px;
+      color: var(--text-dim);
+      font-variant-numeric: tabular-nums;
+    }
+    .sub .name {
+      display: inline-block;
+      max-width: 22ch;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      vertical-align: bottom;
+    }
+    .sub.kept {
+      padding-right: 3px;
+    }
+    .sub .pinned {
+      color: var(--accent);
+    }
+    .subtabs .close {
+      flex: none;
+      margin-left: -3px;
+      padding: 0 5px;
+      color: var(--text-dim);
+      font-size: 12px;
+    }
+    .subtabs .close:hover {
+      color: var(--text);
+    }
+    .subtabs .rename {
+      flex: none;
+      width: 20ch;
+      font-size: 12px;
+    }
+    .subtabs .usage {
+      flex: none;
+      align-self: center;
+      padding: 0 6px;
+      color: var(--text-dim);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .subtabs .tool {
+      flex: none;
+      padding: 2px 7px;
+      color: var(--text-dim);
+      font-size: 12px;
+    }
+    .subtabs .tool:hover,
+    .subtabs .tool[aria-pressed='true'] {
       color: var(--text);
     }
     .sub.failed .mark {
@@ -695,6 +834,11 @@ export class QueryPane implements OnInit, OnDestroy {
     return find.open() && find.count() > 0 ? { at: find.marks.at } : null;
   });
   protected readonly cursor = () => this.grid()?.cursor() ?? null;
+  /** A comparison colours its rows by what became of them (prompt 041). */
+  protected readonly tint = computed(() => {
+    const kept = this.tab().shownKept();
+    return kept?.compare ? compareTint(kept.compare.report.columns.map((c) => c.name)) : null;
+  });
 
   protected setLayout(layout: ColumnLayout): void {
     this.layouts.set(this.tab(), layout);
@@ -721,6 +865,26 @@ export class QueryPane implements OnInit, OnDestroy {
   };
 
   constructor() {
+    effect(() => {
+      // what the kept results take is asked whenever they change
+      const tab = this.tab();
+      const kept = tab.kept();
+      if (kept.length === 0) return;
+      void tab.keptBytes().then((bytes) => {
+        if (this.tab() === tab && tab.kept() === kept) {
+          this.usage.set(this.t.keptUsage(kept.length, bytesText(bytes, locale())));
+        }
+      });
+    });
+    effect(() => {
+      // the field for a name takes the focus, its text selected
+      if (this.renaming() === null) return;
+      setTimeout(() => {
+        const field = this.host.nativeElement.querySelector<HTMLInputElement>('.subtabs .rename');
+        field?.focus();
+        field?.select();
+      });
+    });
     // a statement that runs shows its result: a hidden result area comes back
     effect(() => {
       if (!this.tab().running()) return;
@@ -771,8 +935,8 @@ export class QueryPane implements OnInit, OnDestroy {
   }
 
   /** `✓`, `✗` … in front of the number of a result. */
-  protected mark(run: StatementRun): string {
-    switch (run.kind) {
+  protected mark(kind: StatementRun['kind']): string {
+    switch (kind) {
       case 'done':
         return '✓';
       case 'failed':
@@ -787,12 +951,76 @@ export class QueryPane implements OnInit, OnDestroy {
     }
   }
 
-  /** Arrows move between the results and the messages (APG tabs). */
+  /** The sub-tabs of the result area (prompt 041). */
+  protected readonly subs = computed(() => this.tab().subTabs());
+  /** The sub-tab whose name is being typed. */
+  protected readonly renaming = signal<Shown | null>(null);
+  /** What the kept results of the tab take: `2 kept results · 1.5 MB`. */
+  protected readonly usage = signal('');
+
+  protected numberOf(target: Shown): string {
+    return typeof target === 'number' ? String(target + 1) : '';
+  }
+
+  protected outcomeOf(target: Shown): string {
+    const run = typeof target === 'number' ? this.tab().runs()[target] : undefined;
+    return run ? outcomeText(run) : '';
+  }
+
+  protected count(rows: number): string {
+    return rows.toLocaleString(locale());
+  }
+
+  protected closeKept(target: Shown): void {
+    if (isKept(target)) this.tab().closeKept(target);
+  }
+
+  private focusSub(): void {
+    setTimeout(() =>
+      this.host.nativeElement.querySelector<HTMLElement>('.subtabs [aria-selected=true]')?.focus(),
+    );
+  }
+
+  protected onRenameKey(event: KeyboardEvent): void {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      (event.target as HTMLInputElement).blur();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      this.renaming.set(null);
+      this.focusSub();
+    }
+  }
+
+  /** The field loses the focus: its text is the name – unless Escape ended the renaming before. */
+  protected endRename(target: Shown, event: Event): void {
+    if (this.renaming() !== target) return;
+    this.tab().renameResult(target, (event.target as HTMLInputElement).value);
+    this.renaming.set(null);
+  }
+
+  /** Arrows move between the results and the messages (APG tabs); F2 renames, Delete closes a kept one. */
   protected onSubKey(event: KeyboardEvent): void {
     const tab = this.tab();
-    const count = tab.runs().length > 1 ? tab.runs().length : 0;
-    const order: (number | 'messages')[] = [...Array(count).keys(), 'messages'];
-    const at = order.indexOf(tab.shown());
+    const subs = this.subs();
+    const order: Shown[] = [
+      ...subs.filter((s) => subs.length > 1 || s.kept).map((s) => s.target),
+      'messages',
+    ];
+    const shown = tab.shown();
+    if (event.key === 'F2' && shown !== 'messages') {
+      event.preventDefault();
+      this.renaming.set(shown);
+      return;
+    }
+    if (event.key === 'Delete' && isKept(shown)) {
+      event.preventDefault();
+      tab.closeKept(shown);
+      this.focusSub();
+      return;
+    }
+    const at = order.indexOf(shown);
     const to: Record<string, number> = {
       ArrowRight: (at + 1) % order.length,
       ArrowLeft: (at - 1 + order.length) % order.length,
@@ -802,10 +1030,8 @@ export class QueryPane implements OnInit, OnDestroy {
     const next = to[event.key];
     if (next === undefined) return;
     event.preventDefault();
-    tab.shown.set(order[next]);
-    setTimeout(() =>
-      this.host.nativeElement.querySelector<HTMLElement>('.subtabs [aria-selected=true]')?.focus(),
-    );
+    tab.show(order[next]);
+    this.focusSub();
   }
 
   /** The editor has its text: back to where the caret was in the last run. */

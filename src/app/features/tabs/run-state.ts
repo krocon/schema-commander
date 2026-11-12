@@ -49,6 +49,10 @@ export interface StatementRun {
   readonly elapsedMs: number | null;
   /** The values its parameters were bound to, as text (prompt 025): `kunde = 42 · ab = 2026-01-01`. */
   readonly values?: string | null;
+  /** The name the user gave the result (prompt 041); else it is called after its statement. */
+  readonly title?: string | null;
+  /** Its result is kept beyond the run now (pinned): it has a tab of its own there. */
+  readonly moved?: boolean;
 }
 
 /** A line of the messages of a tab. */
@@ -99,7 +103,8 @@ export function stateOf(run: StatementRun | undefined): RunState {
     case 'skipped':
       return { kind: 'cancelled', sql: run.sql };
     case 'done':
-      return run.result || run.rowsAffected !== null
+      // a result that was taken over into the kept ones (prompt 041) is not „not kept“
+      return run.result || run.rowsAffected !== null || run.moved
         ? {
             kind: 'done',
             sql: run.sql,

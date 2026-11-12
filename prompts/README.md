@@ -63,7 +63,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 | 038 | [Schema-Vergleich](done/038-schema-vergleich.md) ([Design](done/038-schema-vergleich.design.md)) | B6 | 019 | L | ✅ 12.11.2026 |
 | 039 | [Ausführungsplan](done/039-ausfuehrungsplan.md) ([Design](done/039-ausfuehrungsplan.design.md)) | C9 | 005, 012 | M–L | ✅ 12.11.2026 |
 | 040 | [Zeile als Formular](done/040-zeilen-formular.md) ([Design](done/040-zeilen-formular.design.md)) | D4 | 007 (026 und 031 für Wert-Ansicht/Bearbeiten) | S–M | ✅ 12.11.2026 |
-| 041 | [Mehrere Ergebnisse, Anpinnen, Vergleichen](041-ergebnisse-vergleichen.md) | D9 | 005, 006 | M | offen |
+| 041 | [Mehrere Ergebnisse, Anpinnen, Vergleichen](done/041-ergebnisse-vergleichen.md) ([Design](done/041-ergebnisse-vergleichen.design.md)) | D9 | 005, 006 | M | ✅ 12.11.2026 |
 | 042 | [Diagramm aus dem Ergebnis](042-diagramme.md) | D11 | 006 | M | offen |
 | 043 | [Struktur bearbeiten](043-struktur-bearbeiten.md) | E3 | 012, 019 | L | ✅ editlicious 028, in `editlicious-editor` 1.2.0 |
 | 044 | [Sichern und Wiederherstellen](044-sichern-wiederherstellen.md) | F3 | 003, 011 (Job-Engine), 012 | M | offen |

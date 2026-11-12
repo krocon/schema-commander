@@ -48,8 +48,7 @@ export class CopyService {
   readonly current = computed(() => {
     const tab = this.tabs.active();
     if (!tab) return null;
-    const shown = tab.shown();
-    const run = typeof shown === 'number' ? tab.runs()[shown] : undefined;
+    const run = tab.shown() === 'messages' ? undefined : tab.shownRun();
     if (!run?.result || run.rows === null) return null;
     // looked at through a local filter or order: the grid shows the view, so that is what is copied
     const view = tab.localView();

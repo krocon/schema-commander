@@ -14,6 +14,7 @@ pub mod format;
 pub mod history;
 pub mod image_info;
 pub mod menu;
+pub mod result_compare;
 pub mod results;
 pub mod saved;
 pub mod search;
@@ -159,6 +160,10 @@ pub fn run() {
             commands::result_window,
             commands::result_view,
             commands::result_stats,
+            commands::compare_columns,
+            commands::result_compare,
+            commands::result_neighbour,
+            commands::result_usage,
             commands::result_search,
             commands::result_seek,
             commands::table_query,

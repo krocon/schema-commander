@@ -64,6 +64,7 @@ export const SETTINGS_DE: Translation<typeof SETTINGS_EN> = {
     copyNullAs: 'NULL in kopiertem Text',
     csvDelimiter: 'Trennzeichen von CSV',
     stopOnError: 'Skript beim ersten Fehler anhalten',
+    keepResults: 'Ergebnisse früherer Läufe behalten',
     statementTimeoutSec: 'Zeitlimit je Anweisung (Sekunden)',
     paramsEnabled: 'Werte von Parametern abfragen',
     autoCommit: 'Neue Tabs bestätigen automatisch',
@@ -104,6 +105,8 @@ export const SETTINGS_DE: Translation<typeof SETTINGS_EN> = {
     copyNullAs: '',
     csvDelimiter: '',
     stopOnError: 'Der Rest des Skripts wird ausgelassen.',
+    keepResults:
+      'Jeder Lauf bekommt neue Ergebnis-Reiter; ältere Ergebnisse bleiben, bis sie geschlossen werden (höchstens 20 nicht angepinnte).',
     statementTimeoutSec: '0 = so lange es dauert.',
     paramsEnabled:
       ':name, ${name}, $1 oder ? in einer Anweisung: Die Werte werden abgefragt und getrennt vom Text gesendet. Welche Formen gelten, wird je Verbindung eingestellt – im Dialog, der fragt.',

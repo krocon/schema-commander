@@ -39,7 +39,14 @@ import {
 import { localTsv, selectionOf } from './copy-logic';
 import { CopyService } from './copy.service';
 import { StatsService } from '../stats/stats.service';
-import { HitMarks, PAGE_ROWS, WindowAreaModel, resultModel, resultOptions } from './result-model';
+import {
+  HitMarks,
+  PAGE_ROWS,
+  RowTint,
+  WindowAreaModel,
+  resultModel,
+  resultOptions,
+} from './result-model';
 import { RESULTS_TEXTS } from './results-texts';
 
 /**
@@ -123,6 +130,8 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
   readonly hits = input<HitMarks | null>(null);
   /** Changes to cells that are not written yet: shown instead of what was read (prompt 031). */
   readonly edits = input<EditMarks | null>(null);
+  /** Colours rows by what they hold (prompt 041: the rows of a comparison). */
+  readonly tint = input<RowTint | null>(null);
   /** A cell was double-clicked: edit it. */
   readonly editCell = output<void>();
   /** Text was pasted into the grid (`Mod+V`): a block of cells for the table (prompt 032). */
@@ -182,6 +191,12 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
       const hits = this.hits();
       if (!this.model()) return;
       this.body?.setHits(hits);
+      this.api()?.repaint();
+    });
+    effect(() => {
+      const tint = this.tint();
+      if (!this.model()) return;
+      this.body?.setTint(tint);
       this.api()?.repaint();
     });
     effect(() => {
@@ -501,6 +516,7 @@ export class ResultGrid implements OnDestroy, ResultGridHandle {
     body.setShown(this.resolved.shown);
     body.setHits(untracked(() => this.hits()));
     body.setLinks(untracked(() => this.links()));
+    body.setTint(untracked(() => this.tint()));
     body.setEdits(
       untracked(() => this.edits()),
       EDIT_TEXTS.marked,

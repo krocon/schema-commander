@@ -45,6 +45,7 @@ import {
   newTabId,
   untitled,
 } from './tab-logic';
+import { isKept } from './result-tabs-logic';
 import { TABS_TEXTS } from './tabs-texts';
 
 const SESSION_DELAY_MS = 400;
@@ -113,6 +114,7 @@ export class TabsStore {
         stopOnError: s.stopOnError,
         timeoutMs: s.statementTimeoutSec * 1000,
         allowDangerous: !s.confirmDangerous,
+        keepResults: s.keepResults,
       };
     },
   };
@@ -331,6 +333,24 @@ export class TabsStore {
   }
 
   /** Moves a tab to the other group, with the focus; the last tab of a group ends the split. */
+  /**
+   * The result on screen of the tab in front goes into a tab of its own (prompt 041) – kept there, with
+   * its statement as the text; `beside`: in the other group, next to the tab it came from.
+   */
+  detachResult(beside: boolean): void {
+    const tab = this.active();
+    if (!tab) return;
+    const shown = tab.shown();
+    const key = isKept(shown) ? shown : shown === 'messages' ? null : tab.keep(shown);
+    if (!key) return;
+    const title = tab.subTabs().find((t) => t.target === key)?.title ?? null;
+    const kept = tab.release(key);
+    if (!kept) return;
+    const next = this.newTab(kept.run.sql, { connection: tab.connectionId() });
+    next.adopt({ ...kept, title: kept.title ?? title });
+    if (beside) this.moveToOtherGroup(next.id);
+  }
+
   moveToOtherGroup(id: string): void {
     const layout = moveToOther(this.slots(), this.shown(), id);
     if (layout) this.apply(layout);

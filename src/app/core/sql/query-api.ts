@@ -21,6 +21,10 @@ import {
   SearchSpec,
   SeekKind,
   ViewedResult,
+  ColumnPairing,
+  CompareReport,
+  CompareSpec,
+  ResultUsage,
 } from './query.models';
 
 /** What lets a guarded statement run (prompt 012). */
@@ -120,6 +124,30 @@ export abstract class QueryApi {
    */
   abstract resultView(jobId: number, resultId: number, spec: ViewSpec): Promise<ViewedResult>;
   abstract cancelView(jobId: number): Promise<void>;
+  /** Which columns of two results go together (prompt 041). */
+  abstract compareColumns(left: number, right: number): Promise<ColumnPairing>;
+  /**
+   * Compares two results over the store (prompt 041). Resolves with a report that names the outcome: a
+   * result and a view of it, freed like results (the view goes with the result). A job: `cancelCompare`
+   * stops it (`cancelled`), and nothing of it stays.
+   */
+  abstract resultCompare(
+    jobId: number,
+    spec: CompareSpec,
+    onProgress?: (done: number, of: number) => void,
+  ): Promise<CompareReport>;
+  abstract cancelCompare(jobId: number): Promise<void>;
+  /**
+   * The row of a view that shows the next row of its result behind (`forward`) or before `row`:
+   * `[row of the view, row of the result]`, `null` when there is none.
+   */
+  abstract resultNeighbour(
+    viewId: number,
+    row: number,
+    forward: boolean,
+  ): Promise<readonly [number, number] | null>;
+  /** What results take in the store, in the order asked. */
+  abstract resultUsage(resultIds: readonly number[]): Promise<ResultUsage[]>;
   /**
    * The figures of a selection of a result (prompt 028), worked out over the store; `top` adds the most
    * frequent values. A job: `cancelStats` stops it (`cancelled`).
@@ -278,6 +306,36 @@ export class TauriQueryApi extends QueryApi {
 
   cancelStats(jobId: number): Promise<void> {
     return call('cancel_job', { jobId });
+  }
+
+  compareColumns(left: number, right: number): Promise<ColumnPairing> {
+    return call('compare_columns', { left, right });
+  }
+
+  resultCompare(
+    jobId: number,
+    spec: CompareSpec,
+    onProgress?: (done: number, of: number) => void,
+  ): Promise<CompareReport> {
+    const channel = new Channel<{ done: number; of: number }>();
+    if (onProgress) channel.onmessage = (p) => onProgress(p.done, p.of);
+    return call('result_compare', { jobId, spec, onProgress: channel });
+  }
+
+  cancelCompare(jobId: number): Promise<void> {
+    return call('cancel_job', { jobId });
+  }
+
+  resultNeighbour(
+    viewId: number,
+    row: number,
+    forward: boolean,
+  ): Promise<readonly [number, number] | null> {
+    return call('result_neighbour', { viewId, row, forward });
+  }
+
+  resultUsage(resultIds: readonly number[]): Promise<ResultUsage[]> {
+    return call('result_usage', { resultIds });
   }
 
   resultSearch(

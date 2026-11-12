@@ -21,6 +21,7 @@ export const MENU_DE: Translation<typeof MENU_EN> = {
   filterCell: 'Nach dieser Zelle filtern',
   editCells: 'Zellen bearbeiten',
   relations: 'Beziehungen',
+  resultTabs: 'Ergebnisse des Tabs',
   resultColumns: 'Spalten',
   resultFind: 'Suchen und springen',
   failed: (reason) => `Die Menüleiste ließ sich nicht aufbauen: ${reason}`,
