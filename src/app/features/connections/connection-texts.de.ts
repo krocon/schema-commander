@@ -26,6 +26,7 @@ export const CONNECTION_DE: Translation<typeof CONNECTION_EN> = {
     clickhouse: 'ClickHouse',
     trino: 'Trino / Presto',
     libsql: 'libSQL / Turso',
+    d1: 'Cloudflare D1',
   },
   password: 'Passwort',
   sshSecretTitle: 'SSH-Tunnel: Passwort oder Passphrase',

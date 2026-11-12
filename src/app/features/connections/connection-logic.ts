@@ -92,6 +92,11 @@ export function profileProblems(p: Profile): Partial<Record<Field, string>> {
   // libSQL logs in with a token alone: the password of the profile
   if (!p.user.trim() && p.kind !== 'libsql') out.user = t.userMissing;
   if (p.kind === 'trino' && !p.database.trim()) out.database = t.catalogMissing;
+  if (p.kind === 'd1') {
+    const id = /^[A-Za-z0-9-]{1,64}$/;
+    if (!id.test(p.database.trim())) out.database = t.d1DatabaseMissing;
+    if (!id.test(p.user.trim())) out.user = t.d1AccountMissing;
+  }
   if (p.kind === 'oracle') {
     if (!p.database.trim()) out.database = t.serviceMissing;
     if (p.tls === 'prefer' || p.tls === 'require') out.tls = t.oracleTlsChecked;
@@ -118,6 +123,9 @@ export function profileProblems(p: Profile): Partial<Record<Field, string>> {
   return out;
 }
 
+/** Where Cloudflare's API answers. */
+export const D1_HOST = 'api.cloudflare.com';
+
 /** The profile after another database was chosen: its usual user, port back to the default. */
 export function withKind(p: Profile, kind: DbKind): Profile {
   const users: Record<DbKind, string> = {
@@ -130,13 +138,22 @@ export function withKind(p: Profile, kind: DbKind): Profile {
     clickhouse: 'default',
     trino: 'trino',
     libsql: '',
+    d1: '',
   };
   const usual = Object.values(users);
   return {
     ...p,
     kind,
     port: 0,
-    host: isFileKind(kind) ? '' : p.host || 'localhost',
+    // D1 is reached at Cloudflare, over TLS – nowhere else
+    host: isFileKind(kind)
+      ? ''
+      : kind === 'd1'
+        ? D1_HOST
+        : p.kind === 'd1'
+          ? 'localhost'
+          : p.host || 'localhost',
+    tls: kind === 'd1' ? 'verify' : p.kind === 'd1' ? 'off' : p.tls,
     user: usual.includes(p.user.trim()) ? users[kind] : p.user,
     database: isFileKind(kind) || isFileKind(p.kind) ? '' : p.database,
   };

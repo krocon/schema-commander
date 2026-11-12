@@ -2521,7 +2521,7 @@ fn load_plan(s: &mut Box<dyn Session>, kind: DbKind, table: &str, local: bool) -
         DbKind::Postgres => "public",
         DbKind::Mysql => "shop",
         DbKind::Sqlserver => "dbo",
-        DbKind::Sqlite | DbKind::Libsql => "main",
+        DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => "main",
         DbKind::Oracle => "SHOP",
         DbKind::Duckdb => "main",
         DbKind::Clickhouse => "shop",

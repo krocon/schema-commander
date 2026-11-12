@@ -71,6 +71,8 @@
   Tabellen-Ansicht, Suche, nur lesende Sitzung – ohne Bearbeiten, Import und Kopieren (Prompt 035f);
   **libSQL/Turso** über HTTP mit dem Dialekt von SQLite: alles, was für eine SQLite-Datei geht, außer der
   Kopie als Sicherung; offene Transaktionen hält ein Herzschlag (Prompt 035g);
+  **Cloudflare D1** über die REST-API von Cloudflare zum Lesen und Ausführen, Dialekt von SQLite, ohne
+  Transaktionen – nach der Dokumentation, nicht gegen Cloudflare gelaufen (Prompt 035h);
   **Suche auf dem Server**: ein Text in den Zeilen aller Tabellen und in Definitionen, als lesender Job (Prompt 036);
   **ER-Diagramm** eines Schemas oder einer Tabelle mit Nachbarn: eigene Anordnung, verschiebbar, Listenansicht,
   Export als SVG, Mermaid, DBML (Prompt 037);
@@ -106,7 +108,7 @@
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a–035g, 036–049; von 035 offen: D1, Firebird, BigQuery, Snowflake, Db2),
+  erledigt: 001–034, 035a–035h, 036–049; von 035 offen: Firebird, BigQuery, Snowflake, Db2),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -302,6 +304,8 @@ src-tauri/                     Rust
                                Löschen der nächsten Seite, Sitzung aus den Kopfzeilen, Werte als geprüfte Literale
   src/db/libsql.rs             libSQL/Turso über Hrana (HTTP): Cursor je Anweisung, Stream mit `baton`, Herzschlag
                                für offene Transaktionen, zurückgelassene Anfrage statt Abbruch
+  src/db/d1.rs                 Cloudflare D1 über die REST-API: eine Anfrage je Anweisung, keine Sitzung; Tests
+                               gegen einen nachgestellten Server (d1_tests.rs)
   src/db/http.rs               was die HTTP-Treiber teilen: Client mit dem TLS des Profils, Adresse, Kodierung
   src/db/duckdb.rs             DuckDB eingebettet: eine geteilte Datenbank je Profil, Typen (Listen, Structs),
                                Abbruch, Transaktionszustand aus den Anweisungen; Tests ohne Server (duckdb_tests.rs)
@@ -424,6 +428,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
 - **libSQL**: Der Dialekt ist der von SQLite – gefragt wird `DbKind::is_sqlite()` (Rust) bzw. `dialectOf(kind)`
   (Fenster), nie ein Vergleich mit `Sqlite`; was eine Datei meint, fragt `is_file`. Der Stream gehört
   `take`/`give` in `libsql.rs` (ein `baton` gilt genau einmal); eine Transaktion lebt nur mit dem Herzschlag.
+- **D1**: keine Sitzung, keine Transaktion – was eine braucht, lehnt `edits_rows` ab. Account- und Datenbank-ID
+  werden Teil einer Adresse und gehen nur durch `d1::id`. Das Token steht nur in der Kopfzeile, nie in einer Meldung.
 - **DuckDB**: nie eine zweite Datenbank auf dieselbe Datei öffnen – Sitzungen sind Klone der einen (`SHARED`
   in `duckdb.rs`). Vor jedem Lesen einer Zelle prüft `readable`, ob der Treiber den Typ kann (sonst endet er in
   `unreachable!`). Erweiterungen werden nie von selbst geladen; ein Assistent bekommt dort keine Abfrage ausgeführt.

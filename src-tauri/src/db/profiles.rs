@@ -76,6 +76,12 @@ pub fn check(p: &Profile) -> AppResult<()> {
             return Err(invalid(format!("{what}: too long or control characters")));
         }
     }
+    if p.kind == DbKind::D1 && p.ssh.is_some() {
+        // behind a tunnel the token would go on in the clear, and no certificate would fit
+        return Err(invalid(
+            "D1 is reached at Cloudflare directly: no SSH tunnel",
+        ));
+    }
     if p.kind.is_file() {
         if p.ssh.is_some() {
             return Err(invalid("a database file has no SSH tunnel"));

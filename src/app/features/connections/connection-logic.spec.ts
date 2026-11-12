@@ -1,4 +1,4 @@
-import { Profile, emptyProfile } from '../../core/connections/connection.models';
+import { Profile, dialectOf, emptyProfile } from '../../core/connections/connection.models';
 import {
   groupProfiles,
   profileProblems,
@@ -59,6 +59,29 @@ describe('connection logic', () => {
     const lite = { ...emptyProfile('sqlite'), name: 'Datei' };
     expect(profileProblems(lite)).toEqual({ database: 'Bitte eine Datei wählen.' });
     expect(profileProblems({ ...lite, database: '/tmp/a.db' })).toEqual({});
+  });
+
+  it('knows what Trino, libSQL and D1 need (035f–h)', () => {
+    const trino = { name: 'Lake', kind: 'trino' as const, user: 'trino' };
+    expect(Object.keys(profileProblems(p({ ...trino, database: '' })))).toEqual(['database']);
+    expect(profileProblems(p({ ...trino, database: 'hive' }))).toEqual({});
+    // libSQL logs in with a token alone
+    expect(profileProblems(p({ name: 'Turso', kind: 'libsql', user: '' }))).toEqual({});
+    // D1: both ids become part of an address
+    const d1 = withKind(p({ name: 'Edge' }), 'd1');
+    expect(d1).toMatchObject({ host: 'api.cloudflare.com', tls: 'verify', user: '' });
+    expect(Object.keys(profileProblems(d1)).sort()).toEqual(['database', 'user']);
+    const ids = { user: '0123456789abcdef0123456789abcdef', database: '1111-22' };
+    expect(profileProblems({ ...d1, ...ids })).toEqual({});
+    expect(profileProblems({ ...d1, ...ids, database: 'x/../y' }).database).toBeTruthy();
+    // and back: not to Cloudflare with another database
+    expect(withKind({ ...d1, ...ids }, 'postgres')).toMatchObject({
+      host: 'localhost',
+      tls: 'off',
+    });
+    expect(dialectOf('d1')).toBe('sqlite');
+    expect(dialectOf('libsql')).toBe('sqlite');
+    expect(dialectOf('trino')).toBe('trino');
   });
 
   it('takes the usual user of another database but keeps an own one', () => {

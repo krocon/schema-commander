@@ -389,6 +389,12 @@ impl ConnectionManager {
             Some(tunnel) => {
                 // behind the tunnel the way goes on in the clear: a token of libSQL does not take it
                 // unless the server is the jump host itself (review 035g 6)
+                if profile.kind == DbKind::D1 {
+                    return Err(AppError::new(
+                        ErrorCode::InvalidProfile,
+                        "D1 is reached at Cloudflare directly: no SSH tunnel",
+                    ));
+                }
                 if profile.kind == DbKind::Libsql
                     && profile.tls == super::TlsMode::Off
                     && secret.is_some_and(|s| !s.is_empty())
