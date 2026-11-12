@@ -1,0 +1,163 @@
+[
+  {
+    "description": "Whether Schema Commander answers, its version and the limits the user set (rows, characters, whether data may be read at all).",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "status"
+  },
+  {
+    "description": "The connections of the user: id, name, kind of database (postgres, mysql, sqlserver, sqlite), whether it is open, and what you may do on it: off (nothing), schema (structure only), read (reading queries), write (writing only as a proposal the user confirms). Never contains hosts, users or passwords.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "list_connections"
+  },
+  {
+    "description": "Without `schema`: the schemas (databases) of a connection. With `schema`: its tables, views and routines with an estimated row count. Needs access `schema` or more.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "connection": {
+          "description": "Id of a connection from list_connections.",
+          "type": "string"
+        },
+        "schema": {
+          "description": "Name of a schema; leave out to list the schemas.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection"
+      ],
+      "type": "object"
+    },
+    "name": "get_schema"
+  },
+  {
+    "description": "Columns (type, nullable, default, key), indexes and foreign keys of a table or view, and its DDL where the database gives one. Needs access `schema` or more.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "connection": {
+          "description": "Id of a connection from list_connections.",
+          "type": "string"
+        },
+        "schema": {
+          "type": "string"
+        },
+        "table": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection",
+        "schema",
+        "table"
+      ],
+      "type": "object"
+    },
+    "name": "describe_table"
+  },
+  {
+    "description": "Runs ONE statement that only reads (SELECT, WITH … SELECT, SHOW, EXPLAIN without ANALYZE) in a read-only transaction and returns the rows as JSON. Limited in rows, in characters and in time (30 s); `truncated` says when rows or text were cut. A statement that writes is refused – use propose_query. Needs access `read` or more.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "connection": {
+          "description": "Id of a connection from list_connections.",
+          "type": "string"
+        },
+        "max_rows": {
+          "description": "Default 200; the user's limit may be lower.",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "sql": {
+          "description": "One statement, without parameters.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection",
+        "sql"
+      ],
+      "type": "object"
+    },
+    "name": "run_query"
+  },
+  {
+    "description": "The estimated execution plan of ONE statement, as a tree with costs and row estimates. The statement is not run. Needs access `read` or more.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "connection": {
+          "description": "Id of a connection from list_connections.",
+          "type": "string"
+        },
+        "sql": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection",
+        "sql"
+      ],
+      "type": "object"
+    },
+    "name": "explain_query"
+  },
+  {
+    "description": "Opens a new editor tab in the app with the text. Nothing runs: the user reads it and decides. Use it for longer scripts or for SQL the user should keep.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "connection": {
+          "description": "Optional: the connection the tab belongs to.",
+          "type": "string"
+        },
+        "text": {
+          "description": "The SQL or text for the tab.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "write_to_tab"
+  },
+  {
+    "description": "Proposes ONE statement to the user – the way to change data or structure. The app shows the statement, the connection and your reason; the call waits (up to 5 minutes) for the decision. Accepted, the user's app runs it with its own safeguards and you get the outcome (rows affected or the error); declined, you get `accepted: false`. A statement that writes needs access `write`.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "connection": {
+          "description": "Id of a connection from list_connections.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "One or two sentences for the user: what it does and why.",
+          "type": "string"
+        },
+        "sql": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection",
+        "sql"
+      ],
+      "type": "object"
+    },
+    "name": "propose_query"
+  }
+]

@@ -1,0 +1,24 @@
+[package]
+name = "sc-mcp"
+version = "0.1.0"
+description = "MCP server of Schema Commander (stdio sidecar `schema-commander-mcp`) and the bridge between it and the running app"
+authors = ["Marc Kronberg"]
+license = "MIT"
+repository = "https://github.com/krocon/schema-commander"
+edition = "2021"
+rust-version = "1.89"
+
+[lib]
+name = "sc_mcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "schema-commander-mcp"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

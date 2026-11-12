@@ -2,6 +2,35 @@ import { COMMON_TEXTS } from '../i18n/common-texts';
 import { DEFAULT_SELECTION, ThemeSelection, sanitizeSelection } from '../theme/theme.models';
 
 /** What the app remembers over a restart (`settings.json` in the app's config folder). */
+/** What an AI assistant may do on a connection (prompt 048); mirrors `Level` in src-tauri/src/mcp.rs. */
+export const AI_LEVELS = ['off', 'schema', 'read', 'write'] as const;
+export type AiLevel = (typeof AI_LEVELS)[number];
+
+/** AI control over MCP (prompt 048); mirrors `Config` in src-tauri/src/mcp.rs, plus the switch. */
+export interface AiSettings {
+  /** The bridge listens. Off: no port, no file, no sidecar can reach the app. */
+  readonly enabled: boolean;
+  /** The level of a connection that is not protected and has none of its own. */
+  readonly defaultAccess: AiLevel;
+  readonly access: Readonly<Record<string, AiLevel>>;
+  readonly maxRows: number;
+  readonly maxChars: number;
+  /** Parts of column names whose values never leave, beside the built-in ones. */
+  readonly exclude: readonly string[];
+  /** Only structure, never data. */
+  readonly structureOnly: boolean;
+}
+
+export const DEFAULT_AI: AiSettings = {
+  enabled: false,
+  defaultAccess: 'off',
+  access: {},
+  maxRows: 200,
+  maxChars: 100_000,
+  exclude: [],
+  structureOnly: false,
+};
+
 export interface Settings {
   /** The language of the window (prompt 017): the system's, English or German. */
   readonly language: LanguageSetting;
@@ -114,6 +143,8 @@ export interface Settings {
    * Where the user moved the tables of an ER diagram (prompt 037), per diagram (connection, schema,
    * table): the id of a table → `[x, y]`.
    */
+  /** AI control over MCP (prompt 048): off unless the user turns it on; never part of an export. */
+  readonly ai: AiSettings;
   /** Where the tools of the databases are, when the user said so (prompt 044): tool → full path. */
   readonly toolPaths: Readonly<Record<string, string>>;
   readonly diagramPlaces: Readonly<
@@ -207,6 +238,7 @@ export const DEFAULT_SETTINGS: Settings = {
   filterBarVisible: false,
   columnLayouts: {},
   virtualRelations: {},
+  ai: DEFAULT_AI,
   toolPaths: {},
   diagramPlaces: {},
   statsMeasures: ['cells', 'sum', 'mean', 'min', 'max'],
@@ -247,6 +279,40 @@ function numberOr(value: unknown, fallback: number): number {
 }
 
 const TOOLS = ['pgDump', 'pgRestore', 'psql', 'mysqlDump', 'mysql'];
+
+/** The AI settings as stored: anything that is not what it should be falls back to "off" and "nothing". */
+export function readAi(raw: unknown): AiSettings {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return DEFAULT_AI;
+  const r = raw as Record<string, unknown>;
+  const level = (v: unknown): AiLevel | null =>
+    typeof v === 'string' && (AI_LEVELS as readonly string[]).includes(v) ? (v as AiLevel) : null;
+  const access: Record<string, AiLevel> = {};
+  if (r['access'] && typeof r['access'] === 'object' && !Array.isArray(r['access'])) {
+    for (const [id, v] of Object.entries(r['access'] as Record<string, unknown>)) {
+      const l = level(v);
+      if (l && /^[a-z0-9-]{1,64}$/.test(id)) access[id] = l;
+    }
+  }
+  const within = (v: unknown, min: number, max: number, fallback: number) =>
+    typeof v === 'number' && Number.isFinite(v)
+      ? Math.min(max, Math.max(min, Math.round(v)))
+      : fallback;
+  return {
+    enabled: r['enabled'] === true,
+    defaultAccess: level(r['defaultAccess']) ?? DEFAULT_AI.defaultAccess,
+    access,
+    maxRows: within(r['maxRows'], 1, 1000, DEFAULT_AI.maxRows),
+    maxChars: within(r['maxChars'], 1000, 500_000, DEFAULT_AI.maxChars),
+    exclude: Array.isArray(r['exclude'])
+      ? r['exclude']
+          .filter((x): x is string => typeof x === 'string')
+          .map((x) => x.trim().toLowerCase())
+          .filter((x) => x !== '' && x.length <= 64)
+          .slice(0, 100)
+      : [],
+    structureOnly: r['structureOnly'] === true,
+  };
+}
 
 /** The paths of tools as stored: only known tools, only texts of a sane length. */
 export function readToolPaths(raw: unknown): Settings['toolPaths'] {
@@ -371,6 +437,7 @@ export function mergeSettings(saved: unknown): Settings {
           ) as Record<string, TableSpecStored>)
         : {},
     filterBarVisible: bool('filterBarVisible'),
+    ai: readAi(s['ai']),
     toolPaths: readToolPaths(s['toolPaths']),
     diagramPlaces: readDiagramPlaces(s['diagramPlaces']),
     virtualRelations:

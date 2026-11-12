@@ -136,6 +136,12 @@ jobs:
             echo "APPLE_API_KEY_PATH=$key" >> "$GITHUB_ENV"
           fi
 
+      # Prompt 048: the MCP sidecar `schema-commander-mcp` next to the app (`bundle.externalBin` in
+      # tauri.sidecar.conf.json).
+      - name: MCP sidecar
+        shell: bash
+        run: node scripts/mcp-sidecar.mjs ${{ runner.os == 'macOS' && 'universal-apple-darwin' || '' }}
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -148,7 +154,7 @@ jobs:
           releaseBody: "Unsigned preview build unless noted. Release notes: generate with `pnpm release:notes` (docs/release.md) and paste here before publishing."
           releaseDraft: ${{ github.event_name != 'workflow_dispatch' || inputs.draft }}
           prerelease: ${{ startsWith(needs.check.outputs.version, '0.') }}
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} --config src-tauri/tauri.sidecar.conf.json
 
   # SHA-256 of every package, as one more file of the (draft) release
   checksums:

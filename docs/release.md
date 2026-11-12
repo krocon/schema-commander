@@ -47,6 +47,11 @@ In jedem Paket liegt `THIRD-PARTY-NOTICES.txt` (`bundle.resources`); der About-D
 
 ## Signierung (vorbereitet, **nicht eingerichtet**)
 
+Seit Prompt 048 baut der Workflow vor dem Paket das MCP-Sidecar (`node scripts/mcp-sidecar.mjs`, auf macOS
+universal) und bündelt es über `--config src-tauri/tauri.sidecar.conf.json` als `externalBin` neben die App.
+Lokal genauso: erst das Skript, dann `pnpm tauri build --config src-tauri/tauri.sidecar.conf.json`. Noch nicht
+mit einem echten Paket geprüft. Auf macOS muss das Sidecar mitsigniert werden (Tauri signiert `externalBin`).
+
 Ohne Secrets baut `release.yml` **unsignierte** Pakete: macOS warnt über Gatekeeper (Rechtsklick → Öffnen),
 Windows über SmartScreen. Geheimnisse stehen nur als Secrets des Repositories, nie in einer Datei.
 

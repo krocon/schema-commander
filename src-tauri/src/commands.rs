@@ -2548,3 +2548,214 @@ mod tests {
         }
     }
 }
+
+// ── AI control over MCP (prompt 048) ─────────────────────────────────────────────────────
+
+/// What the window hears of the assistant.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum McpEvent {
+    /// The number of connected assistants changed.
+    Status { connections: usize },
+    /// A call ended: a line of the protocol.
+    Call { entry: crate::mcp::LogEntry },
+    /// The window is asked: a proposal, text for a tab. It answers with `mcp_reply`.
+    Request {
+        id: u64,
+        tool: String,
+        args: serde_json::Value,
+    },
+}
+
+/// The window, as the engine sees it.
+pub struct McpWindow {
+    channel: parking_lot::Mutex<Option<Channel<McpEvent>>>,
+}
+
+impl McpWindow {
+    fn send(&self, event: McpEvent) -> bool {
+        match self.channel.lock().as_ref() {
+            Some(channel) => channel.send(event).is_ok(),
+            None => false,
+        }
+    }
+}
+
+impl crate::mcp::Window for McpWindow {
+    fn ask(&self, id: u64, tool: &str, args: &serde_json::Value) -> bool {
+        self.send(McpEvent::Request {
+            id,
+            tool: tool.to_owned(),
+            args: args.clone(),
+        })
+    }
+
+    fn log(&self, entry: &crate::mcp::LogEntry) {
+        self.send(McpEvent::Call {
+            entry: entry.clone(),
+        });
+    }
+}
+
+/// AI control: the engine, and the bridge while it is on. Off, there is no bridge: no port, no file.
+pub struct McpState {
+    engine: std::sync::Arc<crate::mcp::Engine<McpWindow>>,
+    host: parking_lot::Mutex<Option<sc_mcp::host::Host>>,
+}
+
+impl Default for McpState {
+    fn default() -> Self {
+        McpState {
+            engine: std::sync::Arc::new(crate::mcp::Engine::new(McpWindow {
+                channel: parking_lot::Mutex::new(None),
+            })),
+            host: parking_lot::Mutex::new(None),
+        }
+    }
+}
+
+/// The bridge hands every call to the engine, with the connections of the app.
+struct McpBridge {
+    app: AppHandle,
+    engine: std::sync::Arc<crate::mcp::Engine<McpWindow>>,
+}
+
+impl sc_mcp::host::Handler for McpBridge {
+    fn call(
+        &self,
+        tool: &str,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value, sc_mcp::bridge::BridgeError> {
+        let manager = self.app.state::<ConnectionManager>();
+        self.engine.call(manager.inner(), tool, args)
+    }
+
+    fn status(&self, connections: usize) {
+        self.engine.window.send(McpEvent::Status { connections });
+    }
+}
+
+/// Where the sidecar is: next to the app (bundled, and `target/debug` while developing).
+fn mcp_sidecar() -> Option<PathBuf> {
+    let name = if cfg!(windows) {
+        "schema-commander-mcp.exe"
+    } else {
+        "schema-commander-mcp"
+    };
+    Some(std::env::current_exe().ok()?.parent()?.join(name))
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpStatus {
+    /// The bridge listens.
+    running: bool,
+    /// Assistants connected right now.
+    connections: usize,
+    /// The path of the sidecar, for the configuration of the assistant.
+    sidecar: String,
+    sidecar_found: bool,
+}
+
+fn mcp_status_of(state: &McpState) -> McpStatus {
+    let host = state.host.lock();
+    let sidecar = mcp_sidecar();
+    McpStatus {
+        running: host.is_some(),
+        connections: host.as_ref().map_or(0, sc_mcp::host::Host::connections),
+        sidecar_found: sidecar.as_ref().is_some_and(|p| p.is_file()),
+        sidecar: sidecar
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+    }
+}
+
+/// The events of AI control go to this channel.
+#[tauri::command]
+pub fn mcp_subscribe(state: State<'_, McpState>, on_event: Channel<McpEvent>) {
+    *state.engine.window.channel.lock() = Some(on_event);
+}
+
+#[tauri::command(async)]
+pub fn mcp_status(state: State<'_, McpState>) -> McpStatus {
+    mcp_status_of(&state)
+}
+
+/// What the user allows: enforced by the engine from now on.
+#[tauri::command(async)]
+pub fn mcp_configure(state: State<'_, McpState>, config: crate::mcp::Config) {
+    state.engine.configure(config);
+}
+
+/// Turns AI control on: the bridge listens on 127.0.0.1 with a fresh token, written to a file only the
+/// user can read.
+#[tauri::command(async)]
+pub fn mcp_start(
+    app: AppHandle,
+    state: State<'_, McpState>,
+    config: crate::mcp::Config,
+) -> AppResult<McpStatus> {
+    state.engine.configure(config);
+    state.engine.start();
+    let mut host = state.host.lock();
+    if host.is_none() {
+        let file = app
+            .path()
+            .app_config_dir()
+            .map_err(|e| AppError::new(ErrorCode::Unsupported, e.to_string()))?
+            .join(sc_mcp::bridge::ENDPOINT_FILE);
+        let bridge = std::sync::Arc::new(McpBridge {
+            app: app.clone(),
+            engine: state.engine.clone(),
+        });
+        *host = Some(
+            sc_mcp::host::Host::start(bridge, &file)
+                .map_err(|e| AppError::new(ErrorCode::Unsupported, e.to_string()))?,
+        );
+    }
+    drop(host);
+    Ok(mcp_status_of(&state))
+}
+
+/// Turns AI control off: the port closes, the file goes, every assistant is cut off, nothing waits.
+#[tauri::command(async)]
+pub fn mcp_stop(manager: State<'_, ConnectionManager>, state: State<'_, McpState>) -> McpStatus {
+    // first the engine: a call that is on its way finds it off
+    state.engine.stop(&manager);
+    *state.host.lock() = None;
+    state
+        .engine
+        .window
+        .send(McpEvent::Status { connections: 0 });
+    mcp_status_of(&state)
+}
+
+/// Cuts every assistant off; AI control stays on.
+#[tauri::command(async)]
+pub fn mcp_disconnect(state: State<'_, McpState>) {
+    if let Some(host) = state.host.lock().as_ref() {
+        host.disconnect();
+    }
+}
+
+/// The window's answer to a request (`McpEvent::Request`).
+#[tauri::command(async)]
+pub fn mcp_reply(
+    state: State<'_, McpState>,
+    id: u64,
+    result: Option<serde_json::Value>,
+    error: Option<sc_mcp::bridge::BridgeError>,
+) -> bool {
+    let answer = match error {
+        Some(e) => Err(e),
+        None => Ok(result.unwrap_or(serde_json::Value::Null)),
+    };
+    state.engine.calls.complete(id, answer)
+}
+
+/// Connection test: starts the sidecar like an assistant does and asks the app through it.
+#[tauri::command(async)]
+pub fn mcp_test() -> sc_mcp::probe::Probe {
+    let program = mcp_sidecar().unwrap_or_default();
+    sc_mcp::probe::probe(&program, std::time::Duration::from_secs(5))
+}

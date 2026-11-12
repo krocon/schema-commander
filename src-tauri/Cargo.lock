@@ -4248,6 +4248,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sc-mcp"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "schannel"
 version = "0.1.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4276,6 +4285,7 @@ dependencies = [
  "russh",
  "rust_xlsxwriter",
  "rustls",
+ "sc-mcp",
  "serde",
  "serde_json",
  "sha1",

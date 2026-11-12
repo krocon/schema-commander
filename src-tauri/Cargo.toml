@@ -8,6 +8,11 @@ repository = "https://github.com/krocon/schema-commander"
 edition = "2024"
 rust-version = "1.93"
 
+# The MCP sidecar `schema-commander-mcp` and the bridge the app runs (prompt 048). A workspace member, so the
+# debug sidecar lands in target/debug next to the app, where the app looks for it.
+[workspace]
+members = ["mcp"]
+
 [lib]
 name = "schema_commander_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -70,6 +75,9 @@ tauri-plugin-store = "2"
 tauri-plugin-window-state = "2"
 
 # Keychain of the OS: Secret Service over D-Bus on Linux, Keychain on macOS, Credential Manager on Windows.
+# The bridge to the MCP sidecar (prompt 048): our own crate, only std and serde.
+sc-mcp = { path = "mcp" }
+
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
 

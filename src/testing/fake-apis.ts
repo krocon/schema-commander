@@ -6,6 +6,7 @@ import {
   GrantList,
   Who,
 } from '../app/core/access/access-api';
+import { McpApi, McpConfig, McpEvent, McpProbe, McpStatus } from '../app/core/mcp/mcp-api';
 import { MonitorApi, ServerActivity } from '../app/core/monitor/monitor-api';
 import {
   TransferApi,
@@ -2307,5 +2308,78 @@ function fakeAccessSql(c: AccessChange): string {
       return c.add
         ? `GRANT ${c.privilege} ON TABLE "${c.schema}"."${c.object}" TO "${c.who.name}"`
         : `REVOKE ${c.privilege} ON TABLE "${c.schema}"."${c.object}" FROM "${c.who.name}"`;
+  }
+}
+
+/** AI control over MCP (prompt 048): notes what the window turns on and answers; a test sends the events. */
+export class FakeMcpApi extends McpApi {
+  running = false;
+  sidecar = '/Applications/Schema Commander.app/Contents/MacOS/schema-commander-mcp';
+  probe: McpProbe = {
+    ok: true,
+    step: 'app',
+    code: null,
+    server: 'schema-commander',
+    version: '0.1.0',
+    protocol: '2025-06-18',
+    tools: 8,
+    app: true,
+  };
+  failConfigure: unknown = null;
+  readonly started: McpConfig[] = [];
+  readonly configured: McpConfig[] = [];
+  readonly replies: { id: number; result: unknown; error?: { code: string; message: string } }[] =
+    [];
+  stops = 0;
+  disconnects = 0;
+  private listener: ((event: McpEvent) => void) | null = null;
+
+  /** What the backend would send. */
+  emit(event: McpEvent): void {
+    this.listener?.(event);
+  }
+
+  private now(): McpStatus {
+    return { running: this.running, connections: 0, sidecar: this.sidecar, sidecarFound: true };
+  }
+
+  subscribe(onEvent: (event: McpEvent) => void): Promise<void> {
+    this.listener = onEvent;
+    return Promise.resolve();
+  }
+
+  status(): Promise<McpStatus> {
+    return Promise.resolve(this.now());
+  }
+
+  start(config: McpConfig): Promise<McpStatus> {
+    this.started.push(config);
+    this.running = true;
+    return Promise.resolve(this.now());
+  }
+
+  stop(): Promise<McpStatus> {
+    this.stops++;
+    this.running = false;
+    return Promise.resolve(this.now());
+  }
+
+  configure(config: McpConfig): Promise<void> {
+    this.configured.push(config);
+    return this.failConfigure ? Promise.reject(this.failConfigure) : Promise.resolve();
+  }
+
+  disconnect(): Promise<void> {
+    this.disconnects++;
+    return Promise.resolve();
+  }
+
+  reply(id: number, result: unknown, error?: { code: string; message: string }): Promise<boolean> {
+    this.replies.push(error ? { id, result, error } : { id, result });
+    return Promise.resolve(true);
+  }
+
+  test(): Promise<McpProbe> {
+    return Promise.resolve(this.probe);
   }
 }
