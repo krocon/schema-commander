@@ -540,6 +540,14 @@ fn sqlite_files(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<
 /// Reads the objects of all schemas but the system's: kind, schema, name, detail.
 pub fn read_objects(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<NameIndex> {
     let rows = match kind {
+        DbKind::Snowflake => ask(
+            s,
+            "SELECT CASE WHEN table_type LIKE '%VIEW%' THEN 'view' ELSE 'table' END, table_schema, \
+               table_name, '' \
+             FROM INFORMATION_SCHEMA.TABLES WHERE table_schema <> 'INFORMATION_SCHEMA'",
+            &[],
+            stop,
+        )?,
         // a dataset is named in the statement: one question each, the first fifty
         DbKind::Bigquery => {
             let mut rows = TextRows::new();
@@ -702,6 +710,16 @@ pub fn read_columns(
     stop: Stop,
 ) -> AppResult<()> {
     let rows = match kind {
+        DbKind::Snowflake => ask(
+            s,
+            &format!(
+                "SELECT table_schema, table_name, column_name, {} FROM INFORMATION_SCHEMA.COLUMNS \
+                 WHERE table_schema <> 'INFORMATION_SCHEMA'",
+                super::meta::SNOWFLAKE_TYPE
+            ),
+            &[],
+            stop,
+        )?,
         DbKind::Bigquery => {
             let mut rows = TextRows::new();
             for schema in super::meta::schemas(s, kind, stop)?.into_iter().take(50) {

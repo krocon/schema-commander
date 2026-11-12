@@ -29,6 +29,8 @@ export const CONNECTION_DIALOG_DE: Translation<typeof CONNECTION_DIALOG_EN> = {
   bigqueryProjectExample: 'die ID des Google-Cloud-Projekts, zum Beispiel my-project-123',
   bigqueryLocation: 'Ort',
   serviceAccountKey: 'Schlüsseldatei des Dienstkontos (JSON)',
+  snowflakeToken: 'Programmatic Access Token',
+  snowflakeKey: 'Datei des privaten Schlüssels (PKCS#8, statt eines Tokens)',
   firebirdDatabaseExample: 'Pfad auf dem Server oder Alias, zum Beispiel /data/shop.fdb',
   unchanged: '(unverändert)',
   rememberInKeychain: 'im Schlüsselbund merken',
@@ -99,6 +101,8 @@ export const CONNECTION_DIALOG_DE: Translation<typeof CONNECTION_DIALOG_EN> = {
     'Firebird braucht die Datenbank: ihren Pfad auf dem Server oder einen Alias.',
   firebirdNoCertificates:
     'Firebird kennt keine Zertifikate: „erforderlich“ (seine eigene Verschlüsselung) oder keine wählen.',
+  snowflakeHost: 'Snowflake erreicht man unter <account>.snowflakecomputing.com.',
+  snowflakeDatabaseMissing: 'Snowflake braucht die Datenbank: Ihre Schemata zeigt der Baum.',
   bigqueryProjectMissing: 'BigQuery braucht die ID des Projekts.',
   bigqueryKeyMissing: 'BigQuery braucht die Schlüsseldatei eines Dienstkontos (JSON).',
   d1AccountMissing: 'D1 braucht die ID des Cloudflare-Kontos (Buchstaben, Ziffern, Bindestriche).',

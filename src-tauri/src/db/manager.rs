@@ -389,7 +389,10 @@ impl ConnectionManager {
             Some(tunnel) => {
                 // behind the tunnel the way goes on in the clear: a token of libSQL does not take it
                 // unless the server is the jump host itself (review 035g 6)
-                if matches!(profile.kind, DbKind::D1 | DbKind::Bigquery) {
+                if matches!(
+                    profile.kind,
+                    DbKind::D1 | DbKind::Bigquery | DbKind::Snowflake
+                ) {
                     return Err(AppError::new(
                         ErrorCode::InvalidProfile,
                         "this service is reached at its own address directly: no SSH tunnel",

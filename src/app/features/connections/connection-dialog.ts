@@ -214,7 +214,9 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                 ? t.tokenOrPassword
                 : draft().kind === 'd1'
                   ? t.d1Token
-                  : t.password
+                  : draft().kind === 'snowflake'
+                    ? t.snowflakeToken
+                    : t.password
             }}</label>
             <span class="row">
               <input
@@ -286,7 +288,11 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                 <button type="button" (click)="choosePem('clientCert')">{{ t.choose }}</button>
               </span>
               <label for="conn-key">{{
-                draft().kind === 'bigquery' ? t.serviceAccountKey : t.clientKey
+                draft().kind === 'bigquery'
+                  ? t.serviceAccountKey
+                  : draft().kind === 'snowflake'
+                    ? t.snowflakeKey
+                    : t.clientKey
               }}</label>
               <span class="row">
                 <input

@@ -603,14 +603,15 @@ fn plain(name: &str, kind: DbKind) -> bool {
         // PostgreSQL folds unquoted names to lower case: an upper case letter needs quotes
         DbKind::Postgres => first.is_ascii_lowercase() || first == '_',
         // Oracle folds unquoted names to upper case: a lower case letter needs quotes
-        // (so does Firebird, and a name there begins with a letter)
+        // (so does Firebird, and a name there begins with a letter; Snowflake folds to upper case too)
         DbKind::Oracle | DbKind::Firebird => first.is_ascii_uppercase(),
+        DbKind::Snowflake => first.is_ascii_uppercase() || first == '_',
         _ => first.is_ascii_alphabetic() || first == '_',
     };
     let rest_ok = name.chars().all(|c| match kind {
         DbKind::Postgres => c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_',
         // unquoted names are stored in upper case there
-        DbKind::Oracle | DbKind::Firebird => {
+        DbKind::Oracle | DbKind::Firebird | DbKind::Snowflake => {
             c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'
         }
         _ => c.is_ascii_alphanumeric() || c == '_',
@@ -652,7 +653,8 @@ pub fn quote_always(name: &str, kind: DbKind) -> String {
         | DbKind::D1
         | DbKind::Duckdb
         | DbKind::Trino
-        | DbKind::Firebird => {
+        | DbKind::Firebird
+        | DbKind::Snowflake => {
             format!("\"{}\"", name.replace('"', "\"\""))
         }
         // Oracle has no way to write a quote inside a quoted name (and allows none in a name): one that
@@ -779,6 +781,12 @@ pub fn schemas(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<S
         // answered above, without a question
         DbKind::Firebird => "SELECT '', 'false', 'true' FROM rdb$database",
         DbKind::Bigquery => "SELECT schema_name FROM INFORMATION_SCHEMA.SCHEMATA",
+        // the schemas of the database the connection names
+        DbKind::Snowflake => {
+            "SELECT schema_name, \
+             CASE WHEN schema_name = 'INFORMATION_SCHEMA' THEN 'true' ELSE 'false' END, 'false' \
+             FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY 1"
+        }
         DbKind::Trino => {
             "SELECT schema_name, \
              CASE WHEN schema_name = 'information_schema' THEN 'true' ELSE 'false' END, 'false' \
@@ -856,6 +864,11 @@ pub fn objects(
     };
     let questions: &[&str] = match kind {
         DbKind::Bigquery => &[],
+        DbKind::Snowflake => &[
+            "SELECT CASE WHEN table_type LIKE '%VIEW%' THEN 'view' ELSE 'table' END, table_name, '', \
+               TO_VARCHAR(row_count) \
+             FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = ?",
+        ],
         DbKind::Postgres => &[
             "SELECT CASE c.relkind WHEN 'v' THEN 'view' WHEN 'm' THEN 'matview' \
                WHEN 'S' THEN 'sequence' ELSE 'table' END, \
@@ -1234,6 +1247,40 @@ fn mssql_table(s: &mut dyn Session, schema: &str, table: &str, stop: Stop) -> Ap
         triggers: parts(&triggers),
     })
 }
+
+/// Snowflake: `INFORMATION_SCHEMA.COLUMNS` of the database. Keys there are a promise nobody checks,
+/// and there are no indexes or triggers.
+fn snowflake_table(
+    s: &mut dyn Session,
+    schema: &str,
+    table: &str,
+    stop: Stop,
+) -> AppResult<TableInfo> {
+    let columns = ask(
+        s,
+        &format!(
+            "SELECT column_name, {SNOWFLAKE_TYPE}, \
+               CASE is_nullable WHEN 'YES' THEN 'true' ELSE 'false' END, column_default, '' \
+             FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = ? AND table_name = ? \
+             ORDER BY ordinal_position"
+        ),
+        &[schema, table],
+        stop,
+    )?;
+    Ok(TableInfo {
+        columns: column_rows(&columns, DbKind::Snowflake),
+        indexes: Vec::new(),
+        keys: Vec::new(),
+        triggers: Vec::new(),
+    })
+}
+
+/// The type of a column of Snowflake's `INFORMATION_SCHEMA.COLUMNS`, as one would declare it.
+pub(super) const SNOWFLAKE_TYPE: &str = "CASE \
+    WHEN data_type = 'NUMBER' THEN 'NUMBER(' || numeric_precision || ', ' || numeric_scale || ')' \
+    WHEN data_type = 'TEXT' AND character_maximum_length < 16777216 \
+      THEN 'VARCHAR(' || character_maximum_length || ')' \
+    WHEN data_type = 'TEXT' THEN 'VARCHAR' ELSE data_type END";
 
 /// BigQuery: `INFORMATION_SCHEMA.COLUMNS` of the dataset. Its keys are a promise nobody checks, and it
 /// has no indexes or triggers.
@@ -1693,6 +1740,7 @@ pub fn table(
         DbKind::Trino => trino_table(s, schema, table, stop),
         DbKind::Firebird => firebird_table(s, table, stop),
         DbKind::Bigquery => bigquery_table(s, schema, table, stop),
+        DbKind::Snowflake => snowflake_table(s, schema, table, stop),
     }
 }
 
@@ -1752,6 +1800,14 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
              WHERE name LIKE ?1 ESCAPE '\\' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' \
              ORDER BY 3, 1 LIMIT 200"
         }
+        // CONTAINS takes a text as it is
+        DbKind::Snowflake => {
+            "SELECT table_schema, CASE WHEN table_type LIKE '%VIEW%' THEN 'view' ELSE 'table' END, \
+               table_name \
+             FROM INFORMATION_SCHEMA.TABLES \
+             WHERE CONTAINS(LOWER(table_name), LOWER(?)) AND table_schema <> 'INFORMATION_SCHEMA' \
+             ORDER BY 3, 1 LIMIT 200"
+        }
         // answered above
         DbKind::Bigquery => {
             "SELECT '', 'table', table_name FROM INFORMATION_SCHEMA.TABLES WHERE ? = ''"
@@ -1804,7 +1860,7 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
              ORDER BY 3, 1 FETCH FIRST 200 ROWS ONLY"
         }
     };
-    let wanted = if matches!(kind, DbKind::Trino | DbKind::Firebird) {
+    let wanted = if matches!(kind, DbKind::Trino | DbKind::Firebird | DbKind::Snowflake) {
         text
     } else {
         &pattern

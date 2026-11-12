@@ -17,6 +17,7 @@ import { offsetAt, placeIn } from '../../core/text/places';
  * - **firebird**: a procedure, function, trigger, package or `EXECUTE BLOCK` keeps the `;` of its body.
  * - **bigquery**: backslash escapes in strings and in backticks, no doubled quotes, strings of three
  *   quotes, `#` comments; a script runs whole (`splitForRun`).
+ * - **snowflake**: backslash escapes in strings, `//` comments, `$$ … $$` strings.
  * - **trino**: the common rules – a quote is escaped only by doubling it.
  * - **oracle**: `q'[ … ]'` strings; PL/SQL (`BEGIN`, `DECLARE`, `CREATE … FUNCTION | PROCEDURE | PACKAGE |
  *   TRIGGER | TYPE`) keeps its `;` and ends at a line with only `/` – as in SQL*Plus. That line also ends
@@ -32,7 +33,8 @@ export type Dialect =
   | 'clickhouse'
   | 'trino'
   | 'firebird'
-  | 'bigquery';
+  | 'bigquery'
+  | 'snowflake';
 
 export interface Statement {
   /** The statement without its terminator, trimmed. */
@@ -89,6 +91,7 @@ function skipToken(s: Scan): boolean {
       dialect === 'mysql' ||
       dialect === 'clickhouse' ||
       dialect === 'bigquery' ||
+      dialect === 'snowflake' ||
       (dialect === 'postgres' &&
         c === "'" &&
         (prev === 'E' || prev === 'e') &&
@@ -108,6 +111,16 @@ function skipToken(s: Scan): boolean {
   }
   if (c === '-' && next === '-') {
     skipLine(s);
+    return true;
+  }
+  if (dialect === 'snowflake' && c === '/' && next === '/') {
+    skipLine(s);
+    return true;
+  }
+  if (dialect === 'snowflake' && c === '$' && next === '$') {
+    // a string between `$$` and `$$`, whatever it holds (the body of a procedure)
+    const close = script.indexOf('$$', s.i + 2);
+    s.i = close < 0 ? script.length : close + 2;
     return true;
   }
   if (c === '#' && (dialect === 'mysql' || dialect === 'bigquery')) {

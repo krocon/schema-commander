@@ -438,7 +438,7 @@ impl Builder {
                 // without a column beside it the server cannot tell what the value is; hex is read
                 // in pairs, so the length is an even one (review 035i 3)
                 DbKind::Firebird => "CAST(? AS VARCHAR(8190))".to_owned(),
-                DbKind::Bigquery => "?".to_owned(),
+                DbKind::Bigquery | DbKind::Snowflake => "?".to_owned(),
                 DbKind::Sqlserver => format!("@P{n}"),
                 DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("?{n}"),
                 DbKind::Oracle => format!(":{n}"),
@@ -459,6 +459,7 @@ impl Builder {
                 DbKind::Trino => format!("from_hex({inner})"),
                 DbKind::Firebird => format!("HEX_DECODE({inner})"),
                 DbKind::Bigquery => format!("FROM_HEX({inner})"),
+                DbKind::Snowflake => format!("TO_BINARY({inner}, 'HEX')"),
             };
             self.sql.push_str(&around(&placeholder));
             self.display.push_str(&around(&format!("'{raw}'")));
@@ -524,7 +525,7 @@ impl Builder {
             // a pattern is longer than the column it is held against: said to be text of any length;
             // every other value is what the column beside it is (the driver reads it as that)
             DbKind::Firebird if type_name.is_empty() => "CAST(? AS VARCHAR(8191))".to_owned(),
-            DbKind::Firebird | DbKind::Bigquery => "?".to_owned(),
+            DbKind::Firebird | DbKind::Bigquery | DbKind::Snowflake => "?".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
             DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("?{n}"),
             DbKind::Oracle => format!(":{n}"),
@@ -590,6 +591,7 @@ impl Builder {
             DbKind::Duckdb | DbKind::Trino => format!("CAST({column} AS VARCHAR)"),
             DbKind::Firebird => format!("CAST({column} AS VARCHAR(8191))"),
             DbKind::Bigquery => format!("CAST({column} AS STRING)"),
+            DbKind::Snowflake => format!("TO_VARCHAR({column})"),
             DbKind::Mysql => format!("CAST({column} AS char)"),
             DbKind::Sqlserver => format!("CAST({column} AS nvarchar(max))"),
             DbKind::Oracle => format!("TO_CHAR({column})"),
@@ -702,6 +704,20 @@ impl Builder {
                 self.text(") > 0");
             }
             // Trino takes an escape only before `%`, `_` and itself: a position says the same
+            // Snowflake: CONTAINS takes a text as it is
+            Op::Contains | Op::ContainsNoCase if self.kind == DbKind::Snowflake => {
+                need(1)?;
+                let text = self.as_text(&column, c.kind);
+                if c.op == Op::ContainsNoCase {
+                    self.text(&format!("CONTAINS(LOWER({text}), LOWER("));
+                    self.pattern(&c.values[0]);
+                    self.text("))");
+                } else {
+                    self.text(&format!("CONTAINS({text}, "));
+                    self.pattern(&c.values[0]);
+                    self.text(")");
+                }
+            }
             // BigQuery: a position as well – its LIKE knows the backslash, and so does its string
             Op::Contains | Op::ContainsNoCase if self.kind == DbKind::Bigquery => {
                 need(1)?;
@@ -834,8 +850,10 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
                     None => return refuse("a string or a quoted name is not closed"),
                     // MySQL reads a backslash in a string as an escape
                     Some(b'\\')
-                        if (matches!(kind, DbKind::Mysql | DbKind::Clickhouse)
-                            && close != b'`')
+                        if (matches!(
+                            kind,
+                            DbKind::Mysql | DbKind::Clickhouse | DbKind::Snowflake
+                        ) && close != b'`')
                             || kind == DbKind::Bigquery =>
                     {
                         i += 2;
@@ -863,6 +881,11 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
             }
             // `@name` is a parameter of BigQuery's own
             b'@' if kind == DbKind::Bigquery => return refuse("no placeholders"),
+            // Snowflake: `//` is a comment, `$$` opens a string that ends elsewhere, `:name` binds
+            b'/' if kind == DbKind::Snowflake && next == b'/' => return refuse("no comments"),
+            b'$' if kind == DbKind::Snowflake && next == b'$' => {
+                return refuse("no `$$` strings");
+            }
             b'(' => depth += 1,
             b')' => {
                 if depth == 0 {
@@ -891,6 +914,7 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
                     | DbKind::Trino
                     | DbKind::Firebird
                     | DbKind::Bigquery
+                    | DbKind::Snowflake
             ) =>
             {
                 return refuse("no placeholders");
@@ -1019,6 +1043,7 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
                     | DbKind::Trino
                     | DbKind::Firebird
                     | DbKind::Bigquery
+                    | DbKind::Snowflake
             );
             if let (Some(nulls), false) = (o.nulls, native) {
                 // no NULLS FIRST/LAST there: a key before the column says where the NULLs go
@@ -1075,6 +1100,71 @@ fn oracle_instant(type_name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// Snowflake (prompt 035k): names in upper case stay bare, CONTAINS instead of LIKE.
+    #[test]
+    fn snowflake_statements_of_a_table_view() {
+        let condition =
+            |column: &str, op: Op, value: &str, kind: ValueKind, type_name: &str| Condition {
+                column: column.into(),
+                op,
+                values: vec![value.into()],
+                kind,
+                type_name: type_name.into(),
+            };
+        let q = build(
+            DbKind::Snowflake,
+            &TableQuery {
+                schema: Some("PUBLIC".into()),
+                table: "Orders".into(),
+                conditions: vec![
+                    condition("PLACED_AT", Op::Ge, "2026-02-01", ValueKind::Text, "DATE"),
+                    condition("ID", Op::Eq, "7", ValueKind::Number, "NUMBER(38, 0)"),
+                    condition(
+                        "name",
+                        Op::ContainsNoCase,
+                        "100%_[",
+                        ValueKind::Text,
+                        "VARCHAR",
+                    ),
+                    condition("RAW", Op::Eq, "00ff", ValueKind::Bytes, "BINARY"),
+                ],
+                order: vec![Order {
+                    column: "ID".into(),
+                    desc: true,
+                    nulls: Some(Nulls::Last),
+                }],
+                limit: Some(10),
+                ..TableQuery::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            q.sql,
+            "SELECT *\nFROM \"PUBLIC\".\"Orders\"\nWHERE PLACED_AT >= ?\n  AND ID = ?\n  AND CONTAINS(LOWER(\"name\"), LOWER(?))\n  AND RAW = TO_BINARY(?, 'HEX')\nORDER BY ID DESC NULLS LAST\nLIMIT 10"
+        );
+        assert_eq!(q.params[1], Bind::Int("7".into()));
+        assert_eq!(q.params[2], Bind::Text("100%_[".into()));
+        let free = |text: &str| {
+            build(
+                DbKind::Snowflake,
+                &TableQuery {
+                    table: "T".into(),
+                    where_sql: Some(text.into()),
+                    ..TableQuery::default()
+                },
+            )
+        };
+        assert!(free("TOTAL > 100 AND NAME = 'it\\'s; fine'").is_ok());
+        for no in [
+            "A = 1 // and the rest",
+            "A = $$ ' $$) ; DROP TABLE T ; SELECT ($$ ' $$",
+            "A = ?",
+            "A = 1; DROP TABLE T",
+        ] {
+            assert!(free(no).is_err(), "{no}");
+        }
+    }
+
     /// BigQuery (review 035j 3): the free condition is read as BigQuery reads it.
     #[test]
     fn bigquery_conditions_stay_one_expression() {

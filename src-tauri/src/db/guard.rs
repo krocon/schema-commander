@@ -124,6 +124,28 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
         let next = chars.get(i + 1).copied();
         if c.is_whitespace() || c.is_control() {
             i += 1;
+        } else if kind == DbKind::Snowflake && c == '/' && next == Some('/') {
+            // Snowflake's other comment to the end of the line
+            while i < n && chars[i] != '\n' && chars[i] != '\r' {
+                i += 1;
+            }
+        } else if kind == DbKind::Snowflake && c == '$' && next == Some('$') {
+            // a string between `$$` and `$$`, whatever it holds
+            let start = i + 2;
+            i = start;
+            while i < n && !(chars[i] == '$' && chars.get(i + 1) == Some(&'$')) {
+                i += 1;
+            }
+            if i >= n {
+                // not closed: where it would end for the server nobody can say here
+                ambiguous = true;
+            }
+            let body: String = chars[start..i.min(n)]
+                .iter()
+                .collect::<String>()
+                .to_uppercase();
+            i = (i + 2).min(n);
+            toks.push(Tok::Str(body));
         } else if c == '-' && next == Some('-') {
             // MySQL takes `--` for a comment only before a space; else it is twice a minus
             let after = chars.get(i + 2).copied();
@@ -1053,6 +1075,8 @@ pub fn read_only_statement(kind: DbKind) -> Option<&'static str> {
         DbKind::Firebird => None,
         // every statement is a job of its own; what a login may write is decided at Google
         DbKind::Bigquery => None,
+        // every statement is a request of its own; what a login may write its role decides
+        DbKind::Snowflake => None,
     }
 }
 
@@ -1061,7 +1085,7 @@ mod tests {
     use super::*;
     use Class::{Dangerous, Ddl, Read, Write};
 
-    const ALL: [DbKind; 12] = [
+    const ALL: [DbKind; 13] = [
         DbKind::Postgres,
         DbKind::Mysql,
         DbKind::Sqlserver,
@@ -1074,6 +1098,7 @@ mod tests {
         DbKind::D1,
         DbKind::Firebird,
         DbKind::Bigquery,
+        DbKind::Snowflake,
     ];
 
     /// libSQL (prompt 035g): classified as SQLite; read only is not a statement there.
@@ -1095,6 +1120,28 @@ mod tests {
             );
         }
         assert_eq!(read_only_statement(DbKind::Libsql), None);
+    }
+
+    /// Snowflake (prompt 035k).
+    #[test]
+    fn snowflake_comments_and_dollar_strings_hide_nothing() {
+        let k = DbKind::Snowflake;
+        assert_eq!(classify("SELECT * FROM T WHERE A = 1", k), Read);
+        assert_eq!(classify("SELECT $$it's; fine$$ AS S // a comment", k), Read);
+        for hidden in [
+            "SELECT 1 // it's\n; DROP TABLE T",
+            "SELECT $$ ' $$ ; DROP TABLE T --'",
+            "SELECT $$ never closed",
+        ] {
+            assert_ne!(classify(hidden, k), Read, "{hidden}");
+        }
+        assert_eq!(classify("INSERT INTO T VALUES (1)", k), Write);
+        assert_eq!(classify("DROP TABLE T", k), Dangerous);
+        assert_ne!(classify("CALL P()", k), Read);
+        assert_ne!(classify("COPY INTO @stage FROM T", k), Read);
+        assert_ne!(classify("PUT file:///x @stage", k), Read);
+        assert_ne!(classify("EXECUTE IMMEDIATE 'DROP TABLE T'", k), Read);
+        assert_eq!(read_only_statement(k), None);
     }
 
     /// BigQuery (prompt 035j).

@@ -140,7 +140,7 @@ pub fn sql_text(text: &str, dialect: DbKind) -> String {
             // MySQL takes the backslash as an escape unless told otherwise
             '\\' if matches!(
                 dialect,
-                DbKind::Mysql | DbKind::Clickhouse | DbKind::Bigquery
+                DbKind::Mysql | DbKind::Clickhouse | DbKind::Bigquery | DbKind::Snowflake
             ) =>
             {
                 out.push_str("\\\\");
@@ -196,6 +196,7 @@ pub fn literal(cell: &Value, kind: ColKind, dialect: DbKind) -> String {
             Some((bytes, hex)) if bytes * 2 == hex.len() as u64 => match dialect {
                 DbKind::Postgres => format!("'\\x{hex}'"),
                 DbKind::Bigquery => format!("FROM_HEX('{hex}')"),
+                DbKind::Snowflake => format!("TO_BINARY('{hex}', 'HEX')"),
                 DbKind::Sqlserver => format!("0x{hex}"),
                 DbKind::Mysql
                 | DbKind::Sqlite

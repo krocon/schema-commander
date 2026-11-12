@@ -396,6 +396,16 @@
       ]
     },
     {
+      "name": "comments with //, strings between $$ and backslash escapes",
+      "dialect": "snowflake",
+      "script": "select 1 // it's; not here\n; create procedure p() returns int language sql as $$ begin delete from t; return 1; end; $$; select 'it\\'s; one'",
+      "statements": [
+        "select 1 // it's; not here",
+        "create procedure p() returns int language sql as $$ begin delete from t; return 1; end; $$",
+        "select 'it\\'s; one'"
+      ]
+    },
+    {
       "name": "a body in PSQL keeps its semicolons",
       "dialect": "firebird",
       "script": "execute block as declare n integer; begin n = 1; if (n = 1) then begin delete from t; end end; create or alter trigger tr for t before insert as begin new.id = case when new.id is null then 1 else new.id end; end; alter trigger tr inactive; select 1 from rdb$database; begin_work",

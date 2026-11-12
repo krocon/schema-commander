@@ -13,7 +13,8 @@ export type DbKind =
   | 'libsql'
   | 'd1'
   | 'firebird'
-  | 'bigquery';
+  | 'bigquery'
+  | 'snowflake';
 
 /** A kind with a dialect of its own (libSQL and D1 write SQLite's). */
 export type SqlDialect = Exclude<DbKind, 'libsql' | 'd1'>;
@@ -185,6 +186,8 @@ export const DB_KINDS: readonly {
   { kind: 'firebird', label: 'Firebird', port: 3050 },
   // over Google's REST API: the project, the key file of a service account (prompt 035j)
   { kind: 'bigquery', label: 'BigQuery', port: 443 },
+  // over Snowflake's SQL API: the account's address, a token or the file of a private key (035k)
+  { kind: 'snowflake', label: 'Snowflake', port: 443 },
   {
     kind: 'sqlite',
     // a getter: the language may change while the app runs

@@ -96,6 +96,11 @@ export function profileProblems(p: Profile): Partial<Record<Field, string>> {
     if (!p.database.trim()) out.database = t.firebirdDatabaseMissing;
     if (p.tls === 'verify' || p.tls === 'verify-ca') out.tls = t.firebirdNoCertificates;
   }
+  if (p.kind === 'snowflake') {
+    if (!isLocalHost(p.host) && !/\.snowflakecomputing\.(com|cn)$/i.test(p.host.trim()))
+      out.host = t.snowflakeHost;
+    if (!p.database.trim()) out.database = t.snowflakeDatabaseMissing;
+  }
   if (p.kind === 'bigquery') {
     if (!/^[A-Za-z0-9._:-]{1,100}$/.test(p.database.trim()))
       out.database = t.bigqueryProjectMissing;
@@ -111,7 +116,11 @@ export function profileProblems(p: Profile): Partial<Record<Field, string>> {
     if (p.tls === 'prefer' || p.tls === 'require') out.tls = t.oracleTlsChecked;
   }
   // BigQuery logs in with a key file alone: no certificate goes with it
-  if (p.kind !== 'bigquery' && !p.clientCert.trim() !== !p.clientKey.trim()) {
+  if (
+    p.kind !== 'bigquery' &&
+    p.kind !== 'snowflake' &&
+    !p.clientCert.trim() !== !p.clientKey.trim()
+  ) {
     out.clientKey = t.certPair;
   }
   if (p.caFile.trim() && p.tls !== 'verify-ca' && p.tls !== 'verify') {
@@ -157,6 +166,7 @@ export function withKind(p: Profile, kind: DbKind): Profile {
     d1: '',
     firebird: 'SYSDBA',
     bigquery: '',
+    snowflake: '',
   };
   const usual = Object.values(users);
   return {
@@ -167,7 +177,7 @@ export function withKind(p: Profile, kind: DbKind): Profile {
     host: isFileKind(kind)
       ? ''
       : (FIXED_HOSTS[kind] ?? (FIXED_HOSTS[p.kind] ? 'localhost' : p.host || 'localhost')),
-    tls: FIXED_HOSTS[kind] ? 'verify' : FIXED_HOSTS[p.kind] ? 'off' : p.tls,
+    tls: FIXED_HOSTS[kind] || kind === 'snowflake' ? 'verify' : FIXED_HOSTS[p.kind] ? 'off' : p.tls,
     user: usual.includes(p.user.trim()) ? users[kind] : p.user,
     database: isFileKind(kind) || isFileKind(p.kind) ? '' : p.database,
   };

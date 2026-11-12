@@ -31,6 +31,7 @@ export const CONNECTION_EN = {
     d1: 'Cloudflare D1',
     firebird: 'Firebird',
     bigquery: 'BigQuery',
+    snowflake: 'Snowflake',
   },
   password: 'Password',
   sshSecretTitle: 'SSH tunnel: password or passphrase',

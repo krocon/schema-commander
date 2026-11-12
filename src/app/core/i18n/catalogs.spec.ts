@@ -127,6 +127,7 @@ const SAME = new Set<string>([
   'Cloudflare D1',
   'Firebird',
   'BigQuery',
+  'Snowflake',
   'Schema Commander',
   'Schema',
   'TLS: ',

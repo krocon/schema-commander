@@ -310,6 +310,7 @@ fn as_text(column: &str, kind: DbKind) -> String {
         DbKind::Duckdb | DbKind::Trino => format!("CAST({column} AS VARCHAR)"),
         DbKind::Firebird => format!("CAST({column} AS VARCHAR(8191))"),
         DbKind::Bigquery => format!("CAST({column} AS STRING)"),
+        DbKind::Snowflake => format!("TO_VARCHAR({column})"),
         DbKind::Clickhouse => format!("toString({column})"),
     }
 }
@@ -351,7 +352,7 @@ pub fn data_question(
             DbKind::Postgres | DbKind::Duckdb => format!("${n}"),
             DbKind::Mysql | DbKind::Trino => "?".to_owned(),
             DbKind::Firebird => "CAST(? AS VARCHAR(8191))".to_owned(),
-            DbKind::Bigquery => "?".to_owned(),
+            DbKind::Bigquery | DbKind::Snowflake => "?".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
             DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("?{n}"),
             DbKind::Oracle => format!(":{n}"),
@@ -371,7 +372,9 @@ pub fn data_question(
             }
             DbKind::Oracle => format!("SUBSTR({text}, 1, {VALUE_CHARS})"),
             DbKind::Firebird => format!("SUBSTRING({text} FROM 1 FOR {VALUE_CHARS})"),
-            DbKind::Bigquery => format!("SUBSTR({text}, 1, {VALUE_CHARS})"),
+            DbKind::Bigquery | DbKind::Snowflake => {
+                format!("SUBSTR({text}, 1, {VALUE_CHARS})")
+            }
             DbKind::Clickhouse => format!("substringUTF8({text}, 1, {VALUE_CHARS})"),
             DbKind::Postgres | DbKind::Mysql | DbKind::Sqlserver | DbKind::Duckdb => {
                 format!("LEFT({text}, {VALUE_CHARS})")
@@ -434,6 +437,25 @@ pub fn data_question(
             (DbKind::Sqlite | DbKind::Libsql | DbKind::D1, _) => {
                 format!("{text} = {} COLLATE NOCASE", place(spec.text.clone()))
             }
+            (DbKind::Snowflake, Mode::Contains) if sensitive => {
+                format!("CONTAINS({text}, {})", place(spec.text.clone()))
+            }
+            (DbKind::Snowflake, Mode::Contains) => format!(
+                "CONTAINS(LOWER({text}), LOWER({}))",
+                place(spec.text.clone())
+            ),
+            (DbKind::Snowflake, Mode::Exact) if sensitive => {
+                format!("{text} = {}", place(spec.text.clone()))
+            }
+            (DbKind::Snowflake, Mode::Exact) => {
+                format!("LOWER({text}) = LOWER({})", place(spec.text.clone()))
+            }
+            // found anywhere in the text, not only as the whole of it
+            (DbKind::Snowflake, Mode::Regex) => format!(
+                "REGEXP_INSTR({text}, {}, 1, 1, 0, '{}') > 0",
+                place(spec.text.clone()),
+                if sensitive { "c" } else { "i" }
+            ),
             (DbKind::Bigquery, Mode::Contains) if sensitive => {
                 format!("STRPOS({text}, {}) > 0", place(spec.text.clone()))
             }
@@ -740,6 +762,17 @@ fn columns_of(
             limit,
             stop,
         )?,
+        DbKind::Snowflake => s.ask(
+            "SELECT c.table_name, c.column_name, c.data_type FROM INFORMATION_SCHEMA.COLUMNS c \
+             JOIN INFORMATION_SCHEMA.TABLES t \
+               ON t.table_schema = c.table_schema AND t.table_name = c.table_name \
+             WHERE c.table_schema = ? AND t.table_type = 'BASE TABLE' \
+               AND c.data_type NOT IN ('VARIANT', 'OBJECT', 'ARRAY', 'GEOGRAPHY', 'GEOMETRY', 'BINARY') \
+             ORDER BY c.table_name, c.ordinal_position",
+            &[schema],
+            limit,
+            stop,
+        )?,
         DbKind::Bigquery => s.ask(
             &format!(
                 "SELECT c.table_name, c.column_name, c.data_type \
@@ -906,6 +939,10 @@ pub(super) fn source_questions(kind: DbKind, flavor: Flavor) -> Vec<&'static str
         ],
         // a dataset is named in the statement, and these questions bind it: none here
         DbKind::Bigquery => Vec::new(),
+        DbKind::Snowflake => vec![
+            "SELECT 'view', table_name, view_definition FROM INFORMATION_SCHEMA.VIEWS \
+             WHERE table_schema = ?",
+        ],
         DbKind::Firebird => vec![
             "SELECT 'view', r.rdb$relation_name, r.rdb$view_source FROM rdb$relations r \
              WHERE r.rdb$view_blr IS NOT NULL AND COALESCE(r.rdb$system_flag, 0) = 0 \

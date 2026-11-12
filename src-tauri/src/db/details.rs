@@ -147,6 +147,7 @@ pub fn details(
         DbKind::Trino => trino::read(&mut r, schema, name, object)?,
         DbKind::Firebird => firebird::read(&mut r, name, object)?,
         DbKind::Bigquery => bigquery::read(&mut r, schema, name)?,
+        DbKind::Snowflake => snowflake::read(&mut r, schema, name, object)?,
     };
     if ddl.is_none() {
         r.notes.push("ddl".into());
@@ -1657,6 +1658,43 @@ mod sqlite {
             .map(|row| format!("{};\n", at(row, 0).trim_end().trim_end_matches(';')))
             .collect();
         Ok(Some(statements.join("\n")))
+    }
+}
+
+mod snowflake {
+    use super::*;
+    use crate::db::meta::{SNOWFLAKE_TYPE, quote_always};
+
+    pub fn read(
+        r: &mut Reader,
+        schema: &str,
+        name: &str,
+        object: ObjectKind,
+    ) -> AppResult<Option<String>> {
+        r.section(
+            "columns",
+            &["name", "type", "nullable", "default", "comment"],
+            &format!(
+                "SELECT column_name, {SNOWFLAKE_TYPE}, \
+                   CASE is_nullable WHEN 'YES' THEN 'yes' ELSE 'no' END, column_default, comment \
+                 FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = ? AND table_name = ? \
+                 ORDER BY ordinal_position"
+            ),
+            &[schema, name],
+        )?;
+        // the statement as Snowflake writes it; the name travels as a value, quoted as a name
+        let k = DbKind::Snowflake;
+        let what = if object == ObjectKind::View {
+            "VIEW"
+        } else {
+            "TABLE"
+        };
+        let full = format!("{}.{}", quote_always(schema, k), quote_always(name, k));
+        let ddl = r.text(&format!("SELECT GET_DDL('{what}', ?)"), &[&full])?;
+        Ok(ddl
+            .map(|t| t.trim().to_owned())
+            .filter(|t| !t.is_empty())
+            .map(|t| format!("{};\n", t.trim_end_matches(';'))))
     }
 }
 

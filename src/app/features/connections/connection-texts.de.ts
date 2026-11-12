@@ -29,6 +29,7 @@ export const CONNECTION_DE: Translation<typeof CONNECTION_EN> = {
     d1: 'Cloudflare D1',
     firebird: 'Firebird',
     bigquery: 'BigQuery',
+    snowflake: 'Snowflake',
   },
   password: 'Passwort',
   sshSecretTitle: 'SSH-Tunnel: Passwort oder Passphrase',

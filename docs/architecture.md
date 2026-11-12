@@ -95,12 +95,13 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | A73 | Cloudflare D1 über die **REST-API von Cloudflare** (`…/d1/database/{id}/raw`) mit `ureq`: Benutzer = Account-ID, Datenbank = ID, Passwort = API-Token; Dialekt von SQLite, aber ohne Sitzung und Transaktionen – darum nur lesen und ausführen (`edits_rows` falsch). Nach der Dokumentation geschrieben und gegen einen nachgestellten Server getestet, nicht gegen Cloudflare | Design 035h |
 | A74 | Firebird über **`firebird-wire`** (MIT, reines Rust, fest auf `=0.1.16`): gewählt vor `rsfbclient`, weil es `NUMERIC` exakt (Mantisse und Skala) statt als Gleitkommazahl gibt; jung und von einem Autor, darum angepinnt. Transaktionen hält der Treiber (Firebird führt nichts außerhalb einer aus); Werte werden als das gebunden, was der Server beim Vorbereiten für den Platz nennt; Abbruch von einer zweiten Verbindung über `MON$STATEMENTS` | Design 035i E1, E2, E4, E5 |
 | A75 | BigQuery über die **REST-API** (`jobs.query`, `getQueryResults`, `cancel`) mit `ureq`. Anmeldung mit der Schlüsseldatei eines Dienstkontos: Der Treiber signiert die Zusicherung selbst (RS256) – neue direkte Abhängigkeit `ring` (ISC/MIT/OpenSSL-artig, stand über rustls schon im Baum) – und tauscht sie nur bei Googles eigener Adresse. Lesen und ausführen, keine Sitzung. Gegen den Emulator geprüft, nicht gegen Google | Design 035j |
+| A76 | Snowflake über die **SQL-API** (`/api/v2/statements`) mit `ureq`: asynchron einreichen, nach dem Stand fragen, Partitionen; Anmeldung mit Token oder Schlüsselpaar (JWT, RS256 mit `ring`). Lesen und ausführen, keine Sitzung. Nach der Dokumentation geschrieben und gegen einen nachgestellten Server getestet, nicht gegen Snowflake | Design 035k |
 
 ## Offene Architekturfragen (entscheidet der jeweilige Prompt)
 
 - **Treiber**: entschieden und umgesetzt (Design 003); CockroachDB, TimescaleDB und YugabyteDB über den PostgreSQL-Treiber
   (Design 035a); Oracle mit eigenem Treiber (Design 035b); DuckDB eingebettet (Design 035c); ClickHouse über
-  HTTP (Design 035d); Trino/Presto über HTTP (Design 035f); libSQL/Turso über HTTP (Design 035g); Cloudflare D1 über dessen REST-API (Design 035h); Firebird mit eigenem Treiber (Design 035i); BigQuery über REST (Design 035j); weitere bleiben mit Prompt 035 offen (Reihenfolge dort).
+  HTTP (Design 035d); Trino/Presto über HTTP (Design 035f); libSQL/Turso über HTTP (Design 035g); Cloudflare D1 über dessen REST-API (Design 035h); Firebird mit eigenem Treiber (Design 035i); BigQuery über REST (Design 035j); Snowflake über dessen SQL-API (Design 035k); weitere bleiben mit Prompt 035 offen (Reihenfolge dort).
 - **Große Ergebnisse**: entschieden und umgesetzt (Design 006).
 - **Vervollständigung**: Schema-Metadaten in Rust zwischenspeichern; der Editor braucht dafür eine Schnittstelle für
   Vorschläge von außen (Erweiterung in editlicious).
