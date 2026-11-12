@@ -1,0 +1,39 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "cost": 5.311696,
+    "filesort": {
+      "sort_key": "sum(b.price) desc",
+      "temporary_table": {
+        "nested_loop": [
+          {
+            "table": {
+              "table_name": "b",
+              "access_type": "ALL",
+              "loops": 1,
+              "rows": 5000,
+              "cost": 0.8386768,
+              "filtered": 100,
+              "attached_condition": "b.price > 5"
+            }
+          },
+          {
+            "table": {
+              "table_name": "a",
+              "access_type": "eq_ref",
+              "possible_keys": ["PRIMARY"],
+              "key": "PRIMARY",
+              "key_length": "4",
+              "used_key_parts": ["id"],
+              "ref": ["shop.b.author_id"],
+              "loops": 5000,
+              "rows": 1,
+              "cost": 4.4730192,
+              "filtered": 100
+            }
+          }
+        ]
+      }
+    }
+  }
+}

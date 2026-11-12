@@ -65,10 +65,12 @@
   Export als SVG, Mermaid, DBML (Prompt 037);
   **Schema-Vergleich**: zwei Schemata oder Schnappschüsse, Unterschiede, Migrationsskript als Vorschlag mit
   auskommentierten gefährlichen Schritten (Prompt 038);
+  **Ausführungsplan** als Baumtabelle für alle Datenbanken, geschätzt oder mit Ausführung (zurückgerollt), mit
+  Hinweisen (Prompt 039);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a, 036–038),
+  erledigt: 001–034, 035a, 036–039),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -125,6 +127,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/import/             DataImportApi (load_*) + DTOs – spiegelt data_import.rs und db/load.rs
   app/core/menu/               MenuApi (set_app_menu, set_menu_state, subscribe_menu) + DTOs – spiegelt app_menu.rs
   app/core/saved/              SavedApi (saved_*) + DTOs – spiegelt saved.rs
+  app/core/plan/               PlanApi (explain_plan) + DTOs – spiegelt db/plan.rs
   app/core/schema/             SchemaApi (meta_*) + DTOs (SchemaInfo, ObjectInfo, TableInfo) – spiegelt db/meta.rs
   app/core/session/            SessionApi: session.json, Texte der Tabs, .sql lesen/schreiben
   app/core/settings/           Settings (Modell, mergeSettings), SettingsService (tauri-plugin-store)
@@ -157,6 +160,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                Tabelle als Tabellen-Ansicht öffnen), filter-logic.ts (rein)
   app/features/find/           ResultFind (je Tab: Suche stückweise, Treffer, Sprung; kein Injectable), FindBar
                                (Suchzeile über dem Ergebnis), ColumnsPopover (Spaltenliste)
+  app/features/plan/           PlanDialog (Baumtabelle, Einzelheiten, Hinweise, Rohplan), PlanService (Root: fragen,
+                               Rückfrage vor der Ausführung), plan-logic.ts (rein)
   app/features/relations/      RelationsService (Root: Schlüssel lesen, folgen, zählen, Vorschau, eigene
                                Beziehungen), RelationsDialog, RelationPath (Pfad über dem Ergebnis),
                                relation-logic.ts (rein: Schlüsselwerte, Sichten, Pfad)
@@ -246,6 +251,8 @@ src-tauri/                     Rust
                                Lesen; Katalog böser Namen, Rundreise)
   src/db/details.rs            Objekt-Details als Listen + DDL je Datenbank (Katalog, gebundene Parameter)
   src/db/relations.rs          Fremdschlüssel einer Tabelle als Daten, je Datenbank (Katalog, gebundene Parameter)
+  src/db/plan.rs               Ausführungspläne: fragen je Datenbank, Parser (JSON, XML, Textbäume) in ein Modell,
+                               Eigenzeiten, Hinweise (rein; Katalog echter Pläne in plan_cases/)
   src/db/names.rs              Namensindex je Verbindung: Katalog lesen, Suche und Rangfolge (rein, Katalog als Test)
   src/db/meta.rs               Metadaten aus dem Systemkatalog (gebundene Parameter), quote() je Dialekt
   src/db/value.rs              Cell, ColKind, QueryResult (verlustfrei über die Brücke)
@@ -312,6 +319,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   Fenster; das Fenster zeigt den Text, den es bekommt.
 - **Werte**: Eine `Cell` trägt den ganzen Wert; gekürzt wird nur beim Schreiben der Zeile. Nichts aus einem
   Wert wird als Markup in die Seite gesetzt; Bilder nur innerhalb der Grenzen von `value-logic.ts` als `blob:`.
+- **Ausführungsplan**: „Mit Ausführung“ führt die Anweisung aus – immer durch `admit`, immer in einer
+  Transaktion, die `plan::explain` zurückrollt; ein Plan wird nur für **eine** Anweisung gefragt.
 - **Schema-Vergleich**: Das Migrationsskript führt die App nie aus. Jeder Schritt, der Daten kosten kann, steht
   mit `-- DANGER: ` als Kommentar (`compare::danger`); neue Schritte in `script()` brauchen diese Prüfung.
 - **Suche auf dem Server**: nur `db/find.rs` baut ihre Anweisungen; der Suchtext ist immer gebunden. Ein Treffer

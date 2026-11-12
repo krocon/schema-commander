@@ -32,6 +32,8 @@ import { AboutDialog } from './features/about/about-dialog';
 import { DiagramService } from './features/diagram/diagram.service';
 import { ErDiagramDialog } from './features/diagram/er-diagram-dialog';
 import { ExportDialog } from './features/export/export-dialog';
+import { PlanDialog } from './features/plan/plan-dialog';
+import { PlanService } from './features/plan/plan.service';
 import { SchemaCompareDialog } from './features/schema-compare/schema-compare-dialog';
 import { SchemaCompareService } from './features/schema-compare/schema-compare.service';
 import { ServerSearchDialog } from './features/server-search/server-search-dialog';
@@ -130,6 +132,7 @@ const SIDEBAR_MIN = 140;
     ConnectionList,
     ContextMenu,
     ExportDialog,
+    PlanDialog,
     SchemaCompareDialog,
     ErDiagramDialog,
     ServerSearchDialog,
@@ -554,6 +557,11 @@ const SIDEBAR_MIN = 140;
         <app-schema-compare-dialog (closed)="schemaCompare.open.set(false)" />
       }
     }
+    @if (plans.view(); as view) {
+      @defer (on immediate) {
+        <app-plan-dialog [view]="view" (closed)="plans.close()" />
+      }
+    }
     @if (aboutOpen()) {
       @defer (on immediate) {
         <app-about-dialog (closed)="aboutOpen.set(false)" />
@@ -697,6 +705,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly dataImporter = inject(DataImportService);
   protected readonly serverSearch = inject(ServerSearchService);
   protected readonly diagrams = inject(DiagramService);
+  protected readonly plans = inject(PlanService);
   protected readonly schemaCompare = inject(SchemaCompareService);
   protected readonly formatter = inject(FormatService);
   protected readonly saved = inject(SavedStore);
@@ -1045,6 +1054,16 @@ export class App implements OnInit, OnDestroy {
         'EXPORT_RESULT',
         () => this.exportResult(),
         () => this.copier.current() !== null && !this.exporter.running(),
+      ),
+      this.actions.register(
+        'EXPLAIN_PLAN',
+        () => void this.plans.show(this.tabs.active(), false),
+        () => this.tabs.active() !== null,
+      ),
+      this.actions.register(
+        'EXPLAIN_ANALYZE',
+        () => void this.plans.show(this.tabs.active(), true),
+        () => this.tabs.active() !== null,
       ),
       this.actions.register('COMPARE_SCHEMAS', () => this.schemaCompare.open.set(true)),
       this.actions.register(

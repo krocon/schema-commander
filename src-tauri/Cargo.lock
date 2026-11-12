@@ -4270,6 +4270,7 @@ dependencies = [
  "hmac 0.13.0",
  "keyring-core",
  "parking_lot",
+ "quick-xml 0.42.0",
  "regex",
  "rusqlite",
  "russh",

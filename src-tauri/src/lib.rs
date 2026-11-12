@@ -139,6 +139,7 @@ pub fn run() {
             commands::meta_relations,
             commands::edit_preview,
             commands::edit_apply,
+            commands::explain_plan,
             commands::meta_diagram,
             commands::schema_snapshot,
             commands::schema_compare,

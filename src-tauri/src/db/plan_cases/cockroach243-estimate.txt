@@ -1,0 +1,29 @@
+distribution: local
+vectorized: true
+
+• sort
+│ order: -sum
+│
+└── • group (hash)
+    │ group by: name
+    │
+    └── • hash join
+        │ equality: (id) = (author_id)
+        │ left cols are key
+        │
+        ├── • scan
+        │     missing stats
+        │     table: sc_p_author@sc_p_author_pkey
+        │     spans: FULL SCAN
+        │
+        └── • filter
+            │ filter: price > 5
+            │
+            └── • scan
+                  missing stats
+                  table: sc_p_book@sc_p_book_pkey
+                  spans: FULL SCAN
+
+index recommendations: 1
+1. type: index creation
+   SQL command: CREATE INDEX ON defaultdb.public.sc_p_book (price) STORING (author_id);

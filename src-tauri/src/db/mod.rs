@@ -19,6 +19,7 @@ pub mod mssql;
 pub mod mysql;
 pub mod names;
 pub mod pg;
+pub mod plan;
 pub mod profiles;
 pub mod relations;
 pub mod secrets;

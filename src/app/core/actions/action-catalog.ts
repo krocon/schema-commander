@@ -46,6 +46,14 @@ export const ACTIONS = [
     group: 'Query',
     scope: 'global',
   },
+  // Execution plan (prompt 039)
+  { id: 'EXPLAIN_PLAN', label: 'Show the plan of the statement', group: 'Query', scope: 'global' },
+  {
+    id: 'EXPLAIN_ANALYZE',
+    label: 'Plan with execution (runs the statement) …',
+    group: 'Query',
+    scope: 'global',
+  },
   {
     id: 'RUN_SCRIPT',
     label: 'Run the whole script',

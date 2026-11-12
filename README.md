@@ -45,6 +45,9 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   (<kbd>Ctrl/⌘</kbd>+<kbd>⌫</kbd>), paste a block of cells from a spreadsheet (<kbd>Ctrl/⌘</kbd>+<kbd>V</kbd>
   in the grid – over the rows below the cursor and on into new rows), fill down
   (<kbd>Ctrl/⌘</kbd>+<kbd>D</kbd>). Everything is written together: deletes, then changes, then inserts
+- Execution plans (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>X</kbd>) as a tree table for every database: rows estimated and
+  actual, own and total time, cost – the expensive operations and wrong estimates stand out. „With execution“
+  runs the statement inside a transaction that is rolled back
 - Compare two schemas (or a schema with a saved snapshot): what is only on one side, what differs, both
   definitions side by side – and a migration script as a proposal in a tab, with every step that may lose data
   commented out

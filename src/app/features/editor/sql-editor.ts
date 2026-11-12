@@ -263,6 +263,23 @@ export class SqlEditor implements OnInit {
     if (statement) this.emitRun([statement.text], [positionOf(script, statement.start)]);
   }
 
+  /**
+   * The statement a plan is asked for (prompt 039): what is selected, else the statement under the
+   * caret. `''`: there is none.
+   */
+  async currentStatement(): Promise<string> {
+    const editor = this.editor()?.nativeElement;
+    if (!editor) return '';
+    const selection = await editor.getSelection();
+    if (selection.text.trim() !== '') return selection.text.trim();
+    const script = await editor.getValue();
+    const caret = this.lastCaret;
+    return (
+      statementAt(script, offsetOf(script, caret?.line ?? 1, caret?.ch ?? 1), this.dialect())
+        ?.text ?? ''
+    );
+  }
+
   /** Starts a run and remembers where each of its statements stands (for the marks of prompt 022). */
   private emitRun(statements: string[], places: Place[]): void {
     if (statements.length === 0) return;

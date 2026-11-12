@@ -44,6 +44,7 @@
   "FILTER_RESET": ["Mod+K Mod+R"],
   "SUMMARIZE_COLUMN": ["Mod+K Mod+A"],
   "SEARCH_SERVER": ["Mod+K Mod+G"],
+  "EXPLAIN_PLAN": ["Mod+K Mod+X"],
   "EDIT_CELL": ["F2"],
   "EDIT_ADD_ROW": ["Mod+Shift+I"],
   "EDIT_DUPLICATE_ROW": ["Mod+Shift+D"],

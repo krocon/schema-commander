@@ -1,0 +1,8 @@
+-> Sort: total DESC  (actual time=4.54..4.55 rows=170 loops=1)
+    -> Table scan on <temporary>  (actual time=4.46..4.47 rows=170 loops=1)
+        -> Aggregate using temporary table  (actual time=4.46..4.46 rows=170 loops=1)
+            -> Nested loop inner join  (cost=1087 rows=1666) (actual time=0.0857..3.13 rows=4250 loops=1)
+                -> Filter: (b.price > 5.00)  (cost=504 rows=1666) (actual time=0.0554..0.899 rows=4250 loops=1)
+                    -> Table scan on b  (cost=504 rows=5000) (actual time=0.0525..0.567 rows=5000 loops=1)
+                -> Single-row index lookup on a using PRIMARY (id=b.author_id)  (cost=0.25 rows=1) (actual time=392e-6..413e-6 rows=1 loops=4250)
+

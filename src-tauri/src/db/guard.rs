@@ -746,6 +746,19 @@ pub fn classify(sql: &str, kind: DbKind) -> Class {
     worst
 }
 
+/// Whether a text is exactly one statement: nothing stands behind a semicolon. (Where a batch needs no
+/// semicolon between statements – T-SQL – this cannot be told from the tokens alone.)
+pub fn is_single_statement(sql: &str, kind: DbKind) -> bool {
+    let scan = scan(sql, kind);
+    !scan.ambiguous
+        && scan
+            .toks
+            .split(|t| *t == Tok::Semi)
+            .filter(|s| !s.is_empty())
+            .count()
+            == 1
+}
+
 /// Whether a text is one statement that creates a table, and nothing else: `CREATE [TEMP …] TABLE …`,
 /// with no second statement behind a semicolon – or, where a batch needs none (T-SQL), behind the
 /// column list.

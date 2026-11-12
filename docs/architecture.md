@@ -74,6 +74,7 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | A54 | Die Suche auf dem Server ist ein lesender Job im Backend: je Tabelle eine Anweisung mit gebundenem Text (`LIKE … ESCAPE '!'`), begrenzt nach Treffern und Zeit, eine Tabelle nach der anderen; Definitionen liefert der Katalog, gesucht wird in Rust. Treffer kommen als Ereignisse und bleiben nach einem Abbruch stehen. Ein Treffer führt als Bedingung in eine Tabellen-Ansicht, nie als SQL | Design 036 E1–E9 |
 | A55 | Das ER-Diagramm ist reine Logik im Fenster über drei Katalogfragen je Schema: Modell mit Kardinalität, eine eigene Anordnung in Schichten (keine Layout-Bibliothek: stabil, überlappungsfrei, klein), Export als Mermaid, DBML und SVG mit festen Farben. Gezeichnet wird SVG mit den vorhandenen Tokens; daneben steht dasselbe als Listen | Design 037 E1–E9 |
 | A56 | Der Schema-Vergleich arbeitet auf Schnappschüssen (serialisierbar, auch als Datei): Vergleich und Migrationsskript sind reine Funktionen in Rust. Das Skript ist ein Vorschlag in fester, tragfähiger Reihenfolge; was Daten kosten kann, steht als markierter Kommentar; ausgeführt wird es nie von der App, sondern vom Nutzer in einem Tab | Design 038 E1–E8 |
+| A57 | Ausführungspläne aller Datenbanken werden in ein Modell gelesen (Knoten mit Zeilen, Kosten, Zeit über alle Schleifen, Eigenzeit); die Parser sind rein und nachsichtig – Unbekanntes bleibt mit Rohdaten sichtbar. „Mit Ausführung“ führt aus: durch den Schutz, auf eigener Sitzung, in einer Transaktion, die immer zurückgerollt wird | Design 039 E1–E8 |
 | A34 | Texte in typisierten Katalogen (Englisch Quelle, Deutsch typgeprüft), Sprache als Signal, Wechsel zur Laufzeit; `pnpm texts` hält Texte aus Templates und Deutsch aus dem Code. Ersetzt A10 | Design 017 E1–E6 |
 | A35 | Einstellungen bleiben ein flaches, je Wert geprüftes Objekt; der Dialog hat ein eigenes Schema, ein Test hält beide zusammen. Keine Formularschicht: jede Änderung wirkt sofort | Design 017 E8, E9 |
 
@@ -110,5 +111,6 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | `chrono` | Datum und Zeit aus den Treibern | von sqlx und tiberius benutzt |
 | `keyring-core` + `apple-native-`, `windows-native-`, `dbus-secret-service-keyring-store` | Passwörter im Schlüsselbund des Systems | wie log-commander und files-and-folders |
 | `zeroize`, `sha2`, `parking_lot` | Geheimnisse im Speicher löschen, Kontonamen als Hash, Sperren | klein, verbreitet |
+| `quick-xml` | Showplan-XML von SQL Server lesen (Design 039 E9) | schon im Baum (über Tauri/`plist`), MIT |
 | `serde`, `serde_json` | DTOs; `serde_json` mit `raw_value`: JSON-Dateien beim Import ohne Verlust lesen (Zahlen Ziffer für Ziffer, Schlüssel in der Reihenfolge der Datei – Design 033 E2) | Standard; kein neues Paket, nur ein Feature |
 | Dev: `vitest`, `jsdom`, `eslint`, `angular-eslint`, `typescript-eslint`, `prettier` | Tests, Lint, Format | wie die Vorgänger |

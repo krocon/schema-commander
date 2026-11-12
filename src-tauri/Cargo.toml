@@ -59,6 +59,8 @@ trash = { version = "5.2", default-features = false, features = ["coinit_apartme
 serde = { version = "1", features = ["derive"] }
 # raw_value: the import (prompt 033) keeps numbers of a JSON file digit for digit
 serde_json = { version = "1", features = ["raw_value"] }
+# showplan XML of SQL Server (prompt 039); already in the tree through tauri
+quick-xml = "0.42"
 tauri = { version = "2", features = [] }
 # Native open/save dialogs (import and export of colour schemes, later SQL files and exports).
 tauri-plugin-dialog = "2"
