@@ -62,6 +62,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+      # rust-cache keeps the directories of DuckDB's unpacked sources (target/duckdb-sources) but removes
+      # their files; the build script of libduckdb-sys then fails with "Directory not empty"
+      - name: Drop what the cache left of DuckDB's sources
+        shell: bash
+        run: rm -rf src-tauri/target/duckdb-sources
       # Debug builds compile in Tauri's dev mode (devUrl), so no frontend build is needed here.
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings

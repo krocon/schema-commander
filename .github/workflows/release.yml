@@ -83,6 +83,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+      # rust-cache keeps the directories of DuckDB's unpacked sources (target/duckdb-sources) but removes
+      # their files; the build script of libduckdb-sys then fails with "Directory not empty"
+      - name: Drop what the cache left of DuckDB's sources
+        shell: bash
+        run: rm -rf src-tauri/target/duckdb-sources
       - run: pnpm install --frozen-lockfile
       # THIRD-PARTY-NOTICES.txt goes into every package (tauri.conf.json `bundle.resources`):
       # refuse to ship it out of date (`pnpm notices` regenerates it)
