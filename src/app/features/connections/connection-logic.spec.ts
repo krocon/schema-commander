@@ -36,6 +36,14 @@ describe('connection logic', () => {
 
   it('says what is missing or not allowed', () => {
     expect(profileProblems(p({ name: 'Lokal' }))).toEqual({});
+    // Oracle (035b): the service name is needed, and TLS always checks
+    const oracle = { name: 'Lager', kind: 'oracle' as const, user: 'report' };
+    expect(Object.keys(profileProblems(p({ ...oracle, database: '' })))).toEqual(['database']);
+    expect(profileProblems(p({ ...oracle, database: 'ORCLPDB1' }))).toEqual({});
+    expect(Object.keys(profileProblems(p({ ...oracle, database: 'X', tls: 'require' })))).toEqual([
+      'tls',
+    ]);
+    expect(profileProblems(p({ ...oracle, database: 'X', tls: 'verify' }))).toEqual({});
     expect(Object.keys(profileProblems(p({ name: ' ', host: '', user: '' }))).sort()).toEqual([
       'host',
       'name',

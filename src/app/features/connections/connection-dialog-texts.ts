@@ -14,6 +14,8 @@ export const CONNECTION_DIALOG_EN = {
   host: 'Host',
   port: 'Port',
   serverDefault: '(server default)',
+  serviceName: 'Service name',
+  serviceExample: 'for example FREEPDB1 or ORCLPDB1',
   user: 'User',
   password: 'Password',
   unchanged: '(unchanged)',
@@ -77,6 +79,9 @@ export const CONNECTION_DIALOG_EN = {
   nameInvalid: 'This name is not allowed.',
   portRange: 'The port is between 1 and 65535.',
   fileMissing: 'Please choose a file.',
+  serviceMissing: 'Oracle needs the service name of the database.',
+  oracleTlsChecked:
+    'Oracle connections always check the certificate: choose a mode that checks it, or no TLS.',
   hostMissing: 'Please enter a host.',
   hostInvalid: 'Only the name or the address of the machine, without blanks, path or user.',
   userMissing: 'Please enter a user.',

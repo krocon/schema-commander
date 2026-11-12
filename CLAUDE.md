@@ -60,6 +60,8 @@
   in eine vorhandene oder neue Tabelle: Vorschau, Zuordnung, gebundene Stapel-`INSERT`s, Fehlerdatei, als Job
   (Prompt 033); **Release** vorbereitet: Workflow für Pakete je System, Lizenzhinweise, About-Dialog (Prompt 034);
   **CockroachDB und TimescaleDB** über den PostgreSQL-Treiber, Fähigkeits-Flags je Verbindung (Prompt 035a);
+  **Oracle** über den reinen Rust-Treiber `oracledb` (ohne Instant Client): verbinden, ausführen, Baum, Details,
+  Tabellen-Ansicht, Bearbeiten, Suche; Plan, Monitor, Rechte und Struktur noch nicht (Prompt 035b);
   **Suche auf dem Server**: ein Text in den Zeilen aller Tabellen und in Definitionen, als lesender Job (Prompt 036);
   **ER-Diagramm** eines Schemas oder einer Tabelle mit Nachbarn: eigene Anordnung, verschiebbar, Listenansicht,
   Export als SVG, Mermaid, DBML (Prompt 037);
@@ -95,7 +97,7 @@
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a, 036–049),
+  erledigt: 001–034, 035a, 035b, 036–049),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -115,7 +117,7 @@
 | Lizenzhinweise | `pnpm notices` (schreibt `THIRD-PARTY-NOTICES.txt`; nach jeder Änderung an Abhängigkeiten), `pnpm notices:check` |
 | Release-Notizen | `pnpm release:notes` (Conventional Commits seit dem letzten Tag); Ablauf in `docs/release.md` |
 | MCP-Sidecar | `pnpm mcp:dev` (Debug-Sidecar neben die Debug-App), `node scripts/mcp-sidecar.mjs [Ziel]` (für ein Paket, mit `--config src-tauri/tauri.sidecar.conf.json`) |
-| Treiber gegen echte Server | `sh scripts/db-test-servers.sh up` (Docker: PostgreSQL, MySQL, MariaDB, SQL Server, CockroachDB, TimescaleDB auf 127.0.0.1), `pnpm rust:test:db`, danach `sh scripts/db-test-servers.sh down` |
+| Treiber gegen echte Server | `sh scripts/db-test-servers.sh up` (Docker: PostgreSQL, MySQL, MariaDB, SQL Server, CockroachDB, TimescaleDB, Oracle Free auf 127.0.0.1; `SC_DBTEST_ORACLE=0` lässt Oracle weg), `pnpm rust:test:db`, danach `sh scripts/db-test-servers.sh down` |
 | Texte | `pnpm texts` (kein Text im Template, kein Deutsch außerhalb von `*.de.ts`) |
 | Alles prüfen | `pnpm check` |
 | Produktions-Build unter CSP | `pnpm build && pnpm preview:csp` → http://localhost:1461 (ohne Backend; prüft Editor-Worker, WebAssembly, Styles) |
@@ -285,6 +287,8 @@ src-tauri/                     Rust
   src/db/mod.rs                Profile, DbKind, TlsMode, Session-Trait, Flavor und Capabilities (wer antwortet, was
                                er kann), Laufzeit, Fehler in Worten
   src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
+  src/db/oracle.rs             Oracle über `oracledb`: Verbindung auf eigenem Thread, Auto-Commit, Typen, Fehler
+                               mit Stelle; ein Abbruch kostet die Verbindung
   src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink; ganze Werte
                                getrennt (`<id>.values`) und stückweise (`value`) (rein, getestet)
   src/backup.rs                Sichern/Wiederherstellen: Werkzeuge finden, Argumente ohne Shell, Passwort nie als
@@ -350,6 +354,7 @@ src-tauri/                     Rust
   src/db/profiles.rs           connections.json (nie ein Geheimnis); db/secrets.rs: Secret, Schlüsselbund
   tests/mcp_bridge.rs          MCP von Ende zu Ende ohne Fenster: Client-Zeilen → Server → Brücke → Werkzeuge
   tests/db_integration.rs      Treiber gegen echte Server (ignoriert; pnpm rust:test:db)
+  tests/oracle_integration.rs  Oracle gegen Oracle Database Free im Container (ignoriert; pnpm rust:test:db)
   src/themes.rs                eigene Farbschemata: themes.json, Grenzen, Import/Export (rein, getestet)
   src/error.rs                 AppError { code, message, details } – details: was die Datenbank zum Fehler sagt
   capabilities/default.json    minimale Rechte (core:default, store:default, dialog:allow-open/-save)
@@ -385,6 +390,9 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   vorn ist. Höchstens zwei Tab-Gruppen; alle `QueryPane` bleiben Kinder des einen Rasters in `app.ts` und
   wechseln nur die Zelle (nie im DOM umhängen: der Editor ginge verloren). Der Text eines Tabs wird nie bei jedem Tastendruck über die Brücke geschickt: `TabsStore.textChanged`
   plant die Sicherung, die den Text einmal holt. Nichts fragt „Speichern?“.
+- **Oracle**: Die Verbindung gehört dem Thread in `oracle.rs`, nichts sonst fasst sie an. Platzhalter sind `:1`,
+  `:2` …; ein Datum wird als Datum gebunden, nie als Text (NLS). Eine Zeile je `INSERT`. Was es für Oracle noch
+  nicht gibt, meldet `db::not_yet` und steht in den `Capabilities` – kein stiller Rückfall auf einen anderen Dialekt.
 - **Verwandte Server** (CockroachDB, TimescaleDB): keine eigene `DbKind`. Abweichungen hängen am `Flavor` der
   Sitzung (`Session::flavor`), nie an einem Vergleich von Versionstexten außerhalb des Treibers.
 - **Bezeichner** quotet nur `meta::quote` in Rust; Knoten und DTOs bringen `quoted` mit. Katalogabfragen nur über

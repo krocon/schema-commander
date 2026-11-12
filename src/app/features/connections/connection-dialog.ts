@@ -146,7 +146,9 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
               />
             </span>
 
-            <label for="conn-database">{{ t.database }}</label>
+            <label for="conn-database">{{
+              draft().kind === 'oracle' ? t.serviceName : t.database
+            }}</label>
             <input
               #database
               id="conn-database"
@@ -154,8 +156,10 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
               autocomplete="off"
               autocapitalize="off"
               spellcheck="false"
-              [placeholder]="t.serverDefault"
+              [placeholder]="draft().kind === 'oracle' ? t.serviceExample : t.serverDefault"
               [value]="draft().database"
+              [class.invalid]="shown('database')"
+              [attr.aria-invalid]="!!shown('database')"
               (input)="patch({ database: database.value })"
             />
 

@@ -8,7 +8,7 @@ import {
   statementAt,
 } from './sql-split';
 
-const DIALECTS: Dialect[] = ['postgres', 'mysql', 'sqlserver', 'sqlite'];
+const DIALECTS: Dialect[] = ['postgres', 'mysql', 'sqlserver', 'sqlite', 'oracle'];
 
 describe('splitStatements (catalog)', () => {
   for (const c of catalog.cases) {

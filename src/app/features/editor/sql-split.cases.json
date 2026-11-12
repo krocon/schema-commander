@@ -5,63 +5,89 @@
       "name": "semicolons, empty parts dropped",
       "dialect": "all",
       "script": "select 1; select 2;;\n",
-      "statements": ["select 1", "select 2"]
+      "statements": [
+        "select 1",
+        "select 2"
+      ]
     },
     {
       "name": "no terminator at the end",
       "dialect": "all",
       "script": "select 1;\nselect 2",
-      "statements": ["select 1", "select 2"]
+      "statements": [
+        "select 1",
+        "select 2"
+      ]
     },
     {
       "name": "semicolon in a string",
       "dialect": "all",
       "script": "select 'a;b'; select 2",
-      "statements": ["select 'a;b'", "select 2"]
+      "statements": [
+        "select 'a;b'",
+        "select 2"
+      ]
     },
     {
       "name": "doubled quote in a string",
       "dialect": "all",
       "script": "select 'it''s; fine'; select 2",
-      "statements": ["select 'it''s; fine'", "select 2"]
+      "statements": [
+        "select 'it''s; fine'",
+        "select 2"
+      ]
     },
     {
       "name": "semicolon in a quoted name",
       "dialect": "all",
       "script": "select \"c;d\" from t; select 2",
-      "statements": ["select \"c;d\" from t", "select 2"]
+      "statements": [
+        "select \"c;d\" from t",
+        "select 2"
+      ]
     },
     {
       "name": "line comment",
       "dialect": "all",
       "script": "select 1 -- no; split\nfrom t; select 2",
-      "statements": ["select 1 -- no; split\nfrom t", "select 2"]
+      "statements": [
+        "select 1 -- no; split\nfrom t",
+        "select 2"
+      ]
     },
     {
       "name": "block comment",
       "dialect": "all",
       "script": "select 1 /* nor; here */ from t; select 2",
-      "statements": ["select 1 /* nor; here */ from t", "select 2"]
+      "statements": [
+        "select 1 /* nor; here */ from t",
+        "select 2"
+      ]
     },
     {
       "name": "unterminated string",
       "dialect": "all",
       "script": "select 'open; x",
-      "statements": ["select 'open; x"]
+      "statements": [
+        "select 'open; x"
+      ]
     },
     {
       "name": "unterminated comment",
       "dialect": "all",
       "script": "select 1 /* open; x",
-      "statements": ["select 1 /* open; x"]
+      "statements": [
+        "select 1 /* open; x"
+      ]
     },
     {
       "name": "only comments and blanks",
       "dialect": "all",
       "script": "  \n-- nothing\n",
-      "statements": ["-- nothing"]
+      "statements": [
+        "-- nothing"
+      ]
     },
-
     {
       "name": "dollar quoting",
       "dialect": "postgres",
@@ -75,107 +101,155 @@
       "name": "tagged dollar quoting with inner $$",
       "dialect": "postgres",
       "script": "do $body$ begin perform $$a;b$$; end $body$; select 1",
-      "statements": ["do $body$ begin perform $$a;b$$; end $body$", "select 1"]
+      "statements": [
+        "do $body$ begin perform $$a;b$$; end $body$",
+        "select 1"
+      ]
     },
     {
       "name": "dollar parameter is no quote",
       "dialect": "postgres",
       "script": "select $1; select $2",
-      "statements": ["select $1", "select $2"]
+      "statements": [
+        "select $1",
+        "select $2"
+      ]
     },
     {
       "name": "dollar inside a name is no quote",
       "dialect": "postgres",
       "script": "select a$b$c; select 2",
-      "statements": ["select a$b$c", "select 2"]
+      "statements": [
+        "select a$b$c",
+        "select 2"
+      ]
     },
     {
       "name": "E string with backslash quote",
       "dialect": "postgres",
       "script": "select E'it\\'s; ok'; select 2",
-      "statements": ["select E'it\\'s; ok'", "select 2"]
+      "statements": [
+        "select E'it\\'s; ok'",
+        "select 2"
+      ]
     },
     {
       "name": "plain string keeps its backslash",
       "dialect": "postgres",
       "script": "select 'a\\'; select 2",
-      "statements": ["select 'a\\'", "select 2"]
+      "statements": [
+        "select 'a\\'",
+        "select 2"
+      ]
     },
     {
       "name": "nested block comments",
       "dialect": "postgres",
       "script": "select 1 /* a /* b; */ c; */; select 2",
-      "statements": ["select 1 /* a /* b; */ c; */", "select 2"]
+      "statements": [
+        "select 1 /* a /* b; */ c; */",
+        "select 2"
+      ]
     },
     {
       "name": "backtick is nothing special",
       "dialect": "postgres",
       "script": "select '`'; select 2",
-      "statements": ["select '`'", "select 2"]
+      "statements": [
+        "select '`'",
+        "select 2"
+      ]
     },
-
     {
       "name": "backticks",
       "dialect": "mysql",
       "script": "select `a;b` from t; select 2",
-      "statements": ["select `a;b` from t", "select 2"]
+      "statements": [
+        "select `a;b` from t",
+        "select 2"
+      ]
     },
     {
       "name": "hash comment",
       "dialect": "mysql",
       "script": "select 1 # no; split\n; select 2",
-      "statements": ["select 1 # no; split", "select 2"]
+      "statements": [
+        "select 1 # no; split",
+        "select 2"
+      ]
     },
     {
       "name": "backslash escape in a string",
       "dialect": "mysql",
       "script": "select 'it\\'s; ok'; select 2",
-      "statements": ["select 'it\\'s; ok'", "select 2"]
+      "statements": [
+        "select 'it\\'s; ok'",
+        "select 2"
+      ]
     },
     {
       "name": "DELIMITER",
       "dialect": "mysql",
       "script": "DELIMITER //\ncreate procedure p() begin select 1; select 2; end//\nDELIMITER ;\ncall p();",
-      "statements": ["create procedure p() begin select 1; select 2; end", "call p()"]
+      "statements": [
+        "create procedure p() begin select 1; select 2; end",
+        "call p()"
+      ]
     },
     {
       "name": "DELIMITER with dollar signs",
       "dialect": "mysql",
       "script": "delimiter $$\nselect 1; select 2$$\nselect 3$$",
-      "statements": ["select 1; select 2", "select 3"]
+      "statements": [
+        "select 1; select 2",
+        "select 3"
+      ]
     },
     {
       "name": "delimiter as a column name is no command",
       "dialect": "mysql",
       "script": "select delimiter from t; select 2",
-      "statements": ["select delimiter from t", "select 2"]
+      "statements": [
+        "select delimiter from t",
+        "select 2"
+      ]
     },
-
     {
       "name": "bracket names",
       "dialect": "sqlserver",
       "script": "select [a;b] from t; select 2",
-      "statements": ["select [a;b] from t", "select 2"]
+      "statements": [
+        "select [a;b] from t",
+        "select 2"
+      ]
     },
     {
       "name": "GO ends a statement",
       "dialect": "sqlserver",
       "script": "select 1\nGO\nselect 2\ngo\n",
-      "statements": ["select 1", "select 2"]
+      "statements": [
+        "select 1",
+        "select 2"
+      ]
     },
     {
       "name": "GO inside a line is a name",
       "dialect": "sqlserver",
       "script": "select go from t; select 2",
-      "statements": ["select go from t", "select 2"]
+      "statements": [
+        "select go from t",
+        "select 2"
+      ]
     },
     {
       "name": "GO in a string or comment is text",
       "dialect": "sqlserver",
       "script": "select '\nGO\n'; /*\nGO\n*/ select 2",
-      "statements": ["select '\nGO\n'", "/*\nGO\n*/ select 2"]
+      "statements": [
+        "select '\nGO\n'",
+        "/*\nGO\n*/ select 2"
+      ]
     },
-
     {
       "name": "trigger keeps its inner statements",
       "dialect": "sqlite",
@@ -198,13 +272,86 @@
       "name": "BEGIN of a transaction is no block",
       "dialect": "sqlite",
       "script": "begin; insert into t values (1); end; select 1",
-      "statements": ["begin", "insert into t values (1)", "end", "select 1"]
+      "statements": [
+        "begin",
+        "insert into t values (1)",
+        "end",
+        "select 1"
+      ]
     },
     {
       "name": "bracket names in sqlite",
       "dialect": "sqlite",
       "script": "select [a;b] from t; select 2",
-      "statements": ["select [a;b] from t", "select 2"]
+      "statements": [
+        "select [a;b] from t",
+        "select 2"
+      ]
+    },
+    {
+      "name": "PL/SQL keeps its semicolons and ends at the slash",
+      "dialect": "oracle",
+      "script": "select 1 from dual;\nbegin\n  update t set a = 1;\n  commit;\nend;\n/\nselect 2 from dual;",
+      "statements": [
+        "select 1 from dual",
+        "begin\n  update t set a = 1;\n  commit;\nend;",
+        "select 2 from dual"
+      ]
+    },
+    {
+      "name": "a routine, then statements",
+      "dialect": "oracle",
+      "script": "create or replace function f return number as\nbegin\n  return 1;\nend;\n/\ndrop function f;",
+      "statements": [
+        "create or replace function f return number as\nbegin\n  return 1;\nend;",
+        "drop function f"
+      ]
+    },
+    {
+      "name": "PL/SQL without a slash runs to the end",
+      "dialect": "oracle",
+      "script": "declare n number;\nbegin n := 4 / 2; end;",
+      "statements": [
+        "declare n number;\nbegin n := 4 / 2; end;"
+      ]
+    },
+    {
+      "name": "a slash line ends a plain statement too, a division does not",
+      "dialect": "oracle",
+      "script": "select 4\n / 2 from dual\n/\nselect 2 from dual\n/\n",
+      "statements": [
+        "select 4\n / 2 from dual",
+        "select 2 from dual"
+      ]
+    },
+    {
+      "name": "q-quotes hold quotes and semicolons",
+      "dialect": "oracle",
+      "script": "select q'[it's; fine]' from dual; select nq'{a'b;c}' from dual; select 3 from dual",
+      "statements": [
+        "select q'[it's; fine]' from dual",
+        "select nq'{a'b;c}' from dual",
+        "select 3 from dual"
+      ]
+    },
+    {
+      "name": "create table and view are no PL/SQL",
+      "dialect": "oracle",
+      "script": "create table t (id number); create or replace view v as select 1 x from dual; insert into t values (1);",
+      "statements": [
+        "create table t (id number)",
+        "create or replace view v as select 1 x from dual",
+        "insert into t values (1)"
+      ]
+    },
+    {
+      "name": "a comment before a block",
+      "dialect": "oracle",
+      "script": "-- setup; really\n/* a; b */ begin null; end;\n/\ncommit;",
+      "statements": [
+        "-- setup; really\n/* a; b */ begin null; end;",
+        "commit"
+      ]
     }
   ]
 }

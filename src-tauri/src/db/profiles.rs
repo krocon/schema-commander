@@ -104,6 +104,16 @@ pub fn check(p: &Profile) -> AppResult<()> {
             "client certificates are not supported for SQL Server",
         ));
     }
+    if p.kind == DbKind::Oracle {
+        if p.database.trim().is_empty() {
+            return Err(invalid("Oracle needs the service name of the database"));
+        }
+        if p.tls.unchecked() {
+            return Err(invalid(
+                "Oracle connections always check the certificate: choose a mode that checks it, or no TLS",
+            ));
+        }
+    }
     if !p.client_cert.trim().is_empty() && matches!(p.tls, crate::db::TlsMode::Off) {
         return Err(invalid("a client certificate is given, but TLS is off"));
     }

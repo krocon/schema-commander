@@ -1,7 +1,7 @@
 import { CONNECTION_MODEL_TEXTS } from './connection-model-texts';
 
 /** Mirrors `DbKind` in src-tauri/src/db/mod.rs. */
-export type DbKind = 'postgres' | 'mysql' | 'sqlserver' | 'sqlite';
+export type DbKind = 'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle';
 
 /** Mirrors `TlsMode`: no TLS (servers on this machine), or TLS with certificate and host name checked. */
 export type TlsMode = 'off' | 'prefer' | 'require' | 'verify-ca' | 'verify';
@@ -99,6 +99,14 @@ export interface Capabilities {
   readonly schemas: boolean;
   readonly triggers: boolean;
   readonly routines: boolean;
+  /** The execution plan of a statement can be shown. */
+  readonly plan: boolean;
+  /** Sessions and running statements can be shown (the server monitor). */
+  readonly monitor: boolean;
+  /** Users, roles and rights can be shown and changed. */
+  readonly access: boolean;
+  /** The structure of a table can be edited, schemas can be compared. */
+  readonly structure: boolean;
 }
 
 /** What is assumed of a connection that has not said what it can do: everything. */
@@ -109,6 +117,10 @@ export const ALL_CAPABILITIES: Capabilities = {
   schemas: true,
   triggers: true,
   routines: true,
+  plan: true,
+  monitor: true,
+  access: true,
+  structure: true,
 };
 
 /** Mirrors `ConnectionInfo`. */
@@ -129,6 +141,8 @@ export const DB_KINDS: readonly {
   { kind: 'postgres', label: 'PostgreSQL · CockroachDB · TimescaleDB', port: 5432 },
   { kind: 'mysql', label: 'MySQL / MariaDB', port: 3306 },
   { kind: 'sqlserver', label: 'SQL Server', port: 1433 },
+  // the database of an Oracle profile is its service name (prompt 035b)
+  { kind: 'oracle', label: 'Oracle', port: 1521 },
   {
     kind: 'sqlite',
     // a getter: the language may change while the app runs

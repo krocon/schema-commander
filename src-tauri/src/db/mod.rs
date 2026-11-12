@@ -253,6 +253,14 @@ pub struct Capabilities {
     pub triggers: bool,
     /// Functions and procedures exist.
     pub routines: bool,
+    /// The app can show the execution plan of a statement.
+    pub plan: bool,
+    /// The app can show sessions and running statements (the server monitor).
+    pub monitor: bool,
+    /// The app can show and change users, roles and rights.
+    pub access: bool,
+    /// The app can edit the structure of a table and compare schemas.
+    pub structure: bool,
 }
 
 /// The capabilities of a database of a kind and flavour.
@@ -275,6 +283,10 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
         schemas: kind != DbKind::Sqlite,
         triggers: flavor != Flavor::Cockroach,
         routines: kind != DbKind::Sqlite,
+        plan: kind != DbKind::Oracle,
+        monitor: !matches!(kind, DbKind::Sqlite | DbKind::Oracle),
+        access: !matches!(kind, DbKind::Sqlite | DbKind::Oracle),
+        structure: kind != DbKind::Oracle,
     }
 }
 
@@ -855,6 +867,14 @@ mod tests {
         assert_eq!(of(DbKind::Mysql, Flavor::Maria).product, "MariaDB");
         assert_eq!(of(DbKind::Mysql, Flavor::Plain).product, "MySQL");
         assert!(!of(DbKind::Sqlserver, Flavor::Plain).cancel);
+        // Oracle (035b): what is not there yet is said, so the window hides it
+        let oracle = of(DbKind::Oracle, Flavor::Plain);
+        assert_eq!(oracle.product, "Oracle");
+        assert!(!oracle.cancel && oracle.foreign_keys && oracle.schemas && oracle.routines);
+        assert!(!oracle.plan && !oracle.monitor && !oracle.access && !oracle.structure);
+        let pg = of(DbKind::Postgres, Flavor::Plain);
+        assert!(pg.plan && pg.monitor && pg.access && pg.structure);
+        assert!(!of(DbKind::Sqlite, Flavor::Plain).monitor);
         let lite = of(DbKind::Sqlite, Flavor::Plain);
         assert!(!lite.schemas && !lite.routines && lite.triggers && lite.cancel);
         let json = serde_json::to_value(&crdb).unwrap();

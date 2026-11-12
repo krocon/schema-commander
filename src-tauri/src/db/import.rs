@@ -341,6 +341,11 @@ pub fn parse_url(text: &str) -> AppResult<Candidate> {
         } else {
             url_form(DbKind::Sqlserver, body)?
         }
+    } else if lower.starts_with("oracle:thin:@//") {
+        // jdbc:oracle:thin:@//host:1521/service – the user is not part of it
+        url_form(DbKind::Oracle, after("oracle:thin:@//"))?
+    } else if lower.starts_with("oracle://") {
+        url_form(DbKind::Oracle, after("oracle://"))?
     } else if lower.starts_with("sqlite:") {
         sqlite_path(after("sqlite:"), true)
     } else if lower.starts_with("file:")
@@ -389,6 +394,8 @@ fn dbeaver_kind(provider: &str, driver: &str) -> Option<DbKind> {
         Some(DbKind::Mysql)
     } else if both.contains("sqlserver") || both.contains("mssql") {
         Some(DbKind::Sqlserver)
+    } else if both.contains("oracle") {
+        Some(DbKind::Oracle)
     } else if both.contains("sqlite") {
         Some(DbKind::Sqlite)
     } else {
@@ -933,6 +940,17 @@ mod tests {
         );
         assert_eq!(pw.as_deref(), Some("pw"));
         assert_eq!(url("mariadb://u@h/d").0.kind, DbKind::Mysql);
+        let (oracle, _) = url("jdbc:oracle:thin:@//ora.example:1522/ORCLPDB1");
+        assert_eq!(
+            (
+                oracle.kind,
+                oracle.host.as_str(),
+                oracle.port,
+                oracle.database.as_str()
+            ),
+            (DbKind::Oracle, "ora.example", 1522, "ORCLPDB1")
+        );
+        assert_eq!(url("oracle://report@ora.example/FREEPDB1").0.user, "report");
         let (p, pw) = url("jdbc:mysql://h:3306/d?user=app&password=x%26y");
         assert_eq!((p.user.as_str(), pw.as_deref()), ("app", Some("x&y")));
 
@@ -1063,8 +1081,11 @@ mod tests {
           "configuration": { "host": "10.0.0.5", "port": "3307", "database": "old",
                              "url": "jdbc:mysql://10.0.0.5:3307/old" }
         },
-        "oracle-1": { "provider": "oracle", "driver": "oracle_thin", "name": "Nope",
-                      "configuration": { "host": "ora" } },
+        "db2-1": { "provider": "db2", "driver": "db2", "name": "Nope",
+                   "configuration": { "host": "big-iron" } },
+        "oracle-1": { "provider": "oracle", "driver": "oracle_thin", "name": "Warehouse",
+                      "configuration": { "host": "ora.example", "port": "1521", "database": "ORCLPDB1",
+                                         "user": "report" } },
         "sqlite-1": { "provider": "sqlite", "driver": "sqlite_jdbc", "name": "Local",
                       "configuration": { "database": "/data/local.db", "url": "jdbc:sqlite:/data/local.db" } }
       }
@@ -1076,7 +1097,12 @@ mod tests {
         found.sort_by(|a, b| a.profile.name.cmp(&b.profile.name));
         let names: Vec<&str> = found.iter().map(|c| c.profile.name.as_str()).collect();
         // what we have no driver for is left out
-        assert_eq!(names, vec!["Legacy", "Local", "Shop Prod"]);
+        assert_eq!(names, vec!["Legacy", "Local", "Shop Prod", "Warehouse"]);
+        let oracle = &found[3].profile;
+        assert_eq!(
+            (oracle.kind, oracle.host.as_str(), oracle.database.as_str()),
+            (DbKind::Oracle, "ora.example", "ORCLPDB1")
+        );
         let shop = &found[2].profile;
         assert_eq!(
             (

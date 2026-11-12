@@ -65,6 +65,10 @@ describe('ConnectionsStore', () => {
       schemas: true,
       triggers: false,
       routines: true,
+      plan: true,
+      monitor: true,
+      access: true,
+      structure: true,
     };
     await store.load();
     await settle();

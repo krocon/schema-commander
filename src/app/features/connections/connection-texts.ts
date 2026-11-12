@@ -23,6 +23,7 @@ export const CONNECTION_EN = {
     mysql: 'MySQL / MariaDB',
     sqlserver: 'SQL Server',
     sqlite: 'SQLite (file)',
+    oracle: 'Oracle',
   },
   password: 'Password',
   sshSecretTitle: 'SSH tunnel: password or passphrase',

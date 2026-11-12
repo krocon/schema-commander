@@ -52,6 +52,7 @@ export const DEFAULT_FORMS: Readonly<Record<Dialect, readonly ParamForm[]>> = {
   mysql: ['colon', 'brace', 'question'],
   sqlserver: ['colon', 'brace', 'question'],
   sqlite: ['colon', 'brace', 'question', 'dollarName', 'at'],
+  oracle: ['colon', 'brace'],
 };
 
 /** The forms of a connection: what the user set for it, else the defaults of its database. */
@@ -130,7 +131,18 @@ export function findParams(sql: string, dialect: Dialect, forms: readonly ParamF
     }
     if (t.kind !== 'sign') continue;
     if (t.text === ':' && on.has('colon')) {
-      if (!attached && glued(t, next) && next.kind === 'word' && NAME.test(next.text)) {
+      // `:new.col` and `:old.col` of an Oracle trigger are no values of ours
+      const ofTrigger =
+        dialect === 'oracle' &&
+        /^(new|old)$/i.test(next?.text ?? '') &&
+        tokens[i + 2]?.text === '.';
+      if (
+        !attached &&
+        !ofTrigger &&
+        glued(t, next) &&
+        next.kind === 'word' &&
+        NAME.test(next.text)
+      ) {
         uses.push({ key: next.text, form: 'colon', start: t.start, end: next.end });
         i++;
       }
@@ -373,6 +385,9 @@ export function placeholder(dialect: Dialect, n: number, kind: BoundValue['kind'
     }
     case 'sqlite':
       return `?${n}`;
+    case 'oracle':
+      // the driver binds numbers and dates as what they are
+      return `:${n}`;
   }
 }
 

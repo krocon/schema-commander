@@ -12,8 +12,11 @@ import { offsetAt, placeIn } from '../../core/text/places';
  * - **sqlserver**: `[bracket names]`; a line with only `GO` ends a **batch**. Statements of a batch are found
  *   at `;` for „under the caret“; a script runs batch by batch (`splitBatches`).
  * - **sqlite**: `CREATE TRIGGER … BEGIN … END` keeps its inner `;`.
+ * - **oracle**: `q'[ … ]'` strings; PL/SQL (`BEGIN`, `DECLARE`, `CREATE … FUNCTION | PROCEDURE | PACKAGE |
+ *   TRIGGER | TYPE`) keeps its `;` and ends at a line with only `/` – as in SQL*Plus. That line also ends
+ *   any other statement.
  */
-export type Dialect = 'postgres' | 'mysql' | 'sqlserver' | 'sqlite';
+export type Dialect = 'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle';
 
 export interface Statement {
   /** The statement without its terminator, trimmed. */
@@ -36,6 +39,22 @@ function skipToken(s: Scan): boolean {
   const { script, dialect } = s;
   const c = script[s.i];
   const next = script[s.i + 1];
+  if (c === "'" && dialect === 'oracle') {
+    // q'[ … ]' (also nq'…'): ends at its closing sign followed by a quote, holds quotes as they are
+    const prev = script[s.i - 1];
+    const before = script[s.i - 2] ?? '';
+    const q =
+      (prev === 'q' || prev === 'Q') &&
+      (!WORD.test(before) ||
+        ((before === 'n' || before === 'N') && !WORD.test(script[s.i - 3] ?? '')));
+    const open = script[s.i + 1];
+    if (q && open !== undefined) {
+      const close = { '[': ']', '(': ')', '{': '}', '<': '>' }[open] ?? open;
+      const end = script.indexOf(close + "'", s.i + 2);
+      s.i = end < 0 ? script.length : end + 2;
+      return true;
+    }
+  }
   if (c === "'" || c === '"') {
     // PostgreSQL: only E'…' strings know backslash escapes; MySQL: every string does
     const prev = script[s.i - 1];
@@ -154,6 +173,21 @@ function goLine(script: string, i: number): number {
   return m ? i + m[0].length : -1;
 }
 
+/** `/` alone on its line (Oracle: runs what stands above); returns the end of the line or -1. */
+function slashLine(script: string, i: number): number {
+  const lineStart = script.lastIndexOf('\n', i - 1) + 1;
+  if (script.slice(lineStart, i).trim() !== '') return -1;
+  const m = /^\/[ \t]*(?:\r?\n|$)/.exec(script.slice(i, i + 200));
+  return m ? i + m[0].length : -1;
+}
+
+/** Whether a statement that starts at `i` is PL/SQL (Oracle): its `;` belong to it. */
+function startsPlsql(script: string, i: number): boolean {
+  return /^(?:BEGIN|DECLARE)\b|^CREATE\s+(?:OR\s+REPLACE\s+)?(?:(?:NON)?EDITIONABLE\s+)?(?:FUNCTION|PROCEDURE|PACKAGE|TRIGGER|TYPE|LIBRARY)\b/i.test(
+    script.slice(i, i + 120),
+  );
+}
+
 /** `DELIMITER xx` alone on its line (MySQL client command); returns the new delimiter and the line's end. */
 function delimiterLine(script: string, i: number): { delimiter: string; end: number } | null {
   const lineStart = script.lastIndexOf('\n', i - 1) + 1;
@@ -171,12 +205,15 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
   /** Depth of `BEGIN … END` / `CASE … END` inside a trigger (SQLite). */
   let depth = 0;
   let trigger = false;
+  /** Oracle: the statement is PL/SQL (`null` = its first word was not seen yet). */
+  let plsql: boolean | null = null;
   const push = (end: number, next: number) => {
     const st = statement(script, start, end);
     if (st) out.push(st);
     start = next;
     depth = 0;
     trigger = false;
+    plsql = null;
   };
   while (s.i < script.length) {
     if (skipToken(s)) continue;
@@ -195,6 +232,21 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
         push(i, line.end);
         delimiter = line.delimiter;
         s.i = line.end;
+        continue;
+      }
+    }
+    if (dialect === 'oracle') {
+      if (script[i] === '/') {
+        const end = slashLine(script, i);
+        if (end >= 0) {
+          push(i, end);
+          s.i = end;
+          continue;
+        }
+      }
+      if (plsql === null && wordAt(script, i)) plsql = startsPlsql(script, i);
+      if (plsql && script[i] === ';') {
+        s.i = i + 1;
         continue;
       }
     }

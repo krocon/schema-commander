@@ -1240,12 +1240,12 @@ export class App implements OnInit, OnDestroy {
       this.actions.register(
         'EXPLAIN_PLAN',
         () => void this.plans.show(this.tabs.active(), false),
-        () => this.tabs.active() !== null,
+        () => this.canExplain(),
       ),
       this.actions.register(
         'EXPLAIN_ANALYZE',
         () => void this.plans.show(this.tabs.active(), true),
-        () => this.tabs.active() !== null,
+        () => this.canExplain(),
       ),
       this.actions.register('COMPARE_SCHEMAS', () => this.schemaCompare.open.set(true)),
       this.actions.register(
@@ -1262,7 +1262,7 @@ export class App implements OnInit, OnDestroy {
         },
         () =>
           this.connections.activeState().kind === 'open' &&
-          this.connections.active()?.kind !== 'sqlite',
+          this.connections.capabilities(this.connections.active()?.id ?? '').access,
       ),
       this.actions.register(
         'SERVER_MONITOR',
@@ -1272,7 +1272,7 @@ export class App implements OnInit, OnDestroy {
         },
         () =>
           this.connections.activeState().kind === 'open' &&
-          this.connections.active()?.kind !== 'sqlite',
+          this.connections.capabilities(this.connections.active()?.id ?? '').monitor,
       ),
       this.actions.register(
         'TRANSFER_TABLES',
@@ -1846,6 +1846,12 @@ export class App implements OnInit, OnDestroy {
       schema: null,
       table: null,
     });
+  }
+
+  /** A plan can be asked for: a tab is there, and its database is one the app reads plans of. */
+  private canExplain(): boolean {
+    const tab = this.tabs.active();
+    return tab !== null && this.connections.capabilities(tab.connectionId() ?? '').plan;
   }
 
   private exportResult(): void {

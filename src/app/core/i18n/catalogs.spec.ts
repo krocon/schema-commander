@@ -119,6 +119,7 @@ const SAME = new Set<string>([
   'View',
   'SELECT',
   'SQL Server',
+  'Oracle',
   'Schema Commander',
   'Schema',
   'TLS: ',
