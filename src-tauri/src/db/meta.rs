@@ -554,6 +554,37 @@ fn firebird_reserved(name: &str) -> bool {
         .is_ok()
 }
 
+/// The reserved words of BigQuery that the common list does not hold (review 035j 4).
+const BIGQUERY_RESERVED: &[&str] = &[
+    "assert_rows_modified",
+    "at",
+    "contains",
+    "define",
+    "enum",
+    "exclude",
+    "following",
+    "graph_table",
+    "groups",
+    "hash",
+    "lateral",
+    "lookup",
+    "new",
+    "nulls",
+    "preceding",
+    "proto",
+    "qualify",
+    "respect",
+    "struct",
+    "tablesample",
+    "treat",
+    "unbounded",
+    "within",
+];
+
+fn bigquery_reserved(name: &str) -> bool {
+    BIGQUERY_RESERVED.contains(&name.to_ascii_lowercase().as_str())
+}
+
 fn oracle_reserved(name: &str) -> bool {
     ORACLE_RESERVED.contains(&name.to_ascii_uppercase().as_str())
 }
@@ -589,6 +620,7 @@ fn plain(name: &str, kind: DbKind) -> bool {
         && !reserved(name)
         && !(kind == DbKind::Oracle && oracle_reserved(name))
         && !(kind == DbKind::Firebird && firebird_reserved(name))
+        && !(kind == DbKind::Bigquery && bigquery_reserved(name))
 }
 
 /// A name as it is written in SQL: as it is where that is safe, quoted otherwise (spaces, upper case in
@@ -692,23 +724,18 @@ pub fn schemas(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<S
     }
     if kind == DbKind::Bigquery {
         // the datasets of the project, where the jobs of the connection run
-        return Ok(ask(
-            s,
-            "SELECT schema_name FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY 1",
-            &[],
-            stop,
-        )?
-        .iter()
-        .map(|row| {
-            let name = at(row, 0);
-            SchemaInfo {
-                quoted: quote(&name, kind),
-                name,
-                system: false,
-                current: false,
-            }
-        })
-        .collect());
+        return Ok(ask(s, super::bigquery::DATASETS, &[], stop)?
+            .iter()
+            .map(|row| {
+                let name = at(row, 0);
+                SchemaInfo {
+                    quoted: quote(&name, kind),
+                    name,
+                    system: false,
+                    current: false,
+                }
+            })
+            .collect());
     }
     if kind == DbKind::Firebird {
         // one namespace without a name: nothing is ever qualified with it
@@ -1832,6 +1859,19 @@ mod tests {
         assert_eq!(q("x\\`; DROP TABLE t; --"), "`x\\\\``; DROP TABLE t; --`");
         // MySQL takes a backslash as it is there
         assert_eq!(quote("a\\b", DbKind::Mysql), "`a\\b`");
+    }
+
+    /// BigQuery (review 035j 4): its own words, and a name cannot leave its backticks.
+    #[test]
+    fn bigquery_names_are_quoted_with_backticks_and_backslashes() {
+        let q = |name: &str| quote(name, DbKind::Bigquery);
+        assert_eq!(q("orders"), "orders");
+        for word in ["hash", "new", "at", "groups", "select", "STRUCT"] {
+            assert_eq!(q(word), format!("`{word}`"));
+        }
+        assert_eq!(q("my-table"), "`my-table`");
+        assert_eq!(q("a`b\\c"), "`a\\`b\\\\c`");
+        assert_eq!(q("x\\`; DROP TABLE t; --"), "`x\\\\\\`; DROP TABLE t; --`");
     }
 
     /// Firebird (review 035i 4): its own words, and no name that begins with `_`.

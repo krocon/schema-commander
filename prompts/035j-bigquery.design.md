@@ -52,3 +52,31 @@ sagt es noch nirgends im Fenster – das gehört vor den ersten Einsatz gegen ei
 - `src-tauri/src/db/bigquery_tests.rs` (6 Tests, bei jedem `cargo test`): Warten auf einen Job, Seiten, Typen der
   Parameter, Abbruch, Fehler, dass ein Login nur zu Google geht, die signierte Zusicherung (mit `openssl`, wo es da
   ist), Werte.
+
+## Review
+
+Ein zweiter, nur lesender Blick, gegen Googles Dokumentation und den Emulator geprüft. Behoben, mit Tests
+(`bigquery_tests.rs`, `guard.rs`, `filter.rs`, `meta.rs`, Fälle des Zerlegers):
+
+| # | Befund | Behebung |
+|---|---|---|
+| 1 (hoch) | Mit einer Schlüsseldatei und einem lokalen Host – oder durch einen SSH-Tunnel, der den Host zu `127.0.0.1` macht – holte der Treiber ein echtes Token bei Google und schickte es an einen anderen Host | Eine Schlüsseldatei gilt nur für `bigquery.googleapis.com` über geprüftes TLS mit den Zertifikaten des Systems (keine eigene CA); für einen lokalen Host wird sie abgelehnt; kein SSH-Tunnel |
+| 2 (hoch) | Der Schutz las einen Text anders als BigQuery: `#`-Kommentare, Zeichenketten aus drei Anführungszeichen, Backslash in Backticks, das verdoppelte `'` (das es dort nicht gibt). Ein Skript galt als lesend, während BigQuery darin ein `DROP` ausführte | Der Lexer des Schutzes kennt für BigQuery alle vier; eine nicht geschlossene Zeichenkette gilt nie als lesend |
+| 3 | Die freie Bedingung der Tabellen-Ansicht hatte dieselben Lücken | liest wie BigQuery; `#`, `@name` und Zeichenketten aus drei Anführungszeichen werden abgelehnt |
+| 4 | 23 reservierte Wörter (`hash`, `new`, `at`, `groups` …) wurden nicht gequotet | eigene Liste |
+| 5 | Ein Job wurde am Ort des Profils abgebrochen, nicht dort, wo er lief: Bei einem regionalen Dataset lief (und kostete) er weiter | abgebrochen wird am Ort des Jobs |
+| 6 | `errors` in einer Antwort, die eine ist, galt als Fehlschlag – es können Warnungen eines Jobs sein, der ging | nur ein Fehler der API ist einer |
+| 7 | Die Liste der Datasets kam aus `INFORMATION_SCHEMA.SCHEMATA` – das meint ohne Region die USA: Ein Projekt in der EU zeigte einen leeren Baum | über `datasets.list` der API, alle Orte |
+| 9 | Der Zerleger im Fenster zerschnitt Skripte (`DECLARE x …; SELECT x`) in einzelne Jobs und kannte `#` und drei Anführungszeichen nicht | ein Skript läuft als Ganzes; der Lexer wie im Backend |
+| 10 | Die Lebenszeit des Tokens zählte nicht weiter, während der Rechner schlief; ein abgelehntes Token wurde nicht erneuert | Uhr an der Wand; ein neuer Versuch mit neuem Token |
+| 11, 13, 14 | Die Schlüsseldatei wurde ganz gelesen, bevor ihre Größe geprüft war; ein Wert mit Zeitzone ging als `DATETIME`; `..` als Projekt | behoben |
+
+Offen geblieben:
+
+- **Kosten** (siehe oben): Vorschau und Suche lesen ganze Tabellen; `maximumBytesBilled` und eine kostenlose Vorschau
+  über `tabledata.list` gibt es noch nicht. Tabellen, die einen Partitionsfilter verlangen, lassen sich nicht
+  einfach öffnen.
+- Werte in Listen und Records bleiben, wie die API sie schreibt (ein Zeitstempel darin als Zahl von Mikrosekunden).
+- Tabellen an einem anderen Ort als dem der Verbindung erscheinen im Baum, lassen sich von dort aber nur fragen,
+  wenn der Ort der Verbindung leer ist. `CLONE`-, `SNAPSHOT`- und externe Tabellen fehlen in Suche und Diagramm.
+- Der Namensindex stellt bis zu hundert Fragen nacheinander (zwei je Dataset).

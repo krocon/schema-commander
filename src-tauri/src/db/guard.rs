@@ -137,7 +137,7 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                 toks.push(Tok::Other);
                 i += 1;
             }
-        } else if c == '#' && kind == DbKind::Mysql {
+        } else if c == '#' && matches!(kind, DbKind::Mysql | DbKind::Bigquery) {
             while i < n && chars[i] != '\n' && chars[i] != '\r' {
                 i += 1;
             }
@@ -175,6 +175,36 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
         } else if c == '*' && next == Some('/') && kind == DbKind::Mysql {
             // the end of an executable comment
             i += 2;
+        } else if kind == DbKind::Bigquery
+            && (c == '\'' || c == '"')
+            && next == Some(c)
+            && chars.get(i + 2) == Some(&c)
+        {
+            // BigQuery's string of three quotes: to its three closing ones, a backslash escapes
+            // (review 035j 2)
+            let start = i + 3;
+            i = start;
+            let mut closed = false;
+            while i < n {
+                if chars[i] == '\\' && i + 1 < n {
+                    i += 2;
+                } else if chars[i] == c
+                    && chars.get(i + 1) == Some(&c)
+                    && chars.get(i + 2) == Some(&c)
+                {
+                    closed = true;
+                    break;
+                } else {
+                    i += 1;
+                }
+            }
+            if !closed {
+                ambiguous = true;
+            }
+            let end = i.min(n);
+            let body: String = chars[start..end].iter().collect::<String>().to_uppercase();
+            i = (i + 3).min(n);
+            toks.push(Tok::Str(body));
         } else if c == '\'' || c == '"' || c == '`' {
             // A string or a quoted name: to its closing quote; a doubled quote stays inside. Whether a
             // backslash escapes depends on dialect and settings: a backslash before a quote is taken
@@ -190,7 +220,7 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                 // Oracle knows no backslash escape, whatever the settings
                 // ClickHouse takes it as an escape inside backticks too (review 035d 2)
                 if chars[i] == '\\'
-                    && (quote != '`' || kind == DbKind::Clickhouse)
+                    && (quote != '`' || matches!(kind, DbKind::Clickhouse | DbKind::Bigquery))
                     && !matches!(kind, DbKind::Oracle | DbKind::Trino | DbKind::Firebird)
                     && i + 1 < n
                 {
@@ -200,7 +230,8 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                     }
                     i += 2;
                 } else if chars[i] == quote {
-                    if chars.get(i + 1) == Some(&quote) {
+                    // (BigQuery knows no doubled quote: the first one ends the string)
+                    if chars.get(i + 1) == Some(&quote) && kind != DbKind::Bigquery {
                         i += 2;
                     } else {
                         break;
@@ -208,6 +239,10 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                 } else {
                     i += 1;
                 }
+            }
+            if i >= n && kind == DbKind::Bigquery {
+                // not closed: where it would end for the server nobody can say here
+                ambiguous = true;
             }
             let end = i.min(n);
             let body: String = chars[start..end].iter().collect::<String>().to_uppercase();
@@ -1083,6 +1118,18 @@ mod tests {
         assert_ne!(classify("EXECUTE IMMEDIATE 'DROP TABLE d.t'", k), Read);
         assert_ne!(classify("CALL d.p()", k), Read);
         assert_eq!(read_only_statement(k), None);
+        // review 035j 2: the guard reads a text as BigQuery does
+        for hidden in [
+            "SELECT a # customer's id\nFROM d.t;\nDELETE FROM d.t WHERE true",
+            "SELECT ''' ' ''' ; DROP TABLE d.t --'",
+            "SELECT \"\"\" \" \"\"\" ; DROP TABLE d.t --\"",
+            "SELECT 1 AS `a\\``; DROP TABLE d.t; SELECT 1 AS `b`",
+            "SELECT 'not closed",
+        ] {
+            assert_ne!(classify(hidden, k), Read, "{hidden}");
+        }
+        assert_eq!(classify("SELECT '''it's''' AS a # a comment", k), Read);
+        assert_eq!(classify("SELECT r'a\\b' AS a", k), Read);
     }
 
     /// Firebird (prompt 035i).
@@ -1485,8 +1532,11 @@ mod tests {
         for kind in ALL {
             assert_eq!(classify("DELETE FROM t /* where", kind), Dangerous);
             assert_eq!(classify("DROP TABLE t; SELECT '", kind), Dangerous);
-            // the string swallows the rest: what stands before it decides
-            assert_eq!(classify("SELECT 'x; DROP TABLE t", kind), Read);
+            // the string swallows the rest: what stands before it decides (BigQuery: where a
+            // string that is not closed would end for the server nobody says here – not reading)
+            if kind != DbKind::Bigquery {
+                assert_eq!(classify("SELECT 'x; DROP TABLE t", kind), Read);
+            }
         }
     }
 

@@ -47,7 +47,8 @@ struct Key {
 
 struct Token {
     bearer: Secret,
-    until: Instant,
+    /// By the clock on the wall: a computer that slept has not stopped the time at Google.
+    until: SystemTime,
 }
 
 pub struct BigQuery {
@@ -72,6 +73,8 @@ fn local(host: &str) -> bool {
 fn project(value: &str) -> AppResult<String> {
     let v = value.trim();
     let ok = !v.is_empty()
+        && !v.starts_with('.')
+        && !v.contains("..")
         && v.len() <= 100
         && v.chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | ':' | '_'));
@@ -87,10 +90,12 @@ fn project(value: &str) -> AppResult<String> {
 /// Reads the key file of a service account. Its content never goes into a message.
 fn read_key(path: &str) -> AppResult<Key> {
     let bad = |what: &str| AppError::new(ErrorCode::InvalidProfile, format!("{path}: {what}"));
-    let bytes = std::fs::read(path).map_err(|e| bad(&e.to_string()))?;
-    if bytes.len() > 64 * 1024 {
-        return Err(bad("too large for a key file"));
+    // a file, and a small one: not whatever a path of a profile may lead to
+    let meta = std::fs::metadata(path).map_err(|e| bad(&e.to_string()))?;
+    if !meta.is_file() || meta.len() > 64 * 1024 {
+        return Err(bad("not a key file (a file of at most 64 KB)"));
     }
+    let bytes = std::fs::read(path).map_err(|e| bad(&e.to_string()))?;
     let v: Value = serde_json::from_slice(&bytes)
         .map_err(|_| bad("not the JSON key file of a service account"))?;
     let field = |name: &str| v.get(name).and_then(Value::as_str).unwrap_or_default();
@@ -211,20 +216,30 @@ fn failed(on: &str, status: u16, error: &Value, sql: &str) -> AppError {
 pub fn connect(profile: &Profile, _secret: Option<&Secret>, stop: Stop) -> AppResult<BigQuery> {
     let host = profile.host.trim();
     let key_file = profile.client_key.trim();
-    let key = if local(host) && key_file.is_empty() {
+    let key = if local(host) {
+        // a server on this machine (the emulator, a test) is talked to without a login: a key would
+        // get a real token from Google, and that token is never sent anywhere but to Google
+        // (review 035j 1)
+        if !key_file.is_empty() {
+            return Err(AppError::new(
+                ErrorCode::InvalidProfile,
+                "a key file is given, but the host is this machine: the login of Google is sent to Google only",
+            ));
+        }
         None
     } else {
-        // a key opens a project: it is used for Google, over TLS that checks who answers
-        if !host.eq_ignore_ascii_case(API_HOST) && !local(host) {
+        // a key opens a project: it is used for Google, over TLS that checks who answers – against
+        // the certificates this system trusts, not one a profile names
+        if !host.eq_ignore_ascii_case(API_HOST) {
             return Err(AppError::new(
                 ErrorCode::InvalidProfile,
                 format!("BigQuery is reached at {API_HOST}: the login is sent nowhere else"),
             ));
         }
-        if !local(host) && !profile.tls.checks_server() {
+        if !profile.tls.checks_server() || !profile.ca_file.trim().is_empty() {
             return Err(AppError::new(
                 ErrorCode::InvalidProfile,
-                "the login is sent only over TLS that checks the certificate: choose such a mode",
+                "the login is sent only over TLS that checks the certificate of Google (no CA file of your own)",
             ));
         }
         if key_file.is_empty() {
@@ -442,10 +457,24 @@ fn parameter(bind: &Bind) -> AppResult<Value> {
         }
         Bind::Bool(v) => ("BOOL", v.to_string()),
         Bind::Date(v) => ("DATE", v.trim().to_owned()),
-        Bind::Datetime(v) => ("DATETIME", v.trim().replace('T', " ")),
+        // with a zone it is an instant, without one a date and time of no place in particular
+        Bind::Datetime(v) => {
+            let t = v.trim();
+            let tail = t.get(10..).unwrap_or_default();
+            if t.ends_with(['Z', 'z']) || tail.contains(['+', '-']) || tail.contains("UTC") {
+                ("TIMESTAMP", t.to_owned())
+            } else {
+                ("DATETIME", t.replace('T', " "))
+            }
+        }
     };
     Ok(json!({"parameterType": {"type": kind}, "parameterValue": {"value": value}}))
 }
+
+/// The app's question for the datasets of the project. It is no statement: a query for them sees one
+/// region only (`INFORMATION_SCHEMA.SCHEMATA` without one means the US), so the driver answers it with
+/// the list the API keeps of all places (review 035j 7).
+pub const DATASETS: &str = "-- datasets of the project";
 
 /// What one statement gave.
 struct Answer {
@@ -468,7 +497,7 @@ impl BigQuery {
             return Ok(None);
         };
         if let Some(token) = &self.token
-            && token.until > Instant::now()
+            && token.until > SystemTime::now()
         {
             return Ok(Some(token.bearer.expose().to_owned()));
         }
@@ -518,13 +547,31 @@ impl BigQuery {
         let seconds = v.get("expires_in").and_then(Value::as_u64).unwrap_or(3600);
         self.token = Some(Token {
             bearer: Secret::new(token),
-            until: Instant::now() + Duration::from_secs(seconds.saturating_sub(120)),
+            until: SystemTime::now() + Duration::from_secs(seconds.saturating_sub(120)),
         });
         Ok(Some(token.to_owned()))
     }
 
-    /// One request of the API; the answer as JSON, an error of the API as an error.
+    /// One request of the API; the answer as JSON, an error of the API as an error. A refused token
+    /// is asked for anew, once.
     fn call(
+        &mut self,
+        post: bool,
+        path: &str,
+        body: Option<&Value>,
+        sql: &str,
+    ) -> AppResult<Value> {
+        let had_token = self.token.is_some();
+        match self.call_once(post, path, body, sql) {
+            Err(e) if e.code == ErrorCode::AuthFailed && self.key.is_some() && had_token => {
+                self.token = None;
+                self.call_once(post, path, body, sql)
+            }
+            other => other,
+        }
+    }
+
+    fn call_once(
         &mut self,
         post: bool,
         path: &str,
@@ -588,14 +635,53 @@ impl BigQuery {
         Ok(v)
     }
 
-    fn cancel(&mut self, job: &str) {
-        let place = if self.location.is_empty() {
+    /// Ends a job where it runs (review 035j 5: not where the profile says jobs run).
+    fn cancel(&mut self, job: &str, place: &str) {
+        let place = if place.is_empty() {
             String::new()
         } else {
-            format!("?location={}", encode(&self.location))
+            format!("?location={}", encode(place))
         };
         let path = format!("/jobs/{}/cancel{place}", encode(job));
         let _ = self.call(true, &path, None, "");
+    }
+
+    /// The datasets of the project, wherever they lie: one row each, its name.
+    fn datasets(&mut self, stop: Stop) -> AppResult<super::TextRows> {
+        let mut rows = Vec::new();
+        let mut token: Option<String> = None;
+        loop {
+            let path = match &token {
+                Some(t) => format!("/datasets?maxResults=1000&pageToken={}", encode(t)),
+                None => "/datasets?maxResults=1000".to_owned(),
+            };
+            let page = self.call(false, &path, None, "")?;
+            for d in page
+                .get("datasets")
+                .and_then(Value::as_array)
+                .map(Vec::as_slice)
+                .unwrap_or_default()
+            {
+                if let Some(name) = d
+                    .pointer("/datasetReference/datasetId")
+                    .and_then(Value::as_str)
+                {
+                    rows.push(vec![Some(name.to_owned())]);
+                }
+            }
+            token = page
+                .get("nextPageToken")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            if token.is_none() || rows.len() >= 10_000 {
+                break;
+            }
+            if stop() {
+                return Err(super::cancelled());
+            }
+        }
+        rows.sort();
+        Ok(rows)
     }
 
     /// Runs one statement: starts the job, waits for it, reads its pages.
@@ -678,13 +764,8 @@ impl BigQuery {
                 .get("jobComplete")
                 .and_then(Value::as_bool)
                 .unwrap_or(true);
-            // a job that failed after it was started says so in its page
-            if let Some(error) = page
-                .pointer("/errors/0")
-                .or_else(|| page.pointer("/status/errorResult"))
-            {
-                return Err(failed(&self.on, 400, error, sql));
-            }
+            // `errors` in an answer that is one may be warnings of a job that worked (review 035j 6):
+            // a job that failed answers with an error of its own, which `call` reads
             if !complete {
                 if job.is_empty() {
                     return Err(AppError::new(
@@ -693,11 +774,11 @@ impl BigQuery {
                     ));
                 }
                 if stop() {
-                    self.cancel(job);
+                    self.cancel(job, place);
                     return Err(super::cancelled());
                 }
                 if timeout.is_some_and(|t| started.elapsed() >= t) {
-                    self.cancel(job);
+                    self.cancel(job, place);
                     return Err(AppError::new(
                         ErrorCode::Timeout,
                         "the statement took too long",
@@ -809,6 +890,9 @@ impl Session for BigQuery {
         timeout: Option<Duration>,
         stop: Stop,
     ) -> AppResult<super::TextRows> {
+        if sql == DATASETS {
+            return self.datasets(stop);
+        }
         let params = params
             .iter()
             .map(|p| json!({"parameterType": {"type": "STRING"}, "parameterValue": {"value": p}}))

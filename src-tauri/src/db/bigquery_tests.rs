@@ -352,9 +352,40 @@ fn a_login_goes_to_google_and_nowhere_else() {
         assert_eq!(e.code, ErrorCode::InvalidProfile, "{}", e.message);
         assert!(!e.message.contains("AAAA"));
     }
+    // review 035j 1: a key is never used for a host that is not Google – not this machine, not
+    // through a tunnel, not against a CA of the profile's own
+    write(json!({"type": "service_account", "client_email": "a@b.iam", "private_key": "AAAA"}));
+    let mut here = profile(1);
+    here.client_key = far.client_key.clone();
+    let e = connect(&here, None, stop).err().unwrap();
+    assert_eq!(e.code, ErrorCode::InvalidProfile, "{}", e.message);
+    let mut own_ca = far.clone();
+    own_ca.ca_file = "/tmp/ca.pem".into();
+    assert_eq!(
+        connect(&own_ca, None, stop).err().unwrap().code,
+        ErrorCode::InvalidProfile
+    );
+    let mut tunnelled = far.clone();
+    tunnelled.ssh = Some(crate::ssh::SshTarget {
+        host: "jump.example.com".into(),
+        port: 0,
+        user: "me".into(),
+        auth: Default::default(),
+        key_file: String::new(),
+    });
+    assert!(crate::db::profiles::check(&tunnelled).is_err());
+    // a key file is a small file, not whatever a path leads to
+    let mut dev = far.clone();
+    dev.client_key = dir.path().to_string_lossy().into_owned();
+    assert_eq!(
+        connect(&dev, None, stop).err().unwrap().code,
+        ErrorCode::InvalidProfile
+    );
     // a project id becomes part of an address
     assert!(project("my-project").is_ok());
     assert!(project("../../x").is_err());
+    assert!(project("..").is_err());
+    assert!(project(".hidden").is_err());
     assert!(project("a b").is_err());
     assert!(project("").is_err());
 }
@@ -434,5 +465,85 @@ fn values_become_cells() {
     assert_eq!(
         kind_of(&json!({"type": "INTEGER", "mode": "REPEATED"})),
         ColKind::Json
+    );
+}
+
+/// Review 035j 5, 6, 7.
+#[test]
+fn datasets_come_from_the_api_and_warnings_are_no_failure() {
+    let (port, seen) = server(|request, _| {
+        if request
+            .path
+            .starts_with("/bigquery/v2/projects/my-project/datasets")
+        {
+            return if request.path.contains("pageToken=next") {
+                (
+                    200,
+                    json!({"datasets": [{"datasetReference": {"datasetId": "alpha"}}]}).to_string(),
+                )
+            } else {
+                (
+                    200,
+                    json!({"datasets": [{"datasetReference": {"datasetId": "shop"}}],
+                        "nextPageToken": "next"})
+                    .to_string(),
+                )
+            };
+        }
+        let query = request
+            .body
+            .get("query")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if query.contains("warned") {
+            // a job that worked, with what it stumbled over on its way
+            let mut v: Value = serde_json::from_str(&one()).unwrap();
+            v["errors"] = json!([{"reason": "invalid", "message": "2 bad records were skipped"}]);
+            return (200, v.to_string());
+        }
+        if request.path.contains("/cancel") {
+            return (200, "{}".to_owned());
+        }
+        if query.contains("slow") {
+            return (
+                200,
+                json!({"jobReference": {"jobId": "job_3", "location": "europe-west3"},
+                    "jobComplete": false})
+                .to_string(),
+            );
+        }
+        (200, one())
+    });
+    let mut p = profile(port);
+    // the profile says nothing about where jobs run
+    p.user = String::new();
+    let mut s = connect(&p, None, &|| false).unwrap();
+    let schemas = crate::db::meta::schemas(&mut s, DbKind::Bigquery, &|| false).unwrap();
+    let names: Vec<&str> = schemas.iter().map(|x| x.name.as_str()).collect();
+    assert_eq!(names, ["alpha", "shop"]);
+    assert!(
+        seen.lock()
+            .unwrap()
+            .iter()
+            .any(|r| r.method == "GET" && r.path.contains("pageToken=next"))
+    );
+    let ok = run(&mut s, "SELECT warned", &[]).unwrap();
+    assert_eq!(ok.rows, vec![vec![Cell::I64(1)]]);
+    // a job is ended where it runs
+    let mut sink = VecSink::new(1);
+    let stopped = s.execute_bound("SELECT slow", &[], Limits::rows(1), &mut sink, &|| true);
+    assert_eq!(stopped.unwrap_err().code, ErrorCode::Cancelled);
+    assert!(
+        seen.lock().unwrap().iter().any(|r| r.path
+            == "/bigquery/v2/projects/my-project/jobs/job_3/cancel?location=europe-west3")
+    );
+    // a value with a zone is an instant
+    assert_eq!(
+        parameter(&Bind::Datetime("2026-11-12T08:30:00Z".into())).unwrap()["parameterType"]["type"],
+        json!("TIMESTAMP")
+    );
+    assert_eq!(
+        parameter(&Bind::Datetime("2026-11-12 08:30:00".into())).unwrap()["parameterType"]["type"],
+        json!("DATETIME")
     );
 }

@@ -385,6 +385,17 @@
       ]
     },
     {
+      "name": "comments with #, strings of three quotes, no doubled quote",
+      "dialect": "bigquery",
+      "script": "select a # customer's id; not here\nfrom d.t; select ''' ' ; ''' as s; select 'it\\'s; one', `a\\`;b` from d.t; select 'a' 'b;c'",
+      "statements": [
+        "select a # customer's id; not here\nfrom d.t",
+        "select ''' ' ; ''' as s",
+        "select 'it\\'s; one', `a\\`;b` from d.t",
+        "select 'a' 'b;c'"
+      ]
+    },
+    {
       "name": "a body in PSQL keeps its semicolons",
       "dialect": "firebird",
       "script": "execute block as declare n integer; begin n = 1; if (n = 1) then begin delete from t; end end; create or alter trigger tr for t before insert as begin new.id = case when new.id is null then 1 else new.id end; end; alter trigger tr inactive; select 1 from rdb$database; begin_work",

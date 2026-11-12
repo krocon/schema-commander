@@ -21,6 +21,17 @@ const DIALECTS: Dialect[] = [
   'bigquery',
 ];
 
+describe('a script of BigQuery', () => {
+  it('runs whole: its variables and blocks live in one job', () => {
+    const script = 'DECLARE x INT64 DEFAULT 1;\nSELECT x;\n';
+    const run = splitForRun(script, 'bigquery');
+    expect(run.map((s) => s.text)).toEqual(['DECLARE x INT64 DEFAULT 1;\nSELECT x']);
+    expect(splitForRun('select 1', 'bigquery').map((s) => s.text)).toEqual(['select 1']);
+    // under the caret a statement is still one
+    expect(splitStatements(script, 'bigquery')).toHaveLength(2);
+  });
+});
+
 describe('splitStatements (catalog)', () => {
   for (const c of catalog.cases) {
     const dialects = c.dialect === 'all' ? DIALECTS : [c.dialect as Dialect];

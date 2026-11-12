@@ -800,13 +800,26 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
         {
             return refuse("no q'…' strings");
         }
+        // BigQuery's strings of three quotes end elsewhere than the scan below would look
+        if kind == DbKind::Bigquery
+            && matches!(c, b'\'' | b'"')
+            && next == c
+            && b.get(i + 2) == Some(&c)
+        {
+            return refuse("no strings of three quotes");
+        }
         // strings and quoted names: text, whatever it holds (a doubled quote is the quote itself)
         let close = match c {
             b'\'' => Some(b'\''),
             b'"' => Some(b'"'),
             b'`' if matches!(
                 kind,
-                DbKind::Mysql | DbKind::Sqlite | DbKind::Libsql | DbKind::D1 | DbKind::Clickhouse
+                DbKind::Mysql
+                    | DbKind::Sqlite
+                    | DbKind::Libsql
+                    | DbKind::D1
+                    | DbKind::Clickhouse
+                    | DbKind::Bigquery
             ) =>
             {
                 Some(b'`')
@@ -821,12 +834,15 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
                     None => return refuse("a string or a quoted name is not closed"),
                     // MySQL reads a backslash in a string as an escape
                     Some(b'\\')
-                        if matches!(kind, DbKind::Mysql | DbKind::Clickhouse) && close != b'`' =>
+                        if (matches!(kind, DbKind::Mysql | DbKind::Clickhouse)
+                            && close != b'`')
+                            || kind == DbKind::Bigquery =>
                     {
                         i += 2;
                     }
                     Some(&x) if x == close => {
-                        if b.get(i + 1) == Some(&close) {
+                        // (BigQuery knows no doubled quote: the first one ends the string)
+                        if b.get(i + 1) == Some(&close) && kind != DbKind::Bigquery {
                             i += 2;
                         } else {
                             i += 1;
@@ -842,7 +858,11 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
             b';' => return refuse("no `;`"),
             b'-' if next == b'-' => return refuse("no comments"),
             b'/' if next == b'*' => return refuse("no comments"),
-            b'#' if kind == DbKind::Mysql => return refuse("no comments"),
+            b'#' if matches!(kind, DbKind::Mysql | DbKind::Bigquery) => {
+                return refuse("no comments");
+            }
+            // `@name` is a parameter of BigQuery's own
+            b'@' if kind == DbKind::Bigquery => return refuse("no placeholders"),
             b'(' => depth += 1,
             b')' => {
                 if depth == 0 {
@@ -1055,6 +1075,38 @@ fn oracle_instant(type_name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// BigQuery (review 035j 3): the free condition is read as BigQuery reads it.
+    #[test]
+    fn bigquery_conditions_stay_one_expression() {
+        let free = |text: &str| {
+            build(
+                DbKind::Bigquery,
+                &TableQuery {
+                    schema: Some("shop".into()),
+                    table: "t".into(),
+                    where_sql: Some(text.into()),
+                    ..TableQuery::default()
+                },
+            )
+        };
+        assert!(free("total > 100 AND `my col` = 'it\\'s; fine'").is_ok());
+        for no in [
+            "''' ' ''' = 'a') ; DROP TABLE t ; SELECT ('''' '''",
+            "a = 1 # and the rest",
+            "a = @p",
+            "a = ?",
+            "`a\\`) ; DROP TABLE t ; SELECT (`b` = 1",
+        ] {
+            assert!(free(no).is_err(), "{no}");
+        }
+        assert_eq!(
+            bigquery_castable("numeric(10, 2)").as_deref(),
+            Some("NUMERIC")
+        );
+        assert_eq!(bigquery_castable("STRING"), None);
+        assert_eq!(bigquery_castable("DATE) OR (1=1"), None);
+    }
+
     /// Trino (prompt 035f): a value is cast to the type of its column – only to one of a list.
     #[test]
     fn trino_casts_a_value_to_a_type_of_a_list_or_not_at_all() {

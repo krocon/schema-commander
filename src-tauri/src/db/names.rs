@@ -554,8 +554,13 @@ pub fn read_objects(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<
                     &[],
                     stop,
                 );
-                // a dataset in another place than the jobs of the connection cannot be asked from here
-                rows.extend(asked.unwrap_or_default());
+                // a dataset in another place than the jobs of the connection cannot be asked from
+                // here: left out – but a stop is a stop
+                match asked {
+                    Ok(more) => rows.extend(more),
+                    Err(e) if e.code == crate::error::ErrorCode::Cancelled => return Err(e),
+                    Err(_) => {}
+                }
             }
             rows
         }
@@ -710,7 +715,11 @@ pub fn read_columns(
                     &[],
                     stop,
                 );
-                rows.extend(asked.unwrap_or_default());
+                match asked {
+                    Ok(more) => rows.extend(more),
+                    Err(e) if e.code == crate::error::ErrorCode::Cancelled => return Err(e),
+                    Err(_) => {}
+                }
             }
             rows
         }
