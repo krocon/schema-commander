@@ -11,7 +11,8 @@ export type DbKind =
   | 'clickhouse'
   | 'trino'
   | 'libsql'
-  | 'd1';
+  | 'd1'
+  | 'firebird';
 
 /** A kind with a dialect of its own (libSQL and D1 write SQLite's). */
 export type SqlDialect = Exclude<DbKind, 'libsql' | 'd1'>;
@@ -179,6 +180,8 @@ export const DB_KINDS: readonly {
   { kind: 'libsql', label: 'libSQL / Turso', port: 8080 },
   // over Cloudflare's REST API: account id as the user, the id of the database, an API token (035h)
   { kind: 'd1', label: 'Cloudflare D1', port: 443 },
+  // the database is its path on the server, or an alias (prompt 035i)
+  { kind: 'firebird', label: 'Firebird', port: 3050 },
   {
     kind: 'sqlite',
     // a getter: the language may change while the app runs

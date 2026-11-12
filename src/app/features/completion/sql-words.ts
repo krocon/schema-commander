@@ -99,6 +99,7 @@ const NOT_IN: Readonly<Record<Dialect, readonly string[]>> = {
   duckdb: [],
   clickhouse: ['RETURNING', 'ON CONFLICT', 'FOR UPDATE'],
   trino: ['RETURNING', 'ON CONFLICT', 'FOR UPDATE'],
+  firebird: ['LIMIT', 'ON CONFLICT'],
 };
 const ALSO: Readonly<Record<Dialect, Readonly<Record<string, readonly string[]>>>> = {
   postgres: { WHERE: ['ILIKE'], FROM: ['LATERAL'] },
@@ -132,6 +133,12 @@ const ALSO: Readonly<Record<Dialect, Readonly<Record<string, readonly string[]>>
     FROM: ['LATERAL', 'UNNEST', 'TABLESAMPLE', 'MATCH_RECOGNIZE'],
     'ORDER BY': ['OFFSET', 'FETCH FIRST'],
     'GROUP BY': ['ROLLUP', 'CUBE', 'GROUPING SETS'],
+  },
+  firebird: {
+    SELECT: ['FIRST', 'SKIP'],
+    WHERE: ['CONTAINING', 'STARTING WITH', 'SIMILAR TO', 'IS DISTINCT FROM'],
+    FROM: ['LATERAL'],
+    'ORDER BY': ['OFFSET', 'FETCH FIRST', 'ROWS'],
   },
 };
 
@@ -279,6 +286,24 @@ const TYPES: Readonly<Record<Dialect, readonly string[]>> = {
     'ARRAY(VARCHAR)',
     'MAP(VARCHAR, VARCHAR)',
     'ROW(a INTEGER, b VARCHAR)',
+  ],
+  firebird: [
+    'SMALLINT',
+    'INTEGER',
+    'BIGINT',
+    'INT128',
+    'NUMERIC(18, 2)',
+    'DECFLOAT(34)',
+    'DOUBLE PRECISION',
+    'BOOLEAN',
+    'CHAR(10)',
+    'VARCHAR(255)',
+    'BLOB SUB_TYPE TEXT',
+    'BLOB',
+    'DATE',
+    'TIME',
+    'TIMESTAMP',
+    'TIMESTAMP WITH TIME ZONE',
   ],
 };
 
@@ -466,6 +491,26 @@ const BUILTINS: Readonly<Record<Dialect, readonly Builtin[]>> = {
       'try_cast(value AS type)',
       'try(expression)',
       'if(condition, then, else)',
+    ].map(f),
+  ],
+  firebird: [
+    ...COMMON,
+    ...[
+      'CURRENT_TIMESTAMP',
+      'CURRENT_DATE',
+      'IIF(condition, then, else)',
+      'DATEADD(amount unit TO date)',
+      'DATEDIFF(unit FROM start TO end)',
+      'EXTRACT(part FROM date)',
+      'LIST(value, delimiter)',
+      'SUBSTRING(text FROM start FOR length)',
+      'POSITION(part IN text)',
+      'CHAR_LENGTH(text)',
+      'GEN_ID(sequence, step)',
+      'NEXT VALUE FOR sequence',
+      'RDB$GET_CONTEXT(namespace, variable)',
+      'HASH(value)',
+      'DECODE(value, when, then, else)',
     ].map(f),
   ],
 };

@@ -2859,6 +2859,7 @@ pub fn testdata_keys(
             crate::db::DbKind::Duckdb => format!("CAST({column} AS VARCHAR)"),
             crate::db::DbKind::Clickhouse => format!("toString({column})"),
             crate::db::DbKind::Trino => format!("CAST({column} AS varchar)"),
+            crate::db::DbKind::Firebird => format!("CAST({column} AS VARCHAR(8191))"),
         };
         let sql = if kind == crate::db::DbKind::Sqlserver {
             format!(

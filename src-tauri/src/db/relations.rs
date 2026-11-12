@@ -228,6 +228,17 @@ pub fn relations(
         DbKind::Clickhouse => Vec::new(),
         // the catalog of Trino names no keys
         DbKind::Trino => Vec::new(),
+        DbKind::Firebird => fold(&s.ask(
+            &format!(
+                "{} AND {} AND (rc.rdb$relation_name = ? OR pk.rdb$relation_name = ?) \
+                 ORDER BY rc.rdb$relation_name, rc.rdb$constraint_name, cs.rdb$field_position",
+                super::firebird::FOREIGN_KEYS,
+                super::firebird::NO_SCHEMA
+            ),
+            &[schema, table, table],
+            Some(TIMEOUT),
+            stop,
+        )?),
         DbKind::Oracle => {
             fold(&s.ask(ORACLE, &[schema, table, schema, table], Some(TIMEOUT), stop)?)
         }

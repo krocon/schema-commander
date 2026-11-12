@@ -576,6 +576,16 @@ pub fn read_objects(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<
             &[],
             stop,
         )?,
+        DbKind::Firebird => ask(
+            s,
+            "SELECT CASE WHEN r.rdb$view_blr IS NULL THEN 'table' ELSE 'view' END, '', \
+               r.rdb$relation_name, '' \
+             FROM rdb$relations r WHERE COALESCE(r.rdb$system_flag, 0) = 0 \
+             UNION ALL SELECT 'routine', '', p.rdb$procedure_name, 'procedure' FROM rdb$procedures p \
+             WHERE COALESCE(p.rdb$system_flag, 0) = 0 AND p.rdb$package_name IS NULL",
+            &[],
+            stop,
+        )?,
         DbKind::Trino => ask(
             s,
             "SELECT CASE table_type WHEN 'VIEW' THEN 'view' ELSE 'table' END, table_schema, \
@@ -694,6 +704,20 @@ pub fn read_columns(
              JOIN sys.schemas s ON s.schema_id = o.schema_id \
              JOIN sys.types t ON t.user_type_id = c.user_type_id \
              WHERE o.type IN ('U', 'V') AND o.is_ms_shipped = 0",
+            &[],
+            stop,
+        )?,
+        DbKind::Firebird => ask(
+            s,
+            &format!(
+                "SELECT '', rf.rdb$relation_name, rf.rdb$field_name, {} \
+                 FROM rdb$relation_fields rf \
+                 JOIN rdb$fields f ON f.rdb$field_name = rf.rdb$field_source \
+                 JOIN rdb$relations r ON r.rdb$relation_name = rf.rdb$relation_name \
+                 WHERE {} ORDER BY rf.rdb$relation_name, rf.rdb$field_position",
+                super::firebird::TYPE,
+                super::firebird::OWN
+            ),
             &[],
             stop,
         )?,

@@ -294,7 +294,12 @@ fn insert(
     let returns = match (returning, kind) {
         (
             Some(column),
-            DbKind::Postgres | DbKind::Sqlite | DbKind::Libsql | DbKind::D1 | DbKind::Duckdb,
+            DbKind::Postgres
+            | DbKind::Sqlite
+            | DbKind::Libsql
+            | DbKind::D1
+            | DbKind::Duckdb
+            | DbKind::Firebird,
         ) => {
             b.text(&format!("\nRETURNING {}", name(column, kind)?));
             true
@@ -363,7 +368,8 @@ pub fn steps(kind: DbKind, plan: &UpdatePlan) -> AppResult<Vec<Step>> {
             && end < plan.inserts.len()
             // Oracle before 23ai takes one row per INSERT (and INSERT ALL would give every row the
             // same number of an identity column)
-            && kind != DbKind::Oracle
+            // Firebird takes one row per INSERT as well
+            && !matches!(kind, DbKind::Oracle | DbKind::Firebird)
             && end - at < MAX_BATCH_ROWS
             && (end - at + 1) * width <= MAX_PARAMS
             && same_columns(&plan.inserts[at], &plan.inserts[end])

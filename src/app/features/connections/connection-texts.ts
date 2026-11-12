@@ -29,6 +29,7 @@ export const CONNECTION_EN = {
     trino: 'Trino / Presto',
     libsql: 'libSQL / Turso',
     d1: 'Cloudflare D1',
+    firebird: 'Firebird',
   },
   password: 'Password',
   sshSecretTitle: 'SSH tunnel: password or passphrase',

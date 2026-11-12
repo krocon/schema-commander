@@ -191,7 +191,7 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                 // ClickHouse takes it as an escape inside backticks too (review 035d 2)
                 if chars[i] == '\\'
                     && (quote != '`' || kind == DbKind::Clickhouse)
-                    && !matches!(kind, DbKind::Oracle | DbKind::Trino)
+                    && !matches!(kind, DbKind::Oracle | DbKind::Trino | DbKind::Firebird)
                     && i + 1 < n
                 {
                     if chars[i + 1] == quote || chars[i + 1] == '\\' {
@@ -687,6 +687,10 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
         // them is the first half of running foreign code
         return Some(Class::Dangerous);
     }
+    if kind == DbKind::Firebird && start == "RECREATE" {
+        // drops what is there and makes it anew: the rows of a table are gone with it
+        return Some(Class::Dangerous);
+    }
     if kind == DbKind::Clickhouse && matches!(start, "SYSTEM" | "KILL") {
         // the server itself: stop it, drop its caches, end what others run
         return Some(Class::Dangerous);
@@ -991,6 +995,8 @@ pub fn read_only_statement(kind: DbKind) -> Option<&'static str> {
         // no statement that holds: the driver keeps the session inside a read-only transaction
         // (`Session::make_read_only`, see trino.rs)
         DbKind::Trino => None,
+        // every transaction of the session is opened read only (`Session::make_read_only`)
+        DbKind::Firebird => None,
     }
 }
 
@@ -999,7 +1005,7 @@ mod tests {
     use super::*;
     use Class::{Dangerous, Ddl, Read, Write};
 
-    const ALL: [DbKind; 9] = [
+    const ALL: [DbKind; 11] = [
         DbKind::Postgres,
         DbKind::Mysql,
         DbKind::Sqlserver,
@@ -1009,6 +1015,8 @@ mod tests {
         DbKind::Clickhouse,
         DbKind::Trino,
         DbKind::Libsql,
+        DbKind::D1,
+        DbKind::Firebird,
     ];
 
     /// libSQL (prompt 035g): classified as SQLite; read only is not a statement there.
@@ -1030,6 +1038,24 @@ mod tests {
             );
         }
         assert_eq!(read_only_statement(DbKind::Libsql), None);
+    }
+
+    /// Firebird (prompt 035i).
+    #[test]
+    fn firebird_blocks_and_procedures_are_no_reading() {
+        let k = DbKind::Firebird;
+        assert_eq!(classify("SELECT FIRST 5 * FROM t", k), Read);
+        assert_eq!(classify("SELECT 'C:\\' FROM rdb$database", k), Read);
+        assert_eq!(classify("UPDATE t SET a = 1 WHERE id = 1", k), Write);
+        assert_ne!(
+            classify("EXECUTE BLOCK AS BEGIN DELETE FROM t; END", k),
+            Read
+        );
+        assert_ne!(classify("EXECUTE PROCEDURE wipe", k), Read);
+        assert_eq!(classify("DROP TABLE t", k), Dangerous);
+        assert_eq!(classify("RECREATE TABLE t (a INTEGER)", k), Dangerous);
+        assert!(is_transaction_control("SET TRANSACTION", k));
+        assert_eq!(read_only_statement(k), None);
     }
 
     /// Trino (prompt 035f).

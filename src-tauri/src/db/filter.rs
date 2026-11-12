@@ -416,6 +416,8 @@ impl Builder {
             let placeholder = match self.kind {
                 DbKind::Postgres | DbKind::Duckdb => format!("${n}"),
                 DbKind::Mysql | DbKind::Trino => "?".to_owned(),
+                // without a column beside it the server cannot tell what the value is
+                DbKind::Firebird => "CAST(? AS VARCHAR(8191))".to_owned(),
                 DbKind::Sqlserver => format!("@P{n}"),
                 DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("?{n}"),
                 DbKind::Oracle => format!(":{n}"),
@@ -434,6 +436,7 @@ impl Builder {
                 }
                 DbKind::Oracle => format!("HEXTORAW({inner})"),
                 DbKind::Trino => format!("from_hex({inner})"),
+                DbKind::Firebird => format!("HEX_DECODE({inner})"),
             };
             self.sql.push_str(&around(&placeholder));
             self.display.push_str(&around(&format!("'{raw}'")));
@@ -494,6 +497,10 @@ impl Builder {
         let placeholder = match self.kind {
             DbKind::Postgres | DbKind::Duckdb => format!("${n}"),
             DbKind::Mysql | DbKind::Trino => "?".to_owned(),
+            // a pattern is longer than the column it is held against: said to be text of any length;
+            // every other value is what the column beside it is (the driver reads it as that)
+            DbKind::Firebird if type_name.is_empty() => "CAST(? AS VARCHAR(8191))".to_owned(),
+            DbKind::Firebird => "?".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
             DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("?{n}"),
             DbKind::Oracle => format!(":{n}"),
@@ -557,6 +564,7 @@ impl Builder {
                 format!("CAST({column} AS text)")
             }
             DbKind::Duckdb | DbKind::Trino => format!("CAST({column} AS VARCHAR)"),
+            DbKind::Firebird => format!("CAST({column} AS VARCHAR(8191))"),
             DbKind::Mysql => format!("CAST({column} AS char)"),
             DbKind::Sqlserver => format!("CAST({column} AS nvarchar(max))"),
             DbKind::Oracle => format!("TO_CHAR({column})"),
@@ -682,6 +690,20 @@ impl Builder {
                     self.text(") > 0");
                 }
             }
+            // Firebird takes an escape only before `%`, `_` and itself as well; CONTAINING looks for a
+            // text as it is, whatever its case – with the case, a position says the same
+            Op::Contains | Op::ContainsNoCase if self.kind == DbKind::Firebird => {
+                need(1)?;
+                let text = self.as_text(&column, c.kind);
+                if c.op == Op::ContainsNoCase {
+                    self.text(&format!("{text} CONTAINING "));
+                    self.pattern(&c.values[0]);
+                } else {
+                    self.text("POSITION(");
+                    self.pattern(&c.values[0]);
+                    self.text(&format!(" IN {text}) > 0"));
+                }
+            }
             Op::Contains | Op::ContainsNoCase => {
                 need(1)?;
                 // `!` escapes: the same in all four databases (a backslash is not)
@@ -803,7 +825,12 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
             b'#' if kind == DbKind::Clickhouse => return refuse("no comments"),
             b'?' if matches!(
                 kind,
-                DbKind::Mysql | DbKind::Sqlite | DbKind::Libsql | DbKind::D1 | DbKind::Trino
+                DbKind::Mysql
+                    | DbKind::Sqlite
+                    | DbKind::Libsql
+                    | DbKind::D1
+                    | DbKind::Trino
+                    | DbKind::Firebird
             ) =>
             {
                 return refuse("no placeholders");
@@ -930,6 +957,7 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
                     | DbKind::Duckdb
                     | DbKind::Clickhouse
                     | DbKind::Trino
+                    | DbKind::Firebird
             );
             if let (Some(nulls), false) = (o.nulls, native) {
                 // no NULLS FIRST/LAST there: a key before the column says where the NULLs go
@@ -956,7 +984,7 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
         }
     }
     if let (Some(n), false) = (q.limit, kind == DbKind::Sqlserver || q.count) {
-        if kind == DbKind::Oracle {
+        if matches!(kind, DbKind::Oracle | DbKind::Firebird) {
             b.text(&format!("\nFETCH FIRST {n} ROWS ONLY"));
         } else {
             b.text(&format!("\nLIMIT {n}"));

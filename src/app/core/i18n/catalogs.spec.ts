@@ -125,6 +125,7 @@ const SAME = new Set<string>([
   'Trino / Presto',
   'libSQL / Turso',
   'Cloudflare D1',
+  'Firebird',
   'Schema Commander',
   'Schema',
   'TLS: ',

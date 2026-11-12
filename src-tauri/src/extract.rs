@@ -185,7 +185,12 @@ pub fn literal(cell: &Value, kind: ColKind, dialect: DbKind) -> String {
             Some((bytes, hex)) if bytes * 2 == hex.len() as u64 => match dialect {
                 DbKind::Postgres => format!("'\\x{hex}'"),
                 DbKind::Sqlserver => format!("0x{hex}"),
-                DbKind::Mysql | DbKind::Sqlite | DbKind::Libsql | DbKind::D1 | DbKind::Trino => {
+                DbKind::Mysql
+                | DbKind::Sqlite
+                | DbKind::Libsql
+                | DbKind::D1
+                | DbKind::Trino
+                | DbKind::Firebird => {
                     format!("X'{hex}'")
                 }
                 DbKind::Oracle => format!("HEXTORAW('{hex}')"),

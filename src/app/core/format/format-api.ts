@@ -3,7 +3,15 @@ import { call } from '../backend/call';
 
 /** Mirrors `Dialect` in src-tauri/src/format.rs. */
 export type FormatDialect =
-  'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle' | 'duckdb' | 'clickhouse' | 'trino';
+  | 'postgres'
+  | 'mysql'
+  | 'sqlserver'
+  | 'sqlite'
+  | 'oracle'
+  | 'duckdb'
+  | 'clickhouse'
+  | 'trino'
+  | 'firebird';
 
 /**
  * Mirrors `Mode`: lay the text out, pull it into one line, or only write its keywords in upper or lower

@@ -14,6 +14,7 @@ pub mod duckdb;
 pub mod edit;
 pub mod filter;
 pub mod find;
+pub mod firebird;
 pub mod guard;
 pub mod http;
 pub mod import;
@@ -69,6 +70,9 @@ pub enum DbKind {
     /// Cloudflare D1 (prompt 035h) over Cloudflare's REST API; the dialect is SQLite's. `user` of the
     /// profile is the account id, `database` the id of the database.
     D1,
+    /// Firebird (prompt 035i): `database` of the profile is the path of the database on the server, or
+    /// an alias.
+    Firebird,
 }
 
 impl DbKind {
@@ -102,6 +106,7 @@ impl DbKind {
             DbKind::Trino => 8080,
             DbKind::Libsql => 8080,
             DbKind::D1 => 443,
+            DbKind::Firebird => 3050,
         }
     }
 }
@@ -327,6 +332,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
         (DbKind::Trino, _) => "Trino",
         (DbKind::Libsql, _) => "libSQL",
         (DbKind::D1, _) => "Cloudflare D1",
+        (DbKind::Firebird, _) => "Firebird",
     };
     Capabilities {
         product: product.to_owned(),
@@ -336,9 +342,11 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
             kind,
             DbKind::Sqlserver | DbKind::Oracle | DbKind::Libsql | DbKind::D1
         ),
+        // (Firebird stops a statement from a second connection)
         // ClickHouse has no foreign keys, and Trino's catalog names none
         foreign_keys: !matches!(kind, DbKind::Clickhouse | DbKind::Trino),
-        schemas: !kind.is_sqlite(),
+        // Firebird (before 6) has one namespace in a database
+        schemas: !kind.is_sqlite() && kind != DbKind::Firebird,
         triggers: flavor != Flavor::Cockroach
             && !matches!(kind, DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino),
         routines: !matches!(
@@ -352,7 +360,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
         ),
         plan: !matches!(
             kind,
-            DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino
+            DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird
         ),
         // an embedded database has no server to watch and no users
         monitor: !matches!(
@@ -364,6 +372,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
                 | DbKind::Duckdb
                 | DbKind::Clickhouse
                 | DbKind::Trino
+                | DbKind::Firebird
         ),
         access: !matches!(
             kind,
@@ -374,11 +383,17 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
                 | DbKind::Duckdb
                 | DbKind::Clickhouse
                 | DbKind::Trino
+                | DbKind::Firebird
         ),
         // D1: a change of a table is written in a transaction, and there is none to open
         structure: !matches!(
             kind,
-            DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino | DbKind::D1
+            DbKind::Oracle
+                | DbKind::Duckdb
+                | DbKind::Clickhouse
+                | DbKind::Trino
+                | DbKind::Firebird
+                | DbKind::D1
         ),
         // without transactions and unique keys a changed cell cannot be written safely
         edit: kind.edits_rows(),
@@ -424,6 +439,8 @@ pub fn begin_statement(kind: DbKind) -> &'static str {
         DbKind::Trino => "START TRANSACTION",
         // there are no transactions over the API: who needs one refuses D1 before it comes to this
         DbKind::Libsql | DbKind::D1 => "BEGIN",
+        // carried out by the driver: the transaction is the client's to hold (see firebird.rs)
+        DbKind::Firebird => "SET TRANSACTION",
     }
 }
 
@@ -571,6 +588,7 @@ pub fn connect(
         DbKind::Trino => Box::new(trino::connect(profile, secret, stop)?),
         DbKind::Libsql => Box::new(libsql::connect(profile, secret, stop)?),
         DbKind::D1 => Box::new(d1::connect(profile, secret, stop)?),
+        DbKind::Firebird => Box::new(firebird::connect(profile, secret, stop)?),
     })
 }
 
@@ -1015,6 +1033,12 @@ mod tests {
         assert!(DbKind::D1.is_sqlite() && !DbKind::D1.is_file() && !DbKind::D1.edits_rows());
         assert!(!d1.edit && !d1.structure && !d1.cancel && !d1.schemas && !d1.monitor);
         assert!(d1.foreign_keys && d1.plan && d1.triggers);
+        // Firebird (035i): its own dialect; rows are edited, the rest comes later
+        let fb = of(DbKind::Firebird, Flavor::Plain);
+        assert_eq!(fb.product, "Firebird");
+        assert!(fb.cancel && fb.edit && fb.foreign_keys && fb.triggers && fb.routines);
+        assert!(!fb.schemas && !fb.plan && !fb.monitor && !fb.access && !fb.structure);
+        assert_eq!(begin_statement(DbKind::Firebird), "SET TRANSACTION");
         let lite = of(DbKind::Sqlite, Flavor::Plain);
         assert!(!lite.schemas && !lite.routines && lite.triggers && lite.cancel);
         let json = serde_json::to_value(&crdb).unwrap();

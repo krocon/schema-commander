@@ -58,6 +58,8 @@ export const DEFAULT_FORMS: Readonly<Record<Dialect, readonly ParamForm[]>> = {
   clickhouse: ['colon'],
   // `?` belongs to its own PREPARE … EXECUTE … USING
   trino: ['colon', 'brace'],
+  // `:name` is a variable of PSQL there (inside EXECUTE BLOCK and procedures): only `${name}` and `?`
+  firebird: ['brace', 'question'],
 };
 
 /** The forms of a connection: what the user set for it, else the defaults of its database. */
@@ -393,6 +395,9 @@ export function placeholder(dialect: Dialect, n: number, kind: BoundValue['kind'
     case 'oracle':
       // the driver binds numbers and dates as what they are
       return `:${n}`;
+    case 'firebird':
+      // the driver reads every value as what its place in the statement is
+      return '?';
     case 'trino':
       // the driver writes every value as the literal of what it is (a date as DATE '…')
       return '?';

@@ -175,7 +175,9 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                     ? t.catalogExample
                     : draft().kind === 'd1'
                       ? t.d1DatabaseExample
-                      : t.serverDefault
+                      : draft().kind === 'firebird'
+                        ? t.firebirdDatabaseExample
+                        : t.serverDefault
               "
               [value]="draft().database"
               [class.invalid]="shown('database')"

@@ -238,7 +238,7 @@ fn index_rows(s: &mut dyn Session, kind: DbKind, schema: &str, stop: Stop) -> Ap
             Some(TIMEOUT),
             stop,
         ),
-        DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino => Err(super::not_yet(kind, "schema compare and structure editing")),
+        DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird => Err(super::not_yet(kind, "schema compare and structure editing")),
     }
 }
 
@@ -294,7 +294,7 @@ pub fn snapshot(
 ) -> AppResult<Snapshot> {
     if matches!(
         kind,
-        DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino
+        DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird
     ) {
         return Err(super::not_yet(kind, "schema compare and structure editing"));
     }
@@ -1617,7 +1617,7 @@ fn grouped(
                                     }
                                 }
                             }
-                            DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino => {
+                            DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird => {
                                 return Err(super::not_yet(kind, "schema compare and structure editing"));
                             }
                             DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => sqls.push(note(&format!(
@@ -1859,6 +1859,7 @@ fn written(
                 DbKind::Duckdb => "DuckDB",
                 DbKind::Clickhouse => "ClickHouse",
                 DbKind::Trino => "Trino",
+                DbKind::Firebird => "Firebird",
             }
         )),
         note(

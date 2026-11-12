@@ -254,6 +254,50 @@ pub fn diagram(
                 stop,
             ),
         ),
+        DbKind::Firebird => {
+            use super::firebird::{FOREIGN_KEYS, NO_SCHEMA, OWN, TYPE, in_key};
+            (
+                s.ask(
+                    &format!(
+                        "SELECT rf.rdb$relation_name, rf.rdb$field_name, {TYPE}, \
+                           IIF(COALESCE(rf.rdb$null_flag, f.rdb$null_flag, 0) = 1, 'false', 'true'), \
+                           IIF({}, 'true', 'false') \
+                         FROM rdb$relation_fields rf \
+                         JOIN rdb$fields f ON f.rdb$field_name = rf.rdb$field_source \
+                         JOIN rdb$relations r ON r.rdb$relation_name = rf.rdb$relation_name \
+                         WHERE {NO_SCHEMA} AND {OWN} AND r.rdb$view_blr IS NULL \
+                         ORDER BY rf.rdb$relation_name, rf.rdb$field_position",
+                        in_key("PRIMARY KEY")
+                    ),
+                    one,
+                    Some(TIMEOUT),
+                    stop,
+                )?,
+                s.ask(
+                    &format!(
+                        "{FOREIGN_KEYS} AND {NO_SCHEMA} \
+                         ORDER BY rc.rdb$relation_name, rc.rdb$constraint_name, cs.rdb$field_position"
+                    ),
+                    one,
+                    Some(TIMEOUT),
+                    stop,
+                )?,
+                s.ask(
+                    &format!(
+                        "SELECT rc.rdb$relation_name, rc.rdb$constraint_name, sg.rdb$field_name \
+                         FROM rdb$relation_constraints rc \
+                         JOIN rdb$index_segments sg ON sg.rdb$index_name = rc.rdb$index_name \
+                         JOIN rdb$relations r ON r.rdb$relation_name = rc.rdb$relation_name \
+                         WHERE rc.rdb$constraint_type IN ('PRIMARY KEY', 'UNIQUE') AND {NO_SCHEMA} \
+                           AND {OWN} \
+                         ORDER BY 1, 2, sg.rdb$field_position"
+                    ),
+                    one,
+                    Some(TIMEOUT),
+                    stop,
+                ),
+            )
+        }
         // tables without keys: the catalog names none
         DbKind::Trino => (
             s.ask(

@@ -14,13 +14,22 @@ import { offsetAt, placeIn } from '../../core/text/places';
  * - **sqlite**: `CREATE TRIGGER … BEGIN … END` keeps its inner `;`.
  * - **duckdb**: dollar quoting, as PostgreSQL.
  * - **clickhouse**: backticks and backslash escapes in strings, as MySQL.
+ * - **firebird**: a procedure, function, trigger, package or `EXECUTE BLOCK` keeps the `;` of its body.
  * - **trino**: the common rules – a quote is escaped only by doubling it.
  * - **oracle**: `q'[ … ]'` strings; PL/SQL (`BEGIN`, `DECLARE`, `CREATE … FUNCTION | PROCEDURE | PACKAGE |
  *   TRIGGER | TYPE`) keeps its `;` and ends at a line with only `/` – as in SQL*Plus. That line also ends
  *   any other statement.
  */
 export type Dialect =
-  'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle' | 'duckdb' | 'clickhouse' | 'trino';
+  | 'postgres'
+  | 'mysql'
+  | 'sqlserver'
+  | 'sqlite'
+  | 'oracle'
+  | 'duckdb'
+  | 'clickhouse'
+  | 'trino'
+  | 'firebird';
 
 export interface Statement {
   /** The statement without its terminator, trimmed. */
@@ -173,6 +182,13 @@ function wordAt(script: string, i: number): string {
 }
 
 /** Whether the text from `from` to `to` starts a trigger (`CREATE [TEMP] TRIGGER`). */
+/** Firebird: a statement with a body in PSQL (from its first `BEGIN` to the `END` that closes it). */
+function startsPsql(script: string, from: number, to: number): boolean {
+  return /^\s*(?:(?:CREATE(?:\s+OR\s+ALTER)?|ALTER|RECREATE)\s+(?:PROCEDURE|FUNCTION|TRIGGER|PACKAGE)|EXECUTE\s+BLOCK)\b/i.test(
+    script.slice(from, Math.min(to, from + 400)).replace(/--[^\n]*\n|\/\*[\s\S]*?\*\//g, ' '),
+  );
+}
+
 function startsTrigger(script: string, from: number, to: number): boolean {
   return /^\s*CREATE\s+(?:TEMP(?:ORARY)?\s+)?TRIGGER\b/i.test(
     script.slice(from, Math.min(to, from + 200)).replace(/--[^\n]*\n|\/\*[\s\S]*?\*\//g, ' '),
@@ -219,12 +235,18 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
   /** Depth of `BEGIN … END` / `CASE … END` inside a trigger (SQLite). */
   let depth = 0;
   let trigger = false;
+  /**
+   * Firebird: inside a statement with a body, between its `AS` and its first `BEGIN` – where the
+   * declarations stand, each with its `;`.
+   */
+  let declaring = false;
   /** Oracle: the statement is PL/SQL (`null` = its first word was not seen yet). */
   let plsql: boolean | null = null;
   const push = (end: number, next: number) => {
     const st = statement(script, start, end);
     if (st) out.push(st);
     start = next;
+    declaring = false;
     depth = 0;
     trigger = false;
     plsql = null;
@@ -264,17 +286,23 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
         continue;
       }
     }
-    if (dialect === 'sqlite') {
+    if (dialect === 'sqlite' || dialect === 'firebird') {
       const word = wordAt(script, i);
       if (word) {
-        if (word === 'BEGIN' && startsTrigger(script, start, i)) trigger = true;
+        const body =
+          dialect === 'sqlite' ? startsTrigger(script, start, i) : startsPsql(script, start, i);
+        if (dialect === 'firebird' && word === 'AS' && !trigger && body) declaring = true;
+        if (word === 'BEGIN' && body) {
+          trigger = true;
+          declaring = false;
+        }
         if (trigger && (word === 'BEGIN' || word === 'CASE')) depth++;
         else if (trigger && word === 'END') depth--;
         s.i = i + word.length;
         continue;
       }
     }
-    if (script.startsWith(delimiter, i) && depth <= 0) {
+    if (script.startsWith(delimiter, i) && depth <= 0 && !declaring) {
       push(i, i + delimiter.length);
       s.i = i + delimiter.length;
       continue;

@@ -364,6 +364,18 @@
       ]
     },
     {
+      "name": "a body in PSQL keeps its semicolons",
+      "dialect": "firebird",
+      "script": "execute block as declare n integer; begin n = 1; if (n = 1) then begin delete from t; end end; create or alter trigger tr for t before insert as begin new.id = case when new.id is null then 1 else new.id end; end; alter trigger tr inactive; select 1 from rdb$database; begin_work",
+      "statements": [
+        "execute block as declare n integer; begin n = 1; if (n = 1) then begin delete from t; end end",
+        "create or alter trigger tr for t before insert as begin new.id = case when new.id is null then 1 else new.id end; end",
+        "alter trigger tr inactive",
+        "select 1 from rdb$database",
+        "begin_work"
+      ]
+    },
+    {
       "name": "a backslash is a character, a quote is doubled",
       "dialect": "trino",
       "script": "select 'C:\\'; select 'it''s; fine', \"a;b\" from t",

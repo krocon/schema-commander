@@ -31,6 +31,7 @@ export function defaultSchema(kind: DbKind, database: string): string {
       // a schema is a user: the caller fills in the one of the connection
       return '';
     case 'trino':
+    case 'firebird':
       // the database of the profile is the catalog; its schemas have names of their own
       return '';
     default:

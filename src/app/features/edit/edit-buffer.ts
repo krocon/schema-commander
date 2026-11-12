@@ -545,7 +545,15 @@ export function planOf(
 
 /** The database of a connection, as far as the lock cares. */
 export type Dialect =
-  'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle' | 'duckdb' | 'clickhouse' | 'trino';
+  | 'postgres'
+  | 'mysql'
+  | 'sqlserver'
+  | 'sqlite'
+  | 'oracle'
+  | 'duckdb'
+  | 'clickhouse'
+  | 'trino'
+  | 'firebird';
 
 /** Types a database cannot compare with `=` (or never finds equal to a text): no lock on them. */
 const NO_EQUALS: Readonly<Record<Dialect, RegExp>> = {
@@ -559,6 +567,8 @@ const NO_EQUALS: Readonly<Record<Dialect, RegExp>> = {
   // nothing is edited there
   clickhouse: /^$/,
   trino: /^$/,
+  // a BLOB cannot be compared with `=`
+  firebird: /^blob/i,
 };
 
 export function comparable(dialect: Dialect, typeName: string): boolean {

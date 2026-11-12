@@ -92,6 +92,10 @@ export function profileProblems(p: Profile): Partial<Record<Field, string>> {
   // libSQL logs in with a token alone: the password of the profile
   if (!p.user.trim() && p.kind !== 'libsql') out.user = t.userMissing;
   if (p.kind === 'trino' && !p.database.trim()) out.database = t.catalogMissing;
+  if (p.kind === 'firebird') {
+    if (!p.database.trim()) out.database = t.firebirdDatabaseMissing;
+    if (p.tls === 'verify' || p.tls === 'verify-ca') out.tls = t.firebirdNoCertificates;
+  }
   if (p.kind === 'd1') {
     const id = /^[A-Za-z0-9-]{1,64}$/;
     if (!id.test(p.database.trim())) out.database = t.d1DatabaseMissing;
@@ -139,6 +143,7 @@ export function withKind(p: Profile, kind: DbKind): Profile {
     trino: 'trino',
     libsql: '',
     d1: '',
+    firebird: 'SYSDBA',
   };
   const usual = Object.values(users);
   return {

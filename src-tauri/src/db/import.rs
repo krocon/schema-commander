@@ -181,6 +181,17 @@ fn pg_tls(mode: &str) -> Option<TlsMode> {
 }
 
 /// `scheme://[user[:password]@]host[:port][/database][?options]`.
+/// `host:3050/C:/data/shop.fdb`, `host//var/data/shop.fdb`, `host/alias`: what follows the first slash
+/// is the database as the server knows it – an alias, or a path (on Unix written with a second slash).
+fn firebird_form(rest: &str) -> AppResult<(Profile, Option<Secret>)> {
+    let (mut p, secret) = url_form(DbKind::Firebird, rest)?;
+    let main = rest.split_once('?').map_or(rest, |(m, _)| m);
+    if let Some((_, path)) = main.split_once('/') {
+        p.database = percent_decode(path);
+    }
+    Ok((p, secret))
+}
+
 fn url_form(kind: DbKind, rest: &str) -> AppResult<(Profile, Option<Secret>)> {
     let mut p = blank(kind);
     let (main, query) = rest.split_once('?').unwrap_or((rest, ""));
@@ -348,6 +359,11 @@ pub fn parse_url(text: &str) -> AppResult<Candidate> {
         url_form(DbKind::Trino, after("trino://"))?
     } else if lower.starts_with("presto://") {
         url_form(DbKind::Trino, after("presto://"))?
+    } else if lower.starts_with("firebirdsql://") {
+        // jdbc:firebirdsql://host:3050/path/to.fdb – the database is a path: its slash belongs to it
+        firebird_form(after("firebirdsql://"))?
+    } else if lower.starts_with("firebird://") {
+        firebird_form(after("firebird://"))?
     } else if lower.starts_with("libsql://") {
         // a Turso address: HTTPS, the token in the query (`?authToken=…`) – it is the password
         let (mut p, mut secret) = url_form(DbKind::Libsql, after("libsql://"))?;
@@ -421,6 +437,8 @@ fn dbeaver_kind(provider: &str, driver: &str) -> Option<DbKind> {
         Some(DbKind::Oracle)
     } else if both.contains("trino") || both.contains("presto") {
         Some(DbKind::Trino)
+    } else if both.contains("firebird") || both.contains("jaybird") {
+        Some(DbKind::Firebird)
     } else if both.contains("libsql") || both.contains("turso") {
         Some(DbKind::Libsql)
     } else if both.contains("clickhouse") {
@@ -912,6 +930,25 @@ pub fn read(source: Source, path: Option<&Path>) -> AppResult<Vec<Candidate>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Firebird (prompt 035i): the database is a path or an alias.
+    #[test]
+    fn reads_a_firebird_address_with_its_path() {
+        let c = parse_url("jdbc:firebirdsql://db.example.com:3051//var/data/shop.fdb").unwrap();
+        assert_eq!(c.profile.kind, DbKind::Firebird);
+        assert_eq!(
+            (c.profile.host.as_str(), c.profile.port),
+            ("db.example.com", 3051)
+        );
+        assert_eq!(c.profile.database, "/var/data/shop.fdb");
+        let win = parse_url("firebird://sysdba:pw@host/C:/data/shop.fdb").unwrap();
+        assert_eq!(win.profile.database, "C:/data/shop.fdb");
+        assert_eq!(win.profile.user, "sysdba");
+        assert_eq!(
+            parse_url("firebird://host/shop").unwrap().profile.database,
+            "shop"
+        );
+    }
 
     /// libSQL (prompt 035g): the address Turso hands out.
     #[test]

@@ -58,7 +58,8 @@ pub fn tools_of(kind: DbKind) -> &'static [Tool] {
         | DbKind::Oracle
         | DbKind::Duckdb
         | DbKind::Clickhouse
-        | DbKind::Trino => &[],
+        | DbKind::Trino
+        | DbKind::Firebird => &[],
     }
 }
 
@@ -579,7 +580,8 @@ pub fn dump(e: &Endpoint, spec: &DumpSpec, target: &Path) -> AppResult<Invocatio
         | DbKind::Oracle
         | DbKind::Duckdb
         | DbKind::Clickhouse
-        | DbKind::Trino => Err(invalid(
+        | DbKind::Trino
+        | DbKind::Firebird => Err(invalid(
             "this database is not backed up with a tool: use the simple export",
         )),
     }

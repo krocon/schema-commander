@@ -145,6 +145,7 @@ pub fn details(
         DbKind::Duckdb => duckdb::read(&mut r, schema, name, object)?,
         DbKind::Clickhouse => clickhouse::read(&mut r, schema, name)?,
         DbKind::Trino => trino::read(&mut r, schema, name, object)?,
+        DbKind::Firebird => firebird::read(&mut r, name, object)?,
     };
     if ddl.is_none() {
         r.notes.push("ddl".into());
@@ -1655,6 +1656,113 @@ mod sqlite {
             .map(|row| format!("{};\n", at(row, 0).trim_end().trim_end_matches(';')))
             .collect();
         Ok(Some(statements.join("\n")))
+    }
+}
+
+mod firebird {
+    use super::*;
+    use crate::db::firebird::{FOREIGN_KEYS, TYPE, in_key};
+    use crate::db::meta::quote;
+
+    pub fn read(r: &mut Reader, name: &str, object: ObjectKind) -> AppResult<Option<String>> {
+        let p = &[name];
+        let k = DbKind::Firebird;
+        if object == ObjectKind::Routine {
+            // the body as it was written; its head is not kept as text
+            let body = r.text(
+                "SELECT p.rdb$procedure_source FROM rdb$procedures p \
+                 WHERE p.rdb$procedure_name = ? AND p.rdb$package_name IS NULL \
+                 UNION ALL SELECT f.rdb$function_source FROM rdb$functions f \
+                 WHERE f.rdb$function_name = ? AND f.rdb$package_name IS NULL",
+                &[name, name],
+            )?;
+            return Ok(body
+                .map(|t| t.trim().to_owned())
+                .filter(|t| !t.is_empty())
+                .map(|t| {
+                    format!(
+                        "-- the body of {}; its parameters are not part of it\n{t}\n",
+                        quote(name, k)
+                    )
+                }));
+        }
+        r.section(
+            "columns",
+            &["name", "type", "nullable", "default", "key", "comment"],
+            &format!(
+                "SELECT rf.rdb$field_name, {TYPE}, \
+                   IIF(COALESCE(rf.rdb$null_flag, f.rdb$null_flag, 0) = 1, 'no', 'yes'), \
+                   COALESCE(rf.rdb$default_source, f.rdb$default_source), \
+                   CASE WHEN {} THEN 'pk' WHEN {} THEN 'fk' ELSE '' END, rf.rdb$description \
+                 FROM rdb$relation_fields rf \
+                 JOIN rdb$fields f ON f.rdb$field_name = rf.rdb$field_source \
+                 WHERE rf.rdb$relation_name = ? ORDER BY rf.rdb$field_position",
+                in_key("PRIMARY KEY"),
+                in_key("FOREIGN KEY")
+            ),
+            p,
+        )?;
+        if object == ObjectKind::View {
+            let source = r.text(
+                "SELECT r.rdb$view_source FROM rdb$relations r WHERE r.rdb$relation_name = ?",
+                p,
+            )?;
+            return Ok(source
+                .map(|t| t.trim().to_owned())
+                .filter(|t| !t.is_empty())
+                .map(|t| format!("CREATE OR ALTER VIEW {} AS\n{t};\n", quote(name, k))));
+        }
+        r.section(
+            "indexes",
+            &["name", "columns", "unique", "active"],
+            "SELECT i.rdb$index_name, \
+               COALESCE((SELECT LIST(TRIM(sg.rdb$field_name), ', ') FROM rdb$index_segments sg \
+                 WHERE sg.rdb$index_name = i.rdb$index_name), i.rdb$expression_source), \
+               IIF(i.rdb$unique_flag = 1, 'yes', 'no'), IIF(i.rdb$index_inactive = 1, 'no', 'yes') \
+             FROM rdb$indices i WHERE i.rdb$relation_name = ? ORDER BY 1",
+            p,
+        )?;
+        r.section(
+            "constraints",
+            &["name", "type", "definition"],
+            "SELECT rc.rdb$constraint_name, TRIM(rc.rdb$constraint_type), \
+               COALESCE((SELECT LIST(TRIM(sg.rdb$field_name), ', ') FROM rdb$index_segments sg \
+                 WHERE sg.rdb$index_name = rc.rdb$index_name), \
+               (SELECT FIRST 1 tr.rdb$trigger_source FROM rdb$check_constraints cc \
+                 JOIN rdb$triggers tr ON tr.rdb$trigger_name = cc.rdb$trigger_name \
+                 WHERE cc.rdb$constraint_name = rc.rdb$constraint_name)) \
+             FROM rdb$relation_constraints rc \
+             WHERE rc.rdb$relation_name = ? AND rc.rdb$constraint_type <> 'NOT NULL' ORDER BY 2, 1",
+            p,
+        )?;
+        r.section(
+            "foreign_keys",
+            &[
+                "name",
+                "schema",
+                "table",
+                "column",
+                "ref_schema",
+                "references",
+                "ref_column",
+            ],
+            &format!(
+                "{FOREIGN_KEYS} AND rc.rdb$relation_name = ? \
+                 ORDER BY rc.rdb$constraint_name, cs.rdb$field_position"
+            ),
+            p,
+        )?;
+        r.section(
+            "triggers",
+            &["name", "active", "source"],
+            "SELECT tr.rdb$trigger_name, IIF(tr.rdb$trigger_inactive = 1, 'no', 'yes'), \
+               tr.rdb$trigger_source \
+             FROM rdb$triggers tr \
+             WHERE tr.rdb$relation_name = ? AND COALESCE(tr.rdb$system_flag, 0) = 0 ORDER BY 1",
+            p,
+        )?;
+        // Firebird keeps no statement of a table, and the app writes none for it yet
+        Ok(None)
     }
 }
 

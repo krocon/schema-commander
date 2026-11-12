@@ -308,6 +308,7 @@ fn as_text(column: &str, kind: DbKind) -> String {
         DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("CAST({column} AS TEXT)"),
         DbKind::Oracle => format!("TO_CHAR({column})"),
         DbKind::Duckdb | DbKind::Trino => format!("CAST({column} AS VARCHAR)"),
+        DbKind::Firebird => format!("CAST({column} AS VARCHAR(8191))"),
         DbKind::Clickhouse => format!("toString({column})"),
     }
 }
@@ -348,6 +349,7 @@ pub fn data_question(
         match kind {
             DbKind::Postgres | DbKind::Duckdb => format!("${n}"),
             DbKind::Mysql | DbKind::Trino => "?".to_owned(),
+            DbKind::Firebird => "CAST(? AS VARCHAR(8191))".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
             DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("?{n}"),
             DbKind::Oracle => format!(":{n}"),
@@ -366,6 +368,7 @@ pub fn data_question(
                 format!("substr({text}, 1, {VALUE_CHARS})")
             }
             DbKind::Oracle => format!("SUBSTR({text}, 1, {VALUE_CHARS})"),
+            DbKind::Firebird => format!("SUBSTRING({text} FROM 1 FOR {VALUE_CHARS})"),
             DbKind::Clickhouse => format!("substringUTF8({text}, 1, {VALUE_CHARS})"),
             DbKind::Postgres | DbKind::Mysql | DbKind::Sqlserver | DbKind::Duckdb => {
                 format!("LEFT({text}, {VALUE_CHARS})")
@@ -427,6 +430,23 @@ pub fn data_question(
             }
             (DbKind::Sqlite | DbKind::Libsql | DbKind::D1, _) => {
                 format!("{text} = {} COLLATE NOCASE", place(spec.text.clone()))
+            }
+            // CONTAINING takes a text as it is and ignores its case; with the case, a position
+            (DbKind::Firebird, Mode::Contains) if sensitive => {
+                format!("POSITION({} IN {text}) > 0", place(spec.text.clone()))
+            }
+            (DbKind::Firebird, Mode::Contains) => {
+                format!("{text} CONTAINING {}", place(spec.text.clone()))
+            }
+            (DbKind::Firebird, Mode::Exact) if sensitive => {
+                format!("{text} = {}", place(spec.text.clone()))
+            }
+            (DbKind::Firebird, Mode::Exact) => {
+                format!("UPPER({text}) = UPPER({})", place(spec.text.clone()))
+            }
+            // SIMILAR TO is another language than a regular expression: the text itself is looked for
+            (DbKind::Firebird, Mode::Regex) => {
+                format!("{text} = {}", place(spec.text.clone()))
             }
             // no LIKE either: a position says the same without a pattern
             (DbKind::Trino, Mode::Contains) if sensitive => {
@@ -520,7 +540,9 @@ pub fn data_question(
     let limit = spec.max_hits.clamp(1, 1_000) + 1;
     let (top, tail) = match kind {
         DbKind::Sqlserver => (format!("TOP ({limit}) "), String::new()),
-        DbKind::Oracle => (String::new(), format!(" FETCH FIRST {limit} ROWS ONLY")),
+        DbKind::Oracle | DbKind::Firebird => {
+            (String::new(), format!(" FETCH FIRST {limit} ROWS ONLY"))
+        }
         _ => (String::new(), format!(" LIMIT {limit}")),
     };
     let sql = format!(
@@ -694,6 +716,22 @@ fn columns_of(
             limit,
             stop,
         )?,
+        DbKind::Firebird => s.ask(
+            &format!(
+                "SELECT rf.rdb$relation_name, rf.rdb$field_name, {} \
+                 FROM rdb$relation_fields rf \
+                 JOIN rdb$fields f ON f.rdb$field_name = rf.rdb$field_source \
+                 JOIN rdb$relations r ON r.rdb$relation_name = rf.rdb$relation_name \
+                 WHERE {} AND {} AND r.rdb$view_blr IS NULL \
+                 ORDER BY rf.rdb$relation_name, rf.rdb$field_position",
+                super::firebird::TYPE,
+                super::firebird::NO_SCHEMA,
+                super::firebird::OWN
+            ),
+            &[schema],
+            limit,
+            stop,
+        )?,
         DbKind::Trino => s.ask(
             "SELECT c.table_name, c.column_name, c.data_type FROM information_schema.columns c \
              JOIN information_schema.tables t \
@@ -827,6 +865,15 @@ pub(super) fn source_questions(kind: DbKind, flavor: Flavor) -> Vec<&'static str
         DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => vec![
             "SELECT type, name, sql FROM sqlite_master \
              WHERE sql IS NOT NULL AND type IN ('view', 'trigger', 'table') AND ?1 = ?1",
+        ],
+        DbKind::Firebird => vec![
+            "SELECT 'view', r.rdb$relation_name, r.rdb$view_source FROM rdb$relations r \
+             WHERE r.rdb$view_blr IS NOT NULL AND COALESCE(r.rdb$system_flag, 0) = 0 \
+               AND CAST(? AS VARCHAR(63)) = ''",
+            "SELECT 'routine', p.rdb$procedure_name, p.rdb$procedure_source FROM rdb$procedures p \
+             WHERE COALESCE(p.rdb$system_flag, 0) = 0 AND CAST(? AS VARCHAR(63)) = ''",
+            "SELECT 'trigger', tr.rdb$trigger_name, tr.rdb$trigger_source FROM rdb$triggers tr \
+             WHERE COALESCE(tr.rdb$system_flag, 0) = 0 AND CAST(? AS VARCHAR(63)) = ''",
         ],
         DbKind::Trino => vec![
             "SELECT 'view', table_name, view_definition FROM information_schema.views \
