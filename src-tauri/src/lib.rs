@@ -139,6 +139,7 @@ pub fn run() {
             commands::meta_relations,
             commands::edit_preview,
             commands::edit_apply,
+            commands::meta_diagram,
             commands::find_on_server,
             commands::app_info,
             commands::third_party_notices,

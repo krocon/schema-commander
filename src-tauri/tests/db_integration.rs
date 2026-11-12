@@ -3604,3 +3604,134 @@ fn a_table_that_takes_too_long_is_left_out_and_the_search_goes_on() {
         }
     }
 }
+
+// ── What an ER diagram is drawn from (prompt 037) ────────────────────────────
+
+/// Every server gives the tables of a schema with their columns, the keys between them – one of two
+/// columns, one of a table to itself – and what is unique.
+#[test]
+#[ignore]
+fn every_server_gives_what_a_diagram_is_drawn_from() {
+    use schema_commander_lib::db::diagram::diagram;
+    for (p, product, schema) in [
+        (pg(), "postgres", "sc_er"),
+        (crdb(), "cockroach", "sc_er"),
+        (my(), "mysql", "shop"),
+        (maria(), "mariadb", "shop"),
+        (ms(), "sqlserver", "dbo"),
+    ] {
+        let kind = p.kind;
+        let mut s = open(&p);
+        if kind == DbKind::Postgres {
+            run(&mut s, "DROP SCHEMA IF EXISTS sc_er CASCADE");
+            run(&mut s, "CREATE SCHEMA sc_er");
+        }
+        let t = |name: &str| format!("{schema}.{name}");
+        for name in ["sc_e_profile", "sc_e_copy", "sc_e_book", "sc_e_author"] {
+            run(&mut s, &format!("DROP TABLE IF EXISTS {}", t(name)));
+        }
+        run(
+            &mut s,
+            &format!(
+                "CREATE TABLE {a} (id int NOT NULL PRIMARY KEY, name varchar(40) NOT NULL, boss int NULL, \
+                 CONSTRAINT sc_e_boss FOREIGN KEY (boss) REFERENCES {a} (id))",
+                a = t("sc_e_author")
+            ),
+        );
+        run(
+            &mut s,
+            &format!(
+                "CREATE TABLE {} (isbn varchar(20) NOT NULL, edition int NOT NULL, author_id int NOT NULL, \
+                 PRIMARY KEY (isbn, edition), \
+                 CONSTRAINT sc_e_written FOREIGN KEY (author_id) REFERENCES {} (id))",
+                t("sc_e_book"),
+                t("sc_e_author")
+            ),
+        );
+        run(
+            &mut s,
+            &format!(
+                "CREATE TABLE {} (id int NOT NULL PRIMARY KEY, isbn varchar(20) NULL, edition int NULL, \
+                 CONSTRAINT sc_e_of FOREIGN KEY (isbn, edition) REFERENCES {} (isbn, edition))",
+                t("sc_e_copy"),
+                t("sc_e_book")
+            ),
+        );
+        run(
+            &mut s,
+            &format!(
+                "CREATE TABLE {} (author_id int NOT NULL PRIMARY KEY, bio varchar(200) NULL, \
+                 CONSTRAINT sc_e_is FOREIGN KEY (author_id) REFERENCES {} (id))",
+                t("sc_e_profile"),
+                t("sc_e_author")
+            ),
+        );
+        let d = diagram(s.as_mut(), kind, schema, &|| false).unwrap();
+        let mine: Vec<_> = d
+            .tables
+            .iter()
+            .filter(|x| x.name.starts_with("sc_e_"))
+            .collect();
+        assert_eq!(
+            mine.iter().map(|x| x.name.as_str()).collect::<Vec<_>>(),
+            ["sc_e_author", "sc_e_book", "sc_e_copy", "sc_e_profile"],
+            "{product}"
+        );
+        let book = mine[1];
+        assert_eq!(
+            book.columns
+                .iter()
+                .map(|c| format!("{} {} {}", c.name, c.nullable, c.pk))
+                .collect::<Vec<_>>(),
+            [
+                "isbn false true",
+                "edition false true",
+                "author_id false false"
+            ],
+            "{product}"
+        );
+        assert!(mine[2].columns[1].nullable, "{product}");
+        let mut keys: Vec<String> = d
+            .keys
+            .iter()
+            .filter(|k| k.table.starts_with("sc_e_"))
+            .map(|k| {
+                format!(
+                    "{}({}) → {}({})",
+                    k.table,
+                    k.columns.join(","),
+                    k.ref_table,
+                    k.ref_columns.join(",")
+                )
+            })
+            .collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            [
+                "sc_e_author(boss) → sc_e_author(id)",
+                "sc_e_book(author_id) → sc_e_author(id)",
+                "sc_e_copy(isbn,edition) → sc_e_book(isbn,edition)",
+                "sc_e_profile(author_id) → sc_e_author(id)"
+            ],
+            "{product}"
+        );
+        let unique = |table: &str, columns: &[&str]| {
+            d.unique.iter().any(|u| {
+                u.table == table
+                    && u.columns.len() == columns.len()
+                    && columns.iter().all(|c| u.columns.iter().any(|x| x == c))
+            })
+        };
+        assert!(
+            unique("sc_e_book", &["isbn", "edition"]),
+            "{product}: {:?}",
+            d.unique
+        );
+        assert!(unique("sc_e_profile", &["author_id"]), "{product}");
+        assert!(!unique("sc_e_book", &["author_id"]), "{product}");
+        for name in ["sc_e_profile", "sc_e_copy", "sc_e_book", "sc_e_author"] {
+            run(&mut s, &format!("DROP TABLE {}", t(name)));
+        }
+    }
+}

@@ -493,6 +493,13 @@ export const ACTIONS = [
     scope: 'global',
   },
   { id: 'SCHEMA_EXPORT_TABLE', label: 'Export table …', group: 'Schema', scope: 'global' },
+  // ER diagram (prompt 037)
+  {
+    id: 'SCHEMA_DIAGRAM',
+    label: 'Diagram of the schema or around the table …',
+    group: 'Schema',
+    scope: 'global',
+  },
   // Search on the server (prompt 036)
   { id: 'SEARCH_SERVER', label: 'Search on the server …', group: 'Schema', scope: 'global' },
   {

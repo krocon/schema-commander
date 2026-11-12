@@ -51,6 +51,7 @@ import { LoadedSession, SessionApi, SessionFile, TextFile } from '../app/core/se
 import { QueryApi, RunGuard } from '../app/core/sql/query-api';
 import { SchemaApi } from '../app/core/schema/schema-api';
 import {
+  DiagramData,
   Found,
   NameContext,
   NameHit,
@@ -910,6 +911,13 @@ export class FakeSchemaApi extends SchemaApi {
     return Promise.resolve(
       this.relationsOf[`${schema}.${table}`] ?? { outgoing: [], incoming: [] },
     );
+  }
+
+  /** What `diagram` answers (prompt 037). */
+  diagramData: DiagramData = { tables: [], keys: [], unique: [], cut: false };
+
+  diagram(_id: string, schema: string): Promise<DiagramData> {
+    return this.answer(`diagram ${schema}`, this.diagramData);
   }
 
   search(_id: string, text: string): Promise<Found[]> {

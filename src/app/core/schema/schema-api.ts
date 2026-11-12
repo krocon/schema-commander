@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { call } from '../backend/call';
 import {
+  DiagramData,
   Found,
   NameContext,
   NameHits,
@@ -25,6 +26,8 @@ export abstract class SchemaApi {
   abstract table(connectionId: string, schema: string, table: string): Promise<TableInfo>;
   /** The foreign keys of a table and those that point to it (prompt 030). */
   abstract relations(connectionId: string, schema: string, table: string): Promise<TableRelations>;
+  /** Tables, keys and unique sets of a schema: what an ER diagram is drawn from (prompt 037). */
+  abstract diagram(connectionId: string, schema: string): Promise<DiagramData>;
   /** Tables and views whose name holds `text`, in all schemas but the system's (at most 200). */
   abstract search(connectionId: string, text: string): Promise<Found[]>;
   /** Everything about one object and its DDL; `detail` tells overloaded routines apart. */
@@ -60,6 +63,10 @@ export class TauriSchemaApi extends SchemaApi {
 
   relations(connectionId: string, schema: string, table: string): Promise<TableRelations> {
     return call('meta_relations', { id: connectionId, schema, table });
+  }
+
+  diagram(connectionId: string, schema: string): Promise<DiagramData> {
+    return call('meta_diagram', { id: connectionId, schema });
   }
 
   search(connectionId: string, text: string): Promise<Found[]> {
