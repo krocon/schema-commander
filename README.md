@@ -47,6 +47,10 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   (<kbd>Ctrl/⌘</kbd>+<kbd>D</kbd>). Everything is written together: deletes, then changes, then inserts
 - A row as a form beside the grid (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>L</kbd>): every column a line, filter by column
   name, step through the rows, marked rows side by side with what differs
+- Results of a script as sub-tabs with title and row count; pin a result so the next run keeps it, move it into a
+  tab of its own, and compare two results (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>B</kbd>; run again and
+  compare: <kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>Y</kbd>) by key columns or position, with tolerances –
+  worked out in Rust, also for millions of rows
 - Execution plans (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>X</kbd>) as a tree table for every database: rows estimated and
   actual, own and total time, cost – the expensive operations and wrong estimates stand out. „With execution“
   runs the statement inside a transaction that is rolled back

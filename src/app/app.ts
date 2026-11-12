@@ -34,6 +34,9 @@ import { ErDiagramDialog } from './features/diagram/er-diagram-dialog';
 import { ExportDialog } from './features/export/export-dialog';
 import { PlanDialog } from './features/plan/plan-dialog';
 import { PlanService } from './features/plan/plan.service';
+import { ResultCompareDialog } from './features/result-compare/result-compare-dialog';
+import { ResultCompareService } from './features/result-compare/result-compare.service';
+import { isKept } from './features/tabs/result-tabs-logic';
 import { SchemaCompareDialog } from './features/schema-compare/schema-compare-dialog';
 import { SchemaCompareService } from './features/schema-compare/schema-compare.service';
 import { ServerSearchDialog } from './features/server-search/server-search-dialog';
@@ -106,7 +109,7 @@ import { MenuService } from './features/menus/menu.service';
 import { SettingsDialog } from './features/settings/settings-dialog';
 import { ShortcutDialogComponent } from './features/shortcuts/shortcut-dialog';
 import { QueryPane } from './features/tabs/query-pane';
-import { runStatus } from './features/tabs/run-state';
+import { runStatus, statusText } from './features/tabs/run-state';
 import { TabBar } from './features/tabs/tab-bar';
 import { encodingLabel } from './features/tabs/tab-logic';
 import { TabsStore } from './features/tabs/tabs.store';
@@ -133,6 +136,7 @@ const SIDEBAR_MIN = 140;
     ContextMenu,
     ExportDialog,
     PlanDialog,
+    ResultCompareDialog,
     SchemaCompareDialog,
     ErDiagramDialog,
     ServerSearchDialog,
@@ -557,6 +561,11 @@ const SIDEBAR_MIN = 140;
         <app-schema-compare-dialog (closed)="schemaCompare.open.set(false)" />
       }
     }
+    @if (resultCompare.request(); as request) {
+      @defer (on immediate) {
+        <app-result-compare-dialog [request]="request" (closed)="resultCompare.close()" />
+      }
+    }
     @if (plans.view(); as view) {
       @defer (on immediate) {
         <app-plan-dialog [view]="view" (closed)="plans.close()" />
@@ -674,7 +683,10 @@ export class App implements OnInit, OnDestroy {
     const job = this.exporter.job();
     if (job) return job.message;
     const tab = this.tabs.active();
-    return tab ? runStatus(tab.runs(), tab.elapsedMs()) : '';
+    if (!tab) return '';
+    // a kept result on screen (prompt 041): the line talks about what is looked at
+    if (tab.shownKept() && !tab.running()) return statusText(tab.state());
+    return runStatus(tab.runs(), tab.elapsedMs());
   });
   protected readonly copier = inject(CopyService);
   protected readonly history = inject(HistoryService);
@@ -706,6 +718,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly serverSearch = inject(ServerSearchService);
   protected readonly diagrams = inject(DiagramService);
   protected readonly plans = inject(PlanService);
+  protected readonly resultCompare = inject(ResultCompareService);
   protected readonly schemaCompare = inject(SchemaCompareService);
   protected readonly formatter = inject(FormatService);
   protected readonly saved = inject(SavedStore);
@@ -1031,8 +1044,75 @@ export class App implements OnInit, OnDestroy {
       ),
       this.actions.register(
         'SHOW_MESSAGES',
-        () => tab()?.shown.set('messages'),
+        () => tab()?.show('messages'),
         () => !!tab(),
+      ),
+      this.actions.register(
+        'RESULT_NEXT_TAB',
+        () => this.stepResult(1),
+        () => (tab()?.subTabs().length ?? 0) > 0,
+      ),
+      this.actions.register(
+        'RESULT_PREVIOUS_TAB',
+        () => this.stepResult(-1),
+        () => (tab()?.subTabs().length ?? 0) > 0,
+      ),
+      this.actions.register(
+        'RESULT_PIN',
+        () => tab()?.togglePin(),
+        () => tab()?.canPin() ?? false,
+      ),
+      this.actions.registerCheck('RESULT_PIN', () => tab()?.isPinned() ?? false),
+      this.actions.register(
+        'RESULT_CLOSE_KEPT',
+        () => tab()?.closeKeptAll(true),
+        () => (tab()?.kept().length ?? 0) > 0,
+      ),
+      this.actions.register(
+        'RESULT_DETACH',
+        () => this.tabs.detachResult(false),
+        () => tab()?.canPin() ?? false,
+      ),
+      this.actions.register(
+        'RESULT_DETACH_BESIDE',
+        () => this.tabs.detachResult(true),
+        () => tab()?.canPin() ?? false,
+      ),
+      this.actions.register(
+        'COMPARE_RESULTS',
+        () => this.resultCompare.open(),
+        () => !!tab() && !tab()?.running(),
+      ),
+      this.actions.register(
+        'RUN_AND_COMPARE',
+        () => void this.resultCompare.runAgain(),
+        () => !this.running() && (tab()?.canPin() ?? false) && !tab()?.shownKept()?.compare,
+      ),
+      this.actions.register(
+        'COMPARE_NEXT',
+        () => void tab()?.nextDifference(true),
+        () => !!tab()?.shownKept()?.compare,
+      ),
+      this.actions.register(
+        'COMPARE_PREVIOUS',
+        () => void tab()?.nextDifference(false),
+        () => !!tab()?.shownKept()?.compare,
+      ),
+      this.actions.register(
+        'COMPARE_ONLY_DIFFERENCES',
+        () => {
+          const t = tab();
+          const shown = t?.shown();
+          const compare = t?.shownKept()?.compare;
+          if (t && compare && shown !== undefined && isKept(shown)) {
+            t.setOnlyDifferences(shown, !compare.onlyDifferences);
+          }
+        },
+        () => !!tab()?.shownKept()?.compare,
+      ),
+      this.actions.registerCheck(
+        'COMPARE_ONLY_DIFFERENCES',
+        () => tab()?.shownKept()?.compare?.onlyDifferences ?? false,
       ),
       this.actions.register(
         'SCHEMA_REFRESH',
@@ -1599,6 +1679,20 @@ export class App implements OnInit, OnDestroy {
   }
 
   /** Opens the export dialog for the result in front: what is selected in its grid, or all of it. */
+  /** The next (or the one before) sub-tab of the result area of the tab in front, round and round. */
+  private stepResult(step: 1 | -1): void {
+    const tab = this.tabs.active();
+    if (!tab) return;
+    const subs = tab.subTabs();
+    const order = [
+      ...subs.filter((s) => subs.length > 1 || s.kept).map((s) => s.target),
+      'messages' as const,
+    ];
+    const at = order.indexOf(tab.shown());
+    tab.show(order[(Math.max(at, 0) + step + order.length) % order.length]);
+    if (!this.settings.settings().resultVisible) this.settings.update({ resultVisible: true });
+  }
+
   private exportResult(): void {
     const current = this.copier.current();
     if (!current) return;

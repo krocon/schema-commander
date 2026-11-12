@@ -590,6 +590,74 @@ pub fn copy_cell_value(
     Ok(chars)
 }
 
+/// Which columns of two results go together (prompt 041): what the dialog offers as keys.
+#[tauri::command(async)]
+pub fn compare_columns(
+    store: State<'_, ResultStore>,
+    left: u64,
+    right: u64,
+) -> AppResult<crate::result_compare::Pairing> {
+    Ok(crate::result_compare::pair(
+        &store.columns(left)?,
+        &store.columns(right)?,
+    ))
+}
+
+/// How far a comparison is, in rows read.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+pub struct CompareProgress {
+    pub done: u64,
+    pub of: u64,
+}
+
+/// Compares two results (prompt 041) over the store: the outcome is a result of its own plus a view of
+/// the rows that differ. A job: `cancel_job` stops it, and then nothing of it stays in the store.
+#[tauri::command(async)]
+pub fn result_compare(
+    store: State<'_, ResultStore>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    spec: crate::result_compare::CompareSpec,
+    on_progress: Channel<CompareProgress>,
+) -> AppResult<crate::result_compare::CompareReport> {
+    use std::sync::atomic::Ordering;
+    let stop = jobs.start(job_id, None);
+    let result = crate::result_compare::compare(
+        &store,
+        &spec,
+        &|done, of| {
+            let _ = on_progress.send(CompareProgress { done, of });
+        },
+        &|| stop.load(Ordering::Relaxed),
+    );
+    jobs.end(job_id);
+    result
+}
+
+/// The next row of a view behind (or before) a row of its result (prompt 041: the next difference).
+/// Answers with `[row of the view, row of the result]`.
+#[tauri::command(async)]
+pub fn result_neighbour(
+    store: State<'_, ResultStore>,
+    view_id: u64,
+    row: u64,
+    forward: bool,
+) -> AppResult<Option<(u64, u64)>> {
+    store.neighbour(view_id, row, forward)
+}
+
+/// What results take in the store (prompt 041); a result that is gone takes nothing.
+#[tauri::command(async)]
+pub fn result_usage(
+    store: State<'_, ResultStore>,
+    result_ids: Vec<u64>,
+) -> Vec<crate::results::Usage> {
+    result_ids
+        .into_iter()
+        .map(|id| store.usage(id).unwrap_or_default())
+        .collect()
+}
+
 /// Forgets results the window no longer shows (their files go too).
 #[tauri::command(async)]
 pub fn free_results(store: State<'_, ResultStore>, result_ids: Vec<u64>) {

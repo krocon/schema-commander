@@ -93,6 +93,10 @@ import {
   SearchSpec,
   SeekKind,
   ViewedResult,
+  ColumnPairing,
+  CompareReport,
+  CompareSpec,
+  ResultUsage,
 } from '../app/core/sql/query.models';
 import { FileDialogApi } from '../app/core/backend/file-dialog-api';
 import { WindowApi } from '../app/core/backend/window-api';
@@ -359,6 +363,87 @@ export class FakeQueryApi extends QueryApi {
   cancelView(jobId: number): Promise<void> {
     this.cancelledViews.push(jobId);
     return Promise.resolve();
+  }
+
+  compareColumns(left: number, right: number): Promise<ColumnPairing> {
+    void left;
+    void right;
+    return Promise.resolve({
+      pairs: this.columns.map((_, i) => [i, i] as const),
+      leftOnly: [],
+      rightOnly: [],
+      byPosition: false,
+    });
+  }
+
+  /** Every comparison asked for; `compareGate` holds the answer back, `compareError` fails it. */
+  readonly compares: { jobId: number; spec: CompareSpec }[] = [];
+  readonly cancelledCompares: number[] = [];
+  compareGate: Promise<void> | null = null;
+  compareError: unknown = null;
+  compareReport: Partial<CompareReport> = {};
+
+  async resultCompare(
+    jobId: number,
+    spec: CompareSpec,
+    onProgress?: (done: number, of: number) => void,
+  ): Promise<CompareReport> {
+    this.compares.push({ jobId, spec });
+    onProgress?.(1, 2);
+    if (this.compareGate) await this.compareGate;
+    if (this.compareError) throw this.compareError;
+    const resultId = 5000 + this.compares.length * 2;
+    const rows: Cell[][] = [
+      ['≡', null, 1, 'a'],
+      ['≠←', 'name', 2, 'b'],
+      ['≠→', 'name', 2, 'B'],
+      ['→', null, 3, 'c'],
+    ];
+    this.results.set(resultId, rows);
+    this.results.set(resultId + 1, rows.slice(1));
+    return {
+      resultId,
+      columns: [
+        { name: 'Δ', kind: 'text', typeName: '' },
+        { name: '≠', kind: 'text', typeName: '' },
+        ...this.columns,
+      ],
+      rows: 4,
+      diffId: resultId + 1,
+      diffRows: 3,
+      leftRows: 2,
+      rightRows: 3,
+      same: 1,
+      changed: 1,
+      leftOnly: 0,
+      rightOnly: 1,
+      duplicateLeft: 0,
+      duplicateRight: 0,
+      duplicateKeys: [],
+      changedByColumn: [{ name: 'name', rows: 1 }],
+      leftColumnsOnly: [],
+      rightColumnsOnly: [],
+      byPosition: false,
+      cut: false,
+      ...this.compareReport,
+    };
+  }
+
+  cancelCompare(jobId: number): Promise<void> {
+    this.cancelledCompares.push(jobId);
+    return Promise.resolve();
+  }
+
+  /** What `resultNeighbour` answers. */
+  neighbour: readonly [number, number] | null = null;
+  resultNeighbour(): Promise<readonly [number, number] | null> {
+    return Promise.resolve(this.neighbour);
+  }
+
+  resultUsage(resultIds: readonly number[]): Promise<ResultUsage[]> {
+    return Promise.resolve(
+      resultIds.map((id) => ({ bytes: this.results.has(id) ? 1024 : 0, onDisk: false })),
+    );
   }
 
   /** Every question for figures, and how it is answered (a gate holds the answer back). */

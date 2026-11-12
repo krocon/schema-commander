@@ -65,6 +65,7 @@ export const SETTINGS_EN = {
     copyNullAs: 'NULL in copied text',
     csvDelimiter: 'Separator of CSV',
     stopOnError: 'Stop a script at the first error',
+    keepResults: 'Keep the results of earlier runs',
     statementTimeoutSec: 'Time limit per statement (seconds)',
     paramsEnabled: 'Ask for the values of parameters',
     autoCommit: 'New tabs commit automatically',
@@ -104,6 +105,8 @@ export const SETTINGS_EN = {
     copyNullAs: '',
     csvDelimiter: '',
     stopOnError: 'The rest of the script is left out.',
+    keepResults:
+      'Every run gets new result tabs; older results stay until they are closed (at most 20 that are not pinned).',
     statementTimeoutSec: '0 = as long as it takes.',
     paramsEnabled:
       ':name, ${name}, $1 or ? in a statement: the values are asked for and sent apart from the text. Which forms count is set per connection, in the dialog that asks.',

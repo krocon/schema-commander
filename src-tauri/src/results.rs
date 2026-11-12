@@ -796,6 +796,87 @@ impl ResultStore {
             .map_err(|e| AppError::new(ErrorCode::Io, format!("a stored row is damaged: {e}")))
     }
 
+    /// One row of a result or of a view as it is stored (prompt 041).
+    pub fn row(&self, id: u64, row: u64) -> AppResult<String> {
+        match self.view(id) {
+            Some(view) => match view.order.get(row as usize) {
+                Some(base) => Self::base_row(&view.data, *base),
+                None => Err(AppError::new(ErrorCode::NotFound, "no such row")),
+            },
+            None => Self::base_row(&self.get(id)?, row),
+        }
+    }
+
+    /// A view of some rows of a result, in the order given (prompt 041: the rows that differ). Rows the
+    /// result does not have are left out. Freed like any view – with its id or with its result.
+    pub fn subset(&self, id: u64, rows: Vec<u64>) -> AppResult<Viewed> {
+        let data = self.get(id)?;
+        let have = data.lock().rows();
+        let order: Vec<u64> = rows.into_iter().filter(|r| *r < have).collect();
+        let view_id = self.next.fetch_add(1, Ordering::Relaxed);
+        let rows = order.len() as u64;
+        self.views.lock().insert(
+            view_id,
+            Arc::new(View {
+                base: id,
+                data,
+                order,
+            }),
+        );
+        Ok(Viewed {
+            result_id: view_id,
+            rows,
+        })
+    }
+
+    /// The row of the view `view_id` that shows the first row of its result behind `row` (`forward`) or
+    /// before it – for a view whose rows are in the order of the result (see [`Self::subset`]). `row` is a
+    /// row of the result; the answer is `(row of the view, row of the result)`.
+    pub fn neighbour(
+        &self,
+        view_id: u64,
+        row: u64,
+        forward: bool,
+    ) -> AppResult<Option<(u64, u64)>> {
+        let view = self.view(view_id).ok_or_else(|| unknown(view_id))?;
+        let at = if forward {
+            let i = view.order.partition_point(|r| *r <= row);
+            (i < view.order.len()).then_some(i)
+        } else {
+            view.order.partition_point(|r| *r < row).checked_sub(1)
+        };
+        Ok(at.map(|i| (i as u64, view.order[i])))
+    }
+
+    /// What a result holds: bytes of its rows and of its long values, and whether the rows are in a file.
+    /// A view holds nothing of its own.
+    pub fn usage(&self, id: u64) -> AppResult<Usage> {
+        if self.view(id).is_some() {
+            return Ok(Usage::default());
+        }
+        let data = self.get(id)?;
+        let d = data.lock();
+        Ok(Usage {
+            bytes: d.bytes() + d.whole_bytes,
+            on_disk: d.file.is_some(),
+        })
+    }
+
+    /// A result that is written row by row as JSON that is there already (prompt 041).
+    pub fn writer(&self, columns: Vec<Column>) -> AppResult<RawWriter<'_>> {
+        let id = self.create(columns)?;
+        Ok(RawWriter {
+            store: self,
+            id,
+            data: self.get(id)?,
+            buffer: Vec::new(),
+            lengths: Vec::new(),
+            rows: 0,
+            bytes: 0,
+            full: false,
+        })
+    }
+
     pub fn len(&self) -> usize {
         self.results.lock().len()
     }
@@ -832,6 +913,75 @@ fn push_row(out: &mut String, row: &str) {
             out.push_str(&serde_json::to_string(&cells).unwrap_or_else(|_| "[]".to_string()));
         }
         Err(_) => out.push_str(row),
+    }
+}
+
+/// What a result takes (prompt 041).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Usage {
+    pub bytes: u64,
+    pub on_disk: bool,
+}
+
+/// Writes rows that are JSON already into a new result. Rows beyond the limits of the store are not
+/// taken (`full`); the caller frees the result when its work fails.
+pub struct RawWriter<'a> {
+    store: &'a ResultStore,
+    id: u64,
+    data: Arc<Mutex<ResultData>>,
+    buffer: Vec<u8>,
+    lengths: Vec<usize>,
+    rows: u64,
+    bytes: u64,
+    pub full: bool,
+}
+
+impl RawWriter<'_> {
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    pub fn rows(&self) -> u64 {
+        self.rows
+    }
+
+    /// Takes a row (a JSON array of its cells); `Ok(false)`: the result is full, the row was not taken.
+    pub fn row(&mut self, json: &[u8]) -> AppResult<bool> {
+        let limits = self.store.limits;
+        if self.full
+            || self.rows >= limits.max_rows
+            || self.bytes + json.len() as u64 > limits.max_bytes
+        {
+            self.full = true;
+            return Ok(false);
+        }
+        self.buffer.extend_from_slice(json);
+        self.lengths.push(json.len());
+        self.rows += 1;
+        self.bytes += json.len() as u64;
+        if self.lengths.len() >= BATCH_ROWS || self.buffer.len() >= BATCH_BYTES {
+            self.flush()?;
+        }
+        Ok(true)
+    }
+
+    fn flush(&mut self) -> AppResult<()> {
+        if !self.lengths.is_empty() {
+            self.data
+                .lock()
+                .append(&self.buffer, &self.lengths)
+                .map_err(io)?;
+            self.buffer.clear();
+            self.lengths.clear();
+        }
+        Ok(())
+    }
+
+    /// Writes what is still collected; answers with the rows of the result.
+    pub fn finish(&mut self) -> AppResult<u64> {
+        self.flush()?;
+        Ok(self.rows)
     }
 }
 

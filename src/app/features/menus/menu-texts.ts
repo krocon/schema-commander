@@ -22,6 +22,7 @@ export const MENU_EN = {
   filterCell: 'Filter by this cell',
   editCells: 'Edit cells',
   relations: 'Relations',
+  resultTabs: 'Results of the tab',
   resultColumns: 'Columns',
   resultFind: 'Find and go to',
   failed: (reason: string) => `The menu bar could not be built: ${reason}`,

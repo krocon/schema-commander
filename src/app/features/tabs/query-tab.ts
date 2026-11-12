@@ -1,4 +1,10 @@
-import { BuiltQuery, QueryColumn, ViewSpec } from '../../core/sql/query.models';
+import {
+  BuiltQuery,
+  CompareSpec,
+  QueryColumn,
+  ResultRef,
+  ViewSpec,
+} from '../../core/sql/query.models';
 import { EMPTY_BUFFER, EditBuffer, editCount } from '../edit/edit-buffer';
 import { ResultFind } from '../find/result-find';
 import { EMPTY_NAV, NavState, navReplace } from '../relations/relation-logic';
@@ -32,7 +38,7 @@ import { FormatOutcome } from '../format/format-logic';
 import { RunGuard } from '../../core/sql/query-api';
 import { GuardAnswer, GuardedStatement, needingConfirmation } from '../guard/guard-logic';
 import type { RanStatement } from '../history/history.service';
-import { computed, signal } from '@angular/core';
+import { Signal, computed, signal } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
 import { ErrorDetails, describeError, toAppError } from '../../core/errors/app-error';
 import { TabMeta } from '../../core/session/session-api';
@@ -53,6 +59,18 @@ import {
   stateOf,
 } from './run-state';
 import { TABS_TEXTS } from './tabs-texts';
+import {
+  KeptKey,
+  KeptResult,
+  Shown,
+  afterClose,
+  compareRun,
+  isKept,
+  keptOverRun,
+  nextKey,
+  storeIds,
+  subTabs,
+} from './result-tabs-logic';
 
 /** What a tab needs of its editor; the pane of the tab registers it. */
 export interface TabEditor {
@@ -140,10 +158,22 @@ export interface RunOptions {
   readonly timeoutMs: number;
   /** Dangerous statements on unprotected connections run without a question. */
   readonly allowDangerous?: boolean;
+  /** The results of a run stay when the next one starts, each in a tab of its own (prompt 041). */
+  readonly keepResults?: boolean;
+}
+
+/** A result of a tab that can be compared with another one. */
+export interface Comparable {
+  readonly target: Shown;
+  readonly title: string;
+  readonly result: ResultRef;
+  readonly rows: number;
 }
 
 /** Ids of the jobs that work out local views: far from those of exports and of the formatter. */
 let nextViewJob = 2_000_000_000;
+/** Ids of the jobs that compare results (prompt 041). */
+let nextCompareJob = 7_000_000_000;
 
 /**
  * A query tab (prompts 004, 005): its title, connection, editor, the statements of its last run with their
@@ -175,7 +205,16 @@ export class QueryTab {
   /** The grid that shows the result of this tab, while there is one: to move its cursor from outside. */
   grid: ResultGridHandle | null = null;
   /** The table this tab shows as a table (prompt 027); `null` = an ordinary query tab. */
-  readonly tableView = signal<TableView | null>(null);
+  private readonly ownTable = signal<TableView | null>(null);
+  /**
+   * Read: `null` also while a kept result is on screen (prompt 041) – that is a plain result, and nothing
+   * that belongs to the table (editing, keys, its filter) may touch it.
+   */
+  readonly tableView: Signal<TableView | null> & { set(view: TableView | null): void } =
+    Object.assign(
+      computed(() => (isKept(this.shown()) ? null : this.ownTable())),
+      { set: (view: TableView | null) => this.ownTable.set(view) },
+    );
   /** How the result on screen is looked at locally, and the view of the store that shows it. */
   readonly localSpec = signal<ViewSpec>(EMPTY_VIEW);
   readonly localView = signal<{ base: number; resultId: number; rows: number } | null>(null);
@@ -186,17 +225,35 @@ export class QueryTab {
 
   /** The statements of the last run (one statement, a selection or a script) and how they went. */
   readonly runs = signal<readonly StatementRun[]>([]);
-  /** What the result area shows: a statement of the run, or the messages. */
-  readonly shown = signal<number | 'messages'>(0);
+  /** Results that outlive a run (prompt 041): pinned ones and the outcomes of comparisons. */
+  readonly kept = signal<readonly KeptResult[]>([]);
+  private lastKey = 0;
+  /** What the result area shows: a statement of the run, a kept result, or the messages. */
+  readonly shown = signal<Shown>(0);
+  /** The statement whose outcome is on screen; `undefined` for the messages or when there is none. */
+  readonly shownRun = computed<StatementRun | undefined>(() => {
+    const shown = this.shown();
+    if (shown === 'messages') return this.runs()[0];
+    if (isKept(shown)) return this.kept().find((k) => k.key === shown)?.run;
+    return this.runs()[shown];
+  });
+  /** The kept result on screen, if it is one. */
+  readonly shownKept = computed<KeptResult | null>(() => {
+    const shown = this.shown();
+    return isKept(shown) ? (this.kept().find((k) => k.key === shown) ?? null) : null;
+  });
+  /** The sub-tabs of the result area, without the messages. */
+  readonly subTabs = computed(() => subTabs(this.runs(), this.kept(), TABS_TEXTS.compareTitle));
+  /** How far the comparison is that runs; `null` = none runs. */
+  readonly comparing = signal<{ readonly done: number; readonly of: number } | null>(null);
+  readonly compareProblem = signal<string | null>(null);
+  private compareJob: number | null = null;
   /** What the tab ran so far, the newest last. */
   readonly log = signal<readonly LogEntry[]>([]);
   /** How long the run takes so far (ticks while it runs). */
   readonly elapsedMs = signal(0);
   /** The outcome of the statement shown. */
-  readonly state = computed<RunState>(() => {
-    const shown = this.shown();
-    return stateOf(this.runs()[shown === 'messages' ? 0 : shown]);
-  });
+  readonly state = computed<RunState>(() => stateOf(this.shownRun()));
   readonly caret = signal<EdCaret | null>(null);
   /** The tab group it is in (prompt 016); only the `TabsStore` moves it. */
   readonly group = signal<Group>(0);
@@ -368,7 +425,7 @@ export class QueryTab {
     const latest = () => id === this.runId;
     const connection = this.connectionId();
     const options = this.services.options();
-    this.freeAll();
+    this.clearForRun(options.keepResults ?? false);
     this.runs.set(sqls.map(pending));
     this.shown.set(0);
     this.startTimer();
@@ -864,8 +921,265 @@ export class QueryTab {
     this.sawTx('idle', false);
     this.runId++;
     this.stopTimer();
+    this.cancelCompare();
     this.freeAll();
+    this.free(this.kept().flatMap(storeIds));
+    this.kept.set([]);
     this.runs.set([]);
+  }
+
+  /** Shows a sub-tab; what was looked at locally (filter, order) belongs to the result that goes. */
+  show(target: Shown): void {
+    if (this.shown() === target) return;
+    this.dropLocal();
+    this.shown.set(target);
+  }
+
+  /**
+   * Before a run: the results of the last one go – unless every run gets new tabs, then they are kept
+   * (not pinned, the oldest beyond the limit go). Kept results that are not pinned go with them.
+   */
+  private clearForRun(keepAll: boolean): void {
+    let kept = this.kept();
+    if (keepAll && !this.ownTable()) {
+      this.runs().forEach((run) => {
+        if (run.kind !== 'done' || !run.result) return;
+        const key = nextKey(kept, this.lastKey++);
+        kept = [...kept, { key, title: run.title ?? null, pinned: false, run }];
+      });
+    } else {
+      this.freeAll();
+    }
+    const over = keptOverRun(kept, keepAll);
+    this.free(over.dropped.flatMap(storeIds));
+    this.kept.set(over.kept);
+  }
+
+  /** Whether the result of a sub-tab can be pinned: a finished statement with rows, not a table view. */
+  canPin(target: Shown = this.shown()): boolean {
+    if (isKept(target)) return this.kept().some((k) => k.key === target);
+    if (target === 'messages' || this.ownTable()) return false;
+    const run = this.runs()[target];
+    return run?.kind === 'done' && !!run.result;
+  }
+
+  isPinned(target: Shown = this.shown()): boolean {
+    return isKept(target) && (this.kept().find((k) => k.key === target)?.pinned ?? false);
+  }
+
+  /**
+   * Keeps the result of a statement of the last run beyond the run: it gets a tab of its own, and the
+   * statement of the run none any more. Answers with the key of the kept result.
+   */
+  keep(index: number, pinned = true): KeptKey | null {
+    if (!this.canPin(index)) return null;
+    const run = this.runs()[index];
+    const key = nextKey(this.kept(), this.lastKey++);
+    const wasShown = this.shown() === index;
+    this.kept.update((all) => [...all, { key, title: run.title ?? null, pinned, run }]);
+    this.runs.update((all) =>
+      all.map((r, i) => (i === index ? { ...r, result: null, moved: true } : r)),
+    );
+    // the same result stays on screen: nothing local is dropped
+    if (wasShown) this.shown.set(key);
+    return key;
+  }
+
+  /** Pins the result of a sub-tab, or lets it go again with the next run. */
+  togglePin(target: Shown = this.shown()): void {
+    if (isKept(target)) {
+      this.kept.update((all) =>
+        all.map((k) => (k.key === target ? { ...k, pinned: !k.pinned } : k)),
+      );
+    } else if (target !== 'messages') {
+      this.keep(target);
+    }
+  }
+
+  /** Closes a kept result: it leaves the store. */
+  closeKept(key: KeptKey): void {
+    const gone = this.kept().find((k) => k.key === key);
+    if (!gone) return;
+    const next = afterClose(this.subTabs(), key);
+    if (this.shown() === key) this.show(next);
+    this.kept.update((all) => all.filter((k) => k.key !== key));
+    this.free(storeIds(gone));
+  }
+
+  /** Closes every kept result that is not pinned (`all`: the pinned ones too). */
+  closeKeptAll(all = false): void {
+    for (const k of this.kept()) if (all || !k.pinned) this.closeKept(k.key);
+  }
+
+  /** Takes a kept result out of the tab without freeing it (it goes to another tab). */
+  release(key: KeptKey): KeptResult | null {
+    const gone = this.kept().find((k) => k.key === key);
+    if (!gone) return null;
+    const next = afterClose(this.subTabs(), key);
+    if (this.shown() === key) this.show(next);
+    this.kept.update((all) => all.filter((k) => k.key !== key));
+    return gone;
+  }
+
+  /** Takes a kept result of another tab over and shows it. */
+  adopt(kept: KeptResult): void {
+    const key = nextKey(this.kept(), this.lastKey++);
+    this.kept.update((all) => [...all, { ...kept, key, pinned: true }]);
+    this.show(key);
+  }
+
+  /** Names the result of a sub-tab; an empty name gives it the one of its statement back. */
+  renameResult(target: Shown, raw: string): void {
+    const title = raw.trim().slice(0, 80) || null;
+    if (isKept(target)) {
+      this.kept.update((all) => all.map((k) => (k.key === target ? { ...k, title } : k)));
+    } else if (target !== 'messages') {
+      this.runs.update((all) => all.map((r, i) => (i === target ? { ...r, title } : r)));
+    }
+  }
+
+  /** The results of this tab that can be compared: of finished statements and kept ones, no comparisons. */
+  comparable(): Comparable[] {
+    const out: Comparable[] = [];
+    const titles = new Map(this.subTabs().map((t) => [t.target, t.title]));
+    for (const k of this.kept()) {
+      if (k.compare || !k.run.result) continue;
+      out.push({
+        target: k.key,
+        title: titles.get(k.key) ?? '',
+        result: k.run.result,
+        rows: k.run.rows ?? 0,
+      });
+    }
+    this.runs().forEach((run, index) => {
+      if (run.kind !== 'done' || !run.result || this.ownTable()) return;
+      out.push({
+        target: index,
+        title: `${index + 1}: ${titles.get(index) ?? ''}`,
+        result: run.result,
+        rows: run.rows ?? 0,
+      });
+    });
+    return out;
+  }
+
+  /**
+   * Compares two results of this tab in the store of the backend (prompt 041); the outcome becomes a kept
+   * result of its own and is shown. `false`: it failed (`compareProblem` says why) or was stopped.
+   */
+  async compare(spec: CompareSpec, leftTitle: string, rightTitle: string): Promise<boolean> {
+    this.cancelCompare();
+    const job = nextCompareJob++;
+    this.compareJob = job;
+    this.compareProblem.set(null);
+    this.comparing.set({ done: 0, of: 0 });
+    try {
+      const report = await this.services.api.resultCompare(job, spec, (done, of) => {
+        if (this.compareJob === job) this.comparing.set({ done, of });
+      });
+      if (this.compareJob !== job) {
+        // stopped meanwhile, or the tab is gone: nobody looks at it
+        this.free([report.resultId]);
+        return false;
+      }
+      const view = { report, onlyDifferences: report.diffRows > 0, leftTitle, rightTitle };
+      const key = nextKey(this.kept(), this.lastKey++);
+      this.kept.update((all) => [
+        ...all,
+        { key, title: null, pinned: true, run: compareRun('', view), compare: view },
+      ]);
+      this.show(key);
+      return true;
+    } catch (e) {
+      if (this.compareJob === job && toAppError(e).code !== 'cancelled') {
+        this.compareProblem.set(describeError(e));
+      }
+      return false;
+    } finally {
+      if (this.compareJob === job) {
+        this.compareJob = null;
+        this.comparing.set(null);
+      }
+    }
+  }
+
+  cancelCompare(): void {
+    const job = this.compareJob;
+    if (job === null) return;
+    this.compareJob = null;
+    this.comparing.set(null);
+    void this.services.api.cancelCompare(job).catch(() => undefined);
+  }
+
+  /** A comparison shows all rows, or only those that differ. */
+  setOnlyDifferences(key: KeptKey, only: boolean): void {
+    this.dropLocal();
+    this.kept.update((all) =>
+      all.map((k) => {
+        if (k.key !== key || !k.compare) return k;
+        const compare = { ...k.compare, onlyDifferences: only };
+        return { ...k, compare, run: compareRun(k.run.sql, compare) };
+      }),
+    );
+  }
+
+  /** The cursor of the grid goes to the next (or the one before) row of a comparison that differs. */
+  async nextDifference(forward: boolean): Promise<boolean> {
+    const compare = this.shownKept()?.compare;
+    const grid = this.grid;
+    if (!compare || !grid) return false;
+    const at = grid.cursor()?.[0] ?? (forward ? -1 : compare.report.rows);
+    if (this.localView()) return false;
+    if (compare.onlyDifferences) {
+      // every row differs: the next one is the next one
+      const next = at + (forward ? 1 : -1);
+      if (next < 0 || next >= compare.report.diffRows) return false;
+      grid.goTo(next, null);
+      return true;
+    }
+    const { diffId } = compare.report;
+    const ask = (row: number, onward: boolean) =>
+      this.services.api.resultNeighbour(diffId, row, onward);
+    // without a cursor the search starts at the top: row 0 itself may differ
+    const found = at < 0 ? ((await ask(1, false)) ?? (await ask(0, true))) : await ask(at, forward);
+    if (!found) return false;
+    grid.goTo(found[1], null);
+    return true;
+  }
+
+  /**
+   * Keeps the result on screen and runs its statement again (prompt 041): answers with the two results
+   * to compare – the old one and the new one. `null`: there is nothing to run again, or the run failed.
+   */
+  async runAgainToCompare(): Promise<{ left: Comparable; right: Comparable } | null> {
+    if (this.ownTable() || this.running()) return null;
+    const shown = this.shown();
+    let oldKey: KeptKey | null;
+    let index: number;
+    let statements: string[];
+    if (isKept(shown)) {
+      const kept = this.shownKept();
+      if (!kept || kept.compare || !kept.run.sql.trim()) return null;
+      oldKey = shown;
+      index = 0;
+      statements = [kept.run.sql];
+      // the old result must outlive the run
+      if (!kept.pinned) this.togglePin(shown);
+    } else if (shown !== 'messages' && this.canPin(shown)) {
+      index = shown;
+      statements = this.runs().map((r) => r.sql);
+      oldKey = this.keep(shown);
+    } else {
+      return null;
+    }
+    if (!oldKey) return null;
+    await this.runAll(statements, 'user', true);
+    const all = this.comparable();
+    const left = all.find((c) => c.target === oldKey);
+    const right = all.find((c) => c.target === index);
+    if (!left || !right) return null;
+    this.show(index);
+    return { left, right };
   }
 
   /** Rows `from..from + count` of a result of this tab. */
@@ -876,6 +1190,14 @@ export class QueryTab {
   /** The results of the last run leave the store of the backend. */
   private freeAll(): void {
     this.free(this.runs().flatMap((r) => (r.result ? [r.result.resultId] : [])));
+  }
+
+  /** What the kept results of this tab take in the store, in bytes. */
+  async keptBytes(): Promise<number> {
+    const ids = this.kept().flatMap(storeIds);
+    if (ids.length === 0) return 0;
+    const usage = await this.services.api.resultUsage(ids).catch(() => []);
+    return usage.reduce((sum, u) => sum + u.bytes, 0);
   }
 
   private free(ids: readonly number[]): void {

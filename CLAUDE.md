@@ -69,10 +69,13 @@
   Hinweisen (Prompt 039);
   **Zeile als Formular** neben dem Gitter, mit Filter über Spaltennamen und markierten Zeilen nebeneinander
   (Prompt 040);
+  **Ergebnisse** als Unter-Reiter mit Titel und Zeilenzahl, **anpinnen**, ablösen in einen eigenen Tab,
+  **zwei Ergebnisse vergleichen** (Schlüssel oder Position, Toleranzen) in Rust über den Ergebnisspeicher
+  (Prompt 041);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a, 036–040),
+  erledigt: 001–034, 035a, 036–041),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -181,6 +184,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/saved/          SavedPanel (Ansicht der Seitenleiste, APG-Baum), SavedDialog, SavedStore (Root:
                                Listing, beobachten, öffnen als Datei-Tab), saved-logic.ts (rein)
   app/features/snippets/       SnippetDialog, snippet-logic.ts (rein: mitgelieferte je Dialekt, Variablen)
+  app/features/result-compare/ ResultCompareDialog, CompareBar (Zeile über dem Vergleich), ResultCompareService
+                               (Root: Dialog, „erneut ausführen und vergleichen“), compare-view-logic.ts (rein)
   app/features/row-form/       RowForm (Seitenfeld: Zeile des Cursors als Felder, Zeilen nebeneinander),
                                row-form-logic.ts (rein)
   app/features/schema/         SchemaTree (virtuelle Liste, APG-Baum), SchemaStore (Root: Zustand je Verbindung),
@@ -203,7 +208,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                Injectable), QueryPane (Editor + Ergebnis eines Tabs), TabBar,
                                tab-logic.ts (rein: Titel, Ids, Reihenfolge), layout-logic.ts (rein: zwei
                                Gruppen – teilen, verschieben, schließen, reparieren), run-state.ts (Läufe, Meldungen,
-                               Statuszeile), tx-logic.ts (rein: Texte zur Transaktion)
+                               Statuszeile), tx-logic.ts (rein: Texte zur Transaktion), result-tabs-logic.ts
+                               (rein: Unter-Reiter, gehaltene Ergebnisse)
   app/features/themes/         Farbschema-Galerie (ThemePicker, ThemeThumb, theme-picker-logic.ts),
                                Schema-Editor (ThemeEditor, theme-editor-logic.ts rein: Ids, Import, Kontrast)
   app/features/value/          ValuePanel (neben dem Gitter, <editlicious-editor readonly>), ValueService (Root:
@@ -224,6 +230,9 @@ src-tauri/                     Rust
   src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
   src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink; ganze Werte
                                getrennt (`<id>.values`) und stückweise (`value`) (rein, getestet)
+  src/result_compare.rs        zwei Ergebnisse vergleichen: Spalten paaren, Schlüssel oder Position, Toleranzen,
+                               doppelte Schlüssel; schreibt ein Ergebnis und eine Sicht der Unterschiede (rein;
+                               Tests result_compare_tests.rs, auch 1 Mio. Zeilen)
   src/image_info.rs            Bildformat und Maße aus den ersten Bytes, nie dekodiert (rein, getestet)
   src/search.rs                Suche im Ergebnisspeicher: Regex mit Grenzen, stückweise; nächster anderer Wert,
                                nächstes NULL (rein, getestet)
@@ -319,6 +328,10 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   Das Backend baut die `UPDATE`s aus dem Plan (das Fenster sendet nie SQL), lässt jede durch `admit`, und
   schreibt alle in einer Transaktion – jede muss genau eine Zeile treffen, sonst Rollback. Was Zeilen neu liest,
   läuft über `QueryTab.runAll` und fragt vorher (`dropEdits`).
+- **Ergebnisse eines Tabs**: Die Anweisungen des letzten Laufs (`runs`, über den Index) und die gehaltenen
+  Ergebnisse (`kept`, über ihren Schlüssel) sind zweierlei; was auf dem Schirm ist, sagt `tab.shownRun()`.
+  Gewechselt wird mit `tab.show(…)`. Solange ein gehaltenes Ergebnis gezeigt wird, ist `tab.tableView()` `null`.
+  Verglichen wird nur in `result_compare.rs`; das Fenster färbt nach der ersten Zelle der Zeile.
 - **Kennzahlen**: Summen rechnet nur `stats.rs` (dezimal, exakt) – nie JavaScript und nie über die Zeilen im
   Fenster; das Fenster zeigt den Text, den es bekommt.
 - **Werte**: Eine `Cell` trägt den ganzen Wert; gekürzt wird nur beim Schreiben der Zeile. Nichts aus einem

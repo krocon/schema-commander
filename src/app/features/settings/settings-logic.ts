@@ -44,6 +44,7 @@ export type SettingKey =
   | 'copyNullAs'
   | 'csvDelimiter'
   | 'stopOnError'
+  | 'keepResults'
   | 'statementTimeoutSec'
   | 'paramsEnabled'
   | 'autoCommit'
@@ -98,6 +99,7 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   { key: 'copyNullAs', group: 'result', kind: 'choice', values: ['', 'NULL', '\\N'] },
   { key: 'csvDelimiter', group: 'result', kind: 'choice', values: [',', ';', '\t'] },
   { key: 'stopOnError', group: 'run', kind: 'bool' },
+  { key: 'keepResults', group: 'run', kind: 'bool' },
   { key: 'statementTimeoutSec', group: 'run', kind: 'number', min: 0, max: 86_400, step: 1 },
   { key: 'paramsEnabled', group: 'run', kind: 'bool' },
   { key: 'autoCommit', group: 'run', kind: 'bool' },

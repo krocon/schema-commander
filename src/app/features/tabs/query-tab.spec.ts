@@ -337,3 +337,266 @@ describe('QueryTab', () => {
     expect(broken.takeStartCaret()).toBeNull();
   });
 });
+
+describe('QueryTab: results that are kept (prompt 041)', () => {
+  let api: FakeQueryApi;
+  let tab: QueryTab;
+  let options: { stopOnError: boolean; timeoutMs: number; keepResults?: boolean };
+
+  beforeEach(async () => {
+    options = { stopOnError: true, timeoutMs: 0 };
+    api = new FakeQueryApi();
+    TestBed.configureTestingModule({
+      providers: [{ provide: ConnectionsApi, useValue: new FakeConnectionsApi() }],
+    });
+    const store = TestBed.inject(ConnectionsStore);
+    await store.load();
+    tab = new QueryTab(
+      {
+        id: 't',
+        title: 'T',
+        customTitle: false,
+        connection: 'demo',
+        filePath: null,
+        encoding: null,
+      },
+      { api, connections: store, options: () => options },
+    );
+  });
+
+  const ids = () => tab.runs().map((r) => r.result?.resultId ?? null);
+
+  it('gives every statement of a script a tab with a title and its rows', async () => {
+    await tab.runAll(Array.from({ length: 20 }, (_, i) => `select * from tabelle_${i}`));
+    const subs = tab.subTabs();
+    expect(subs.length).toBe(20);
+    expect(subs[7]).toMatchObject({ target: 7, title: 'tabelle_7', rows: 2, kind: 'done' });
+    tab.show(19);
+    expect(tab.state().kind).toBe('done');
+  });
+
+  it('keeps a pinned result over the next run, and frees the others', async () => {
+    await tab.runAll(['select * from a', 'select * from b']);
+    const [a, b] = ids();
+    tab.show(1);
+    tab.togglePin();
+    expect(tab.shown()).toBe('k1');
+    expect(tab.isPinned()).toBe(true);
+    // the statement of the run has no tab of its own any more
+    expect(tab.subTabs().map((t) => t.target)).toEqual(['k1', 0]);
+    await tab.runAll(['select * from c']);
+    expect(api.freed).toEqual([a]);
+    expect(api.results.has(b as number)).toBe(true);
+    expect(tab.subTabs().map((t) => [t.target, t.title])).toEqual([
+      ['k1', 'b'],
+      [0, 'c'],
+    ]);
+    // the new run is on screen; the pinned one can be looked at
+    expect(tab.shown()).toBe(0);
+    tab.show('k1');
+    expect(tab.state()).toMatchObject({ kind: 'done', sql: 'select * from b', rows: 2 });
+  });
+
+  it('lets an unpinned result go with the next run', async () => {
+    await tab.run('select * from a');
+    const [a] = ids();
+    tab.togglePin();
+    tab.togglePin();
+    expect(tab.isPinned()).toBe(false);
+    expect(tab.kept().length).toBe(1);
+    await tab.run('select * from b');
+    expect(tab.kept()).toEqual([]);
+    expect(api.freed).toEqual([a]);
+  });
+
+  it('closes a kept result: it leaves the store, and its neighbour is shown', async () => {
+    await tab.run('select * from a');
+    const [a] = ids();
+    tab.togglePin();
+    tab.closeKept('k1');
+    expect(api.freed).toEqual([a]);
+    expect(tab.kept()).toEqual([]);
+    expect(tab.shown()).toBe('messages');
+  });
+
+  it('with „keep the results“ every run gets new tabs', async () => {
+    options.keepResults = true;
+    await tab.run('select * from a');
+    await tab.runAll(['select * from b', 'select * from c']);
+    await tab.run('select * from d');
+    expect(api.freed).toEqual([]);
+    expect(tab.subTabs().map((t) => [t.title, t.pinned])).toEqual([
+      ['a', false],
+      ['b', false],
+      ['c', false],
+      ['d', false],
+    ]);
+    tab.closeKeptAll();
+    expect(tab.kept()).toEqual([]);
+    expect(api.freed.length).toBe(3);
+  });
+
+  it('frees what it keeps when the tab goes', async () => {
+    await tab.runAll(['select * from a', 'select * from b']);
+    const all = ids();
+    tab.togglePin(0);
+    tab.dispose();
+    expect([...api.freed].sort()).toEqual([...all].sort());
+  });
+
+  it('names results', async () => {
+    await tab.runAll(['select * from a', 'select * from b']);
+    tab.renameResult(0, '  Stand vorher ');
+    expect(tab.subTabs()[0].title).toBe('Stand vorher');
+    const key = tab.keep(0);
+    expect(tab.subTabs()[0]).toMatchObject({ target: key, title: 'Stand vorher' });
+    tab.renameResult('k1', '');
+    expect(tab.subTabs()[0].title).toBe('a');
+  });
+
+  it('pins no statement without a result and nothing of a failed one', async () => {
+    api.rowsAffected = 3;
+    await tab.run('update a set x = 1');
+    expect(tab.canPin()).toBe(false);
+    tab.togglePin();
+    expect(tab.kept()).toEqual([]);
+  });
+
+  it('hands a kept result to another tab without freeing it', async () => {
+    await tab.run('select * from a');
+    tab.togglePin();
+    const kept = tab.release('k1');
+    expect(kept?.run.sql).toBe('select * from a');
+    expect(tab.kept()).toEqual([]);
+    expect(api.freed).toEqual([]);
+    tab.adopt(kept!);
+    expect(tab.shownKept()?.pinned).toBe(true);
+  });
+
+  it('compares two results: the outcome is a kept result, shown with its differences', async () => {
+    await tab.runAll(['select * from a', 'select * from b']);
+    const [a, b] = ids() as number[];
+    const all = tab.comparable();
+    expect(all.map((c) => c.title)).toEqual(['1: a', '2: b']);
+    const spec = {
+      left: a,
+      right: b,
+      keys: [0],
+      ignore: [],
+      trim: false,
+      ignoreCase: false,
+      decimals: null,
+    };
+    const progress: (number | null)[] = [];
+    let open!: () => void;
+    api.compareGate = new Promise<void>((r) => (open = r));
+    const running = tab.compare(spec, 'a', 'b');
+    progress.push(tab.comparing()?.done ?? null);
+    open();
+    expect(await running).toBe(true);
+    expect(progress).toEqual([1]);
+    expect(tab.comparing()).toBeNull();
+    expect(api.compares[0].spec).toEqual(spec);
+    const kept = tab.shownKept();
+    expect(kept?.compare?.onlyDifferences).toBe(true);
+    // the view of the differences is what the grid reads
+    expect(tab.state()).toMatchObject({ kind: 'done', rows: 3, result: { resultId: 5003 } });
+    expect(tab.subTabs()[0]).toMatchObject({ title: 'a ↔ b', compare: true, pinned: true });
+    tab.setOnlyDifferences('k1', false);
+    expect(tab.state()).toMatchObject({ rows: 4, result: { resultId: 5002 } });
+    // a comparison is not compared again
+    expect(tab.comparable().length).toBe(2);
+    tab.closeKept('k1');
+    expect(api.freed).toEqual([5002]);
+  });
+
+  it('a comparison that is stopped leaves nothing', async () => {
+    await tab.runAll(['select * from a', 'select * from b']);
+    let open!: () => void;
+    api.compareGate = new Promise<void>((r) => (open = r));
+    const spec = {
+      left: 1,
+      right: 2,
+      keys: [],
+      ignore: [],
+      trim: false,
+      ignoreCase: false,
+      decimals: null,
+    };
+    const running = tab.compare(spec, 'a', 'b');
+    tab.cancelCompare();
+    expect(api.cancelledCompares.length).toBe(1);
+    open();
+    expect(await running).toBe(false);
+    expect(tab.kept()).toEqual([]);
+    // what the backend still answered is freed
+    expect(api.freed).toEqual([5002]);
+  });
+
+  it('says why a comparison failed', async () => {
+    await tab.runAll(['select * from a', 'select * from b']);
+    api.compareError = { code: 'unsupported', message: 'the results have no column in common' };
+    const spec = {
+      left: 1,
+      right: 2,
+      keys: [],
+      ignore: [],
+      trim: false,
+      ignoreCase: false,
+      decimals: null,
+    };
+    expect(await tab.compare(spec, 'a', 'b')).toBe(false);
+    expect(tab.compareProblem()).toBe('Das wird nicht unterstützt.');
+  });
+
+  it('runs again and names the old and the new result to compare', async () => {
+    await tab.run('select * from a');
+    const [old] = ids();
+    const pair = await tab.runAgainToCompare();
+    expect(api.statements.map((s) => s.sql)).toEqual(['select * from a', 'select * from a']);
+    expect(pair?.left.result.resultId).toBe(old);
+    expect(pair?.right.result.resultId).toBe(ids()[0]);
+    expect(pair?.left.target).toBe('k1');
+    expect(api.freed).toEqual([]);
+    // from the kept one: again its statement
+    tab.show('k1');
+    const again = await tab.runAgainToCompare();
+    expect(again?.left.target).toBe('k1');
+    expect(again?.right.target).toBe(0);
+  });
+
+  it('jumps to the next difference of a comparison', async () => {
+    await tab.runAll(['select * from a', 'select * from b']);
+    const spec = {
+      left: 1,
+      right: 2,
+      keys: [0],
+      ignore: [],
+      trim: false,
+      ignoreCase: false,
+      decimals: null,
+    };
+    await tab.compare(spec, 'a', 'b');
+    const went: number[] = [];
+    let cursor: readonly [number, number] | null = [0, 0];
+    tab.grid = {
+      cursor: () => cursor,
+      goTo: (row) => went.push(row),
+      fitWidths: () => undefined,
+      focusGrid: () => undefined,
+    };
+    // only differences: the next row is the next difference
+    expect(await tab.nextDifference(true)).toBe(true);
+    cursor = [2, 0];
+    expect(await tab.nextDifference(true)).toBe(false);
+    expect(went).toEqual([1]);
+    // all rows: the backend knows where the next one is
+    tab.setOnlyDifferences('k1', false);
+    api.neighbour = [1, 3];
+    cursor = [1, 0];
+    expect(await tab.nextDifference(true)).toBe(true);
+    expect(went).toEqual([1, 3]);
+    api.neighbour = null;
+    expect(await tab.nextDifference(false)).toBe(false);
+  });
+});

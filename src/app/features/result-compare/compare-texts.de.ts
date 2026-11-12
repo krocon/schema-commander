@@ -1,0 +1,58 @@
+import type { CompareTexts } from './compare-texts';
+
+export const COMPARE_DE: CompareTexts = {
+  title: 'Ergebnisse vergleichen',
+  left: 'Links',
+  right: 'Rechts',
+  rowsOf: (rows) => `${rows} Zeilen`,
+  match: 'Zeilen gehören zusammen über',
+  byKey: 'Schlüsselspalten',
+  byPosition: 'ihre Position',
+  keys: 'Schlüssel',
+  ignore: 'Ignorieren',
+  column: 'Spalte',
+  columns: 'Spalten',
+  tolerances: 'Als gleich gilt',
+  trim: 'Text, der sich nur im Leerraum am Anfang oder Ende unterscheidet',
+  ignoreCase: 'Text, der sich nur in Groß- und Kleinschreibung unterscheidet',
+  round: 'Zahlen, die gleich sind nach dem Runden auf',
+  decimals: 'Nachkommastellen',
+  decimalsLabel: 'Nachkommastellen',
+  leftColumnsOnly: (names) => `Nur im linken Ergebnis, nicht verglichen: ${names}`,
+  rightColumnsOnly: (names) => `Nur im rechten Ergebnis, nicht verglichen: ${names}`,
+  pairedByPosition:
+    'Kein Spaltenname kommt in beiden Ergebnissen vor: Die Spalten werden nach ihrer Position gepaart.',
+  problems: {
+    same: 'Zwei verschiedene Ergebnisse wählen.',
+    noColumns: 'Die Ergebnisse haben keine gemeinsame Spalte.',
+    noKey: 'Mindestens eine Schlüsselspalte wählen oder nach Position vergleichen.',
+  },
+  tooFew:
+    'Zum Vergleichen braucht ein Tab zwei Ergebnisse: eines anpinnen und erneut ausführen, oder ein Skript ausführen.',
+  compare: 'Vergleichen',
+  cancel: 'Abbrechen',
+  close: 'Schließen',
+  stop: 'Anhalten',
+  progress: (percent) => `Vergleiche … ${percent} %`,
+  bar: 'Vergleich',
+  figures: {
+    same: 'gleich',
+    changed: 'geändert',
+    leftOnly: 'nur links',
+    rightOnly: 'nur rechts',
+    duplicates: 'Schlüssel nicht eindeutig',
+  },
+  identical: 'Die Ergebnisse sind gleich.',
+  onlyDifferences: 'Nur Unterschiede',
+  next: 'Nächster Unterschied',
+  previous: 'Vorheriger Unterschied',
+  export: 'Unterschiede exportieren …',
+  noMore: 'Kein weiterer Unterschied in dieser Richtung.',
+  legend:
+    '≡ gleich · ← nur links · → nur rechts · ≠← / ≠→ geändert (Werte links / rechts) · ‼ Schlüssel nicht eindeutig',
+  duplicates: (keys, more) =>
+    `Schlüssel, die mehrfach vorkommen, wurden nichts zugeordnet: ${keys}${more ? ' …' : ''}`,
+  changedColumns: (list) => `Unterschiede je Spalte: ${list}`,
+  cut: 'Das Ergebnis des Vergleichs hat mehr Zeilen, als behalten werden: Die Zahlen stimmen, Zeilen fehlen.',
+  sides: (left, right) => `${left} ↔ ${right}`,
+};
