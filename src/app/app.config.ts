@@ -2,6 +2,7 @@ import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/
 import { ClipboardApi, TauriClipboardApi } from './core/backend/clipboard-api';
 import { AboutApi, TauriAboutApi } from './core/about/about-api';
 import { ExportApi, TauriExportApi } from './core/backend/export-api';
+import { CompareApi, TauriCompareApi } from './core/compare/compare-api';
 import { FindApi, TauriFindApi } from './core/find/find-api';
 import { DataImportApi, TauriDataImportApi } from './core/import/data-import-api';
 import { FileDialogApi, TauriFileDialogApi } from './core/backend/file-dialog-api';
@@ -23,6 +24,7 @@ export const appConfig: ApplicationConfig = {
     { provide: ClipboardApi, useClass: TauriClipboardApi },
     { provide: HistoryApi, useClass: TauriHistoryApi },
     { provide: ExportApi, useClass: TauriExportApi },
+    { provide: CompareApi, useClass: TauriCompareApi },
     { provide: FindApi, useClass: TauriFindApi },
     { provide: AboutApi, useClass: TauriAboutApi },
     { provide: DataImportApi, useClass: TauriDataImportApi },

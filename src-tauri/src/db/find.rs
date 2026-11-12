@@ -611,7 +611,7 @@ fn columns_of(
 }
 
 /// The questions that read definitions of a schema: each answers with kind, name, text.
-fn source_questions(kind: DbKind, flavor: Flavor) -> Vec<&'static str> {
+pub(super) fn source_questions(kind: DbKind, flavor: Flavor) -> Vec<&'static str> {
     match kind {
         DbKind::Postgres => {
             let mut all = vec![
@@ -659,8 +659,13 @@ fn source_questions(kind: DbKind, flavor: Flavor) -> Vec<&'static str> {
              WHERE ROUTINE_SCHEMA = ?",
             "SELECT 'trigger', CONCAT(EVENT_OBJECT_TABLE, '.', TRIGGER_NAME), ACTION_STATEMENT \
              FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ?",
-            "SELECT 'check', CONSTRAINT_NAME, CHECK_CLAUSE FROM information_schema.CHECK_CONSTRAINTS \
-             WHERE CONSTRAINT_SCHEMA = ?",
+            // with its table (the catalog of checks itself does not name it in MySQL)
+            "SELECT 'check', CONCAT(tc.TABLE_NAME, '.', cc.CONSTRAINT_NAME), cc.CHECK_CLAUSE \
+             FROM information_schema.CHECK_CONSTRAINTS cc \
+             JOIN information_schema.TABLE_CONSTRAINTS tc \
+               ON tc.CONSTRAINT_SCHEMA = cc.CONSTRAINT_SCHEMA \
+              AND tc.CONSTRAINT_NAME = cc.CONSTRAINT_NAME AND tc.CONSTRAINT_TYPE = 'CHECK' \
+             WHERE cc.CONSTRAINT_SCHEMA = ?",
             "SELECT 'default', CONCAT(TABLE_NAME, '.', COLUMN_NAME), COLUMN_DEFAULT \
              FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND COLUMN_DEFAULT IS NOT NULL",
             "SELECT 'comment', TABLE_NAME, TABLE_COMMENT FROM information_schema.TABLES \

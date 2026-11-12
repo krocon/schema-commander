@@ -45,6 +45,9 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   (<kbd>Ctrl/⌘</kbd>+<kbd>⌫</kbd>), paste a block of cells from a spreadsheet (<kbd>Ctrl/⌘</kbd>+<kbd>V</kbd>
   in the grid – over the rows below the cursor and on into new rows), fill down
   (<kbd>Ctrl/⌘</kbd>+<kbd>D</kbd>). Everything is written together: deletes, then changes, then inserts
+- Compare two schemas (or a schema with a saved snapshot): what is only on one side, what differs, both
+  definitions side by side – and a migration script as a proposal in a tab, with every step that may lose data
+  commented out
 - ER diagram of a schema, or of a table with its neighbours: arranged by itself, tables can be moved, zoom,
   search, three levels of detail; the same as lists beside it; export as SVG, Mermaid or DBML
 - Search on the server (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>G</kbd>): where does a text stand – in the rows of all tables (one

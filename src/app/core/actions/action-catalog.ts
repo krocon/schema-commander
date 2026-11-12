@@ -493,6 +493,8 @@ export const ACTIONS = [
     scope: 'global',
   },
   { id: 'SCHEMA_EXPORT_TABLE', label: 'Export table …', group: 'Schema', scope: 'global' },
+  // Schema comparison (prompt 038)
+  { id: 'COMPARE_SCHEMAS', label: 'Compare schemas …', group: 'Schema', scope: 'global' },
   // ER diagram (prompt 037)
   {
     id: 'SCHEMA_DIAGRAM',

@@ -32,6 +32,8 @@ import { AboutDialog } from './features/about/about-dialog';
 import { DiagramService } from './features/diagram/diagram.service';
 import { ErDiagramDialog } from './features/diagram/er-diagram-dialog';
 import { ExportDialog } from './features/export/export-dialog';
+import { SchemaCompareDialog } from './features/schema-compare/schema-compare-dialog';
+import { SchemaCompareService } from './features/schema-compare/schema-compare.service';
 import { ServerSearchDialog } from './features/server-search/server-search-dialog';
 import { ServerSearchService } from './features/server-search/server-search.service';
 import { ExportService } from './features/export/export.service';
@@ -128,6 +130,7 @@ const SIDEBAR_MIN = 140;
     ConnectionList,
     ContextMenu,
     ExportDialog,
+    SchemaCompareDialog,
     ErDiagramDialog,
     ServerSearchDialog,
     AboutDialog,
@@ -546,6 +549,11 @@ const SIDEBAR_MIN = 140;
         <app-er-diagram-dialog [target]="target" (closed)="diagrams.close()" />
       }
     }
+    @if (schemaCompare.open()) {
+      @defer (on immediate) {
+        <app-schema-compare-dialog (closed)="schemaCompare.open.set(false)" />
+      }
+    }
     @if (aboutOpen()) {
       @defer (on immediate) {
         <app-about-dialog (closed)="aboutOpen.set(false)" />
@@ -689,6 +697,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly dataImporter = inject(DataImportService);
   protected readonly serverSearch = inject(ServerSearchService);
   protected readonly diagrams = inject(DiagramService);
+  protected readonly schemaCompare = inject(SchemaCompareService);
   protected readonly formatter = inject(FormatService);
   protected readonly saved = inject(SavedStore);
   protected readonly paramService = inject(ParamService);
@@ -1037,6 +1046,7 @@ export class App implements OnInit, OnDestroy {
         () => this.exportResult(),
         () => this.copier.current() !== null && !this.exporter.running(),
       ),
+      this.actions.register('COMPARE_SCHEMAS', () => this.schemaCompare.open.set(true)),
       this.actions.register(
         'SEARCH_SERVER',
         () => this.serverSearch.open(),

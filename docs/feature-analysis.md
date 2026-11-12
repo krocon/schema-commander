@@ -66,7 +66,7 @@ Prompts) · **Stufe** = meine Empfehlung: **1** Grundlage (ohne das ist es kein 
 | B3 | **Objekt-Details**: Spalten mit Typ/Default/Kommentar, Indizes, Constraints, Trigger; **DDL anzeigen und kopieren**; Zeilenzahl und Größe | DBeaver, Postico | M | 2 | ☑ [019](../prompts/done/019-objekt-details.md) |
 | B4 | **Suche auf dem Server**: einen Text in allen Tabellen (Daten) und in Routinen/Views (Quelltext) finden, als abbrechbarer Job mit Treffer-Tab | HeidiSQL, DataGrip | M | 3 | ☑ [036](../prompts/done/036-server-suche.md) |
 | B5 | **ER-Diagramm** einer Tabelle mit ihren Nachbarn bzw. eines Schemas | DBeaver | L | 3 | ☑ [037](../prompts/done/037-er-diagramm.md) |
-| B6 | **Schema-Vergleich** zweier Datenbanken mit Migrationsskript | DbVisualizer, Navicat | L | 3 | ☑ [038](../prompts/038-schema-vergleich.md) |
+| B6 | **Schema-Vergleich** zweier Datenbanken mit Migrationsskript | DbVisualizer, Navicat | L | 3 | ☑ [038](../prompts/done/038-schema-vergleich.md) |
 
 ### C – SQL-Editor
 

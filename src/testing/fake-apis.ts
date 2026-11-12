@@ -8,6 +8,12 @@ import {
 import { FormatApi, FormatDialect, FormatMode, FormatStyle } from '../app/core/format/format-api';
 import { AboutApi, AppInfo } from '../app/core/about/about-api';
 import { ExportApi, ExportSpec, Exported } from '../app/core/backend/export-api';
+import {
+  CompareApi,
+  CompareItem,
+  SchemaRename,
+  SchemaSnapshot,
+} from '../app/core/compare/compare-api';
 import { FindApi, FindEvent, FindReport, FindSpec } from '../app/core/find/find-api';
 import {
   DataImportApi,
@@ -1620,5 +1626,64 @@ export class FakeFindApi extends FindApi {
     this.report = { ...this.report, cancelled: true };
     this.finish();
     return Promise.resolve();
+  }
+}
+
+/**
+ * A comparison without a backend: snapshots by `connection/schema`, and the items it is told to answer
+ * with. It remembers what was compared and scripted.
+ */
+export class FakeCompareApi extends CompareApi {
+  snapshots: Record<string, SchemaSnapshot> = {};
+  items: CompareItem[] = [];
+  /** The items after a rename was told (`null`: the same). */
+  itemsWithRenames: CompareItem[] | null = null;
+  fail: { code: string; message: string } | null = null;
+  readonly compared: {
+    left: SchemaSnapshot;
+    right: SchemaSnapshot;
+    renames: readonly SchemaRename[];
+  }[] = [];
+  readonly scripted: {
+    source: SchemaSnapshot;
+    target: SchemaSnapshot;
+    picks: readonly string[] | null;
+    renames: readonly SchemaRename[];
+  }[] = [];
+
+  snapshot(connectionId: string, schema: string): Promise<SchemaSnapshot> {
+    if (this.fail) return Promise.reject(this.fail);
+    return Promise.resolve(
+      this.snapshots[`${connectionId}/${schema}`] ?? {
+        kind: 'postgres',
+        schema,
+        tables: [],
+        views: [],
+        routines: [],
+        triggers: [],
+      },
+    );
+  }
+
+  compare(
+    left: SchemaSnapshot,
+    right: SchemaSnapshot,
+    renames: readonly SchemaRename[],
+  ): Promise<CompareItem[]> {
+    this.compared.push({ left, right, renames });
+    if (this.fail) return Promise.reject(this.fail);
+    return Promise.resolve(
+      renames.length > 0 && this.itemsWithRenames ? this.itemsWithRenames : this.items,
+    );
+  }
+
+  script(
+    source: SchemaSnapshot,
+    target: SchemaSnapshot,
+    picks: readonly string[] | null,
+    renames: readonly SchemaRename[],
+  ): Promise<string> {
+    this.scripted.push({ source, target, picks, renames });
+    return Promise.resolve(`-- makes ${target.schema} like ${source.schema}\n`);
   }
 }
