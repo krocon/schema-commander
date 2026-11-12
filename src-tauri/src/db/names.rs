@@ -540,6 +540,25 @@ fn sqlite_files(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<
 /// Reads the objects of all schemas but the system's: kind, schema, name, detail.
 pub fn read_objects(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<NameIndex> {
     let rows = match kind {
+        // a dataset is named in the statement: one question each, the first fifty
+        DbKind::Bigquery => {
+            let mut rows = TextRows::new();
+            for schema in super::meta::schemas(s, kind, stop)?.into_iter().take(50) {
+                let asked = ask(
+                    s,
+                    &format!(
+                        "SELECT CASE table_type WHEN 'VIEW' THEN 'view' ELSE 'table' END, table_schema, \
+                           table_name, '' FROM {}.INFORMATION_SCHEMA.TABLES",
+                        super::meta::quote_always(&schema.name, kind)
+                    ),
+                    &[],
+                    stop,
+                );
+                // a dataset in another place than the jobs of the connection cannot be asked from here
+                rows.extend(asked.unwrap_or_default());
+            }
+            rows
+        }
         DbKind::Postgres => ask(
             s,
             "SELECT CASE c.relkind WHEN 'v' THEN 'view' WHEN 'm' THEN 'matview' \
@@ -678,6 +697,23 @@ pub fn read_columns(
     stop: Stop,
 ) -> AppResult<()> {
     let rows = match kind {
+        DbKind::Bigquery => {
+            let mut rows = TextRows::new();
+            for schema in super::meta::schemas(s, kind, stop)?.into_iter().take(50) {
+                let asked = ask(
+                    s,
+                    &format!(
+                        "SELECT table_schema, table_name, column_name, data_type \
+                         FROM {}.INFORMATION_SCHEMA.COLUMNS",
+                        super::meta::quote_always(&schema.name, kind)
+                    ),
+                    &[],
+                    stop,
+                );
+                rows.extend(asked.unwrap_or_default());
+            }
+            rows
+        }
         DbKind::Postgres => ask(
             s,
             "SELECT n.nspname::text, c.relname::text, a.attname::text, \

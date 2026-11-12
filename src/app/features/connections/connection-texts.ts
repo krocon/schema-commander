@@ -30,6 +30,7 @@ export const CONNECTION_EN = {
     libsql: 'libSQL / Turso',
     d1: 'Cloudflare D1',
     firebird: 'Firebird',
+    bigquery: 'BigQuery',
   },
   password: 'Password',
   sshSecretTitle: 'SSH tunnel: password or passphrase',

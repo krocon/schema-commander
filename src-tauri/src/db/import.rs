@@ -437,6 +437,8 @@ fn dbeaver_kind(provider: &str, driver: &str) -> Option<DbKind> {
         Some(DbKind::Oracle)
     } else if both.contains("trino") || both.contains("presto") {
         Some(DbKind::Trino)
+    } else if both.contains("bigquery") {
+        Some(DbKind::Bigquery)
     } else if both.contains("firebird") || both.contains("jaybird") {
         Some(DbKind::Firebird)
     } else if both.contains("libsql") || both.contains("turso") {

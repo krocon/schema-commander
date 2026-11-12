@@ -134,9 +134,20 @@ pub fn sql_text(text: &str, dialect: DbKind) -> String {
     out.push('\'');
     for c in text.chars() {
         match c {
+            // BigQuery knows no doubled quote: a quote in a string is written with a backslash
+            '\'' if dialect == DbKind::Bigquery => out.push_str("\\'"),
             '\'' => out.push_str("''"),
             // MySQL takes the backslash as an escape unless told otherwise
-            '\\' if matches!(dialect, DbKind::Mysql | DbKind::Clickhouse) => out.push_str("\\\\"),
+            '\\' if matches!(
+                dialect,
+                DbKind::Mysql | DbKind::Clickhouse | DbKind::Bigquery
+            ) =>
+            {
+                out.push_str("\\\\");
+            }
+            // a line break ends a string of one line there
+            '\n' if dialect == DbKind::Bigquery => out.push_str("\\n"),
+            '\r' if dialect == DbKind::Bigquery => out.push_str("\\r"),
             c => out.push(c),
         }
     }
@@ -184,6 +195,7 @@ pub fn literal(cell: &Value, kind: ColKind, dialect: DbKind) -> String {
         other => match binary(other) {
             Some((bytes, hex)) if bytes * 2 == hex.len() as u64 => match dialect {
                 DbKind::Postgres => format!("'\\x{hex}'"),
+                DbKind::Bigquery => format!("FROM_HEX('{hex}')"),
                 DbKind::Sqlserver => format!("0x{hex}"),
                 DbKind::Mysql
                 | DbKind::Sqlite

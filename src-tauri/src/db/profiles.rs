@@ -100,7 +100,9 @@ pub fn check(p: &Profile) -> AppResult<()> {
             return Err(invalid(format!("{what}: too long or control characters")));
         }
     }
-    if p.client_cert.trim().is_empty() != p.client_key.trim().is_empty() {
+    // BigQuery and Snowflake log in with a key file (named as the client key): no certificate goes with it
+    let key_login = matches!(p.kind, DbKind::Bigquery);
+    if !key_login && p.client_cert.trim().is_empty() != p.client_key.trim().is_empty() {
         return Err(invalid(
             "a client certificate needs its key, and the other way round",
         ));
@@ -155,7 +157,7 @@ pub fn check(p: &Profile) -> AppResult<()> {
         return Err(invalid("the host is missing or not a host name"));
     }
     // libSQL logs in with a token alone (the password of the profile)
-    if p.user.trim().is_empty() && p.kind != DbKind::Libsql {
+    if p.user.trim().is_empty() && !matches!(p.kind, DbKind::Libsql | DbKind::Bigquery) {
         return Err(invalid("the user is missing"));
     }
     Ok(())

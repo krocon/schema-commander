@@ -553,7 +553,8 @@ export type Dialect =
   | 'duckdb'
   | 'clickhouse'
   | 'trino'
-  | 'firebird';
+  | 'firebird'
+  | 'bigquery';
 
 /** Types a database cannot compare with `=` (or never finds equal to a text): no lock on them. */
 const NO_EQUALS: Readonly<Record<Dialect, RegExp>> = {
@@ -569,6 +570,8 @@ const NO_EQUALS: Readonly<Record<Dialect, RegExp>> = {
   trino: /^$/,
   // a BLOB cannot be compared with `=`
   firebird: /^blob/i,
+  // nothing is edited there
+  bigquery: /^$/,
 };
 
 export function comparable(dialect: Dialect, typeName: string): boolean {

@@ -194,7 +194,8 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                     && !matches!(kind, DbKind::Oracle | DbKind::Trino | DbKind::Firebird)
                     && i + 1 < n
                 {
-                    if chars[i + 1] == quote || chars[i + 1] == '\\' {
+                    // (in BigQuery the backslash always is the escape: nothing to doubt)
+                    if (chars[i + 1] == quote || chars[i + 1] == '\\') && kind != DbKind::Bigquery {
                         ambiguous = true;
                     }
                     i += 2;
@@ -741,6 +742,15 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
         // who may log in and what a role is: it gives away like a GRANT does (review 047 M1)
         class = Class::Dangerous;
     }
+    if kind == DbKind::Bigquery
+        && class == Class::Read
+        && toks.windows(2).any(|w| {
+            matches!(&w[0], Tok::Word(name) if name == "EXTERNAL_QUERY") && w[1] == Tok::Open
+        })
+    {
+        // hands a text to another database: what it does there nobody reads here
+        class = Class::Write;
+    }
     if kind == DbKind::Firebird
         && class == Class::Read
         && toks
@@ -1006,6 +1016,8 @@ pub fn read_only_statement(kind: DbKind) -> Option<&'static str> {
         DbKind::Trino => None,
         // every transaction of the session is opened read only (`Session::make_read_only`)
         DbKind::Firebird => None,
+        // every statement is a job of its own; what a login may write is decided at Google
+        DbKind::Bigquery => None,
     }
 }
 
@@ -1014,7 +1026,7 @@ mod tests {
     use super::*;
     use Class::{Dangerous, Ddl, Read, Write};
 
-    const ALL: [DbKind; 11] = [
+    const ALL: [DbKind; 12] = [
         DbKind::Postgres,
         DbKind::Mysql,
         DbKind::Sqlserver,
@@ -1026,6 +1038,7 @@ mod tests {
         DbKind::Libsql,
         DbKind::D1,
         DbKind::Firebird,
+        DbKind::Bigquery,
     ];
 
     /// libSQL (prompt 035g): classified as SQLite; read only is not a statement there.
@@ -1047,6 +1060,29 @@ mod tests {
             );
         }
         assert_eq!(read_only_statement(DbKind::Libsql), None);
+    }
+
+    /// BigQuery (prompt 035j).
+    #[test]
+    fn bigquery_reads_until_a_statement_reaches_out() {
+        let k = DbKind::Bigquery;
+        assert_eq!(
+            classify("SELECT * FROM `p.d.t` WHERE a = 'it\\'s'", k),
+            Read
+        );
+        assert_eq!(classify("INSERT INTO d.t VALUES (1)", k), Write);
+        assert_eq!(classify("DROP TABLE d.t", k), Dangerous);
+        assert_eq!(
+            classify("SELECT * FROM EXTERNAL_QUERY('c', 'DELETE FROM t')", k),
+            Write
+        );
+        assert_ne!(
+            classify("EXPORT DATA OPTIONS (uri = 'gs://b/x') AS SELECT 1", k),
+            Read
+        );
+        assert_ne!(classify("EXECUTE IMMEDIATE 'DROP TABLE d.t'", k), Read);
+        assert_ne!(classify("CALL d.p()", k), Read);
+        assert_eq!(read_only_statement(k), None);
     }
 
     /// Firebird (prompt 035i).

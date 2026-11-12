@@ -18,6 +18,7 @@ const DIALECTS: Dialect[] = [
   'clickhouse',
   'trino',
   'firebird',
+  'bigquery',
 ];
 
 describe('splitStatements (catalog)', () => {

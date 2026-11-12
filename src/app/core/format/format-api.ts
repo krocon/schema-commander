@@ -11,7 +11,8 @@ export type FormatDialect =
   | 'duckdb'
   | 'clickhouse'
   | 'trino'
-  | 'firebird';
+  | 'firebird'
+  | 'bigquery';
 
 /**
  * Mirrors `Mode`: lay the text out, pull it into one line, or only write its keywords in upper or lower

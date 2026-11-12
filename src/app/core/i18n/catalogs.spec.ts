@@ -126,6 +126,7 @@ const SAME = new Set<string>([
   'libSQL / Turso',
   'Cloudflare D1',
   'Firebird',
+  'BigQuery',
   'Schema Commander',
   'Schema',
   'TLS: ',

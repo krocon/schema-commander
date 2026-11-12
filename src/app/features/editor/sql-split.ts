@@ -15,6 +15,7 @@ import { offsetAt, placeIn } from '../../core/text/places';
  * - **duckdb**: dollar quoting, as PostgreSQL.
  * - **clickhouse**: backticks and backslash escapes in strings, as MySQL.
  * - **firebird**: a procedure, function, trigger, package or `EXECUTE BLOCK` keeps the `;` of its body.
+ * - **bigquery**: backticks and backslash escapes in strings, as MySQL.
  * - **trino**: the common rules – a quote is escaped only by doubling it.
  * - **oracle**: `q'[ … ]'` strings; PL/SQL (`BEGIN`, `DECLARE`, `CREATE … FUNCTION | PROCEDURE | PACKAGE |
  *   TRIGGER | TYPE`) keeps its `;` and ends at a line with only `/` – as in SQL*Plus. That line also ends
@@ -29,7 +30,8 @@ export type Dialect =
   | 'duckdb'
   | 'clickhouse'
   | 'trino'
-  | 'firebird';
+  | 'firebird'
+  | 'bigquery';
 
 export interface Statement {
   /** The statement without its terminator, trimmed. */
@@ -74,6 +76,7 @@ function skipToken(s: Scan): boolean {
     const escapes =
       dialect === 'mysql' ||
       dialect === 'clickhouse' ||
+      dialect === 'bigquery' ||
       (dialect === 'postgres' &&
         c === "'" &&
         (prev === 'E' || prev === 'e') &&

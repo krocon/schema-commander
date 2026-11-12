@@ -25,6 +25,10 @@ export const CONNECTION_DIALOG_EN = {
   d1Database: 'Database ID',
   d1DatabaseExample: 'the UUID of the database, from the dashboard or wrangler',
   d1Token: 'API token',
+  bigqueryProject: 'Project ID',
+  bigqueryProjectExample: 'the id of the Google Cloud project, for example my-project-123',
+  bigqueryLocation: 'Location',
+  serviceAccountKey: 'Key file of the service account (JSON)',
   firebirdDatabaseExample: 'path on the server or alias, for example /data/shop.fdb',
   unchanged: '(unchanged)',
   rememberInKeychain: 'remember in the keychain',
@@ -95,6 +99,8 @@ export const CONNECTION_DIALOG_EN = {
   firebirdDatabaseMissing: 'Firebird needs the database: its path on the server, or an alias.',
   firebirdNoCertificates:
     'Firebird has no certificates to check: choose “required” (its own encryption) or none.',
+  bigqueryProjectMissing: 'BigQuery needs the id of the project.',
+  bigqueryKeyMissing: 'BigQuery needs the key file of a service account (JSON).',
   d1AccountMissing: 'D1 needs the id of the Cloudflare account (letters, digits, dashes).',
   oracleTlsChecked:
     'Oracle connections always check the certificate: choose a mode that checks it, or no TLS.',

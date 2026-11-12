@@ -106,7 +106,10 @@ export function lex(sql: string, dialect: Dialect): Token[] {
       const q = quoted(i, '"', true);
       push('string', i, q.end, q.value, q.open);
       i = q.end;
-    } else if (c === '`' && (dialect === 'mysql' || dialect === 'sqlite')) {
+    } else if (
+      c === '`' &&
+      (dialect === 'mysql' || dialect === 'sqlite' || dialect === 'bigquery')
+    ) {
       const q = quoted(i, '`', false);
       push('quoted', i, q.end, q.value, q.open);
       i = q.end;

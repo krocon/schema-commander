@@ -5,6 +5,7 @@
 //! Rust, TLS over rustls with the roots of the OS.
 
 pub mod access;
+pub mod bigquery;
 pub mod clickhouse;
 pub mod compare;
 pub mod d1;
@@ -73,6 +74,9 @@ pub enum DbKind {
     /// Firebird (prompt 035i): `database` of the profile is the path of the database on the server, or
     /// an alias.
     Firebird,
+    /// Google BigQuery (prompt 035j) over its REST API: `database` of the profile is the project, `user`
+    /// the location of the jobs (may be empty), the client key the key file of a service account.
+    Bigquery,
 }
 
 impl DbKind {
@@ -91,7 +95,11 @@ impl DbKind {
     /// transaction holds there depends on the connector behind a table.
     pub fn edits_rows(self) -> bool {
         // D1 answers one request at a time: nothing can hold a transaction open
-        !matches!(self, DbKind::Clickhouse | DbKind::Trino | DbKind::D1)
+        // (BigQuery: every statement is a job of its own, and its tables have no keys that hold)
+        !matches!(
+            self,
+            DbKind::Clickhouse | DbKind::Trino | DbKind::D1 | DbKind::Bigquery
+        )
     }
 
     pub fn default_port(self) -> u16 {
@@ -107,6 +115,7 @@ impl DbKind {
             DbKind::Libsql => 8080,
             DbKind::D1 => 443,
             DbKind::Firebird => 3050,
+            DbKind::Bigquery => 443,
         }
     }
 }
@@ -333,6 +342,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
         (DbKind::Libsql, _) => "libSQL",
         (DbKind::D1, _) => "Cloudflare D1",
         (DbKind::Firebird, _) => "Firebird",
+        (DbKind::Bigquery, _) => "BigQuery",
     };
     Capabilities {
         product: product.to_owned(),
@@ -344,11 +354,14 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
         ),
         // (Firebird stops a statement from a second connection)
         // ClickHouse has no foreign keys, and Trino's catalog names none
-        foreign_keys: !matches!(kind, DbKind::Clickhouse | DbKind::Trino),
+        foreign_keys: !matches!(kind, DbKind::Clickhouse | DbKind::Trino | DbKind::Bigquery),
         // Firebird (before 6) has one namespace in a database
         schemas: !kind.is_sqlite() && kind != DbKind::Firebird,
         triggers: flavor != Flavor::Cockroach
-            && !matches!(kind, DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino),
+            && !matches!(
+                kind,
+                DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino | DbKind::Bigquery
+            ),
         routines: !matches!(
             kind,
             DbKind::Sqlite
@@ -357,10 +370,16 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
                 | DbKind::Duckdb
                 | DbKind::Clickhouse
                 | DbKind::Trino
+                | DbKind::Bigquery
         ),
         plan: !matches!(
             kind,
-            DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird
+            DbKind::Oracle
+                | DbKind::Duckdb
+                | DbKind::Clickhouse
+                | DbKind::Trino
+                | DbKind::Firebird
+                | DbKind::Bigquery
         ),
         // an embedded database has no server to watch and no users
         monitor: !matches!(
@@ -373,6 +392,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
                 | DbKind::Clickhouse
                 | DbKind::Trino
                 | DbKind::Firebird
+                | DbKind::Bigquery
         ),
         access: !matches!(
             kind,
@@ -384,6 +404,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
                 | DbKind::Clickhouse
                 | DbKind::Trino
                 | DbKind::Firebird
+                | DbKind::Bigquery
         ),
         // D1: a change of a table is written in a transaction, and there is none to open
         structure: !matches!(
@@ -393,6 +414,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
                 | DbKind::Clickhouse
                 | DbKind::Trino
                 | DbKind::Firebird
+                | DbKind::Bigquery
                 | DbKind::D1
         ),
         // without transactions and unique keys a changed cell cannot be written safely
@@ -441,6 +463,8 @@ pub fn begin_statement(kind: DbKind) -> &'static str {
         DbKind::Libsql | DbKind::D1 => "BEGIN",
         // carried out by the driver: the transaction is the client's to hold (see firebird.rs)
         DbKind::Firebird => "SET TRANSACTION",
+        // there is no session to hold one: who needs one refuses BigQuery before it comes to this
+        DbKind::Bigquery => "BEGIN TRANSACTION",
     }
 }
 
@@ -589,6 +613,7 @@ pub fn connect(
         DbKind::Libsql => Box::new(libsql::connect(profile, secret, stop)?),
         DbKind::D1 => Box::new(d1::connect(profile, secret, stop)?),
         DbKind::Firebird => Box::new(firebird::connect(profile, secret, stop)?),
+        DbKind::Bigquery => Box::new(bigquery::connect(profile, secret, stop)?),
     })
 }
 
@@ -1039,6 +1064,12 @@ mod tests {
         assert!(fb.cancel && fb.edit && fb.foreign_keys && fb.triggers && fb.routines);
         assert!(!fb.schemas && !fb.plan && !fb.monitor && !fb.access && !fb.structure);
         assert_eq!(begin_statement(DbKind::Firebird), "SET TRANSACTION");
+        // BigQuery (035j): jobs, not sessions – read and run
+        let bq = of(DbKind::Bigquery, Flavor::Plain);
+        assert_eq!(bq.product, "BigQuery");
+        assert!(bq.cancel && bq.schemas && !bq.edit && !bq.foreign_keys && !bq.routines);
+        assert!(!bq.plan && !bq.monitor && !bq.access && !bq.structure && !bq.triggers);
+        assert!(!DbKind::Bigquery.edits_rows());
         let lite = of(DbKind::Sqlite, Flavor::Plain);
         assert!(!lite.schemas && !lite.routines && lite.triggers && lite.cancel);
         let json = serde_json::to_value(&crdb).unwrap();

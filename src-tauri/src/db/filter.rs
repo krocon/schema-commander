@@ -173,6 +173,25 @@ pub(super) fn name(raw: &str, kind: DbKind) -> AppResult<String> {
     Ok(quote(raw, kind))
 }
 
+/// BigQuery: the types a text is cast to before it is compared – one of a list, nothing else.
+fn bigquery_castable(type_name: &str) -> Option<String> {
+    const TYPES: &[&str] = &[
+        "INT64",
+        "FLOAT64",
+        "NUMERIC",
+        "BIGNUMERIC",
+        "BOOL",
+        "DATE",
+        "DATETIME",
+        "TIME",
+        "TIMESTAMP",
+    ];
+    let t = type_name.trim().to_ascii_uppercase();
+    // `NUMERIC(10, 2)`: the size says nothing a cast needs
+    let base = t.split('(').next().unwrap_or_default().trim().to_owned();
+    TYPES.contains(&base.as_str()).then_some(base)
+}
+
 /// Trino: the types a text is cast to before it is compared – one of a list, with a size of digits and
 /// `with time zone` at most. Anything else (also `varchar`) is compared as the text it is.
 fn trino_castable(type_name: &str) -> Option<String> {
@@ -419,6 +438,7 @@ impl Builder {
                 // without a column beside it the server cannot tell what the value is; hex is read
                 // in pairs, so the length is an even one (review 035i 3)
                 DbKind::Firebird => "CAST(? AS VARCHAR(8190))".to_owned(),
+                DbKind::Bigquery => "?".to_owned(),
                 DbKind::Sqlserver => format!("@P{n}"),
                 DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("?{n}"),
                 DbKind::Oracle => format!(":{n}"),
@@ -438,6 +458,7 @@ impl Builder {
                 DbKind::Oracle => format!("HEXTORAW({inner})"),
                 DbKind::Trino => format!("from_hex({inner})"),
                 DbKind::Firebird => format!("HEX_DECODE({inner})"),
+                DbKind::Bigquery => format!("FROM_HEX({inner})"),
             };
             self.sql.push_str(&around(&placeholder));
             self.display.push_str(&around(&format!("'{raw}'")));
@@ -449,6 +470,8 @@ impl Builder {
             DbKind::Postgres => (Bind::Text(raw.to_owned()), castable(type_name)),
             // Trino compares nothing with a text but a text: the value is cast to what the column is
             DbKind::Trino => (Bind::Text(raw.to_owned()), trino_castable(type_name)),
+            // BigQuery compares nothing with a text but a text either
+            DbKind::Bigquery => (Bind::Text(raw.to_owned()), bigquery_castable(type_name)),
             _ => {
                 let bind = match kind {
                     ValueKind::Number if is_int(raw) => {
@@ -501,7 +524,7 @@ impl Builder {
             // a pattern is longer than the column it is held against: said to be text of any length;
             // every other value is what the column beside it is (the driver reads it as that)
             DbKind::Firebird if type_name.is_empty() => "CAST(? AS VARCHAR(8191))".to_owned(),
-            DbKind::Firebird => "?".to_owned(),
+            DbKind::Firebird | DbKind::Bigquery => "?".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
             DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("?{n}"),
             DbKind::Oracle => format!(":{n}"),
@@ -566,6 +589,7 @@ impl Builder {
             }
             DbKind::Duckdb | DbKind::Trino => format!("CAST({column} AS VARCHAR)"),
             DbKind::Firebird => format!("CAST({column} AS VARCHAR(8191))"),
+            DbKind::Bigquery => format!("CAST({column} AS STRING)"),
             DbKind::Mysql => format!("CAST({column} AS char)"),
             DbKind::Sqlserver => format!("CAST({column} AS nvarchar(max))"),
             DbKind::Oracle => format!("TO_CHAR({column})"),
@@ -678,6 +702,20 @@ impl Builder {
                 self.text(") > 0");
             }
             // Trino takes an escape only before `%`, `_` and itself: a position says the same
+            // BigQuery: a position as well – its LIKE knows the backslash, and so does its string
+            Op::Contains | Op::ContainsNoCase if self.kind == DbKind::Bigquery => {
+                need(1)?;
+                let text = self.as_text(&column, c.kind);
+                if c.op == Op::ContainsNoCase {
+                    self.text(&format!("STRPOS(LOWER({text}), LOWER("));
+                    self.pattern(&c.values[0]);
+                    self.text(")) > 0");
+                } else {
+                    self.text(&format!("STRPOS({text}, "));
+                    self.pattern(&c.values[0]);
+                    self.text(") > 0");
+                }
+            }
             Op::Contains | Op::ContainsNoCase if self.kind == DbKind::Trino => {
                 need(1)?;
                 let text = self.as_text(&column, c.kind);
@@ -832,6 +870,7 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
                     | DbKind::D1
                     | DbKind::Trino
                     | DbKind::Firebird
+                    | DbKind::Bigquery
             ) =>
             {
                 return refuse("no placeholders");
@@ -959,6 +998,7 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
                     | DbKind::Clickhouse
                     | DbKind::Trino
                     | DbKind::Firebird
+                    | DbKind::Bigquery
             );
             if let (Some(nulls), false) = (o.nulls, native) {
                 // no NULLS FIRST/LAST there: a key before the column says where the NULLs go

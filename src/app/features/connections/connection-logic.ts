@@ -90,11 +90,16 @@ export function profileProblems(p: Profile): Partial<Record<Field, string>> {
     out.host = t.hostInvalid;
   }
   // libSQL logs in with a token alone: the password of the profile
-  if (!p.user.trim() && p.kind !== 'libsql') out.user = t.userMissing;
+  if (!p.user.trim() && p.kind !== 'libsql' && p.kind !== 'bigquery') out.user = t.userMissing;
   if (p.kind === 'trino' && !p.database.trim()) out.database = t.catalogMissing;
   if (p.kind === 'firebird') {
     if (!p.database.trim()) out.database = t.firebirdDatabaseMissing;
     if (p.tls === 'verify' || p.tls === 'verify-ca') out.tls = t.firebirdNoCertificates;
+  }
+  if (p.kind === 'bigquery') {
+    if (!/^[A-Za-z0-9._:-]{1,100}$/.test(p.database.trim()))
+      out.database = t.bigqueryProjectMissing;
+    if (!p.clientKey.trim() && !isLocalHost(p.host)) out.clientKey = t.bigqueryKeyMissing;
   }
   if (p.kind === 'd1') {
     const id = /^[A-Za-z0-9-]{1,64}$/;
@@ -105,7 +110,8 @@ export function profileProblems(p: Profile): Partial<Record<Field, string>> {
     if (!p.database.trim()) out.database = t.serviceMissing;
     if (p.tls === 'prefer' || p.tls === 'require') out.tls = t.oracleTlsChecked;
   }
-  if (!p.clientCert.trim() !== !p.clientKey.trim()) {
+  // BigQuery logs in with a key file alone: no certificate goes with it
+  if (p.kind !== 'bigquery' && !p.clientCert.trim() !== !p.clientKey.trim()) {
     out.clientKey = t.certPair;
   }
   if (p.caFile.trim() && p.tls !== 'verify-ca' && p.tls !== 'verify') {
@@ -130,6 +136,12 @@ export function profileProblems(p: Profile): Partial<Record<Field, string>> {
 /** Where Cloudflare's API answers. */
 export const D1_HOST = 'api.cloudflare.com';
 
+/** The services that answer at one address only. */
+export const FIXED_HOSTS: Partial<Record<DbKind, string>> = {
+  d1: D1_HOST,
+  bigquery: 'bigquery.googleapis.com',
+};
+
 /** The profile after another database was chosen: its usual user, port back to the default. */
 export function withKind(p: Profile, kind: DbKind): Profile {
   const users: Record<DbKind, string> = {
@@ -144,21 +156,18 @@ export function withKind(p: Profile, kind: DbKind): Profile {
     libsql: '',
     d1: '',
     firebird: 'SYSDBA',
+    bigquery: '',
   };
   const usual = Object.values(users);
   return {
     ...p,
     kind,
     port: 0,
-    // D1 is reached at Cloudflare, over TLS – nowhere else
+    // a service of a cloud is reached at its own address, over TLS – nowhere else
     host: isFileKind(kind)
       ? ''
-      : kind === 'd1'
-        ? D1_HOST
-        : p.kind === 'd1'
-          ? 'localhost'
-          : p.host || 'localhost',
-    tls: kind === 'd1' ? 'verify' : p.kind === 'd1' ? 'off' : p.tls,
+      : (FIXED_HOSTS[kind] ?? (FIXED_HOSTS[p.kind] ? 'localhost' : p.host || 'localhost')),
+    tls: FIXED_HOSTS[kind] ? 'verify' : FIXED_HOSTS[p.kind] ? 'off' : p.tls,
     user: usual.includes(p.user.trim()) ? users[kind] : p.user,
     database: isFileKind(kind) || isFileKind(p.kind) ? '' : p.database,
   };

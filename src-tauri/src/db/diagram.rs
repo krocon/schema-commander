@@ -254,6 +254,24 @@ pub fn diagram(
                 stop,
             ),
         ),
+        // tables without keys: the ones BigQuery knows are a promise nobody checks
+        DbKind::Bigquery => (
+            s.ask(
+                &format!(
+                    "SELECT c.table_name, c.column_name, c.data_type, \
+                       CASE c.is_nullable WHEN 'YES' THEN 'true' ELSE 'false' END, 'false' \
+                     FROM {0}.INFORMATION_SCHEMA.COLUMNS c \
+                     JOIN {0}.INFORMATION_SCHEMA.TABLES t ON t.table_name = c.table_name \
+                     WHERE t.table_type = 'BASE TABLE' ORDER BY c.table_name, c.ordinal_position",
+                    super::meta::quote_always(schema, kind)
+                ),
+                none,
+                Some(TIMEOUT),
+                stop,
+            )?,
+            Vec::new(),
+            Ok(Vec::new()),
+        ),
         DbKind::Firebird => {
             use super::firebird::{FOREIGN_KEYS, NO_SCHEMA, OWN, TYPE, in_key};
             (

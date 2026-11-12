@@ -25,6 +25,10 @@ export const CONNECTION_DIALOG_DE: Translation<typeof CONNECTION_DIALOG_EN> = {
   d1Database: 'Datenbank-ID',
   d1DatabaseExample: 'die UUID der Datenbank, aus dem Dashboard oder von wrangler',
   d1Token: 'API-Token',
+  bigqueryProject: 'Projekt-ID',
+  bigqueryProjectExample: 'die ID des Google-Cloud-Projekts, zum Beispiel my-project-123',
+  bigqueryLocation: 'Ort',
+  serviceAccountKey: 'Schlüsseldatei des Dienstkontos (JSON)',
   firebirdDatabaseExample: 'Pfad auf dem Server oder Alias, zum Beispiel /data/shop.fdb',
   unchanged: '(unverändert)',
   rememberInKeychain: 'im Schlüsselbund merken',
@@ -95,6 +99,8 @@ export const CONNECTION_DIALOG_DE: Translation<typeof CONNECTION_DIALOG_EN> = {
     'Firebird braucht die Datenbank: ihren Pfad auf dem Server oder einen Alias.',
   firebirdNoCertificates:
     'Firebird kennt keine Zertifikate: „erforderlich“ (seine eigene Verschlüsselung) oder keine wählen.',
+  bigqueryProjectMissing: 'BigQuery braucht die ID des Projekts.',
+  bigqueryKeyMissing: 'BigQuery braucht die Schlüsseldatei eines Dienstkontos (JSON).',
   d1AccountMissing: 'D1 braucht die ID des Cloudflare-Kontos (Buchstaben, Ziffern, Bindestriche).',
   oracleTlsChecked:
     'Verbindungen zu Oracle prüfen das Zertifikat immer: einen Modus wählen, der es prüft, oder kein TLS.',
