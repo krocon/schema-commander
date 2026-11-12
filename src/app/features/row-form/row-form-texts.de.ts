@@ -1,0 +1,35 @@
+import type { Translation } from '../../core/i18n/i18n';
+import type { ROW_FORM_EN } from './row-form-texts';
+
+export const ROW_FORM_DE: Translation<typeof ROW_FORM_EN> = {
+  title: 'Zeile als Formular',
+  width: 'Breite des Zeilen-Formulars',
+  noRow: 'Den Cursor auf eine Zeile des Ergebnisses setzen.',
+  rowOf: (row: number, rows: number) =>
+    `Zeile ${row.toLocaleString('de')} von ${rows.toLocaleString('de')}`,
+  comparing: (count: number) => `${count} Zeilen nebeneinander`,
+  first: 'Erste Zeile',
+  previous: 'Vorige Zeile',
+  next: 'Nächste Zeile',
+  last: 'Letzte Zeile',
+  goTo: 'Gehe zu Zeile',
+  filter: 'Spalte finden',
+  nonNull: 'Nur mit Wert',
+  changed: 'Nur geänderte',
+  compare: 'Markierte Zeilen nebeneinander',
+  column: 'Spalte',
+  type: 'Typ',
+  value: 'Wert',
+  rowN: (row: number) => `Zeile ${row.toLocaleString('de')}`,
+  more: 'mehr',
+  moreOf: (name: string) => `${name} ganz in der Wert-Ansicht zeigen`,
+  edit: 'Bearbeiten',
+  editOf: (name: string) => `${name} bearbeiten`,
+  copyField: 'Kopieren',
+  copyFieldOf: (name: string) => `Den Wert von ${name} kopieren`,
+  copyList: 'Als „Name: Wert“ kopieren',
+  copyJson: 'Als JSON kopieren',
+  copied: 'Kopiert.',
+  shown: (shown: number, all: number) => `${shown} von ${all} Spalten`,
+  failed: (why: string) => `Die Zeile ließ sich nicht lesen: ${why}`,
+};

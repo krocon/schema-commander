@@ -95,6 +95,8 @@ export interface Settings {
   readonly snippets: readonly OwnSnippet[];
   /** The value panel beside the result (prompt 026): shown, its width in px, lines wrapped. */
   readonly valuePanelVisible: boolean;
+  /** The row under the cursor as a form beside the grid (prompt 040); it takes the place of the value panel. */
+  readonly rowFormVisible: boolean;
   readonly valuePanelWidth: number;
   readonly valueWrap: boolean;
   /**
@@ -192,6 +194,7 @@ export const DEFAULT_SETTINGS: Settings = {
   recentSaved: [],
   snippets: [],
   valuePanelVisible: false,
+  rowFormVisible: false,
   valuePanelWidth: 380,
   valueWrap: true,
   tableFilters: {},
@@ -332,6 +335,7 @@ export function mergeSettings(saved: unknown): Settings {
       : [],
     snippets: mergeSnippets(s['snippets']),
     valuePanelVisible: bool('valuePanelVisible'),
+    rowFormVisible: bool('rowFormVisible'),
     valuePanelWidth: within('valuePanelWidth', 200, 4000),
     valueWrap: bool('valueWrap'),
     tableFilters:

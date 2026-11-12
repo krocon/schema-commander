@@ -124,6 +124,13 @@ export const ACTIONS = [
     scope: 'global',
   },
   { id: 'FILTER_RESET', label: 'Result: reset filter and order', group: 'Query', scope: 'global' },
+  // The row as a form (prompt 040)
+  {
+    id: 'TOGGLE_ROW_FORM',
+    label: 'Result: show the row as a form',
+    group: 'View',
+    scope: 'global',
+  },
   // The value panel (prompt 026)
   {
     id: 'TOGGLE_VALUE_PANEL',

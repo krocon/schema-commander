@@ -37,6 +37,7 @@ import { ColumnLayouts } from '../results/column-layouts.service';
 import { sortMarks, toggleLocalSort, toggleServerOrder } from '../filter/filter-logic';
 import { PARAM_TEXTS } from '../params/param-texts';
 import { ValuePanel } from '../value/value-panel';
+import { RowForm } from '../row-form/row-form';
 import { ActiveCell, ValueService } from '../value/value.service';
 import { VALUE_TEXTS } from '../value/value-texts';
 import { TABS_TEXTS } from './tabs-texts';
@@ -62,6 +63,7 @@ const EDITOR_MIN_W = 160;
     SplitterComponent,
     SqlEditor,
     ValuePanel,
+    RowForm,
   ],
   host: {
     '[class.side]': 'side()',
@@ -221,7 +223,7 @@ const EDITOR_MIN_W = 160;
                     (active)="onActive(r, $event)"
                     (headClick)="onHeadClick(r, $event)"
                   />
-                  @if (settings.settings().valuePanelVisible) {
+                  @if (beside() !== 'none') {
                     <app-splitter
                       orientation="vertical"
                       pane="after"
@@ -233,7 +235,18 @@ const EDITOR_MIN_W = 160;
                       (sizeChange)="dragValue.set($event)"
                       (sizeCommit)="commitValue($event)"
                     />
-                    <app-value-panel [style.width.px]="valueW()" [cell]="activeCell()" />
+                    @if (beside() === 'form') {
+                      <app-row-form
+                        [style.width.px]="valueW()"
+                        [cell]="activeCell()"
+                        [result]="r"
+                        [rows]="rows()"
+                        [tab]="tab()"
+                        [edits]="edits()"
+                      />
+                    } @else {
+                      <app-value-panel [style.width.px]="valueW()" [cell]="activeCell()" />
+                    }
                   }
                 </div>
               } @else {
@@ -299,7 +312,7 @@ const EDITOR_MIN_W = 160;
                     (active)="onActive(r, $event)"
                     (headClick)="onHeadClick(r, $event)"
                   />
-                  @if (settings.settings().valuePanelVisible) {
+                  @if (beside() !== 'none') {
                     <app-splitter
                       orientation="vertical"
                       pane="after"
@@ -311,7 +324,18 @@ const EDITOR_MIN_W = 160;
                       (sizeChange)="dragValue.set($event)"
                       (sizeCommit)="commitValue($event)"
                     />
-                    <app-value-panel [style.width.px]="valueW()" [cell]="activeCell()" />
+                    @if (beside() === 'form') {
+                      <app-row-form
+                        [style.width.px]="valueW()"
+                        [cell]="activeCell()"
+                        [result]="r"
+                        [rows]="rows()"
+                        [tab]="tab()"
+                        [edits]="edits()"
+                      />
+                    } @else {
+                      <app-value-panel [style.width.px]="valueW()" [cell]="activeCell()" />
+                    }
                   }
                 </div>
               } @else {
@@ -377,6 +401,7 @@ const EDITOR_MIN_W = 160;
       flex: 1 1 0;
       min-width: 0;
     }
+    .with-value app-row-form,
     .with-value app-value-panel {
       flex: none;
     }
@@ -520,6 +545,11 @@ export class QueryPane implements OnInit, OnDestroy {
   private readonly values = inject(ValueService);
   /** The cell the cursor of this tab's grid is on. */
   protected readonly activeCell = signal<ActiveCell | null>(null);
+  /** What stands beside the grid: the row as a form, the value of the cell, or nothing. */
+  protected readonly beside = computed(() => {
+    const s = this.settings.settings();
+    return s.rowFormVisible ? 'form' : s.valuePanelVisible ? 'value' : 'none';
+  });
   protected readonly valueMinW = 200;
   protected readonly valueMaxW = 1200;
   protected readonly dragValue = signal<number | null>(null);

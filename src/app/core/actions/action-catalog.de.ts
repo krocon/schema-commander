@@ -23,6 +23,7 @@ export const ACTION_LABELS_DE: Readonly<Record<ActionId, string>> = {
   FILTER_CELL_LT: 'Tabelle: kleiner als die Zelle filtern',
   FILTER_CELL_NULL: 'Tabelle: filtern, wo die Spalte NULL ist',
   FILTER_RESET: 'Ergebnis: Filter und Sortierung zurücksetzen',
+  TOGGLE_ROW_FORM: 'Ergebnis: Zeile als Formular zeigen',
   TOGGLE_VALUE_PANEL: 'Ergebnis: Wert-Feld zeigen',
   COPY_CELL_VALUE: 'Ergebnis: ganzen Wert der Zelle kopieren',
   SUMMARIZE_COLUMN: 'Ergebnis: Spalte zusammenfassen',

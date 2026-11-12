@@ -67,10 +67,12 @@
   auskommentierten gefährlichen Schritten (Prompt 038);
   **Ausführungsplan** als Baumtabelle für alle Datenbanken, geschätzt oder mit Ausführung (zurückgerollt), mit
   Hinweisen (Prompt 039);
+  **Zeile als Formular** neben dem Gitter, mit Filter über Spaltennamen und markierten Zeilen nebeneinander
+  (Prompt 040);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a, 036–039),
+  erledigt: 001–034, 035a, 036–040),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -179,6 +181,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/saved/          SavedPanel (Ansicht der Seitenleiste, APG-Baum), SavedDialog, SavedStore (Root:
                                Listing, beobachten, öffnen als Datei-Tab), saved-logic.ts (rein)
   app/features/snippets/       SnippetDialog, snippet-logic.ts (rein: mitgelieferte je Dialekt, Variablen)
+  app/features/row-form/       RowForm (Seitenfeld: Zeile des Cursors als Felder, Zeilen nebeneinander),
+                               row-form-logic.ts (rein)
   app/features/schema/         SchemaTree (virtuelle Liste, APG-Baum), SchemaStore (Root: Zustand je Verbindung),
                                SchemaActions, schema-logic.ts (rein: Zeilen, Filter, Tasten, Vorlagen)
   app/features/schema-compare/ SchemaCompareDialog (zwei Seiten, Liste, Definitionen nebeneinander), compare-logic.ts
