@@ -254,6 +254,28 @@ pub fn diagram(
                 stop,
             ),
         ),
+        // tables and their columns; keys are not read yet (prompt 035l)
+        DbKind::Db2 => (
+            s.ask(
+                &format!(
+                    "SELECT RTRIM(c.tabname), RTRIM(c.colname), {}, \
+                       CASE c.nulls WHEN 'Y' THEN 'true' ELSE 'false' END, \
+                       CASE WHEN COALESCE(c.keyseq, 0) > 0 THEN 'true' ELSE 'false' END \
+                     FROM syscat.columns c \
+                     JOIN syscat.tables t ON t.tabschema = c.tabschema AND t.tabname = c.tabname \
+                     WHERE c.tabschema = ? AND t.type = 'T' ORDER BY c.tabname, c.colno",
+                    super::meta::DB2_TYPE
+                        .replace("typename", "c.typename")
+                        .replace("length", "c.length")
+                        .replace("scale", "c.scale")
+                ),
+                one,
+                Some(TIMEOUT),
+                stop,
+            )?,
+            Vec::new(),
+            Ok(Vec::new()),
+        ),
         DbKind::Snowflake => (
             s.ask(
                 &format!(

@@ -64,6 +64,7 @@ export const DEFAULT_FORMS: Readonly<Record<Dialect, readonly ParamForm[]>> = {
   bigquery: ['colon', 'brace'],
   // `:name` is a bind of Snowflake's own scripting: only `${name}` and `?`
   snowflake: ['brace', 'question'],
+  db2: ['colon', 'brace', 'question'],
 };
 
 /** The forms of a connection: what the user set for it, else the defaults of its database. */
@@ -399,6 +400,11 @@ export function placeholder(dialect: Dialect, n: number, kind: BoundValue['kind'
     case 'oracle':
       // the driver binds numbers and dates as what they are
       return `:${n}`;
+    case 'db2':
+      // a marker alone has no type: a date says what it is; the rest takes the type of its place
+      if (kind === 'date') return 'CAST(? AS DATE)';
+      if (kind === 'datetime') return 'CAST(? AS TIMESTAMP)';
+      return '?';
     case 'snowflake':
     case 'bigquery':
       // the driver sends every value with its type

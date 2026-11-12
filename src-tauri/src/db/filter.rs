@@ -439,6 +439,8 @@ impl Builder {
                 // in pairs, so the length is an even one (review 035i 3)
                 DbKind::Firebird => "CAST(? AS VARCHAR(8190))".to_owned(),
                 DbKind::Bigquery | DbKind::Snowflake => "?".to_owned(),
+                // a marker with nothing beside it has no type: said to be text
+                DbKind::Db2 => "CAST(? AS VARCHAR(8000))".to_owned(),
                 DbKind::Sqlserver => format!("@P{n}"),
                 DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("?{n}"),
                 DbKind::Oracle => format!(":{n}"),
@@ -455,7 +457,7 @@ impl Builder {
                 | DbKind::Clickhouse => {
                     format!("unhex({inner})")
                 }
-                DbKind::Oracle => format!("HEXTORAW({inner})"),
+                DbKind::Oracle | DbKind::Db2 => format!("HEXTORAW({inner})"),
                 DbKind::Trino => format!("from_hex({inner})"),
                 DbKind::Firebird => format!("HEX_DECODE({inner})"),
                 DbKind::Bigquery => format!("FROM_HEX({inner})"),
@@ -525,7 +527,9 @@ impl Builder {
             // a pattern is longer than the column it is held against: said to be text of any length;
             // every other value is what the column beside it is (the driver reads it as that)
             DbKind::Firebird if type_name.is_empty() => "CAST(? AS VARCHAR(8191))".to_owned(),
-            DbKind::Firebird | DbKind::Bigquery | DbKind::Snowflake => "?".to_owned(),
+            // Db2 the same: a marker inside a function has no type of its own
+            DbKind::Db2 if type_name.is_empty() => "CAST(? AS VARCHAR(4000))".to_owned(),
+            DbKind::Firebird | DbKind::Bigquery | DbKind::Snowflake | DbKind::Db2 => "?".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
             DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("?{n}"),
             DbKind::Oracle => format!(":{n}"),
@@ -592,6 +596,7 @@ impl Builder {
             DbKind::Firebird => format!("CAST({column} AS VARCHAR(8191))"),
             DbKind::Bigquery => format!("CAST({column} AS STRING)"),
             DbKind::Snowflake => format!("TO_VARCHAR({column})"),
+            DbKind::Db2 => format!("VARCHAR({column})"),
             DbKind::Mysql => format!("CAST({column} AS char)"),
             DbKind::Sqlserver => format!("CAST({column} AS nvarchar(max))"),
             DbKind::Oracle => format!("TO_CHAR({column})"),
@@ -716,6 +721,20 @@ impl Builder {
                     self.text(&format!("CONTAINS({text}, "));
                     self.pattern(&c.values[0]);
                     self.text(")");
+                }
+            }
+            // Db2: where the text stands – no pattern, so nothing in it is special
+            Op::Contains | Op::ContainsNoCase if self.kind == DbKind::Db2 => {
+                need(1)?;
+                let text = self.as_text(&column, c.kind);
+                if c.op == Op::ContainsNoCase {
+                    self.text("LOCATE(LOWER(");
+                    self.pattern(&c.values[0]);
+                    self.text(&format!("), LOWER({text})) > 0"));
+                } else {
+                    self.text("LOCATE(");
+                    self.pattern(&c.values[0]);
+                    self.text(&format!(", {text}) > 0"));
                 }
             }
             // BigQuery: a position as well – its LIKE knows the backslash, and so does its string
@@ -917,6 +936,7 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
                     | DbKind::Firebird
                     | DbKind::Bigquery
                     | DbKind::Snowflake
+                    | DbKind::Db2
             ) =>
             {
                 return refuse("no placeholders");
@@ -1046,6 +1066,7 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
                     | DbKind::Firebird
                     | DbKind::Bigquery
                     | DbKind::Snowflake
+                    | DbKind::Db2
             );
             if let (Some(nulls), false) = (o.nulls, native) {
                 // no NULLS FIRST/LAST there: a key before the column says where the NULLs go
@@ -1072,7 +1093,7 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
         }
     }
     if let (Some(n), false) = (q.limit, kind == DbKind::Sqlserver || q.count) {
-        if matches!(kind, DbKind::Oracle | DbKind::Firebird) {
+        if matches!(kind, DbKind::Oracle | DbKind::Firebird | DbKind::Db2) {
             b.text(&format!("\nFETCH FIRST {n} ROWS ONLY"));
         } else {
             b.text(&format!("\nLIMIT {n}"));
@@ -1102,6 +1123,78 @@ fn oracle_instant(type_name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// Db2 (prompt 035l): markers, a position instead of a pattern, FETCH FIRST.
+    #[test]
+    fn db2_statements_of_a_table_view() {
+        let condition =
+            |column: &str, op: Op, value: &str, kind: ValueKind, type_name: &str| Condition {
+                column: column.into(),
+                op,
+                values: vec![value.into()],
+                kind,
+                type_name: type_name.into(),
+            };
+        let q = build(
+            DbKind::Db2,
+            &TableQuery {
+                schema: Some("SHOP".into()),
+                table: "Orders".into(),
+                conditions: vec![
+                    condition("PLACED_AT", Op::Ge, "2026-02-01", ValueKind::Text, "DATE"),
+                    condition("ID", Op::Eq, "7", ValueKind::Number, "INTEGER"),
+                    condition(
+                        "name",
+                        Op::ContainsNoCase,
+                        "100%_[",
+                        ValueKind::Text,
+                        "VARCHAR(40)",
+                    ),
+                    condition(
+                        "TOTAL",
+                        Op::Contains,
+                        "9",
+                        ValueKind::Number,
+                        "DECIMAL(9, 2)",
+                    ),
+                    condition("RAW", Op::Eq, "00ff", ValueKind::Bytes, "VARBINARY(8)"),
+                ],
+                order: vec![Order {
+                    column: "ID".into(),
+                    desc: true,
+                    nulls: Some(Nulls::Last),
+                }],
+                limit: Some(10),
+                ..TableQuery::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            q.sql,
+            "SELECT *\nFROM SHOP.\"Orders\"\nWHERE PLACED_AT >= ?\n  AND ID = ?\n  AND LOCATE(LOWER(CAST(? AS VARCHAR(4000))), LOWER(\"name\")) > 0\n  AND LOCATE(CAST(? AS VARCHAR(4000)), VARCHAR(TOTAL)) > 0\n  AND RAW = HEXTORAW(CAST(? AS VARCHAR(8000)))\nORDER BY ID DESC NULLS LAST\nFETCH FIRST 10 ROWS ONLY"
+        );
+        // the text as it is: nothing in it is a pattern
+        assert_eq!(q.params[2], Bind::Text("100%_[".into()));
+        let free = |text: &str| {
+            build(
+                DbKind::Db2,
+                &TableQuery {
+                    table: "T".into(),
+                    where_sql: Some(text.into()),
+                    ..TableQuery::default()
+                },
+            )
+        };
+        assert!(free("TOTAL > 100 AND NAME = 'it''s; fine'").is_ok());
+        for no in [
+            "A = ?",
+            "A = 1 -- and the rest",
+            "A = 1; DROP TABLE T",
+            "A = 'x\\' OR 1 = 1 --'",
+        ] {
+            assert!(free(no).is_err(), "{no}");
+        }
+    }
+
     /// Snowflake (prompt 035k): names in upper case stay bare, CONTAINS instead of LIKE.
     #[test]
     fn snowflake_statements_of_a_table_view() {

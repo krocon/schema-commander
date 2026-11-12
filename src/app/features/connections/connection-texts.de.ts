@@ -30,6 +30,7 @@ export const CONNECTION_DE: Translation<typeof CONNECTION_EN> = {
     firebird: 'Firebird',
     bigquery: 'BigQuery',
     snowflake: 'Snowflake',
+    db2: 'Db2',
   },
   password: 'Passwort',
   sshSecretTitle: 'SSH-Tunnel: Passwort oder Passphrase',

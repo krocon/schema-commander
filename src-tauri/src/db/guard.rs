@@ -190,6 +190,10 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                 } else if nests && chars[i] == '/' && chars.get(i + 1) == Some(&'*') {
                     depth += 1;
                     i += 2;
+                } else if kind == DbKind::Db2 && chars[i] == '/' && chars.get(i + 1) == Some(&'*') {
+                    // whether Db2 nests comments depends on its platform: read as not known
+                    ambiguous = true;
+                    i += 2;
                 } else {
                     i += 1;
                 }
@@ -243,7 +247,10 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                 // ClickHouse takes it as an escape inside backticks too (review 035d 2)
                 if chars[i] == '\\'
                     && (quote != '`' || matches!(kind, DbKind::Clickhouse | DbKind::Bigquery))
-                    && !matches!(kind, DbKind::Oracle | DbKind::Trino | DbKind::Firebird)
+                    && !matches!(
+                        kind,
+                        DbKind::Oracle | DbKind::Trino | DbKind::Firebird | DbKind::Db2
+                    )
                     // Snowflake: a quote in a name is doubled, a backslash there is a character
                     && !(kind == DbKind::Snowflake && quote == '"')
                     && i + 1 < n
@@ -633,6 +640,8 @@ const READ_PRAGMAS: &[&str] = &[
 /// `DO UPDATE`, `THEN DELETE`), not a statement that needs its own `WHERE`.
 const NOT_A_STATEMENT_AFTER: &[&str] = &[
     "FOR", "DO", "THEN", "ON", "KEY", "NO", "OF", "BEFORE", "AFTER", "OR", "INSTEAD",
+    // Db2: `… USE AND KEEP UPDATE LOCKS`, `ON COMMIT DELETE ROWS`, `ON ROLLBACK DELETE ROWS`
+    "KEEP", "COMMIT", "ROLLBACK",
 ];
 
 /// Statements that run text: what the text does counts for them.
@@ -775,6 +784,13 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
         Class::Write
     };
 
+    // Db2: `OPTIMIZE FOR n ROWS` and the register `CURRENT REFRESH AGE` are words of a query
+    let ddl_here = words.iter().enumerate().any(|(i, w)| {
+        DDL_WORDS.contains(w)
+            && !(kind == DbKind::Db2
+                && ((*w == "OPTIMIZE" && words.get(i + 1).copied() == Some("FOR"))
+                    || (*w == "REFRESH" && i > 0 && words[i - 1] == "CURRENT")))
+    });
     if class == Class::Read {
         // a statement that looks like reading writes when a writing word stands anywhere in it
         let pairs = |a: &str, b: &str| words.windows(2).any(|w| w[0] == a && w[1] == b);
@@ -783,12 +799,12 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
         } else if has(WRITE_WORDS)
             || (kind == DbKind::Sqlserver && has(TSQL_WRITE_WORDS))
             || calls_writing_function(toks)
-            || (kind == DbKind::Oracle && has(&["NEXTVAL"]))
+            || (matches!(kind, DbKind::Oracle | DbKind::Db2) && has(&["NEXTVAL"]))
             || pairs("NEXT", "VALUE")
             || pairs("PREVIOUS", "VALUE")
         {
             class = Class::Write;
-        } else if has(DDL_WORDS) && !matches!(start, "SHOW" | "DESCRIBE" | "DESC" | "HELP") {
+        } else if ddl_here && !matches!(start, "SHOW" | "DESCRIBE" | "DESC" | "HELP") {
             // `SHOW CREATE TABLE` only tells. `EXPLAIN ANALYZE` runs the statement; one that only
             // reads stays reading
             let only_analyze = start == "EXPLAIN"
@@ -810,6 +826,19 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
     {
         // who may log in and what a role is: it gives away like a GRANT does (review 047 M1)
         class = Class::Dangerous;
+    }
+    if kind == DbKind::Db2 {
+        if start == "EXPLAIN" && class == Class::Read {
+            // the plan is written into the explain tables
+            class = Class::Write;
+        }
+        if start == "ALTER"
+            && class != Class::Dangerous
+            && words.windows(2).any(|w| w[0] == "EMPTY" && w[1] == "TABLE")
+        {
+            // … ACTIVATE NOT LOGGED INITIALLY WITH EMPTY TABLE: every row is gone, for good
+            class = Class::Dangerous;
+        }
     }
     if kind == DbKind::Snowflake && class == Class::Read {
         // `SYSTEM$…(…)` cancels queries, ends sessions, sends mail: writing, but for the few that only
@@ -1112,6 +1141,8 @@ pub fn read_only_statement(kind: DbKind) -> Option<&'static str> {
         DbKind::Bigquery => None,
         // every statement is a request of its own; what a login may write its role decides
         DbKind::Snowflake => None,
+        // Db2 has no session that only reads; the classification is all there is
+        DbKind::Db2 => None,
     }
 }
 
@@ -1120,7 +1151,8 @@ mod tests {
     use super::*;
     use Class::{Dangerous, Ddl, Read, Write};
 
-    const ALL: [DbKind; 13] = [
+    const ALL: [DbKind; 14] = [
+        DbKind::Db2,
         DbKind::Postgres,
         DbKind::Mysql,
         DbKind::Sqlserver,
@@ -1155,6 +1187,60 @@ mod tests {
             );
         }
         assert_eq!(read_only_statement(DbKind::Libsql), None);
+    }
+
+    /// Db2 (prompt 035l).
+    #[test]
+    fn db2_statements_are_read_as_db2_reads_them() {
+        let k = DbKind::Db2;
+        assert_eq!(classify("SELECT * FROM T FETCH FIRST 5 ROWS ONLY", k), Read);
+        assert_eq!(classify("VALUES CURRENT TIMESTAMP", k), Read);
+        // a change that answers with rows is a change
+        assert_ne!(
+            classify("SELECT * FROM FINAL TABLE (INSERT INTO T VALUES (1))", k),
+            Read
+        );
+        assert_ne!(classify("SELECT * FROM OLD TABLE (DELETE FROM T)", k), Read);
+        assert_eq!(classify("VALUES NEXT VALUE FOR S", k), Write);
+        assert_eq!(classify("SELECT S.NEXTVAL FROM SYSIBM.SYSDUMMY1", k), Write);
+        assert_ne!(classify("CALL SYSPROC.ADMIN_CMD('REORG TABLE T')", k), Read);
+        assert_eq!(classify("TRUNCATE TABLE T IMMEDIATE", k), Dangerous);
+        assert_eq!(classify("DELETE FROM T", k), Dangerous);
+        // no backslash escape: the string ends at its quote
+        assert_ne!(classify("SELECT 'a\\' ; DROP TABLE T --'", k), Read);
+        assert_eq!(read_only_statement(k), None);
+        // review 035l 11: these write or empty
+        assert_eq!(classify("EXPLAIN PLAN FOR SELECT * FROM T", k), Write);
+        assert_eq!(
+            classify(
+                "ALTER TABLE T ACTIVATE NOT LOGGED INITIALLY WITH EMPTY TABLE",
+                k
+            ),
+            Dangerous
+        );
+        assert_ne!(
+            classify(
+                "SELECT * FROM /* /* */ ' */ OLD TABLE (DELETE FROM T) --'",
+                k
+            ),
+            Read
+        );
+        // review 035l 13: these only read – or take locks, as FOR UPDATE does, but destroy nothing
+        let keeps = "SELECT * FROM T WHERE A = 1 WITH RS USE AND KEEP UPDATE LOCKS";
+        assert_eq!(
+            classify(keeps, k),
+            classify("SELECT * FROM T WHERE A = 1 FOR UPDATE", k)
+        );
+        assert_ne!(classify(keeps, k), Dangerous);
+        assert_eq!(classify("SELECT * FROM T OPTIMIZE FOR 20 ROWS", k), Read);
+        assert_eq!(classify("VALUES CURRENT REFRESH AGE", k), Read);
+        assert_ne!(
+            classify(
+                "DECLARE GLOBAL TEMPORARY TABLE G (A INT) ON COMMIT DELETE ROWS",
+                k
+            ),
+            Dangerous
+        );
     }
 
     /// Snowflake (prompt 035k).
@@ -1509,6 +1595,10 @@ mod tests {
             for (sql, class) in COMMON {
                 // SQL Server has no EXPLAIN: there the words behind it are a second statement
                 if kind == DbKind::Sqlserver && sql.starts_with("EXPLAIN ANALYZE SELECT") {
+                    continue;
+                }
+                // Db2 writes a plan into its explain tables: no reading there (review 035l 11)
+                if kind == DbKind::Db2 && sql.starts_with("EXPLAIN") {
                     continue;
                 }
                 assert_eq!(classify(sql, kind), *class, "{kind:?}: {sql}");

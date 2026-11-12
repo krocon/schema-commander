@@ -61,7 +61,8 @@ pub fn tools_of(kind: DbKind) -> &'static [Tool] {
         | DbKind::Trino
         | DbKind::Firebird
         | DbKind::Bigquery
-        | DbKind::Snowflake => &[],
+        | DbKind::Snowflake
+        | DbKind::Db2 => &[],
     }
 }
 
@@ -585,7 +586,8 @@ pub fn dump(e: &Endpoint, spec: &DumpSpec, target: &Path) -> AppResult<Invocatio
         | DbKind::Trino
         | DbKind::Firebird
         | DbKind::Bigquery
-        | DbKind::Snowflake => Err(invalid(
+        | DbKind::Snowflake
+        | DbKind::Db2 => Err(invalid(
             "this database is not backed up with a tool: use the simple export",
         )),
     }

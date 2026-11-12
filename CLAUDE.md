@@ -79,6 +79,8 @@
   gegen den Emulator geprüft, nicht gegen Google (Prompt 035j);
   **Snowflake** über dessen SQL-API mit Token oder Schlüsselpaar, zum Lesen und Ausführen – nach der
   Dokumentation, nicht gegen Snowflake gelaufen (Prompt 035k);
+  **Db2** (LUW) über den reinen Rust-Treiber `justybase-db2`, zum Lesen und Ausführen mit Auto-Commit – nach
+  Quelltext und Dokumentation, nie gegen einen Server gelaufen (Prompt 035l);
   **Suche auf dem Server**: ein Text in den Zeilen aller Tabellen und in Definitionen, als lesender Job (Prompt 036);
   **ER-Diagramm** eines Schemas oder einer Tabelle mit Nachbarn: eigene Anordnung, verschiebbar, Listenansicht,
   Export als SVG, Mermaid, DBML (Prompt 037);
@@ -113,12 +115,12 @@
   über den Lader des Imports oder als CSV/INSERT-Datei (Prompt 049);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
-  `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a–035k, 036–049; von 035 offen: Firebird, BigQuery, Snowflake, Db2),
+  `docs/feature-analysis.md` sind freigegeben und umgesetzt; die Prompts 001–049 liegen in `prompts/done/`
+  (035 als Durchläufe 035a–035l; gegen echte Server ungeprüft: D1, Snowflake, Db2; BigQuery nur Emulator),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
-## 2. Befehle (Root, pnpm 10 via `packageManager`, Node ≥ 22.22.3, Rust stable ≥ 1.93)
+## 2. Befehle (Root, pnpm 10 via `packageManager`, Node ≥ 22.22.3, Rust stable ≥ 1.98.1)
 
 | Zweck | Befehl |
 |---|---|
@@ -315,6 +317,8 @@ src-tauri/                     Rust
                                die Stücke des Katalogs (`TYPE`, `FOREIGN_KEYS`) für meta, details, diagram
   src/db/bigquery.rs           BigQuery über REST: Job starten, warten, Seiten; Anmeldung mit der Schlüsseldatei
                                eines Dienstkontos (JWT, nur zu Google); Tests gegen einen nachgestellten Server
+  src/db/db2.rs                Db2 über `justybase-db2` (DRDA): Auto-Commit, Werte gebunden und vorher gegen
+                               ihren Platz geprüft (`fits`), Abbruch über eine zweite Verbindung; Tests ohne Server
   src/db/snowflake.rs          Snowflake über die SQL-API: einreichen, warten, Partitionen; Token oder
                                Schlüsselpaar (JWT); Tests gegen einen nachgestellten Server
   src/db/d1.rs                 Cloudflare D1 über die REST-API: eine Anfrage je Anweisung, keine Sitzung; Tests
@@ -449,6 +453,9 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   `firebird::control` aus, nichts sonst öffnet oder schließt eine. Ein Wert wird nur durch `firebird::bound` zu
   dem, was sein Platz ist (nie gerundet). Das eine Schema hat den leeren Namen: Nichts wird damit qualifiziert,
   Katalogabfragen binden es (`NO_SCHEMA`).
+- **Db2**: Jede Anweisung wird abgeschlossen – nur `db2::one` sendet Commit und Rollback (der Treiber selbst
+  schließt einen Cursor ohne gebundene Werte nicht ab); nichts darf sich auf eine offene Transaktion verlassen, `edits_rows` bleibt falsch, bis der Treiber gegen einen Server geprüft ist. Ein Wert geht nur durch
+  `db2::fits` (der Treiber würde ihn sonst kürzen). `justybase-db2` bleibt fest auf seiner Version.
 - **Snowflake**: Token und Zusicherung gehen nur an `*.snowflakecomputing.com` über geprüftes TLS. Es gibt keine
   Sitzung: nichts darf sich auf ein `USE …` oder eine offene Transaktion verlassen.
 - **BigQuery**: Der Schlüssel eines Dienstkontos geht nur an Googles Token-Adresse (`TOKEN_URI`) und das Token

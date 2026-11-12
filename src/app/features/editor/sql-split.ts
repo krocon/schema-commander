@@ -17,6 +17,8 @@ import { offsetAt, placeIn } from '../../core/text/places';
  * - **firebird**: a procedure, function, trigger, package or `EXECUTE BLOCK` keeps the `;` of its body.
  * - **bigquery**: backslash escapes in strings and in backticks, no doubled quotes, strings of three
  *   quotes, `#` comments; a script runs whole (`splitForRun`).
+ * - **db2**: a compound statement of SQL PL (`BEGIN … END`, the body of a routine or trigger) keeps its `;`;
+ *   `--#SET TERMINATOR @` sets another end of a statement.
  * - **snowflake**: backslash escapes in strings, `//` comments, `$$ … $$` strings; a block of Snowflake
  *   Scripting (`[DECLARE …] BEGIN … END`, also as the body of a procedure without `$$`) keeps its `;`.
  * - **trino**: the common rules – a quote is escaped only by doubling it.
@@ -35,7 +37,8 @@ export type Dialect =
   | 'trino'
   | 'firebird'
   | 'bigquery'
-  | 'snowflake';
+  | 'snowflake'
+  | 'db2';
 
 export interface Statement {
   /** The statement without its terminator, trimmed. */
@@ -212,6 +215,16 @@ function wordAt(script: string, i: number): string {
   return m ? m[0].toUpperCase() : '';
 }
 
+/** Db2: a statement whose body may be a compound statement of SQL PL. */
+function startsSqlPl(script: string, from: number, to: number): boolean {
+  return /^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:PROCEDURE|FUNCTION|TRIGGER|METHOD)\b/i.test(
+    script
+      .slice(from, to)
+      .replace(/--[^\n]*\n|\/\*[\s\S]*?\*\//g, ' ')
+      .slice(0, 400),
+  );
+}
+
 /** Whether the text from `from` to `to` starts a trigger (`CREATE [TEMP] TRIGGER`). */
 /** Firebird: a statement with a body in PSQL (from its first `BEGIN` to the `END` that closes it). */
 function startsPsql(script: string, from: number, to: number): boolean {
@@ -318,6 +331,18 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
     fresh = false;
   };
   while (s.i < script.length) {
+    if (dialect === 'db2' && script[s.i] === '-') {
+      // `--#SET TERMINATOR @` of the command line processor: from here on a statement ends there
+      const m = /^--#SET[ \t]+TERMINATOR[ \t]+(\S+)[ \t]*(?:\r?\n|$)/i.exec(
+        script.slice(s.i, s.i + 80),
+      );
+      if (m) {
+        push(s.i, s.i + m[0].length);
+        delimiter = m[1];
+        s.i += m[0].length;
+        continue;
+      }
+    }
     if (skipToken(s)) continue;
     const i = s.i;
     if (dialect === 'sqlserver' && (script[i] === 'G' || script[i] === 'g')) {
@@ -362,36 +387,49 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
         continue;
       }
     }
-    if (dialect === 'snowflake') {
+    // (Db2 with a terminator of its own, `--#SET TERMINATOR @`: the script says where a statement ends)
+    if ((dialect === 'snowflake' || dialect === 'db2') && delimiter === ';') {
       const word = wordAt(script, i);
+      if (word && /[0-9$]/.test(script[i + word.length] ?? '')) {
+        // a name that only begins like a word of the language (`begin1`, `end2`)
+        prev = '';
+        fresh = false;
+        s.i = i + word.length;
+        continue;
+      }
       if (word) {
         const first = script.slice(start, i).trim() === '';
         // `BEGIN;`, `BEGIN TRANSACTION`, `BEGIN WORK` open a transaction, not a block
         const block =
           word === 'BEGIN' &&
           !/^\s*(?:;|$|(?:TRANSACTION|WORK|NAME)\b)/i.test(script.slice(i + 5, i + 40));
+        // `repeat('*', n)` is a function, not a loop
+        const loop =
+          word === 'IF' ||
+          word === 'FOR' ||
+          word === 'WHILE' ||
+          word === 'LOOP' ||
+          (word === 'REPEAT' && !/^\s*\(/.test(script.slice(i + 6, i + 20)));
         if (!trigger) {
-          if (word === 'DECLARE' && (first || prev === 'AS')) declaring = true;
+          if (dialect === 'db2') {
+            // SQL PL: a compound statement, or the body of a routine or trigger, which follows its
+            // options without a word before it – but not `GENERATED ALWAYS AS ROW BEGIN`
+            if (block && prev !== 'ROW' && (first || startsSqlPl(script, start, i))) {
+              trigger = true;
+              depth = 1;
+            }
+          } else if (word === 'DECLARE' && (first || prev === 'AS')) declaring = true;
           else if (block && (first || prev === 'AS' || declaring)) {
             trigger = true;
             declaring = false;
             depth = 1;
           }
-        } else if (prev === 'END') {
-          // `END IF`, `END FOR`, `END LOOP` …: the word belongs to its END
+        } else if (prev === 'END' && (loop || word === 'CASE' || word === 'REPEAT')) {
+          // `END IF`, `END FOR`, `END LOOP`, `END CASE` …: the word belongs to its END
         } else if (word === 'END') {
           depth--;
           if (depth <= 0) trigger = false;
-        } else if (
-          word === 'CASE' ||
-          block ||
-          (fresh &&
-            (word === 'IF' ||
-              word === 'FOR' ||
-              word === 'WHILE' ||
-              word === 'LOOP' ||
-              word === 'REPEAT'))
-        ) {
+        } else if (word === 'CASE' || block || (fresh && loop)) {
           depth++;
         }
         prev = word;
@@ -402,7 +440,9 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
             word === 'ELSE' ||
             word === 'DO' ||
             word === 'LOOP' ||
-            word === 'REPEAT');
+            word === 'REPEAT' ||
+            // `BEGIN ATOMIC`, `BEGIN NOT ATOMIC`: the first statement is still to come
+            (fresh && (word === 'ATOMIC' || word === 'NOT')));
         s.i = i + word.length;
         continue;
       }
@@ -414,7 +454,8 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
       }
       if (!/\s/.test(script[i])) {
         prev = '';
-        fresh = false;
+        // SQL PL: a label stands before its loop (`again: LOOP`)
+        fresh = dialect === 'db2' && trigger && script[i] === ':';
       }
     }
     // with a terminator of its own a script says itself where a statement ends

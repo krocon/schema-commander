@@ -197,6 +197,7 @@ pub fn literal(cell: &Value, kind: ColKind, dialect: DbKind) -> String {
                 DbKind::Postgres => format!("'\\x{hex}'"),
                 DbKind::Bigquery => format!("FROM_HEX('{hex}')"),
                 DbKind::Snowflake => format!("TO_BINARY('{hex}', 'HEX')"),
+                DbKind::Db2 => format!("BX'{hex}'"),
                 DbKind::Sqlserver => format!("0x{hex}"),
                 DbKind::Mysql
                 | DbKind::Sqlite

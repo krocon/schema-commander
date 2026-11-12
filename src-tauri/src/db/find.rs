@@ -311,6 +311,7 @@ fn as_text(column: &str, kind: DbKind) -> String {
         DbKind::Firebird => format!("CAST({column} AS VARCHAR(8191))"),
         DbKind::Bigquery => format!("CAST({column} AS STRING)"),
         DbKind::Snowflake => format!("TO_VARCHAR({column})"),
+        DbKind::Db2 => format!("VARCHAR({column})"),
         DbKind::Clickhouse => format!("toString({column})"),
     }
 }
@@ -353,6 +354,7 @@ pub fn data_question(
             DbKind::Mysql | DbKind::Trino => "?".to_owned(),
             DbKind::Firebird => "CAST(? AS VARCHAR(8191))".to_owned(),
             DbKind::Bigquery | DbKind::Snowflake => "?".to_owned(),
+            DbKind::Db2 => "CAST(? AS VARCHAR(4000))".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
             DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("?{n}"),
             DbKind::Oracle => format!(":{n}"),
@@ -372,6 +374,8 @@ pub fn data_question(
             }
             DbKind::Oracle => format!("SUBSTR({text}, 1, {VALUE_CHARS})"),
             DbKind::Firebird => format!("SUBSTRING({text} FROM 1 FOR {VALUE_CHARS})"),
+            // Db2's SUBSTR fails when the text is shorter than what is asked for, and LEFT pads
+            DbKind::Db2 => format!("SUBSTRING({text}, 1, {VALUE_CHARS}, CODEUNITS32)"),
             DbKind::Bigquery | DbKind::Snowflake => {
                 format!("SUBSTR({text}, 1, {VALUE_CHARS})")
             }
@@ -437,6 +441,24 @@ pub fn data_question(
             (DbKind::Sqlite | DbKind::Libsql | DbKind::D1, _) => {
                 format!("{text} = {} COLLATE NOCASE", place(spec.text.clone()))
             }
+            (DbKind::Db2, Mode::Contains) if sensitive => {
+                format!("LOCATE({}, {text}) > 0", place(spec.text.clone()))
+            }
+            (DbKind::Db2, Mode::Contains) => format!(
+                "LOCATE(LOWER({}), LOWER({text})) > 0",
+                place(spec.text.clone())
+            ),
+            (DbKind::Db2, Mode::Exact) if sensitive => {
+                format!("{text} = {}", place(spec.text.clone()))
+            }
+            (DbKind::Db2, Mode::Exact) => {
+                format!("LOWER({text}) = LOWER({})", place(spec.text.clone()))
+            }
+            (DbKind::Db2, Mode::Regex) => format!(
+                "REGEXP_LIKE({text}, {}, '{}')",
+                place(spec.text.clone()),
+                if sensitive { "c" } else { "i" }
+            ),
             (DbKind::Snowflake, Mode::Contains) if sensitive => {
                 format!("CONTAINS({text}, {})", place(spec.text.clone()))
             }
@@ -586,7 +608,7 @@ pub fn data_question(
     let limit = spec.max_hits.clamp(1, 1_000) + 1;
     let (top, tail) = match kind {
         DbKind::Sqlserver => (format!("TOP ({limit}) "), String::new()),
-        DbKind::Oracle | DbKind::Firebird => {
+        DbKind::Oracle | DbKind::Firebird | DbKind::Db2 => {
             (String::new(), format!(" FETCH FIRST {limit} ROWS ONLY"))
         }
         _ => (String::new(), format!(" LIMIT {limit}")),
@@ -759,6 +781,18 @@ fn columns_of(
              WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_cf\\_%' ESCAPE '\\' \
              ORDER BY m.name, p.cid",
             &[],
+            limit,
+            stop,
+        )?,
+        // large objects are not searched: they are no text a function takes whole
+        DbKind::Db2 => s.ask(
+            "SELECT RTRIM(c.tabname), RTRIM(c.colname), c.typename FROM syscat.columns c \
+             JOIN syscat.tables t ON t.tabschema = c.tabschema AND t.tabname = c.tabname \
+             WHERE c.tabschema = ? AND t.type = 'T' \
+               AND c.typename NOT IN ('BLOB', 'CLOB', 'DBCLOB', 'XML', 'BINARY', 'VARBINARY') \
+               AND NOT (c.typename IN ('CHARACTER', 'VARCHAR', 'LONG VARCHAR') AND c.codepage = 0) \
+             ORDER BY c.tabname, c.colno",
+            &[schema],
             limit,
             stop,
         )?,
@@ -939,6 +973,12 @@ pub(super) fn source_questions(kind: DbKind, flavor: Flavor) -> Vec<&'static str
         ],
         // a dataset is named in the statement, and these questions bind it: none here
         DbKind::Bigquery => Vec::new(),
+        DbKind::Db2 => vec![
+            "SELECT 'view', RTRIM(viewname), text FROM syscat.views WHERE viewschema = ?",
+            "SELECT 'routine', RTRIM(routinename), text FROM syscat.routines \
+             WHERE routineschema = ? AND text IS NOT NULL",
+            "SELECT 'trigger', RTRIM(trigname), text FROM syscat.triggers WHERE trigschema = ?",
+        ],
         DbKind::Snowflake => vec![
             "SELECT 'view', table_name, view_definition FROM INFORMATION_SCHEMA.VIEWS \
              WHERE table_schema = ?",
@@ -1817,5 +1857,29 @@ mod tests {
             (report.tables, report.searched, report.resume),
             (3, 1, None)
         );
+    }
+
+    /// Db2 (prompt 035l, review 3): the start of a value without SUBSTR, which fails on a short text.
+    #[test]
+    fn db2_reads_the_start_of_a_value_and_binds_the_text() {
+        let columns = vec![("NAME".to_owned(), "VARCHAR".to_owned())];
+        let (q, _) = data_question(DbKind::Db2, "SHOP", "PEOPLE", &columns, &spec("it's 100%"))
+            .unwrap()
+            .unwrap();
+        assert!(q.sql.contains("SUBSTRING(VARCHAR(NAME), 1, "), "{}", q.sql);
+        assert!(q.sql.contains("CODEUNITS32)"), "{}", q.sql);
+        assert!(!q.sql.contains("SUBSTR("), "{}", q.sql);
+        assert!(
+            q.sql
+                .contains("LOCATE(LOWER(CAST(? AS VARCHAR(4000))), LOWER(VARCHAR(NAME))) > 0"),
+            "{}",
+            q.sql
+        );
+        assert!(
+            q.sql.ends_with("ROWS ONLY") && !q.sql.contains("LIMIT"),
+            "{}",
+            q.sql
+        );
+        assert_eq!(q.params, vec!["it's 100%".to_owned()]);
     }
 }

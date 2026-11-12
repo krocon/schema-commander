@@ -9,6 +9,7 @@ pub mod bigquery;
 pub mod clickhouse;
 pub mod compare;
 pub mod d1;
+pub mod db2;
 pub mod details;
 pub mod diagram;
 pub mod duckdb;
@@ -81,6 +82,9 @@ pub enum DbKind {
     /// Snowflake (prompt 035k) over its SQL API: `host` is `<account>.snowflakecomputing.com`, the
     /// password a programmatic access token – or the client key the file of a private key.
     Snowflake,
+    /// IBM Db2 for Linux, UNIX and Windows (prompt 035l) over DRDA: `database` is the name or alias of
+    /// the database on the server.
+    Db2,
 }
 
 impl DbKind {
@@ -102,7 +106,12 @@ impl DbKind {
         // (BigQuery: every statement is a job of its own, and its tables have no keys that hold)
         !matches!(
             self,
-            DbKind::Clickhouse | DbKind::Trino | DbKind::D1 | DbKind::Bigquery | DbKind::Snowflake
+            DbKind::Clickhouse
+                | DbKind::Trino
+                | DbKind::D1
+                | DbKind::Bigquery
+                | DbKind::Snowflake
+                | DbKind::Db2
         )
     }
 
@@ -121,6 +130,7 @@ impl DbKind {
             DbKind::Firebird => 3050,
             DbKind::Bigquery => 443,
             DbKind::Snowflake => 443,
+            DbKind::Db2 => 50000,
         }
     }
 }
@@ -349,6 +359,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
         (DbKind::Firebird, _) => "Firebird",
         (DbKind::Bigquery, _) => "BigQuery",
         (DbKind::Snowflake, _) => "Snowflake",
+        (DbKind::Db2, _) => "Db2",
     };
     Capabilities {
         product: product.to_owned(),
@@ -362,7 +373,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
         // ClickHouse has no foreign keys, and Trino's catalog names none
         foreign_keys: !matches!(
             kind,
-            DbKind::Clickhouse | DbKind::Trino | DbKind::Bigquery | DbKind::Snowflake
+            DbKind::Clickhouse | DbKind::Trino | DbKind::Bigquery | DbKind::Snowflake | DbKind::Db2
         ),
         // Firebird (before 6) has one namespace in a database
         schemas: !kind.is_sqlite() && kind != DbKind::Firebird,
@@ -374,6 +385,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
                     | DbKind::Trino
                     | DbKind::Bigquery
                     | DbKind::Snowflake
+                    | DbKind::Db2
             ),
         routines: !matches!(
             kind,
@@ -385,6 +397,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
                 | DbKind::Trino
                 | DbKind::Bigquery
                 | DbKind::Snowflake
+                | DbKind::Db2
         ),
         plan: !matches!(
             kind,
@@ -395,6 +408,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
                 | DbKind::Firebird
                 | DbKind::Bigquery
                 | DbKind::Snowflake
+                | DbKind::Db2
         ),
         // an embedded database has no server to watch and no users
         monitor: !matches!(
@@ -409,6 +423,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
                 | DbKind::Firebird
                 | DbKind::Bigquery
                 | DbKind::Snowflake
+                | DbKind::Db2
         ),
         access: !matches!(
             kind,
@@ -422,6 +437,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
                 | DbKind::Firebird
                 | DbKind::Bigquery
                 | DbKind::Snowflake
+                | DbKind::Db2
         ),
         // D1: a change of a table is written in a transaction, and there is none to open
         structure: !matches!(
@@ -433,6 +449,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
                 | DbKind::Firebird
                 | DbKind::Bigquery
                 | DbKind::Snowflake
+                | DbKind::Db2
                 | DbKind::D1
         ),
         // without transactions and unique keys a changed cell cannot be written safely
@@ -482,7 +499,7 @@ pub fn begin_statement(kind: DbKind) -> &'static str {
         // carried out by the driver: the transaction is the client's to hold (see firebird.rs)
         DbKind::Firebird => "SET TRANSACTION",
         // there is no session to hold one: who needs one refuses BigQuery before it comes to this
-        DbKind::Bigquery | DbKind::Snowflake => "BEGIN TRANSACTION",
+        DbKind::Bigquery | DbKind::Snowflake | DbKind::Db2 => "BEGIN TRANSACTION",
     }
 }
 
@@ -633,6 +650,7 @@ pub fn connect(
         DbKind::Firebird => Box::new(firebird::connect(profile, secret, stop)?),
         DbKind::Bigquery => Box::new(bigquery::connect(profile, secret, stop)?),
         DbKind::Snowflake => Box::new(snowflake::connect(profile, secret, stop)?),
+        DbKind::Db2 => Box::new(db2::connect(profile, secret, stop)?),
     })
 }
 
@@ -1095,6 +1113,13 @@ mod tests {
         assert!(snow.cancel && snow.schemas && !snow.edit && !snow.foreign_keys);
         assert!(!snow.plan && !snow.monitor && !snow.access && !snow.structure && !snow.triggers);
         assert!(!DbKind::Snowflake.edits_rows());
+        // Db2 (035l): every statement its own unit of work – read and run
+        let db2 = of(DbKind::Db2, Flavor::Plain);
+        assert_eq!(db2.product, "Db2");
+        assert!(db2.cancel && db2.schemas && !db2.edit && !db2.foreign_keys);
+        assert!(!db2.plan && !db2.monitor && !db2.access && !db2.structure && !db2.triggers);
+        assert!(!DbKind::Db2.edits_rows());
+        assert_eq!(DbKind::Db2.default_port(), 50000);
         let lite = of(DbKind::Sqlite, Flavor::Plain);
         assert!(!lite.schemas && !lite.routines && lite.triggers && lite.cancel);
         let json = serde_json::to_value(&crdb).unwrap();

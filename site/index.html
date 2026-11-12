@@ -98,8 +98,8 @@
 
   <div class="marquee sec-tight" aria-label="What it speaks" style="padding-block:18px;margin-top:clamp(56px,8vw,110px)">
     <ul>
-      <li>PostgreSQL</li><li>MySQL</li><li>MariaDB</li><li>SQL Server</li><li>Oracle</li><li>ClickHouse</li><li>DuckDB</li><li>SQLite</li><li>CockroachDB</li><li>TimescaleDB</li><li>YugabyteDB</li><li>Parquet</li><li>SSH tunnel</li><li>TLS with your own CA</li><li>CSV · TSV</li><li>JSON · NDJSON</li><li>Excel</li><li>Markdown</li><li>Mermaid · DBML</li><li>pg_dump · mysqldump</li><li>MCP</li>
-      <li aria-hidden="true">PostgreSQL</li><li aria-hidden="true">MySQL</li><li aria-hidden="true">MariaDB</li><li aria-hidden="true">SQL Server</li><li aria-hidden="true">Oracle</li><li aria-hidden="true">ClickHouse</li><li aria-hidden="true">DuckDB</li><li aria-hidden="true">SQLite</li><li aria-hidden="true">CockroachDB</li><li aria-hidden="true">TimescaleDB</li><li aria-hidden="true">YugabyteDB</li><li aria-hidden="true">Parquet</li><li aria-hidden="true">SSH tunnel</li><li aria-hidden="true">TLS with your own CA</li><li aria-hidden="true">CSV · TSV</li><li aria-hidden="true">JSON · NDJSON</li><li aria-hidden="true">Excel</li><li aria-hidden="true">Markdown</li><li aria-hidden="true">Mermaid · DBML</li><li aria-hidden="true">pg_dump · mysqldump</li><li aria-hidden="true">MCP</li>
+      <li>PostgreSQL</li><li>MySQL</li><li>MariaDB</li><li>SQL Server</li><li>Oracle</li><li>ClickHouse</li><li>Trino</li><li>Firebird</li><li>BigQuery</li><li>Snowflake</li><li>Db2</li><li>libSQL · Turso</li><li>Cloudflare D1</li><li>DuckDB</li><li>SQLite</li><li>CockroachDB</li><li>TimescaleDB</li><li>YugabyteDB</li><li>Parquet</li><li>SSH tunnel</li><li>TLS with your own CA</li><li>CSV · TSV</li><li>JSON · NDJSON</li><li>Excel</li><li>Markdown</li><li>Mermaid · DBML</li><li>pg_dump · mysqldump</li><li>MCP</li>
+      <li aria-hidden="true">PostgreSQL</li><li aria-hidden="true">MySQL</li><li aria-hidden="true">MariaDB</li><li aria-hidden="true">SQL Server</li><li aria-hidden="true">Oracle</li><li aria-hidden="true">ClickHouse</li><li aria-hidden="true">Trino</li><li aria-hidden="true">Firebird</li><li aria-hidden="true">BigQuery</li><li aria-hidden="true">Snowflake</li><li aria-hidden="true">Db2</li><li aria-hidden="true">libSQL · Turso</li><li aria-hidden="true">Cloudflare D1</li><li aria-hidden="true">DuckDB</li><li aria-hidden="true">SQLite</li><li aria-hidden="true">CockroachDB</li><li aria-hidden="true">TimescaleDB</li><li aria-hidden="true">YugabyteDB</li><li aria-hidden="true">Parquet</li><li aria-hidden="true">SSH tunnel</li><li aria-hidden="true">TLS with your own CA</li><li aria-hidden="true">CSV · TSV</li><li aria-hidden="true">JSON · NDJSON</li><li aria-hidden="true">Excel</li><li aria-hidden="true">Markdown</li><li aria-hidden="true">Mermaid · DBML</li><li aria-hidden="true">pg_dump · mysqldump</li><li aria-hidden="true">MCP</li>
     </ul>
   </div>
 
@@ -114,7 +114,7 @@
         <div class="stat"><b data-count="17">17</b><span>colour schemes, all WCAG AA, and your own</span></div>
         <div class="stat"><b data-count="0">0</b><span>times the app asks “save?”: every text is backed up</span></div>
       </div>
-      <p class="note reveal">Tested against PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, ClickHouse, DuckDB, SQLite, CockroachDB, TimescaleDB and YugabyteDB. <a href="databases.html">What differs between them</a></p>
+      <p class="note reveal">Tested against PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, ClickHouse, DuckDB, SQLite, CockroachDB, TimescaleDB and YugabyteDB, Trino, libSQL and Firebird; it also connects to BigQuery, Snowflake, Db2 and Cloudflare D1. <a href="databases.html">What differs between them, and what is not yet proven</a></p>
     </div>
   </section>
 
@@ -327,7 +327,8 @@
           <li style="--c:var(--fn)"><b>PostgreSQL</b><span>and what speaks its protocol: CockroachDB, TimescaleDB, YugabyteDB</span></li>
           <li style="--c:var(--warn)"><b>MySQL · MariaDB</b><span>one driver, both flavours</span></li>
           <li style="--c:var(--error)"><b>SQL Server · Oracle</b><span>GO batches, PL/SQL blocks; Oracle without an Instant Client</span></li>
-          <li style="--c:var(--num)"><b>ClickHouse</b><span>over HTTP, to read and analyse</span></li>
+          <li style="--c:var(--num)"><b>ClickHouse · Trino · BigQuery · Snowflake</b><span>over HTTP, to read and analyse</span></li>
+          <li style="--c:var(--ident)"><b>Firebird · Db2 · libSQL · D1</b><span>drivers in pure Rust, no client to install</span></li>
           <li style="--c:var(--ok)"><b>SQLite · DuckDB</b><span>files on your disk; DuckDB also reads Parquet, CSV and JSON</span></li>
           <li style="--c:var(--accent)"><b>TLS · SSH tunnel</b><span>your own CA, client certificate, host key checked</span></li>
         </ul>

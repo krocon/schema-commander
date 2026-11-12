@@ -15,7 +15,7 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
 
 ## What works
 
-- Connections to PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, ClickHouse, Trino/Presto, libSQL/Turso, Cloudflare D1, Firebird, BigQuery, Snowflake, DuckDB and SQLite files: profiles in folders with colour tags,
+- Connections to PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, ClickHouse, Trino/Presto, libSQL/Turso, Cloudflare D1, Firebird, BigQuery, Snowflake, Db2, DuckDB and SQLite files: profiles in folders with colour tags,
   passwords only in the keychain of your OS; a demo database in memory to try things out.
   Servers that speak PostgreSQL's protocol work as PostgreSQL connections – tested with CockroachDB,
   TimescaleDB and YugabyteDB: the app finds out who answers and adapts (cancel, transaction state, catalog).
@@ -45,7 +45,10 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   against the emulator only, not against Google.
   Snowflake is reached over its SQL API with a programmatic access token or a key pair: run, cancel, browse,
   filter and search with the default warehouse and role of the user; rows are not edited. Written from
-  Snowflake's documentation and not yet run against a real account
+  Snowflake's documentation and not yet run against a real account.
+  Db2 (for Linux, UNIX and Windows) is reached with a driver in pure Rust, no IBM client needed: run, cancel,
+  browse, filter and search; every statement is committed as it ran, rows are not edited. Written from the
+  driver's source and IBM's documentation and never run against a server
 - Query tabs, each with its own connection and result. Nothing ever asks „save?“: every text is backed up a
   moment after you type and is there again after a restart or a crash; `.sql` files keep their encoding
 - SQL editor with syntax highlighting; <kbd>Ctrl/⌘</kbd>+<kbd>Enter</kbd> runs the selection or the statement
@@ -179,7 +182,7 @@ pnpm tauri dev      # app with hot reload (Angular on port 1460)
 pnpm check          # contrast, format, lint, tests, build, cargo fmt/clippy/test
 ```
 
-Requirements: Node ≥ 22.22.3, pnpm 10, Rust stable ≥ 1.93 and the
+Requirements: Node ≥ 22.22.3, pnpm 10, Rust stable ≥ 1.98.1 and the
 [Tauri prerequisites](https://tauri.app/start/prerequisites/) of your OS.
 
 Rules and layout for contributors (and AI assistants): [`CLAUDE.md`](CLAUDE.md),

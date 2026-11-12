@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Databases and connections – Schema Commander</title>
-<meta name="description" content="Schema Commander connects to PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, ClickHouse, DuckDB and SQLite, also CockroachDB, TimescaleDB and YugabyteDB: profiles, keychain, SSH tunnels, TLS, import from other tools, and protection for production.">
+<meta name="description" content="Schema Commander connects to PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, ClickHouse, Trino, Firebird, BigQuery, Snowflake, Db2, DuckDB and SQLite, also CockroachDB, TimescaleDB, YugabyteDB, libSQL/Turso and Cloudflare D1: profiles, keychain, SSH tunnels, TLS, import from other tools, and protection for production.">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0f1216" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
@@ -37,13 +37,13 @@
     <div class="wrap">
       <p class="eyebrow reveal"><b class="kw kw-ok">CONNECT</b> to …</p>
       <h1 class="h1 split">Your databases, as they are.</h1>
-      <p class="lead reveal">Five server protocols, two databases that live in a file, and three relatives of PostgreSQL the app recognises on its own. Each dialect keeps its rules: quoting, script separators, plans, transactions.</p>
+      <p class="lead reveal">Servers reached by their own protocol or over HTTP, two databases that live in a file, and three relatives of PostgreSQL the app recognises on its own. Each dialect keeps its rules: quoting, script separators, plans, transactions.</p>
     </div>
   </section>
 
   <section class="sec-tight" id="kinds">
     <div class="wrap">
-      <p class="eyebrow reveal"><b class="kw">FROM</b> eleven kinds of database</p>
+      <p class="eyebrow reveal"><b class="kw">FROM</b> nineteen kinds of database</p>
       <h2 class="h2 split">What it speaks.</h2>
       <div class="dbs">
         <article class="card reveal" style="--c:var(--fn)"><h3>PostgreSQL</h3><p>Dollar quoting in scripts, <code>EXPLAIN</code> as JSON, sessions that are read only on the server, roles with SCRAM.</p><b>pg_dump · pg_restore · psql</b></article>
@@ -55,8 +55,15 @@
         <article class="card reveal" style="--c:var(--error)"><h3>Oracle</h3><p>A driver in pure Rust: no Instant Client to install. PL/SQL blocks end at a line with <code>/</code>, dates are bound as dates. Run, browse, details with DDL, edit rows, search.</p><b>plans, monitor, rights: not yet</b></article>
         <article class="card reveal" style="--d:1;--c:var(--num)"><h3>ClickHouse</h3><p>Over its HTTP interface, to read and analyse: run, cancel, browse, filter, search. It has no transactions and no unique keys, so rows are not edited in the grid.</p><b>read and analyse</b></article>
         <article class="card reveal" style="--d:2;--c:var(--ok)"><h3>DuckDB</h3><p>Built in. A file or <code>:memory:</code>, and <code>SELECT * FROM 'sales.parquet'</code> just works. Nothing is downloaded: extensions are never loaded on their own.</p><b>Parquet · CSV · JSON</b></article>
+        <article class="card reveal" style="--c:var(--num)"><h3>Trino · Presto</h3><p>Over HTTP, one profile per catalog: run, cancel, browse, filter, search. The driver itself keeps a session to reading; values become checked literals, because the protocol binds none.</p><b>read and analyse</b></article>
+        <article class="card reveal" style="--d:1;--c:var(--ok)"><h3>libSQL · Turso</h3><p>SQLite’s dialect behind a server: everything that works for a SQLite file, but the copy as a backup. An open transaction is kept alive by a heartbeat.</p><b>token over TLS</b></article>
+        <article class="card reveal" style="--d:2;--c:var(--warn)"><h3>Cloudflare D1</h3><p>Over Cloudflare’s REST API with an API token: run and read in SQLite’s dialect. One request per statement, so there are no transactions and rows are not edited.</p><b>not yet run against Cloudflare</b></article>
+        <article class="card reveal" style="--c:var(--error)"><h3>Firebird</h3><p>A driver in pure Rust. Run, cancel, browse, details, edit rows, search; <code>NUMERIC</code> values keep every digit, <code>SET TERM</code> splits scripts.</p><b>plans, monitor, rights: not yet</b></article>
+        <article class="card reveal" style="--d:1;--c:var(--fn)"><h3>BigQuery</h3><p>Over Google’s REST API with the key file of a service account: run, cancel, browse datasets, filter, search. Mind the cost: a table view reads the table.</p><b>checked against the emulator only</b></article>
+        <article class="card reveal" style="--d:2;--c:var(--ident)"><h3>Snowflake</h3><p>Over its SQL API with a programmatic access token or a key pair: run, cancel, browse, filter, search, with the default warehouse and role of the user.</p><b>not yet run against a real account</b></article>
+        <article class="card reveal" style="--c:var(--num)"><h3>Db2</h3><p>Db2 for Linux, UNIX and Windows with a driver in pure Rust: no IBM client to install. Run, cancel, browse, filter, search; every statement is committed as it ran.</p><b>never run against a server yet</b></article>
       </div>
-      <p class="note reveal">The drivers are tested against real servers of every kind, started in containers; SQLite and DuckDB run inside the tests.</p>
+      <p class="note reveal">The drivers are tested against real servers, started in containers; SQLite and DuckDB run inside the tests. The exceptions are named on their cards: Cloudflare D1, Snowflake and Db2 are written from their documentation, BigQuery ran against its emulator.</p>
     </div>
   </section>
 

@@ -96,6 +96,14 @@ export function profileProblems(p: Profile): Partial<Record<Field, string>> {
     if (!p.database.trim()) out.database = t.firebirdDatabaseMissing;
     if (p.tls === 'verify' || p.tls === 'verify-ca') out.tls = t.firebirdNoCertificates;
   }
+  if (p.kind === 'db2') {
+    if (!p.database.trim()) out.database = t.db2DatabaseMissing;
+    if (p.tls !== 'off' && p.tls !== 'verify') out.tls = t.db2TlsChecked;
+    // certificates are used with TLS only; with TLS the driver takes 50001 for 50000
+    else if (p.tls === 'off' && (p.caFile.trim() || p.clientCert.trim() || p.clientKey.trim()))
+      out.tls = t.db2CertificatesNeedTls;
+    if (p.tls === 'verify' && p.port === 50000) out.port = t.db2TlsPort;
+  }
   if (p.kind === 'snowflake') {
     if (!isLocalHost(p.host) && !/\.snowflakecomputing\.(com|cn)$/i.test(p.host.trim()))
       out.host = t.snowflakeHost;
@@ -167,6 +175,7 @@ export function withKind(p: Profile, kind: DbKind): Profile {
     firebird: 'SYSDBA',
     bigquery: '',
     snowflake: '',
+    db2: 'db2inst1',
   };
   const usual = Object.values(users);
   return {
@@ -177,7 +186,15 @@ export function withKind(p: Profile, kind: DbKind): Profile {
     host: isFileKind(kind)
       ? ''
       : (FIXED_HOSTS[kind] ?? (FIXED_HOSTS[p.kind] ? 'localhost' : p.host || 'localhost')),
-    tls: FIXED_HOSTS[kind] || kind === 'snowflake' ? 'verify' : FIXED_HOSTS[p.kind] ? 'off' : p.tls,
+    tls:
+      FIXED_HOSTS[kind] || kind === 'snowflake'
+        ? 'verify'
+        : FIXED_HOSTS[p.kind]
+          ? 'off'
+          : kind === 'db2' && p.tls !== 'verify'
+            ? // Db2 knows TLS only checked in full
+              'off'
+            : p.tls,
     user: usual.includes(p.user.trim()) ? users[kind] : p.user,
     database: isFileKind(kind) || isFileKind(p.kind) ? '' : p.database,
   };

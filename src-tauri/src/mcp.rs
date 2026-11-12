@@ -418,6 +418,14 @@ impl<W: Window> Engine<W> {
     /// DuckDB reads files from inside a query (`read_csv('/any/file')`): a „reading query“ there is
     /// reading this computer. An assistant may propose such a statement; it does not run one.
     fn no_file_reader(kind: DbKind) -> Result<(), BridgeError> {
+        if kind == DbKind::Db2 {
+            // nothing holds a session of Db2 to reading but the classification of a statement
+            return Err(err(
+                "access_denied",
+                "Db2 has no session that only reads: queries are not run for an assistant here – \
+                 propose the statement to the user instead",
+            ));
+        }
         if kind == DbKind::Snowflake {
             // every statement is a request of its own: nothing holds one to reading but its
             // classification (and what the role of the login may do)
@@ -469,6 +477,7 @@ fn kind_name(kind: DbKind) -> &'static str {
         DbKind::Firebird => "firebird",
         DbKind::Bigquery => "bigquery",
         DbKind::Snowflake => "snowflake",
+        DbKind::Db2 => "db2",
     }
 }
 

@@ -329,6 +329,52 @@
       ]
     },
     {
+      "name": "a compound statement of SQL PL keeps its semicolons",
+      "dialect": "db2",
+      "script": "create procedure p(in n int) language sql begin declare i int default 0; again: loop set i = i + 1; if i > n then leave again; end if; end loop again; delete from t where a = case when i > 3 then 1 else 2 end; end; select 1 from sysibm.sysdummy1; begin atomic insert into t values (1); end; values 2",
+      "statements": [
+        "create procedure p(in n int) language sql begin declare i int default 0; again: loop set i = i + 1; if i > n then leave again; end if; end loop again; delete from t where a = case when i > 3 then 1 else 2 end; end",
+        "select 1 from sysibm.sysdummy1",
+        "begin atomic insert into t values (1); end",
+        "values 2"
+      ]
+    },
+    {
+      "name": "BEGIN ATOMIC with a control statement first, and what only looks like a block",
+      "dialect": "db2",
+      "script": "create function f(x int) returns int language sql begin atomic if x > 0 then return 1; end if; return 0; end; create table t (a int, s timestamp(12) generated always as row begin not null); select begin1 from t; values 2",
+      "statements": [
+        "create function f(x int) returns int language sql begin atomic if x > 0 then return 1; end if; return 0; end",
+        "create table t (a int, s timestamp(12) generated always as row begin not null)",
+        "select begin1 from t",
+        "values 2"
+      ]
+    },
+    {
+      "name": "nested CASE and a function named like a loop inside a block",
+      "dialect": "db2",
+      "script": "begin set x = case when a = 1 then case when b = 2 then 3 end end; if x > 1 then set y = repeat('*', 3); end if; end; values 3",
+      "statements": [
+        "begin set x = case when a = 1 then case when b = 2 then 3 end end; if x > 1 then set y = repeat('*', 3); end if; end",
+        "values 3"
+      ]
+    },
+    {
+      "name": "a script with a terminator of its own",
+      "dialect": "db2",
+      "script": "values 0;\n--#SET TERMINATOR @\ncreate procedure p() begin delete from t; end@\nvalues 1@",
+      "statements": ["values 0", "create procedure p() begin delete from t; end", "values 1"]
+    },
+    {
+      "name": "nested CASE inside a block of Snowflake Scripting",
+      "dialect": "snowflake",
+      "script": "begin let x := case when a = 1 then case when b = 2 then 3 end end; return x; end; select 1",
+      "statements": [
+        "begin let x := case when a = 1 then case when b = 2 then 3 end end; return x; end",
+        "select 1"
+      ]
+    },
+    {
       "name": "a body in PSQL keeps its semicolons",
       "dialect": "firebird",
       "script": "execute block as declare n integer; begin n = 1; if (n = 1) then begin delete from t; end end; create or alter trigger tr for t before insert as begin new.id = case when new.id is null then 1 else new.id end; end; alter trigger tr inactive; select 1 from rdb$database; begin_work",

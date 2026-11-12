@@ -182,7 +182,8 @@ pub fn principals(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Ac
         | DbKind::Trino
         | DbKind::Firebird
         | DbKind::Bigquery
-        | DbKind::Snowflake => {
+        | DbKind::Snowflake
+        | DbKind::Db2 => {
             return Err(super::not_yet(kind, "users and rights"));
         }
         DbKind::Postgres => {
@@ -499,7 +500,8 @@ pub fn grants(s: &mut dyn Session, kind: DbKind, who: &Who, stop: Stop) -> AppRe
         | DbKind::Trino
         | DbKind::Firebird
         | DbKind::Bigquery
-        | DbKind::Snowflake => {
+        | DbKind::Snowflake
+        | DbKind::Db2 => {
             return Err(super::not_yet(kind, "users and rights"));
         }
         DbKind::Postgres => {
@@ -930,7 +932,8 @@ fn written(
                 | DbKind::Trino
                 | DbKind::Firebird
                 | DbKind::Bigquery
-                | DbKind::Snowflake => {
+                | DbKind::Snowflake
+                | DbKind::Db2 => {
                     return Err(super::not_yet(kind, "users and rights"));
                 }
             }
@@ -960,7 +963,8 @@ fn written(
                 | DbKind::Trino
                 | DbKind::Firebird
                 | DbKind::Bigquery
-                | DbKind::Snowflake => {
+                | DbKind::Snowflake
+                | DbKind::Db2 => {
                     return Err(super::not_yet(kind, "users and rights"));
                 }
             };
@@ -1004,7 +1008,8 @@ fn written(
                     | DbKind::Trino
                     | DbKind::Firebird
                     | DbKind::Bigquery
-                    | DbKind::Snowflake,
+                    | DbKind::Snowflake
+                    | DbKind::Db2,
                     _,
                 ) => {
                     return Err(super::not_yet(kind, "users and rights"));
@@ -1163,7 +1168,8 @@ fn password_literal(
         | DbKind::Trino
         | DbKind::Firebird
         | DbKind::Bigquery
-        | DbKind::Snowflake => {
+        | DbKind::Snowflake
+        | DbKind::Db2 => {
             return Err(super::not_yet(kind, "users and rights"));
         }
     })
@@ -1307,7 +1313,8 @@ pub fn transactional(kind: DbKind, flavor: Flavor) -> bool {
         | DbKind::Trino
         | DbKind::Firebird
         | DbKind::Bigquery
-        | DbKind::Snowflake => false,
+        | DbKind::Snowflake
+        | DbKind::Db2 => false,
     }
 }
 

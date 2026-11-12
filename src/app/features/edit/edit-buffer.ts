@@ -555,7 +555,8 @@ export type Dialect =
   | 'trino'
   | 'firebird'
   | 'bigquery'
-  | 'snowflake';
+  | 'snowflake'
+  | 'db2';
 
 /** Types a database cannot compare with `=` (or never finds equal to a text): no lock on them. */
 const NO_EQUALS: Readonly<Record<Dialect, RegExp>> = {
@@ -574,6 +575,7 @@ const NO_EQUALS: Readonly<Record<Dialect, RegExp>> = {
   // nothing is edited there
   bigquery: /^$/,
   snowflake: /^$/,
+  db2: /^$/,
 };
 
 export function comparable(dialect: Dialect, typeName: string): boolean {

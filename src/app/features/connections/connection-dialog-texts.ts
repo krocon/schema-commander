@@ -101,6 +101,11 @@ export const CONNECTION_DIALOG_EN = {
   firebirdDatabaseMissing: 'Firebird needs the database: its path on the server, or an alias.',
   firebirdNoCertificates:
     'Firebird has no certificates to check: choose “required” (its own encryption) or none.',
+  db2DatabaseMissing: 'Db2 needs the database: its name or alias on the server.',
+  db2CertificatesNeedTls: 'Certificates are used with TLS only: switch it on (“verify”).',
+  db2TlsPort:
+    'Db2 with TLS: name the port TLS listens on (usually 50001); 50000 cannot be reached.',
+  db2TlsChecked: 'Db2: TLS is either checked in full (“verify”) or off.',
   snowflakeHost: 'Snowflake is reached at <account>.snowflakecomputing.com.',
   snowflakeDatabaseMissing: 'Snowflake needs the database: its schemas are what the tree shows.',
   bigqueryProjectMissing: 'BigQuery needs the id of the project.',

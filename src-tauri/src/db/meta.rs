@@ -604,6 +604,25 @@ const SNOWFLAKE_RESERVED: &[&str] = &[
     "WHENEVER",
 ];
 
+/// Names Db2 reads as a special register or a pseudo column when they stand bare (review 035l 27).
+const DB2_RESERVED: &[&str] = &[
+    "CURRENT_DATE",
+    "CURRENT_PATH",
+    "CURRENT_SCHEMA",
+    "CURRENT_SERVER",
+    "CURRENT_TIME",
+    "CURRENT_TIMESTAMP",
+    "CURRENT_TIMEZONE",
+    "CURRENT_USER",
+    "DOCUMENT",
+    "ROWNUM",
+    "SESSION_USER",
+    "SYSDATE",
+    "SYSTEM_USER",
+    "SYSTIMESTAMP",
+    "USER",
+];
+
 fn bigquery_reserved(name: &str) -> bool {
     BIGQUERY_RESERVED.contains(&name.to_ascii_lowercase().as_str())
 }
@@ -627,14 +646,14 @@ fn plain(name: &str, kind: DbKind) -> bool {
         DbKind::Postgres => first.is_ascii_lowercase() || first == '_',
         // Oracle folds unquoted names to upper case: a lower case letter needs quotes
         // (so does Firebird, and a name there begins with a letter; Snowflake folds to upper case too)
-        DbKind::Oracle | DbKind::Firebird => first.is_ascii_uppercase(),
+        DbKind::Oracle | DbKind::Firebird | DbKind::Db2 => first.is_ascii_uppercase(),
         DbKind::Snowflake => first.is_ascii_uppercase() || first == '_',
         _ => first.is_ascii_alphabetic() || first == '_',
     };
     let rest_ok = name.chars().all(|c| match kind {
         DbKind::Postgres => c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_',
         // unquoted names are stored in upper case there
-        DbKind::Oracle | DbKind::Firebird | DbKind::Snowflake => {
+        DbKind::Oracle | DbKind::Firebird | DbKind::Snowflake | DbKind::Db2 => {
             c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'
         }
         _ => c.is_ascii_alphanumeric() || c == '_',
@@ -646,6 +665,7 @@ fn plain(name: &str, kind: DbKind) -> bool {
         && !(kind == DbKind::Firebird && firebird_reserved(name))
         && !(kind == DbKind::Bigquery && bigquery_reserved(name))
         && !(kind == DbKind::Snowflake && SNOWFLAKE_RESERVED.contains(&name))
+        && !(kind == DbKind::Db2 && DB2_RESERVED.contains(&name))
 }
 
 /// A name as it is written in SQL: as it is where that is safe, quoted otherwise (spaces, upper case in
@@ -678,7 +698,8 @@ pub fn quote_always(name: &str, kind: DbKind) -> String {
         | DbKind::Duckdb
         | DbKind::Trino
         | DbKind::Firebird
-        | DbKind::Snowflake => {
+        | DbKind::Snowflake
+        | DbKind::Db2 => {
             format!("\"{}\"", name.replace('"', "\"\""))
         }
         // Oracle has no way to write a quote inside a quoted name (and allows none in a name): one that
@@ -805,6 +826,14 @@ pub fn schemas(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<S
         // answered above, without a question
         DbKind::Firebird => "SELECT '', 'false', 'true' FROM rdb$database",
         DbKind::Bigquery => "SELECT schema_name FROM INFORMATION_SCHEMA.SCHEMATA",
+        // IBM's own schemas begin with SYS; NULLID and SQLJ hold what its tools need
+        DbKind::Db2 => {
+            "SELECT RTRIM(schemaname), \
+             CASE WHEN schemaname LIKE 'SYS%' OR schemaname IN ('NULLID', 'SQLJ') \
+               THEN 'true' ELSE 'false' END, \
+             CASE WHEN schemaname = CURRENT SCHEMA THEN 'true' ELSE 'false' END \
+             FROM syscat.schemata ORDER BY 1"
+        }
         // the schemas of the database the connection names
         DbKind::Snowflake => {
             "SELECT schema_name, \
@@ -888,6 +917,12 @@ pub fn objects(
     };
     let questions: &[&str] = match kind {
         DbKind::Bigquery => &[],
+        // T a table, S a materialized query table, V a view; the rows are what the statistics say
+        DbKind::Db2 => &[
+            "SELECT CASE type WHEN 'V' THEN 'view' ELSE 'table' END, RTRIM(tabname), '', \
+               CASE WHEN card >= 0 THEN RTRIM(CHAR(card)) END \
+             FROM syscat.tables WHERE tabschema = ? AND type IN ('T', 'S', 'V')",
+        ],
         DbKind::Snowflake => &[
             "SELECT CASE WHEN table_type LIKE '%VIEW%' THEN 'view' ELSE 'table' END, table_name, '', \
                TO_VARCHAR(row_count) \
@@ -1271,6 +1306,35 @@ fn mssql_table(s: &mut dyn Session, schema: &str, table: &str, stop: Stop) -> Ap
         triggers: parts(&triggers),
     })
 }
+
+/// Db2: `SYSCAT.COLUMNS`. Indexes and keys are shown with the details of a table; here they are not
+/// read yet (nothing edits rows there, prompt 035l).
+fn db2_table(s: &mut dyn Session, schema: &str, table: &str, stop: Stop) -> AppResult<TableInfo> {
+    let columns = ask(
+        s,
+        &format!(
+            "SELECT RTRIM(colname), {DB2_TYPE}, CASE nulls WHEN 'Y' THEN 'true' ELSE 'false' END, \
+               \"DEFAULT\", '' \
+             FROM syscat.columns WHERE tabschema = ? AND tabname = ? ORDER BY colno"
+        ),
+        &[schema, table],
+        stop,
+    )?;
+    Ok(TableInfo {
+        columns: column_rows(&columns, DbKind::Db2),
+        indexes: Vec::new(),
+        keys: Vec::new(),
+        triggers: Vec::new(),
+    })
+}
+
+/// The type of a column of Db2's `SYSCAT.COLUMNS`, as one would declare it.
+pub(super) const DB2_TYPE: &str = "CASE \
+    WHEN typename IN ('VARCHAR', 'CHARACTER', 'VARGRAPHIC', 'GRAPHIC', 'VARBINARY', 'BINARY') \
+      THEN typename || '(' || RTRIM(CHAR(length)) || ')' \
+    WHEN typename = 'DECIMAL' \
+      THEN 'DECIMAL(' || RTRIM(CHAR(length)) || ', ' || RTRIM(CHAR(scale)) || ')' \
+    ELSE typename END";
 
 /// Snowflake: `INFORMATION_SCHEMA.COLUMNS` of the database. Keys there are a promise nobody checks,
 /// and there are no indexes or triggers.
@@ -1765,6 +1829,7 @@ pub fn table(
         DbKind::Firebird => firebird_table(s, table, stop),
         DbKind::Bigquery => bigquery_table(s, schema, table, stop),
         DbKind::Snowflake => snowflake_table(s, schema, table, stop),
+        DbKind::Db2 => db2_table(s, schema, table, stop),
     }
 }
 
@@ -1823,6 +1888,15 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
             "SELECT schema, type, name FROM pragma_table_list \
              WHERE name LIKE ?1 ESCAPE '\\' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' \
              ORDER BY 3, 1 LIMIT 200"
+        }
+        // where the text stands in the name: no pattern
+        DbKind::Db2 => {
+            "SELECT RTRIM(tabschema), CASE type WHEN 'V' THEN 'view' ELSE 'table' END, \
+               RTRIM(tabname) \
+             FROM syscat.tables \
+             WHERE LOCATE(UPPER(CAST(? AS VARCHAR(128))), UPPER(tabname)) > 0 \
+               AND type IN ('T', 'S', 'V') AND tabschema NOT LIKE 'SYS%' \
+             ORDER BY 3, 1 FETCH FIRST 200 ROWS ONLY"
         }
         // CONTAINS takes a text as it is
         DbKind::Snowflake => {
@@ -1884,7 +1958,10 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
              ORDER BY 3, 1 FETCH FIRST 200 ROWS ONLY"
         }
     };
-    let wanted = if matches!(kind, DbKind::Trino | DbKind::Firebird | DbKind::Snowflake) {
+    let wanted = if matches!(
+        kind,
+        DbKind::Trino | DbKind::Firebird | DbKind::Snowflake | DbKind::Db2
+    ) {
         text
     } else {
         &pattern

@@ -549,6 +549,14 @@ fn sqlite_files(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<
 /// Reads the objects of all schemas but the system's: kind, schema, name, detail.
 pub fn read_objects(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<NameIndex> {
     let rows = match kind {
+        DbKind::Db2 => ask(
+            s,
+            "SELECT CASE type WHEN 'V' THEN 'view' ELSE 'table' END, RTRIM(tabschema), \
+               RTRIM(tabname), '' \
+             FROM syscat.tables WHERE type IN ('T', 'V', 'S') AND tabschema NOT LIKE 'SYS%'",
+            &[],
+            stop,
+        )?,
         // schema by schema: asked for a whole database at once, Snowflake may refuse („returned too
         // much data“, review 035k 8)
         DbKind::Snowflake => {
@@ -727,6 +735,16 @@ pub fn read_columns(
     stop: Stop,
 ) -> AppResult<()> {
     let rows = match kind {
+        DbKind::Db2 => ask(
+            s,
+            &format!(
+                "SELECT RTRIM(tabschema), RTRIM(tabname), RTRIM(colname), {} FROM syscat.columns \
+                 WHERE tabschema NOT LIKE 'SYS%'",
+                super::meta::DB2_TYPE
+            ),
+            &[],
+            stop,
+        )?,
         DbKind::Snowflake => {
             let mut rows = TextRows::new();
             for schema in snowflake_schemas(s, stop)? {

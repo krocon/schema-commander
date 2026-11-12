@@ -2529,6 +2529,7 @@ fn load_plan(s: &mut Box<dyn Session>, kind: DbKind, table: &str, local: bool) -
         DbKind::Firebird => "",
         DbKind::Bigquery => "shop",
         DbKind::Snowflake => "PUBLIC",
+        DbKind::Db2 => "SHOP",
     };
     let info = meta::table(s.as_mut(), kind, schema, table, &|| false).unwrap();
     let mappings = info

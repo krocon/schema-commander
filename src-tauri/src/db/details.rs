@@ -148,6 +148,7 @@ pub fn details(
         DbKind::Firebird => firebird::read(&mut r, name, object)?,
         DbKind::Bigquery => bigquery::read(&mut r, schema, name)?,
         DbKind::Snowflake => snowflake::read(&mut r, schema, name, object)?,
+        DbKind::Db2 => db2::read(&mut r, schema, name, object)?,
     };
     if ddl.is_none() {
         r.notes.push("ddl".into());
@@ -1658,6 +1659,73 @@ mod sqlite {
             .map(|row| format!("{};\n", at(row, 0).trim_end().trim_end_matches(';')))
             .collect();
         Ok(Some(statements.join("\n")))
+    }
+}
+
+mod db2 {
+    use super::*;
+    use crate::db::meta::DB2_TYPE;
+
+    /// From `SYSCAT`, the catalog views of Db2 for Linux, UNIX and Windows. Written from their
+    /// documentation, not run against a server (prompt 035l).
+    pub fn read(
+        r: &mut Reader,
+        schema: &str,
+        name: &str,
+        object: ObjectKind,
+    ) -> AppResult<Option<String>> {
+        r.section(
+            "columns",
+            &["name", "type", "nullable", "default", "comment"],
+            &format!(
+                "SELECT RTRIM(colname), {DB2_TYPE}, CASE nulls WHEN 'Y' THEN 'yes' ELSE 'no' END, \
+                   \"DEFAULT\", remarks \
+                 FROM syscat.columns WHERE tabschema = ? AND tabname = ? ORDER BY colno"
+            ),
+            &[schema, name],
+        )?;
+        if object == ObjectKind::View {
+            // the statement as it was given
+            let text = r.text(
+                "SELECT text FROM syscat.views WHERE viewschema = ? AND viewname = ?",
+                &[schema, name],
+            )?;
+            return Ok(text
+                .map(|t| t.trim().to_owned())
+                .filter(|t| !t.is_empty())
+                .map(|t| format!("{};\n", t.trim_end_matches(';'))));
+        }
+        r.section(
+            "indexes",
+            &["name", "columns", "unique"],
+            // (the columns COLNAMES, FK_COLNAMES, PK_COLNAMES are on their way out: review 035l 10)
+            "SELECT RTRIM(i.indname), \
+               (SELECT LISTAGG(RTRIM(c.colname), ', ') WITHIN GROUP (ORDER BY c.colseq) \
+                FROM syscat.indexcoluse c \
+                WHERE c.indschema = i.indschema AND c.indname = i.indname), \
+               CASE i.uniquerule WHEN 'D' THEN 'no' ELSE 'yes' END \
+             FROM syscat.indexes i WHERE i.tabschema = ? AND i.tabname = ? ORDER BY i.indname",
+            &[schema, name],
+        )?;
+        r.section(
+            "foreign keys",
+            &["name", "columns", "references", "referenced columns"],
+            "SELECT RTRIM(r.constname), \
+               (SELECT LISTAGG(RTRIM(k.colname), ', ') WITHIN GROUP (ORDER BY k.colseq) \
+                FROM syscat.keycoluse k \
+                WHERE k.constname = r.constname AND k.tabschema = r.tabschema \
+                  AND k.tabname = r.tabname), \
+               RTRIM(r.reftabschema) || '.' || RTRIM(r.reftabname), \
+               (SELECT LISTAGG(RTRIM(k.colname), ', ') WITHIN GROUP (ORDER BY k.colseq) \
+                FROM syscat.keycoluse k \
+                WHERE k.constname = r.refkeyname AND k.tabschema = r.reftabschema \
+                  AND k.tabname = r.reftabname) \
+             FROM syscat.references r WHERE r.tabschema = ? AND r.tabname = ? \
+             ORDER BY r.constname",
+            &[schema, name],
+        )?;
+        // Db2 writes the statement of a table only through its tool db2look
+        Ok(None)
     }
 }
 

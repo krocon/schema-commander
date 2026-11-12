@@ -32,6 +32,7 @@ export const CONNECTION_EN = {
     firebird: 'Firebird',
     bigquery: 'BigQuery',
     snowflake: 'Snowflake',
+    db2: 'Db2',
   },
   password: 'Password',
   sshSecretTitle: 'SSH tunnel: password or passphrase',

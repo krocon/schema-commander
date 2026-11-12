@@ -318,6 +318,8 @@ pub fn type_for(to: DbKind, class: Class) -> (String, Option<&'static str>) {
         DbKind::Firebird => own("VARCHAR(8191)"),
         DbKind::Bigquery => own("STRING"),
         DbKind::Snowflake => own("VARCHAR"),
+        // only for the sake of a complete answer: `plan` refuses Db2 before it comes to this
+        DbKind::Db2 => own("VARCHAR(4000)"),
         DbKind::Duckdb => match class {
             Class::SmallInt => own("SMALLINT"),
             Class::Int => own("INTEGER"),

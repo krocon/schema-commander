@@ -355,6 +355,9 @@ pub fn parse_url(text: &str) -> AppResult<Candidate> {
     } else if lower.starts_with("oracle:thin:@//") {
         // jdbc:oracle:thin:@//host:1521/service – the user is not part of it
         url_form(DbKind::Oracle, after("oracle:thin:@//"))?
+    } else if lower.starts_with("db2://") {
+        // jdbc:db2://host:50000/SAMPLE
+        url_form(DbKind::Db2, after("db2://"))?
     } else if lower.starts_with("trino://") {
         url_form(DbKind::Trino, after("trino://"))?
     } else if lower.starts_with("presto://") {
@@ -437,6 +440,8 @@ fn dbeaver_kind(provider: &str, driver: &str) -> Option<DbKind> {
         Some(DbKind::Oracle)
     } else if both.contains("trino") || both.contains("presto") {
         Some(DbKind::Trino)
+    } else if both.contains("db2") {
+        Some(DbKind::Db2)
     } else if both.contains("snowflake") {
         Some(DbKind::Snowflake)
     } else if both.contains("bigquery") {
@@ -937,6 +942,20 @@ mod tests {
 
     /// Firebird (prompt 035i): the database is a path or an alias.
     #[test]
+    fn reads_a_db2_address() {
+        let c = parse_url("jdbc:db2://big-iron.example.com:50001/SAMPLE").unwrap();
+        assert_eq!(c.profile.kind, DbKind::Db2);
+        assert_eq!(
+            (
+                c.profile.host.as_str(),
+                c.profile.port,
+                c.profile.database.as_str()
+            ),
+            ("big-iron.example.com", 50001, "SAMPLE")
+        );
+    }
+
+    #[test]
     fn reads_a_firebird_address_with_its_path() {
         let c = parse_url("jdbc:firebirdsql://db.example.com:3051//var/data/shop.fdb").unwrap();
         assert_eq!(c.profile.kind, DbKind::Firebird);
@@ -1169,7 +1188,7 @@ mod tests {
           "configuration": { "host": "10.0.0.5", "port": "3307", "database": "old",
                              "url": "jdbc:mysql://10.0.0.5:3307/old" }
         },
-        "db2-1": { "provider": "db2", "driver": "db2", "name": "Nope",
+        "informix-1": { "provider": "informix", "driver": "informix", "name": "Nope",
                    "configuration": { "host": "big-iron" } },
         "oracle-1": { "provider": "oracle", "driver": "oracle_thin", "name": "Warehouse",
                       "configuration": { "host": "ora.example", "port": "1521", "database": "ORCLPDB1",
