@@ -259,6 +259,7 @@ export const MENU_BAR: readonly TopMenu[] = [
       'SIDEBAR_SAVED',
       'TOGGLE_VALUE_PANEL',
       'TOGGLE_ROW_FORM',
+      'TOGGLE_CHART',
       'TOGGLE_FILTER_BAR',
       '-',
       {
@@ -413,6 +414,7 @@ export const RESULT_MENU: readonly MenuDef[] = [
   'SAVE_CELL_VALUE',
   'TOGGLE_VALUE_PANEL',
   'TOGGLE_ROW_FORM',
+  'TOGGLE_CHART',
   EDIT_CELLS,
   FILTER_CELL,
   RELATIONS,

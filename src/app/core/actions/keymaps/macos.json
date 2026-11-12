@@ -43,6 +43,7 @@
   "RESULT_NEXT_TAB": ["Mod+Alt+ArrowRight"],
   "RESULT_PREVIOUS_TAB": ["Mod+Alt+ArrowLeft"],
   "RESULT_PIN": ["Mod+K Mod+I"],
+  "TOGGLE_CHART": ["Mod+K Mod+T"],
   "COMPARE_RESULTS": ["Mod+K Mod+B"],
   "RUN_AND_COMPARE": ["Mod+K Mod+Y"],
   "TOGGLE_FILTER_BAR": ["Mod+Alt+F"],

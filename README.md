@@ -51,6 +51,9 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   tab of its own, and compare two results (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>B</kbd>; run again and
   compare: <kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>Y</kbd>) by key columns or position, with tolerances –
   worked out in Rust, also for millions of rows
+- A chart of the result (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>T</kbd>): lines over time, bars, scatter plots – suggested
+  from the column types, grouped and aggregated, with zoom, tooltip and legend; millions of points are thinned in Rust
+  without losing a peak; export as SVG
 - Execution plans (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>X</kbd>) as a tree table for every database: rows estimated and
   actual, own and total time, cost – the expensive operations and wrong estimates stand out. „With execution“
   runs the statement inside a transaction that is rolled back

@@ -1,3 +1,4 @@
+import { ChartApi, ChartData, ChartSpec } from '../app/core/chart/chart-api';
 import {
   SavedApi,
   SavedEntry,
@@ -1802,5 +1803,70 @@ export class FakePlanApi extends PlanApi {
     this.asked.push({ connectionId, sql, analyze, confirmation });
     if (this.fail) return Promise.reject(this.fail);
     return Promise.resolve({ ...this.plan, analyzed: analyze });
+  }
+}
+
+/** Charts (prompt 042): answers with a line of three points, or what a test sets. */
+export class FakeChartApi extends ChartApi {
+  suggestion: ChartSpec | null = {
+    kind: 'line',
+    x: 0,
+    ys: [1],
+    group: null,
+    agg: 'sum',
+    sort: 'none',
+  };
+  data: Omit<ChartData, 'chartId'> = {
+    kind: 'line',
+    xKind: 'number',
+    categories: [],
+    series: [{ name: 'name', x: [1, 2, 3], y: [10, null, 30], points: 3 }],
+    xMin: 1,
+    xMax: 3,
+    rows: 3,
+    nulls: 1,
+    skipped: 0,
+    cutGroups: 0,
+    cutCategories: 0,
+    thinned: false,
+  };
+  error: unknown = null;
+  /** `zoom` rejects with this (a chart that is no longer kept). */
+  zoomError: unknown = null;
+  readonly prepared: { jobId: number; resultId: number; spec: ChartSpec; width: number }[] = [];
+  readonly zooms: { chartId: number; range: readonly [number, number] | null; width: number }[] =
+    [];
+  readonly freed: number[] = [];
+  readonly cancelled: number[] = [];
+  private nextChart = 1;
+
+  suggest(): Promise<ChartSpec | null> {
+    return Promise.resolve(this.suggestion);
+  }
+
+  prepare(jobId: number, resultId: number, spec: ChartSpec, width: number): Promise<ChartData> {
+    this.prepared.push({ jobId, resultId, spec, width });
+    if (this.error) return Promise.reject(this.error);
+    return Promise.resolve({ ...this.data, kind: spec.kind, chartId: this.nextChart++ });
+  }
+
+  cancel(jobId: number): Promise<void> {
+    this.cancelled.push(jobId);
+    return Promise.resolve();
+  }
+
+  zoom(
+    chartId: number,
+    range: readonly [number, number] | null,
+    width: number,
+  ): Promise<ChartData> {
+    this.zooms.push({ chartId, range, width });
+    if (this.zoomError) return Promise.reject(this.zoomError);
+    return Promise.resolve({ ...this.data, chartId });
+  }
+
+  free(chartId: number): Promise<void> {
+    this.freed.push(chartId);
+    return Promise.resolve();
   }
 }

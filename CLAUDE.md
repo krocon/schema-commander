@@ -72,10 +72,12 @@
   **Ergebnisse** als Unter-Reiter mit Titel und Zeilenzahl, **anpinnen**, ablösen in einen eigenen Tab,
   **zwei Ergebnisse vergleichen** (Schlüssel oder Position, Toleranzen) in Rust über den Ergebnisspeicher
   (Prompt 041);
+  **Diagramm** aus dem Ergebnis (Linie, Balken, Punktwolke): aufbereitet und ausgedünnt in Rust, gezeichnet
+  als SVG in den Farben des Schemas, mit Zoom, Tooltip und Legende (Prompt 042);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a, 036–041),
+  erledigt: 001–034, 035a, 036–042),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -118,6 +120,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                FileDialogApi (native Öffnen-/Speichern-Dialoge: einzige Quelle für Pfade),
                                ClipboardApi (copy_result, copy_text: die Zwischenablage gehört Rust),
                                ExportApi (export_result, export_query, cancel_job, reveal_export)
+  app/core/chart/              ChartApi (chart_suggest, chart_prepare, chart_zoom, chart_free) – spiegelt chart.rs
   app/core/compare/            CompareApi (schema_snapshot, schema_compare, schema_script) – spiegelt db/compare.rs
   app/core/connections/        Profile (Modell), ConnectionsApi, ConnectionsStore (Root: Profile, Zustände, aktive
                                Verbindung, Passwortabfrage)
@@ -142,6 +145,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                ThemeService (Root: Auswahl, Vorschau, eigene Schemata), ThemeApi (themes.json),
                                contrast-pairs.json
   app/features/about/          AboutDialog, about-logic.ts (rein: Zeilen, Diagnose, WebView aus dem User-Agent)
+  app/features/chart/          ChartPanel (Einstellungen, SVG, Legende, Zoom), chart-logic.ts (rein: Skalen, Ticks,
+                               Linien mit Lücken, Balken, Punkt unter dem Zeiger, SVG-Datei)
   app/features/completion/     sql-lex.ts, sql-context.ts (rein: was an der Stelle passt, Katalog
                                sql-context.cases.json), suggest.ts (rein: die Liste, suggest.cases.json),
                                sql-words.ts (Wörter je Dialekt), CompletionService (Root: liest, was fehlt)
@@ -230,6 +235,9 @@ src-tauri/                     Rust
   src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
   src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink; ganze Werte
                                getrennt (`<id>.values`) und stückweise (`value`) (rein, getestet)
+  src/chart.rs                 Diagramm aus einem Ergebnis: Vorschlag aus den Spaltentypen, Aufbereiten
+                               (Kategorien aggregiert, Linien nach X sortiert), Ausdünnen auf Pixelbreite ohne
+                               Spitzen zu verlieren, Zwischenspeicher der letzten Diagramme (rein; chart_tests.rs)
   src/result_compare.rs        zwei Ergebnisse vergleichen: Spalten paaren, Schlüssel oder Position, Toleranzen,
                                doppelte Schlüssel; schreibt ein Ergebnis und eine Sicht der Unterschiede (rein;
                                Tests result_compare_tests.rs, auch 1 Mio. Zeilen)
@@ -332,6 +340,9 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   Ergebnisse (`kept`, über ihren Schlüssel) sind zweierlei; was auf dem Schirm ist, sagt `tab.shownRun()`.
   Gewechselt wird mit `tab.show(…)`. Solange ein gehaltenes Ergebnis gezeigt wird, ist `tab.tableView()` `null`.
   Verglichen wird nur in `result_compare.rs`; das Fenster färbt nach der ersten Zelle der Zeile.
+- **Diagramm**: Das Fenster bekommt nur die Punkte, die es zeichnet (`chart.rs`), nie die Zeilen; Namen von
+  Reihen und Kategorien sind Text des Ergebnisses und werden nur als Text gesetzt (in der SVG-Datei maskiert).
+  Farben nur `--chart-1…8` und `--chart-grid`; Reihen unterscheiden sich auch durch Strichart, Marker, Schraffur.
 - **Kennzahlen**: Summen rechnet nur `stats.rs` (dezimal, exakt) – nie JavaScript und nie über die Zeilen im
   Fenster; das Fenster zeigt den Text, den es bekommt.
 - **Werte**: Eine `Cell` trägt den ganzen Wert; gekürzt wird nur beim Schreiben der Zeile. Nichts aus einem

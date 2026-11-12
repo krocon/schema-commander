@@ -59,6 +59,8 @@ import {
   stateOf,
 } from './run-state';
 import { TABS_TEXTS } from './tabs-texts';
+import { ChartSpec } from '../../core/chart/chart-api';
+import { ChartOptions, DEFAULT_OPTIONS } from '../chart/chart-logic';
 import {
   KeptKey,
   KeptResult,
@@ -225,6 +227,11 @@ export class QueryTab {
 
   /** The statements of the last run (one statement, a selection or a script) and how they went. */
   readonly runs = signal<readonly StatementRun[]>([]);
+  /** The result area shows a chart of the result instead of its table (prompt 042). */
+  readonly chartOpen = signal(false);
+  /** What of the result the chart shows; `null`: the backend suggests it from the columns. */
+  readonly chartSpec = signal<ChartSpec | null>(null);
+  readonly chartOptions = signal<ChartOptions>(DEFAULT_OPTIONS);
   /** Results that outlive a run (prompt 041): pinned ones and the outcomes of comparisons. */
   readonly kept = signal<readonly KeptResult[]>([]);
   private lastKey = 0;

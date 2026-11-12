@@ -1,0 +1,63 @@
+import { translatable } from '../../core/i18n/i18n';
+import { CHART_DE } from './chart-texts.de';
+
+/** Texts of the chart of a result (prompt 042). English is the source. */
+export const CHART_EN = {
+  chart: 'Chart',
+  table: 'Table',
+  showChart: 'Show the result as a chart',
+  showTable: 'Show the result as a table',
+  settings: 'Chart settings',
+  kind: 'Type',
+  kinds: { line: 'Line', bar: 'Bars', scatter: 'Scatter plot' },
+  x: 'X',
+  rowNumber: '(row number)',
+  values: 'Values',
+  valuesChosen: (n: number) => (n === 1 ? '1 column' : `${n} columns`),
+  group: 'Group by',
+  none: '(none)',
+  agg: 'Several values',
+  aggs: { sum: 'Sum', avg: 'Mean', count: 'Count', min: 'Smallest', max: 'Largest' },
+  sort: 'Order',
+  sorts: {
+    none: 'As in the result',
+    label: 'By name',
+    valueDesc: 'Largest first',
+    valueAsc: 'Smallest first',
+  },
+  log: 'Logarithmic',
+  stacked: 'Stacked',
+  zoomIn: 'Zoom in',
+  zoomOut: 'Zoom out',
+  left: 'Move left',
+  right: 'Move right',
+  reset: 'Show everything',
+  zoomHint: 'Drag over the chart to zoom into a range; a double click shows everything again.',
+  saveSvg: 'Save as SVG …',
+  copySvg: 'Copy as SVG',
+  saved: (file: string) => `Saved: ${file}`,
+  copied: 'Copied.',
+  saveFailed: 'That did not work.',
+  legend: 'Series',
+  hide: (name: string) => `Hide ${name}`,
+  show: (name: string) => `Show ${name}`,
+  working: 'Reading the result …',
+  waiting: 'The chart appears when the statement has ended.',
+  nothing: 'Nothing here can be drawn: a chart needs a column of numbers.',
+  chooseValues: 'Choose at least one column of values.',
+  tooMany: 'Too many points for a chart: aggregate in the query, or choose fewer columns.',
+  noPoints: 'No points: the columns chosen hold no numbers.',
+  thinned: (shown: string, of: string) => `${shown} of ${of} points drawn (no peak is lost)`,
+  nulls: (n: string) => `${n} NULL values are gaps`,
+  skipped: (n: string) => `${n} values left out (no number, or no X)`,
+  cutGroups: (n: string, max: number) => `${n} further groups left out (at most ${max} series)`,
+  cutCategories: (n: string) => `${n} further categories left out`,
+  described: (kind: string, series: string, points: string) =>
+    `${kind} chart of ${series}; ${points} points.`,
+  range: (name: string, min: string, max: string) => `${name}: from ${min} to ${max}.`,
+  tableHint: 'The values are in the table of the result.',
+  fileName: 'chart',
+};
+
+export type ChartTexts = typeof CHART_EN;
+export const CHART_TEXTS = translatable('chart', CHART_EN, { de: CHART_DE });

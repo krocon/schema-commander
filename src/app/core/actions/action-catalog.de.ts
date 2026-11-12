@@ -16,6 +16,7 @@ export const ACTION_LABELS_DE: Readonly<Record<ActionId, string>> = {
   TOGGLE_COMMENT: 'Zeilenkommentar umschalten',
   CANCEL_FORMAT: 'Formatieren abbrechen',
   SHOW_MESSAGES: 'Meldungen zeigen',
+  TOGGLE_CHART: 'Ergebnis: als Diagramm zeigen',
   RESULT_NEXT_TAB: 'Ergebnis: nächster Ergebnis-Reiter',
   RESULT_PREVIOUS_TAB: 'Ergebnis: vorheriger Ergebnis-Reiter',
   RESULT_PIN: 'Ergebnis: anpinnen (über den nächsten Lauf behalten)',

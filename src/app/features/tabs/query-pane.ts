@@ -43,6 +43,8 @@ import { VALUE_TEXTS } from '../value/value-texts';
 import { TABS_TEXTS } from './tabs-texts';
 import { locale } from '../../core/i18n/i18n';
 import { CompareBar } from '../result-compare/compare-bar';
+import { ChartPanel } from '../chart/chart-panel';
+import { CHART_TEXTS } from '../chart/chart-texts';
 import { compareTint } from '../result-compare/compare-view-logic';
 import { Shown, bytesText, isKept } from './result-tabs-logic';
 
@@ -64,6 +66,7 @@ const EDITOR_MIN_W = 160;
     FindBar,
     RelationPath,
     ResultGrid,
+    ChartPanel,
     CompareBar,
     SplitterComponent,
     SqlEditor,
@@ -129,7 +132,7 @@ const EDITOR_MIN_W = 160;
       [style.height.px]="maximized() || side() ? null : resultH()"
       [style.width.px]="maximized() || !side() ? null : resultW()"
     >
-      @if (subs().length > 1 || tab().kept().length > 0 || tab().log().length > 0) {
+      @if (subs().length > 1 || tab().kept().length > 0 || tab().log().length > 0 || result()) {
         <div class="subtabs">
           <div class="tabs" role="tablist" [attr.aria-label]="t.results">
             @for (sub of subs(); track sub.target) {
@@ -218,6 +221,17 @@ const EDITOR_MIN_W = 160;
               {{ t.releaseKept }}
             </button>
           }
+          @if (result()) {
+            <button
+              type="button"
+              class="tool"
+              [attr.aria-pressed]="tab().chartOpen()"
+              [title]="tab().chartOpen() ? chart.showTable : chart.showChart"
+              (click)="tab().chartOpen.set(!tab().chartOpen())"
+            >
+              {{ chart.chart }}
+            </button>
+          }
           @if (tab().canPin()) {
             <button
               type="button"
@@ -283,7 +297,9 @@ const EDITOR_MIN_W = 160;
         } @else {
           @switch (state().kind) {
             @case ('done') {
-              @if (result(); as r) {
+              @if (chartResult(); as c) {
+                <app-chart-panel [tab]="tab()" [result]="c" [rows]="rows()" />
+              } @else if (result(); as r) {
                 <div class="with-value">
                   <app-result-grid
                     [result]="r"
@@ -373,7 +389,9 @@ const EDITOR_MIN_W = 160;
             }
             @case ('running') {
               <!-- rows are shown as soon as there are some, while the rest is still read -->
-              @if (result(); as r) {
+              @if (chartResult(); as c) {
+                <app-chart-panel [tab]="tab()" [result]="c" [rows]="rows()" [settled]="false" />
+              } @else if (result(); as r) {
                 <div class="with-value">
                   <app-result-grid
                     [result]="r"
@@ -834,6 +852,9 @@ export class QueryPane implements OnInit, OnDestroy {
     return find.open() && find.count() > 0 ? { at: find.marks.at } : null;
   });
   protected readonly cursor = () => this.grid()?.cursor() ?? null;
+  protected readonly chart = CHART_TEXTS;
+  /** The result as a chart instead of as a table (prompt 042); `null`: the table is shown. */
+  protected readonly chartResult = computed(() => (this.tab().chartOpen() ? this.result() : null));
   /** A comparison colours its rows by what became of them (prompt 041). */
   protected readonly tint = computed(() => {
     const kept = this.tab().shownKept();
