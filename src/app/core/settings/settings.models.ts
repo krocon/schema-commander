@@ -55,6 +55,8 @@ export interface Settings {
   readonly keepResults: boolean;
   /** Time at most per statement in seconds; 0 = as long as it takes. */
   readonly statementTimeoutSec: number;
+  /** The server monitor reads again every so many seconds (prompt 046); 0 = only by hand. */
+  readonly monitorIntervalSec: number;
   /** Show numbers in the result with their digits in groups of three (prompt 007); never when copying. */
   readonly groupDigits: boolean;
   /** Show the schemas of the database itself in the tree (prompt 008). */
@@ -214,6 +216,7 @@ export const DEFAULT_SETTINGS: Settings = {
   stopOnError: true,
   keepResults: false,
   statementTimeoutSec: 0,
+  monitorIntervalSec: 0,
   groupDigits: false,
   showSystemSchemas: false,
   copyHeader: true,
@@ -476,6 +479,7 @@ export function mergeSettings(saved: unknown): Settings {
       numberOr(s['historyMaxDays'], DEFAULT_SETTINGS.historyMaxDays),
     ),
     statementTimeoutSec: Math.min(86_400, numberOr(s['statementTimeoutSec'], 0)),
+    monitorIntervalSec: Math.min(3600, Math.max(0, numberOr(s['monitorIntervalSec'], 0))),
     activeConnection:
       typeof s['activeConnection'] === 'string' && /^[a-z0-9-]{1,64}$/.test(s['activeConnection'])
         ? s['activeConnection']

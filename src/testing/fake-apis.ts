@@ -1,3 +1,4 @@
+import { MonitorApi, ServerActivity } from '../app/core/monitor/monitor-api';
 import {
   TransferApi,
   TransferEvent,
@@ -2148,6 +2149,44 @@ export class FakeTransferApi extends TransferApi {
 
   cancel(jobId: number): Promise<void> {
     this.cancelled.push(jobId);
+    return Promise.resolve();
+  }
+}
+
+/** The server monitor (prompt 046): readings a test sets, and what was ended. */
+export class FakeMonitorApi extends MonitorApi {
+  next: ServerActivity = {
+    sessions: [],
+    figures: {
+      version: 'PostgreSQL 17.0',
+      connections: 3,
+      maxConnections: 100,
+      transactions: 1000,
+      databaseBytes: 8_000_000,
+      uptimeS: 3600,
+    },
+    cut: false,
+    missing: [],
+    canCancel: true,
+  };
+  failWith: unknown = null;
+  killResult = true;
+  readonly readings: string[] = [];
+  readonly kills: { connectionId: string; sessionId: string; terminate: boolean }[] = [];
+  readonly closes: string[] = [];
+
+  activity(connectionId: string): Promise<ServerActivity> {
+    this.readings.push(connectionId);
+    return this.failWith ? Promise.reject(this.failWith) : Promise.resolve(this.next);
+  }
+
+  kill(connectionId: string, sessionId: string, terminate: boolean): Promise<boolean> {
+    this.kills.push({ connectionId, sessionId, terminate });
+    return this.failWith ? Promise.reject(this.failWith) : Promise.resolve(this.killResult);
+  }
+
+  close(connectionId: string): Promise<void> {
+    this.closes.push(connectionId);
     return Promise.resolve();
   }
 }

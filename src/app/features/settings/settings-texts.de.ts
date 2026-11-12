@@ -66,6 +66,7 @@ export const SETTINGS_DE: Translation<typeof SETTINGS_EN> = {
     stopOnError: 'Skript beim ersten Fehler anhalten',
     keepResults: 'Ergebnisse früherer Läufe behalten',
     statementTimeoutSec: 'Zeitlimit je Anweisung (Sekunden)',
+    monitorIntervalSec: 'Server-Monitor: alle … Sekunden neu lesen',
     paramsEnabled: 'Werte von Parametern abfragen',
     autoCommit: 'Neue Tabs bestätigen automatisch',
     txWarnMinutes: 'Vor offener Transaktion warnen nach (Minuten)',
@@ -108,6 +109,7 @@ export const SETTINGS_DE: Translation<typeof SETTINGS_EN> = {
     keepResults:
       'Jeder Lauf bekommt neue Ergebnis-Reiter; ältere Ergebnisse bleiben, bis sie geschlossen werden (höchstens 20 nicht angepinnte).',
     statementTimeoutSec: '0 = so lange es dauert.',
+    monitorIntervalSec: '0 = nur von Hand. Pausiert, solange der Monitor nicht zu sehen ist.',
     paramsEnabled:
       ':name, ${name}, $1 oder ? in einer Anweisung: Die Werte werden abgefragt und getrennt vom Text gesendet. Welche Formen gelten, wird je Verbindung eingestellt – im Dialog, der fragt.',
     autoCommit:

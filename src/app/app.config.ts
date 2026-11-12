@@ -5,6 +5,7 @@ import { ExportApi, TauriExportApi } from './core/backend/export-api';
 import { ChartApi, TauriChartApi } from './core/chart/chart-api';
 import { BackupApi, TauriBackupApi } from './core/backup/backup-api';
 import { PlanApi, TauriPlanApi } from './core/plan/plan-api';
+import { MonitorApi, TauriMonitorApi } from './core/monitor/monitor-api';
 import { TauriTransferApi, TransferApi } from './core/transfer/transfer-api';
 import { StructureApi, TauriStructureApi } from './core/structure/structure-api';
 import { CompareApi, TauriCompareApi } from './core/compare/compare-api';
@@ -31,6 +32,7 @@ export const appConfig: ApplicationConfig = {
     { provide: ExportApi, useClass: TauriExportApi },
     { provide: PlanApi, useClass: TauriPlanApi },
     { provide: TransferApi, useClass: TauriTransferApi },
+    { provide: MonitorApi, useClass: TauriMonitorApi },
     { provide: BackupApi, useClass: TauriBackupApi },
     { provide: StructureApi, useClass: TauriStructureApi },
     { provide: ChartApi, useClass: TauriChartApi },

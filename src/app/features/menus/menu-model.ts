@@ -352,6 +352,7 @@ export const MENU_BAR: readonly TopMenu[] = [
           'SCHEMA_REFRESH',
           'SCHEMA_FILTER',
           'SEARCH_SERVER',
+          'SERVER_MONITOR',
           'COMPARE_SCHEMAS',
           'TOGGLE_SYSTEM_SCHEMAS',
           '-',
