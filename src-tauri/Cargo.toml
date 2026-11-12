@@ -1,6 +1,6 @@
 [package]
 name = "schema-commander"
-version = "0.1.0"
+version = "0.2.0"
 description = "Cross-platform SQL client (Tauri 2 + Angular)"
 authors = ["Marc Kronberg"]
 license = "MIT"
