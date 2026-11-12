@@ -6,6 +6,7 @@ export const ERROR_DE: Translation<typeof ERROR_EN> = {
   unsupported: 'Das wird nicht unterstützt.',
   invalid_theme: 'Das ist kein gültiges Farbschema.',
   too_large: 'Die Datei ist zu groß.',
+  program_not_found: 'Ein Programm der Datenbank ist auf diesem Rechner nicht vorhanden.',
   not_found: 'Nicht gefunden.',
   invalid_session: 'Die gespeicherte Sitzung ist ungültig.',
   unknown_result: 'Dieses Ergebnis gibt es nicht mehr.',

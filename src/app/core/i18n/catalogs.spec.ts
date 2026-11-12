@@ -26,6 +26,7 @@ import '../../features/palette/palette-texts';
 import '../../features/params/param-texts';
 import '../../features/results/results-texts';
 import '../../features/plan/plan-texts';
+import '../../features/backup/backup-texts';
 import '../../features/structure/structure-texts';
 import '../../features/chart/chart-texts';
 import '../../features/result-compare/compare-texts';
@@ -129,7 +130,7 @@ const SAME = new Set<string>([
   '~/.pgpass (PostgreSQL)',
 ]);
 
-const CATALOG_FILES = 46;
+const CATALOG_FILES = 47;
 const SAMPLE_ARGS: unknown[] = [2, 'x', 3, 4];
 
 function walk(path: string, en: unknown, de: unknown, problems: string[], same: string[]): void {

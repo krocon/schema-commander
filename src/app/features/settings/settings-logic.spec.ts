@@ -5,6 +5,8 @@ import {
   GROUPS,
   SETTING_DEFS,
   choiceLabel,
+  EXPORT_FORMAT,
+  EXPORT_VERSION,
   exportSettings,
   importSettings,
   isDefault,
@@ -194,5 +196,19 @@ describe('stored settings (migration)', () => {
     expect(mergeSettings({ editorFontFamily: " 'JetBrains Mono', Menlo " }).editorFontFamily).toBe(
       "'JetBrains Mono', Menlo",
     );
+  });
+
+  it('never takes the path of a program from a file (review 044, M1)', () => {
+    const current = { ...DEFAULT_SETTINGS, toolPaths: { pgDump: '/opt/pg/bin/pg_dump' } };
+    const file = JSON.stringify({
+      format: EXPORT_FORMAT,
+      version: EXPORT_VERSION,
+      settings: { toolPaths: { pgDump: '/Users/Shared/x/pg_dump' }, stopOnError: false },
+    });
+    const merged = importSettings(file, current);
+    expect(merged?.toolPaths).toEqual({ pgDump: '/opt/pg/bin/pg_dump' });
+    expect(merged?.stopOnError).toBe(false);
+    // and it does not leave this machine either
+    expect(exportSettings(current)).not.toContain('pg_dump');
   });
 });

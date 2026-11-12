@@ -42,6 +42,7 @@ const MENU: readonly { id: NodeAction; label: () => string; separator?: boolean 
   { id: 'SCHEMA_IMPORT_TABLE', label: () => SCHEMA_TEXTS.importTable },
   { id: 'SCHEMA_SEARCH', label: () => SCHEMA_TEXTS.searchHere },
   { id: 'SCHEMA_DIAGRAM', label: () => SCHEMA_TEXTS.diagram },
+  { id: 'SCHEMA_BACKUP', label: () => SCHEMA_TEXTS.backup },
   { id: 'SCHEMA_EDIT_TABLE', label: () => SCHEMA_TEXTS.editTable, separator: true },
   { id: 'SCHEMA_EDIT_SOURCE', label: () => SCHEMA_TEXTS.editSource },
   { id: 'SCHEMA_NEW_TABLE', label: () => SCHEMA_TEXTS.newTable },

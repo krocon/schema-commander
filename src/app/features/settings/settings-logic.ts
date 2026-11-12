@@ -165,6 +165,8 @@ const LOCAL_KEYS: readonly string[] = [
   'tableFilters',
   'columnLayouts',
   'virtualRelations',
+  // where programs are on this machine (prompt 044): a file from elsewhere must not say what runs here
+  'toolPaths',
 ];
 
 export const EXPORT_FORMAT = 'schema-commander-settings';

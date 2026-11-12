@@ -77,10 +77,12 @@
   **Struktur bearbeiten**: Spalten, Indizes, Schlüssel und Checks einer Tabelle als Formular, Vorschau der
   Anweisungen mit markierten Gefahren, Ausführen in einer Transaktion; neue Tabelle, duplizieren, leeren, löschen;
   Definition von Views und Routinen im Editor (Prompt 043);
+  **Sichern und Wiederherstellen** mit den Werkzeugen der Datenbank (`pg_dump`, `pg_restore`, `psql`,
+  `mysqldump`, `mysql`) als Job ohne Shell, SQLite-Kopie, einfacher SQL-Export ohne Werkzeuge (Prompt 044);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a, 036–043),
+  erledigt: 001–034, 035a, 036–044),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -123,6 +125,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                FileDialogApi (native Öffnen-/Speichern-Dialoge: einzige Quelle für Pfade),
                                ClipboardApi (copy_result, copy_text: die Zwischenablage gehört Rust),
                                ExportApi (export_result, export_query, cancel_job, reveal_export)
+  app/core/backup/             BackupApi (backup_tools, backup_dump, backup_restore, backup_file_kind,
+                               backup_sqlite, backup_simple) – spiegelt backup.rs
   app/core/chart/              ChartApi (chart_suggest, chart_prepare, chart_zoom, chart_free) – spiegelt chart.rs
   app/core/compare/            CompareApi (schema_snapshot, schema_compare, schema_script) – spiegelt db/compare.rs
   app/core/connections/        Profile (Modell), ConnectionsApi, ConnectionsStore (Root: Profile, Zustände, aktive
@@ -150,6 +154,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                ThemeService (Root: Auswahl, Vorschau, eigene Schemata), ThemeApi (themes.json),
                                contrast-pairs.json
   app/features/about/          AboutDialog, about-logic.ts (rein: Zeilen, Diagnose, WebView aus dem User-Agent)
+  app/features/backup/         BackupDialog (Werkzeug, Optionen, Ausgabe des Werkzeugs), BackupService (Root: ein
+                               Job), backup-logic.ts (rein: Werkzeug je Datenbank und Datei, Dateiname, Schutz)
   app/features/chart/          ChartPanel (Einstellungen, SVG, Legende, Zoom), chart-logic.ts (rein: Skalen, Ticks,
                                Linien mit Lücken, Balken, Punkt unter dem Zeiger, SVG-Datei)
   app/features/completion/     sql-lex.ts, sql-context.ts (rein: was an der Stelle passt, Katalog
@@ -243,6 +249,9 @@ src-tauri/                     Rust
   src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
   src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink; ganze Werte
                                getrennt (`<id>.values`) und stückweise (`value`) (rein, getestet)
+  src/backup.rs                Sichern/Wiederherstellen: Werkzeuge finden, Argumente ohne Shell, Passwort nie als
+                               Argument, Lauf als Prozess mit Abbruch und Aufräumen, Dateiart, einfacher Export
+                               (rein bis auf Prozess und Platte; backup_tests.rs mit echten Prozessen)
   src/chart.rs                 Diagramm aus einem Ergebnis: Vorschlag aus den Spaltentypen, Aufbereiten
                                (Kategorien aggregiert, Linien nach X sortiert), Ausdünnen auf Pixelbreite ohne
                                Spitzen zu verlieren, Zwischenspeicher der letzten Diagramme (rein; chart_tests.rs)
@@ -371,6 +380,10 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   im Backend), ihre Werte nur gebunden (`db/load.rs` über `edit::steps`); das Fenster zeigt Werte nur als Text.
 - **Parameter**: Werte des Nutzers gehen nur als `Bind` über `run_query` und werden vom Treiber gebunden
   (`Session::execute_bound`); nie in den SQL-Text, den Verlauf, die Sitzung oder ein Log schreiben.
+- **Externe Programme** (`backup.rs`): nie eine Shell; jeder Wert hängt an seiner Option oder steht hinter
+  `--`; das Passwort ist nie ein Argument und steht in keiner Zeile, die das Fenster bekommt; was ein Lauf
+  schreibt, entfernt er, wenn er scheitert oder angehalten wird. Wiederherstellen entscheidet im Backend nach der
+  Schutzstufe.
 - **Schutz**: Was SQL ausführt, ruft im Backend `ConnectionManager::admit`; das Fenster fragt nur, entscheidet nie.
 - **Zustand in Signals**, Stores je Instanz ohne `providedIn`, Globales in Root-Services; veraltete Antworten verwerfen.
 - **Texte nur in Katalogen**: `*-texts.ts` (Englisch, Quelle) + `*-texts.de.ts` über `translatable()`; nie beim

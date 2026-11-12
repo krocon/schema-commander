@@ -4403,3 +4403,177 @@ fn a_structure_edited_and_written_reads_as_edited() {
         assert!(load(s.as_mut(), kind, schema, "orders_copy", &|| false).is_err());
     }
 }
+
+// ── Backup and restore (prompt 044) ─────────────────────────────────────────────────
+
+/// The round trip with the tools of PostgreSQL: back up → restore into an empty database → the schema
+/// comparison finds no difference and the rows are there. As an archive (`pg_restore`) and as compressed
+/// text (`psql`). Stopping leaves no file. Needs `pg_dump`, `pg_restore` and `psql` on this machine.
+#[test]
+#[ignore]
+fn a_backup_restored_into_an_empty_database_is_the_same() {
+    use schema_commander_lib::backup::{
+        Content, DumpFormat, DumpSpec, Endpoint, FileKind, RestoreSpec, Tool, dump, file_kind,
+        find, restore, run as run_tool,
+    };
+    use schema_commander_lib::db::compare::{State, compare, snapshot};
+    let p = pg();
+    let mut s = open(&p);
+    for db in ["sc_bak_src", "sc_bak_a", "sc_bak_b"] {
+        run(&mut s, &format!("DROP DATABASE IF EXISTS {db}"));
+        run(&mut s, &format!("CREATE DATABASE {db}"));
+    }
+    let on = |db: &str| {
+        let mut profile = pg();
+        profile.database = db.into();
+        profile
+    };
+    let mut src = open(&on("sc_bak_src"));
+    for sql in [
+        "CREATE TABLE author (id int PRIMARY KEY, name varchar(40) NOT NULL DEFAULT 'it''s')",
+        "CREATE TABLE book (id int PRIMARY KEY, author_id int NOT NULL REFERENCES author (id), \
+         title text NOT NULL, price numeric(8,2) CHECK (price >= 0))",
+        "CREATE INDEX book_title ON book (title)",
+        "CREATE VIEW titles AS SELECT title FROM book",
+        "INSERT INTO author VALUES (1, 'Ada'), (2, 'Größe ''quoted''')",
+        "INSERT INTO book SELECT g, 1 + g % 2, 'Titel ' || g, g * 1.5 FROM generate_series(1, 5000) g",
+    ] {
+        run(&mut src, sql);
+    }
+    let endpoint = |db: &str| Endpoint {
+        kind: DbKind::Postgres,
+        host: p.host.clone(),
+        port: p.port,
+        user: p.user.clone(),
+        database: db.into(),
+        password: Some(Secret::new(PW)),
+        tls: p.tls,
+        ca_file: String::new(),
+        client_cert: String::new(),
+        client_key: String::new(),
+        maria_client: false,
+    };
+    let tool = |tool: Tool| {
+        find(
+            tool,
+            None,
+            std::env::var_os("PATH").as_deref(),
+            None,
+            &|p| p.is_file(),
+        )
+        .unwrap_or_else(|_| panic!("{tool:?} is not on this machine"))
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let said = std::sync::Mutex::new(Vec::<String>::new());
+    let hear = |line: String| said.lock().unwrap().push(line);
+    let same = |db: &str| {
+        let mut a = open(&on("sc_bak_src"));
+        let mut b = open(&on(db));
+        let left = snapshot(a.as_mut(), DbKind::Postgres, "public", &|| false).unwrap();
+        let right = snapshot(b.as_mut(), DbKind::Postgres, "public", &|| false).unwrap();
+        assert_eq!(left.tables.len(), 2);
+        let differing: Vec<String> = compare(&left, &right, &[])
+            .unwrap()
+            .into_iter()
+            .filter(|i| i.state != State::Same)
+            .map(|i| format!("{} {:?}", i.id, i.state))
+            .collect();
+        assert_eq!(differing, Vec::<String>::new(), "{db}");
+        let sample = "SELECT count(*), sum(price), max(title) FROM book";
+        assert_eq!(
+            rows(&run(&mut a, sample)),
+            rows(&run(&mut b, sample)),
+            "{db}"
+        );
+        assert_eq!(
+            rows(&run(&mut b, "SELECT name FROM author ORDER BY id")),
+            json!([["Ada"], ["Größe 'quoted'"]])
+        );
+    };
+
+    // 1. as an archive, restored with pg_restore
+    let archive = dir.path().join("shop.dump");
+    let spec = DumpSpec {
+        format: DumpFormat::Custom,
+        no_owner: true,
+        ..DumpSpec::default()
+    };
+    let i = dump(&endpoint("sc_bak_src"), &spec, &archive).unwrap();
+    assert!(!i.args.iter().any(|a| a.contains(PW)));
+    run_tool(&tool(Tool::PgDump), &i, dir.path(), &hear, &|| false).unwrap();
+    assert_eq!(file_kind(&archive).unwrap(), FileKind::PgCustom);
+    let back = RestoreSpec {
+        single_transaction: true,
+        stop_on_error: true,
+        no_owner: true,
+        ..RestoreSpec::default()
+    };
+    let i = restore(&endpoint("sc_bak_a"), &back, FileKind::PgCustom, &archive).unwrap();
+    let done = run_tool(&tool(Tool::PgRestore), &i, dir.path(), &hear, &|| false).unwrap();
+    assert!(!done.warnings);
+    same("sc_bak_a");
+
+    // 2. as compressed text, restored with psql
+    let text = dir.path().join("shop.sql.gz");
+    let spec = DumpSpec {
+        gzip: true,
+        no_owner: true,
+        inserts: true,
+        content: Content::All,
+        ..DumpSpec::default()
+    };
+    let i = dump(&endpoint("sc_bak_src"), &spec, &text).unwrap();
+    let wrote = run_tool(&tool(Tool::PgDump), &i, dir.path(), &hear, &|| false).unwrap();
+    assert!(wrote.bytes > 100_000);
+    assert_eq!(file_kind(&text).unwrap(), FileKind::SqlGzip);
+    assert!(std::fs::metadata(&text).unwrap().len() < wrote.bytes / 3);
+    let i = restore(&endpoint("sc_bak_b"), &back, FileKind::SqlGzip, &text).unwrap();
+    run_tool(&tool(Tool::Psql), &i, dir.path(), &hear, &|| false).unwrap();
+    same("sc_bak_b");
+
+    // 3. a restore into a database that has the tables already fails, and says what the tool said
+    let failed = run_tool(&tool(Tool::Psql), &i, dir.path(), &hear, &|| false).unwrap_err();
+    assert!(
+        failed.message.contains("already exists"),
+        "{}",
+        failed.message
+    );
+
+    // 4. a wrong password: the tool says so, nothing is written, and the password is in no line
+    let mut wrong = endpoint("sc_bak_src");
+    wrong.password = Some(Secret::new("not-the-password-123"));
+    let nothing = dir.path().join("nothing.sql");
+    let i = dump(&wrong, &DumpSpec::default(), &nothing).unwrap();
+    let failed = run_tool(&tool(Tool::PgDump), &i, dir.path(), &hear, &|| false).unwrap_err();
+    assert!(
+        failed.message.to_lowercase().contains("password"),
+        "{}",
+        failed.message
+    );
+    assert!(!nothing.exists());
+
+    // 5. stopped: no process, no half file
+    let half = dir.path().join("half.sql");
+    let i = dump(&endpoint("sc_bak_src"), &DumpSpec::default(), &half).unwrap();
+    let stopped = run_tool(&tool(Tool::PgDump), &i, dir.path(), &hear, &|| true).unwrap_err();
+    assert_eq!(stopped.code, ErrorCode::Cancelled);
+    assert!(!half.exists());
+
+    let all = said.lock().unwrap().join("\n");
+    assert!(!all.contains(PW), "the password was said");
+    assert!(!all.contains("not-the-password-123"));
+    // nothing of ours is left in the folder but the two backups
+    let mut left: Vec<String> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(left, ["shop.dump", "shop.sql.gz"]);
+    drop(src);
+    for db in ["sc_bak_src", "sc_bak_a", "sc_bak_b"] {
+        run(
+            &mut s,
+            &format!("DROP DATABASE IF EXISTS {db} WITH (FORCE)"),
+        );
+    }
+}

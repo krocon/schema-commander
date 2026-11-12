@@ -58,6 +58,8 @@ pub enum ErrorCode {
     FormatTooDeep,
     /// The formatted text would not have had the tokens of the text; nothing was changed.
     FormatUnsafe,
+    /// A program of a database (`pg_dump`, `mysqldump` …) is not on this machine (prompt 044).
+    ProgramNotFound,
     Io,
 }
 

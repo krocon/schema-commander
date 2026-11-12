@@ -34,6 +34,8 @@ import { ErDiagramDialog } from './features/diagram/er-diagram-dialog';
 import { ExportDialog } from './features/export/export-dialog';
 import { PlanDialog } from './features/plan/plan-dialog';
 import { PlanService } from './features/plan/plan.service';
+import { BackupDialog } from './features/backup/backup-dialog';
+import { BackupService } from './features/backup/backup.service';
 import { StructureDialog } from './features/structure/structure-dialog';
 import { StructureService } from './features/structure/structure.service';
 import { ResultCompareDialog } from './features/result-compare/result-compare-dialog';
@@ -138,6 +140,7 @@ const SIDEBAR_MIN = 140;
     ContextMenu,
     ExportDialog,
     PlanDialog,
+    BackupDialog,
     StructureDialog,
     ResultCompareDialog,
     SchemaCompareDialog,
@@ -574,6 +577,11 @@ const SIDEBAR_MIN = 140;
         <app-structure-dialog [target]="target" (closed)="structure.close()" />
       }
     }
+    @if (backup.target(); as target) {
+      @defer (on immediate) {
+        <app-backup-dialog [target]="target" (closed)="backup.close()" />
+      }
+    }
     @if (plans.view(); as view) {
       @defer (on immediate) {
         <app-plan-dialog [view]="view" (closed)="plans.close()" />
@@ -726,6 +734,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly serverSearch = inject(ServerSearchService);
   protected readonly diagrams = inject(DiagramService);
   protected readonly plans = inject(PlanService);
+  protected readonly backup = inject(BackupService);
   protected readonly structure = inject(StructureService);
   protected readonly resultCompare = inject(ResultCompareService);
   protected readonly schemaCompare = inject(SchemaCompareService);
@@ -1171,6 +1180,16 @@ export class App implements OnInit, OnDestroy {
         'SEARCH_SERVER',
         () => this.serverSearch.open(),
         () => this.connections.activeState().kind === 'open',
+      ),
+      this.actions.register(
+        'BACKUP_DATABASE',
+        () => this.openBackup('backup'),
+        () => this.connections.activeState().kind === 'open' && !this.backup.running(),
+      ),
+      this.actions.register(
+        'RESTORE_DATABASE',
+        () => this.openBackup('restore'),
+        () => this.connections.activeState().kind === 'open' && !this.backup.running(),
       ),
       this.actions.register(
         'IMPORT_DATA',
@@ -1712,6 +1731,15 @@ export class App implements OnInit, OnDestroy {
     const at = order.indexOf(tab.shown());
     tab.show(order[(Math.max(at, 0) + step + order.length) % order.length]);
     if (!this.settings.settings().resultVisible) this.settings.update({ resultVisible: true });
+  }
+
+  private openBackup(mode: 'backup' | 'restore'): void {
+    this.backup.open({
+      connectionId: this.connections.activeId(),
+      mode,
+      schema: null,
+      table: null,
+    });
   }
 
   private exportResult(): void {
