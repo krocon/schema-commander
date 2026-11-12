@@ -1,4 +1,11 @@
 import {
+  TransferApi,
+  TransferEvent,
+  TransferPlan,
+  TransferReport,
+  TransferRequest,
+} from '../app/core/transfer/transfer-api';
+import {
   BackupApi,
   BackupDone,
   BackupFileKind,
@@ -2039,6 +2046,104 @@ export class FakeBackupApi extends BackupApi {
     void connectionId;
     this.simples.push({ schema, data, path });
     return this.job(onLine);
+  }
+
+  cancel(jobId: number): Promise<void> {
+    this.cancelled.push(jobId);
+    return Promise.resolve();
+  }
+}
+
+/** Copying tables between connections (prompt 045): a plan and a report a test sets. */
+export class FakeTransferApi extends TransferApi {
+  nextPlan: TransferPlan = {
+    tables: [
+      {
+        table: 'orders',
+        exists: false,
+        columns: [
+          { name: 'id', sourceType: 'integer', target: 'id', targetType: 'int', loss: null },
+          {
+            name: 'at',
+            sourceType: 'timestamptz',
+            target: 'at',
+            targetType: 'datetime(6)',
+            loss: 'the time zone is lost: the instant is stored as UTC',
+          },
+        ],
+        notes: [],
+        before: ['CREATE TABLE copy.orders (id int NOT NULL, at datetime(6));'],
+        after: [],
+      },
+    ],
+    statements: [
+      'CREATE TABLE copy.orders (id int NOT NULL, at datetime(6));',
+      'INSERT INTO copy.orders (id, at) VALUES (?, ?)',
+    ],
+    cycle: [],
+  };
+  planError: unknown = null;
+  report: TransferReport = {
+    tables: [
+      {
+        table: 'orders',
+        skipped: false,
+        loaded: {
+          read: 1200,
+          written: 1200,
+          skipped: 0,
+          errors: [],
+          cancelled: false,
+          failed: false,
+          rolledBack: false,
+          errorFile: false,
+          cleared: false,
+        },
+        created: true,
+        elapsedMs: 1500,
+        error: null,
+      },
+    ],
+    afterErrors: [],
+    cancelled: false,
+  };
+  runError: unknown = null;
+  gate: Promise<void> | null = null;
+  readonly plans: { source: string; target: string; request: TransferRequest }[] = [];
+  readonly runs: {
+    source: string;
+    target: string;
+    request: TransferRequest;
+    confirmations: readonly (string | null)[];
+    errorPath: string | null;
+  }[] = [];
+  readonly cancelled: number[] = [];
+
+  plan(source: string, target: string, request: TransferRequest): Promise<TransferPlan> {
+    this.plans.push({ source, target, request });
+    return this.planError ? Promise.reject(this.planError) : Promise.resolve(this.nextPlan);
+  }
+
+  async run(
+    jobId: number,
+    source: string,
+    target: string,
+    request: TransferRequest,
+    confirmations: readonly (string | null)[],
+    allowDangerous: boolean,
+    errorPath: string | null,
+    timeoutMs: number,
+    onEvent: (event: TransferEvent) => void,
+  ): Promise<TransferReport> {
+    void jobId;
+    void allowDangerous;
+    void timeoutMs;
+    this.runs.push({ source, target, request, confirmations, errorPath });
+    onEvent({ kind: 'table', table: 'orders', index: 0, of: 1 });
+    onEvent({ kind: 'rows', table: 'orders', read: 800 });
+    if (this.gate) await this.gate;
+    if (this.runError) throw this.runError;
+    return this.report;
   }
 
   cancel(jobId: number): Promise<void> {

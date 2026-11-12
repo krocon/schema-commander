@@ -361,6 +361,19 @@ export const ACTIONS = [
   { id: 'CANCEL_EXPORT', label: 'Cancel export', group: 'File', scope: 'global' },
   // Import of a file into a table (prompt 033)
   { id: 'IMPORT_DATA', label: 'Import data from a file …', group: 'File', scope: 'global' },
+  // Copying tables between connections (prompt 045)
+  {
+    id: 'TRANSFER_TABLES',
+    label: 'Copy tables to another connection …',
+    group: 'File',
+    scope: 'global',
+  },
+  {
+    id: 'SCHEMA_TRANSFER',
+    label: 'Copy the schema or table to another connection …',
+    group: 'Schema',
+    scope: 'global',
+  },
   // Backup and restore (prompt 044)
   { id: 'BACKUP_DATABASE', label: 'Back up the database …', group: 'File', scope: 'global' },
   { id: 'RESTORE_DATABASE', label: 'Restore a backup …', group: 'File', scope: 'global' },

@@ -49,6 +49,8 @@ pub enum ValueKind {
     Bool,
     #[default]
     Text,
+    /// Binary data, as hex (prompt 045): the statement turns it into bytes.
+    Bytes,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -361,6 +363,28 @@ impl Builder {
     /// A placeholder for a value of a column, and the value beside it.
     pub(super) fn value(&mut self, raw: &str, kind: ValueKind, type_name: &str) {
         let n = self.params.len() + 1;
+        if kind == ValueKind::Bytes
+            && raw.len().is_multiple_of(2)
+            && raw.bytes().all(|b| b.is_ascii_hexdigit())
+        {
+            // hex as a bound text, made bytes by the database: no driver needs to know binary values
+            let placeholder = match self.kind {
+                DbKind::Postgres => format!("${n}"),
+                DbKind::Mysql => "?".to_owned(),
+                DbKind::Sqlserver => format!("@P{n}"),
+                DbKind::Sqlite => format!("?{n}"),
+            };
+            let around = |inner: &str| match self.kind {
+                DbKind::Postgres => format!("decode({inner}, 'hex')"),
+                DbKind::Mysql => format!("UNHEX({inner})"),
+                DbKind::Sqlserver => format!("CONVERT(varbinary(max), {inner}, 2)"),
+                DbKind::Sqlite => format!("unhex({inner})"),
+            };
+            self.sql.push_str(&around(&placeholder));
+            self.display.push_str(&around(&format!("'{raw}'")));
+            self.params.push(Bind::Text(raw.to_owned()));
+            return;
+        }
         let (bind, cast) = match self.kind {
             // the server reads the text as what the column is
             DbKind::Postgres => (Bind::Text(raw.to_owned()), castable(type_name)),

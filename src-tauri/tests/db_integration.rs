@@ -2559,6 +2559,7 @@ fn load_plan(s: &mut Box<dyn Session>, kind: DbKind, table: &str, local: bool) -
         clear_first: false,
         on_error: OnError::Abort,
         whole_transaction: true,
+        exact: false,
     }
 }
 
@@ -2904,6 +2905,7 @@ fn a_table_without_transactions_is_loaded_row_by_row() {
             clear_first: false,
             on_error: OnError::Abort,
             whole_transaction: true,
+            exact: false,
         };
         let mut source = Source::open(&file, &SourceOptions::default()).unwrap();
         let refused = load(
@@ -2989,6 +2991,7 @@ fn sqlserver_reads_a_day_the_same_in_every_language() {
         clear_first: false,
         on_error: OnError::Abort,
         whole_transaction: true,
+        exact: false,
     };
     let done = load_file(&mut s, p.kind, &file, &plan, None, &|| false);
     assert_eq!((done.written, done.failed), (2, false), "{:?}", done.errors);
@@ -3173,6 +3176,7 @@ fn servers_with_the_protocol_of_postgres_work_like_it() {
             clear_first: false,
             on_error: OnError::Abort,
             whole_transaction: true,
+            exact: false,
         };
         let whole = load_file(&mut s, kind, &file, &plan, None, stop);
         assert!(whole.failed && whole.rolled_back, "{product}: {whole:?}");
@@ -4576,4 +4580,366 @@ fn a_backup_restored_into_an_empty_database_is_the_same() {
             &format!("DROP DATABASE IF EXISTS {db} WITH (FORCE)"),
         );
     }
+}
+
+// ── Copying tables between databases (prompt 045) ──────────────────────────────────
+
+/// A table with every kind of value goes from PostgreSQL to MySQL and back, to SQL Server and to
+/// SQLite: created there with mapped types, in the order of its keys, every value bound. Where the
+/// mapping loses nothing, what comes back is what went. Many rows stream; stopping ends both sides.
+#[test]
+#[ignore]
+fn tables_copied_between_databases_arrive_as_they_were() {
+    use schema_commander_lib::db::compare::snapshot;
+    use schema_commander_lib::db::load::OnError;
+    use schema_commander_lib::db::transfer::{Event, Mode, Request, plan, run as transfer};
+    let mut a = open(&pg());
+    run(&mut a, "DROP SCHEMA IF EXISTS sc_xfer CASCADE");
+    run(&mut a, "DROP SCHEMA IF EXISTS sc_xfer_back CASCADE");
+    run(&mut a, "CREATE SCHEMA sc_xfer");
+    run(&mut a, "CREATE SCHEMA sc_xfer_back");
+    for sql in [
+        "CREATE TABLE sc_xfer.kinds (id int PRIMARY KEY, t text, v varchar(20), n numeric(12,2),          big bigint, f double precision, b boolean, d date, ts timestamp, tz timestamptz, j jsonb,          u uuid, raw bytea)",
+        "CREATE TABLE sc_xfer.child (id int PRIMARY KEY, kind_id int NOT NULL REFERENCES sc_xfer.kinds (id),          note text)",
+        "CREATE INDEX child_kind ON sc_xfer.child (kind_id)",
+        "INSERT INTO sc_xfer.kinds VALUES          (1, 'Größe 🚀 ''quoted'' \\ back', 'kurz', 1234567890.12, 9007199254740993, 0.1, true,           '2026-11-12', '2026-11-12 13:30:05.25', '2026-11-12 13:30:05.25+02',           '{\"a\": [1, 2], \"ü\": null}', '6f1c1e9e-7d0a-4b6e-9a55-0c1d2e3f4a5b', '\\x00ff10'),          (2, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),          (3, '', '', 0, 0, 0, false, '1999-12-31', '1999-12-31 23:59:59', '1999-12-31 23:59:59+00',           '[]', '00000000-0000-0000-0000-000000000000', '\\x'),          (4, E'Zeile\\nzwei\\ttab; DROP TABLE x; --', 'x', -0.01, -9223372036854775808, -1.5e300,           true, '0001-01-01', '2000-02-29 00:00:00', '2000-02-29 00:00:00-11', '\"text\"',           'ffffffff-ffff-ffff-ffff-ffffffffffff', '\\xdeadbeef')",
+        "INSERT INTO sc_xfer.child VALUES (1, 1, 'a'), (2, 4, NULL)",
+    ] {
+        run(&mut a, sql);
+    }
+    let request = |source: &str, target: &str| Request {
+        source_schema: source.into(),
+        tables: vec!["child".into(), "kinds".into()],
+        target_schema: target.into(),
+        mode: Mode::Append,
+        with_keys: true,
+        whole_transaction: true,
+        on_error: OnError::Abort,
+    };
+    let copy = |from: &mut Box<dyn Session>,
+                from_kind: DbKind,
+                to: &mut Box<dyn Session>,
+                to_kind: DbKind,
+                request: &Request| {
+        let source = snapshot(from.as_mut(), from_kind, &request.source_schema, &|| false).unwrap();
+        let target = snapshot(to.as_mut(), to_kind, &request.target_schema, &|| false).unwrap();
+        let made = plan(from_kind, to_kind, &source, &target, request).unwrap();
+        // the tables in the order of their keys, whatever order was asked for
+        assert_eq!(
+            made.tables
+                .iter()
+                .map(|t| t.table.as_str())
+                .collect::<Vec<_>>(),
+            ["kinds", "child"]
+        );
+        let report = transfer(
+            from.as_mut(),
+            to.as_mut(),
+            to_kind,
+            &made,
+            &|_| None,
+            None,
+            &|_| {},
+            &|| false,
+        );
+        for t in &report.tables {
+            assert!(
+                !t.loaded.failed && t.error.is_none(),
+                "{from_kind:?} → {to_kind:?}: {t:#?}\n{:#?}",
+                made.statements
+            );
+        }
+        assert_eq!(
+            report.after_errors,
+            Vec::<String>::new(),
+            "{from_kind:?} → {to_kind:?}"
+        );
+        assert_eq!(report.tables[0].loaded.written, 4);
+        assert_eq!(report.tables[1].loaded.written, 2);
+        made
+    };
+
+    // PostgreSQL → MySQL
+    let mut my = open(&my());
+    run(&mut my, "DROP DATABASE IF EXISTS sc_xfer_my");
+    run(&mut my, "CREATE DATABASE sc_xfer_my");
+    let made = copy(
+        &mut a,
+        DbKind::Postgres,
+        &mut my,
+        DbKind::Mysql,
+        &request("sc_xfer", "sc_xfer_my"),
+    );
+    // what is lost is said before: the zone of the instant
+    let lossy: Vec<&str> = made.tables[0]
+        .columns
+        .iter()
+        .filter(|c| c.loss.is_some())
+        .map(|c| c.name.as_str())
+        .collect();
+    assert_eq!(lossy, ["tz"]);
+    let r = run(
+        &mut my,
+        "SELECT id, t, v, CAST(n AS char), CAST(big AS char), b, CAST(d AS char), HEX(raw), raw IS NULL,          CAST(tz AS char) FROM sc_xfer_my.kinds ORDER BY id",
+    );
+    assert_eq!(
+        rows(&r),
+        json!([
+            [
+                1,
+                "Größe 🚀 'quoted' \\ back",
+                "kurz",
+                "1234567890.12",
+                "9007199254740993",
+                true,
+                "2026-11-12",
+                "00FF10",
+                0,
+                "2026-11-12 11:30:05.250000"
+            ],
+            [2, null, null, null, null, null, null, null, 1, null],
+            [
+                3,
+                "",
+                "",
+                "0.00",
+                "0",
+                false,
+                "1999-12-31",
+                "",
+                0,
+                "1999-12-31 23:59:59.000000"
+            ],
+            [
+                4,
+                "Zeile\nzwei\ttab; DROP TABLE x; --",
+                "x",
+                "-0.01",
+                "-9223372036854775808",
+                true,
+                "0001-01-01",
+                "DEADBEEF",
+                0,
+                "2000-02-29 11:00:00.000000"
+            ]
+        ])
+    );
+    // the key and the index were made after the rows
+    let child = snapshot(my.as_mut(), DbKind::Mysql, "sc_xfer_my", &|| false)
+        .unwrap()
+        .tables
+        .into_iter()
+        .find(|t| t.name == "child")
+        .unwrap();
+    assert_eq!(child.keys.len(), 1);
+    assert!(child.indexes.iter().any(|i| i.name == "child_kind"));
+
+    // … and back: MySQL → PostgreSQL. Where nothing was lost, the values are the same.
+    let mut b = open(&pg());
+    copy(
+        &mut my,
+        DbKind::Mysql,
+        &mut b,
+        DbKind::Postgres,
+        &request("sc_xfer_my", "sc_xfer_back"),
+    );
+    let same = "SELECT id, t, v, n::text, big::text, f::text, b::text, d::text, ts::text, j::text,                 trim(u::text), encode(raw, 'hex') FROM {}.kinds ORDER BY id";
+    assert_eq!(
+        rows(&run(&mut a, &same.replace("{}", "sc_xfer"))),
+        rows(&run(&mut b, &same.replace("{}", "sc_xfer_back")))
+    );
+    // the instant came back as UTC without its zone
+    assert_eq!(
+        rows(&run(
+            &mut a,
+            "SELECT (tz AT TIME ZONE 'UTC')::text FROM sc_xfer.kinds ORDER BY id"
+        )),
+        rows(&run(
+            &mut b,
+            "SELECT tz::text FROM sc_xfer_back.kinds ORDER BY id"
+        ))
+    );
+    assert_eq!(
+        rows(&run(
+            &mut b,
+            "SELECT id, kind_id, note FROM sc_xfer_back.child ORDER BY id"
+        )),
+        json!([[1, 1, "a"], [2, 4, null]])
+    );
+
+    // PostgreSQL → SQL Server (an instant of PostgreSQL has no zone of its own: it arrives as UTC)
+    let mut ms = open(&ms());
+    for t in ["child", "kinds"] {
+        run(&mut ms, &format!("DROP TABLE IF EXISTS sc_xfer.{t}"));
+    }
+    run(&mut ms, "DROP SCHEMA IF EXISTS sc_xfer");
+    run(&mut ms, "CREATE SCHEMA sc_xfer");
+    copy(
+        &mut a,
+        DbKind::Postgres,
+        &mut ms,
+        DbKind::Sqlserver,
+        &request("sc_xfer", "sc_xfer"),
+    );
+    let r = run(
+        &mut ms,
+        "SELECT id, t, CONVERT(varchar(40), n), CONVERT(varchar(40), big), b, CONVERT(varchar(10), d, 23),          CONVERT(varchar(max), raw, 2), CONVERT(varchar(40), tz, 127), LOWER(CONVERT(varchar(36), u))          FROM sc_xfer.kinds ORDER BY id",
+    );
+    assert_eq!(
+        rows(&r),
+        json!([
+            [
+                1,
+                "Größe 🚀 'quoted' \\ back",
+                "1234567890.12",
+                "9007199254740993",
+                true,
+                "2026-11-12",
+                "00FF10",
+                "2026-11-12T11:30:05.2500000Z",
+                "6f1c1e9e-7d0a-4b6e-9a55-0c1d2e3f4a5b"
+            ],
+            [2, null, null, null, null, null, null, null, null],
+            [
+                3,
+                "",
+                "0.00",
+                "0",
+                false,
+                "1999-12-31",
+                "",
+                "1999-12-31T23:59:59Z",
+                "00000000-0000-0000-0000-000000000000"
+            ],
+            [
+                4,
+                "Zeile\nzwei\ttab; DROP TABLE x; --",
+                "-0.01",
+                "-9223372036854775808",
+                true,
+                "0001-01-01",
+                "DEADBEEF",
+                "2000-02-29T11:00:00Z",
+                "ffffffff-ffff-ffff-ffff-ffffffffffff"
+            ]
+        ])
+    );
+
+    // PostgreSQL → SQLite (a database in memory)
+    let mut lite: Box<dyn Session> = Box::new(
+        schema_commander_lib::db::sqlite::open(&schema_commander_lib::db::sqlite::demo_profile())
+            .unwrap(),
+    );
+    copy(
+        &mut a,
+        DbKind::Postgres,
+        &mut lite,
+        DbKind::Sqlite,
+        &request("sc_xfer", "main"),
+    );
+    let r = run(
+        &mut lite,
+        "SELECT id, t, b, d, hex(raw), typeof(raw), tz FROM kinds ORDER BY id",
+    );
+    assert_eq!(
+        rows(&r),
+        json!([
+            [
+                1,
+                "Größe 🚀 'quoted' \\ back",
+                1,
+                "2026-11-12",
+                "00FF10",
+                "blob",
+                "2026-11-12 11:30:05.250"
+            ],
+            // (`hex(NULL)` is an empty text in SQLite; `typeof` says what the value is)
+            [2, null, null, null, "", "null", null],
+            [3, "", 0, "1999-12-31", "", "blob", "1999-12-31 23:59:59"],
+            [
+                4,
+                "Zeile\nzwei\ttab; DROP TABLE x; --",
+                1,
+                "0001-01-01",
+                "DEADBEEF",
+                "blob",
+                "2000-02-29 11:00:00"
+            ]
+        ])
+    );
+
+    // many rows: they stream block by block; stopped in the middle, both sides end and what was
+    // written stays (blocks, not one transaction)
+    run(
+        &mut a,
+        "CREATE TABLE sc_xfer.many (id int PRIMARY KEY, name text, n numeric(12,2))",
+    );
+    run(
+        &mut a,
+        "INSERT INTO sc_xfer.many SELECT g, 'row ' || g, g * 1.25 FROM generate_series(1, 300000) g",
+    );
+    run(
+        &mut my,
+        "CREATE TABLE sc_xfer_my.many (id int PRIMARY KEY, name longtext, n decimal(12,2))",
+    );
+    let many = Request {
+        tables: vec!["many".into()],
+        whole_transaction: false,
+        ..request("sc_xfer", "sc_xfer_my")
+    };
+    let source = snapshot(a.as_mut(), DbKind::Postgres, "sc_xfer", &|| false).unwrap();
+    let target = snapshot(my.as_mut(), DbKind::Mysql, "sc_xfer_my", &|| false).unwrap();
+    let made = plan(DbKind::Postgres, DbKind::Mysql, &source, &target, &many).unwrap();
+    let begun = std::time::Instant::now();
+    let report = transfer(
+        a.as_mut(),
+        my.as_mut(),
+        DbKind::Mysql,
+        &made,
+        &|_| None,
+        None,
+        &|_| {},
+        &|| false,
+    );
+    assert_eq!(report.tables[0].loaded.written, 300_000, "{report:#?}");
+    eprintln!("300 000 rows PostgreSQL → MySQL in {:?}", begun.elapsed());
+    assert_eq!(
+        rows(&run(
+            &mut my,
+            "SELECT count(*), CAST(sum(n) AS char), max(id) FROM sc_xfer_my.many"
+        )),
+        json!([[300000, "56250187500.00", 300000]])
+    );
+    run(&mut my, "TRUNCATE TABLE sc_xfer_my.many");
+    let seen = std::sync::atomic::AtomicU64::new(0);
+    let report = transfer(
+        a.as_mut(),
+        my.as_mut(),
+        DbKind::Mysql,
+        &made,
+        &|_| None,
+        None,
+        &|e| {
+            if let Event::Rows { read, .. } = e {
+                seen.store(read, std::sync::atomic::Ordering::Relaxed);
+            }
+        },
+        &|| seen.load(std::sync::atomic::Ordering::Relaxed) >= 20_000,
+    );
+    assert!(report.cancelled);
+    let written = report.tables[0].loaded.written;
+    assert!((20_000..300_000).contains(&written), "{written}");
+    assert_eq!(
+        rows(&run(&mut my, "SELECT count(*) FROM sc_xfer_my.many")),
+        json!([[written]])
+    );
+    // both sessions go on
+    run(&mut a, "SELECT 1");
+    run(&mut my, "SELECT 1");
+    run(&mut my, "DROP DATABASE sc_xfer_my");
+    for t in ["child", "kinds"] {
+        run(&mut ms, &format!("DROP TABLE IF EXISTS sc_xfer.{t}"));
+    }
+    run(&mut a, "DROP SCHEMA sc_xfer CASCADE");
+    run(&mut a, "DROP SCHEMA sc_xfer_back CASCADE");
 }

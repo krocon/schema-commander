@@ -1030,6 +1030,130 @@ pub fn struct_apply(
     ran
 }
 
+// ── Copying tables between connections (prompt 045) ──────────────────────────────────────────
+
+fn transfer_plan_of(
+    manager: &ConnectionManager,
+    source: &str,
+    target: &str,
+    request: &crate::db::transfer::Request,
+) -> AppResult<(crate::db::DbKind, crate::db::transfer::Plan)> {
+    use crate::db::compare;
+    let from = manager.kind_of(source)?;
+    let to = manager.kind_of(target)?;
+    // a table copied into itself would read what it writes – and, emptied first, lose its rows
+    if source == target
+        && (from == crate::db::DbKind::Sqlite || request.source_schema == request.target_schema)
+    {
+        return Err(AppError::new(
+            ErrorCode::Unsupported,
+            "source and target are the same schema: a table cannot be copied into itself",
+        ));
+    }
+    let read = |id: &str, schema: &str| {
+        manager.ask(id, |session, kind, stop| {
+            compare::snapshot(session, kind, schema, stop)
+        })
+    };
+    let source_snapshot = read(source, &request.source_schema)?;
+    let target_snapshot = read(target, &request.target_schema)?;
+    let plan = crate::db::transfer::plan(from, to, &source_snapshot, &target_snapshot, request)?;
+    Ok((to, plan))
+}
+
+/// What copying tables from one connection to another would do (prompt 045): per table the columns
+/// with their types in the target and what gets lost, and every statement that would run there.
+/// Nothing is written.
+#[tauri::command(async)]
+pub fn transfer_plan(
+    manager: State<'_, ConnectionManager>,
+    source: String,
+    target: String,
+    request: crate::db::transfer::Request,
+) -> AppResult<crate::db::transfer::Plan> {
+    transfer_plan_of(&manager, &source, &target, &request).map(|(_, plan)| plan)
+}
+
+/// Copies the tables (prompt 045). The plan is made here again; each of its statements passes the guard
+/// of the target (`confirmations[i]` for statement `i` of the plan); the rows stream from a session of
+/// the source into one of the target, every value bound. A job: `cancel_job` ends it at the next block.
+/// `error_path` (from the save dialog) names the file for rows that were left out – one per table,
+/// with the name of the table in its name.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn transfer_run(
+    manager: State<'_, ConnectionManager>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    source: String,
+    target: String,
+    request: crate::db::transfer::Request,
+    confirmations: Option<Vec<Option<String>>>,
+    allow_dangerous: bool,
+    error_path: Option<String>,
+    timeout_ms: Option<u64>,
+    on_event: Channel<crate::db::transfer::Event>,
+) -> AppResult<crate::db::transfer::Report> {
+    use std::sync::atomic::Ordering;
+    const FROM: &str = "sc-copy-from";
+    const TO: &str = "sc-copy-to";
+    let error_path = error_path.as_deref().map(export_target).transpose()?;
+    let (to, plan) = transfer_plan_of(&manager, &source, &target, &request)?;
+    let tokens = confirmations.unwrap_or_default();
+    // all of them before the first one runs
+    for (i, sql) in plan.statements.iter().enumerate() {
+        let token = tokens.get(i).and_then(|t| t.as_deref());
+        manager.admit(&target, sql, token, allow_dangerous)?;
+    }
+    let timeout = timeout_ms
+        .filter(|ms| *ms > 0)
+        .map(std::time::Duration::from_millis);
+    // a file per table: `errors.csv` → `errors.orders.csv`; only letters and digits of the name
+    let error_file = |table: &str| -> Option<PathBuf> {
+        let base = error_path.as_ref()?;
+        let safe: String = table
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '_' || c == '-' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .take(80)
+            .collect();
+        let stem = base.file_stem()?.to_string_lossy().into_owned();
+        let name = match base.extension() {
+            Some(ext) => format!("{stem}.{safe}.{}", ext.to_string_lossy()),
+            None => format!("{stem}.{safe}"),
+        };
+        Some(base.with_file_name(name))
+    };
+    let stop = jobs.start(job_id, None);
+    let stopped = || stop.load(Ordering::Relaxed);
+    let report = manager.ask_in(&source, FROM, |from_session, _, _| {
+        manager.ask_in(&target, TO, |to_session, _, _| {
+            Ok(crate::db::transfer::run(
+                from_session,
+                to_session,
+                to,
+                &plan,
+                &error_file,
+                timeout,
+                &|event| {
+                    let _ = on_event.send(event);
+                },
+                &stopped,
+            ))
+        })
+    });
+    jobs.end(job_id);
+    // whatever was begun on those sessions goes with them
+    manager.close_session(&source, FROM);
+    manager.close_session(&target, TO);
+    report
+}
+
 // ── Backup and restore (prompt 044) ─────────────────────────────────────────────────────
 
 /// A tool of the database as the dialog shows it.
