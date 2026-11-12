@@ -15,6 +15,7 @@ pub mod extract;
 pub mod format;
 pub mod history;
 pub mod image_info;
+pub mod mcp;
 pub mod menu;
 pub mod result_compare;
 pub mod results;
@@ -82,6 +83,7 @@ pub fn run() {
             app.manage(results::ResultStore::new(&app.path().app_cache_dir()?));
             app.manage(commands::ClipState::default());
             app.manage(commands::MenuState::default());
+            app.manage(commands::McpState::default());
             app.manage(commands::NameIndexes::default());
             app.manage(commands::Jobs::default());
             app.manage(chart::ChartCache::default());
@@ -171,6 +173,14 @@ pub fn run() {
             commands::access_plan,
             commands::access_script,
             commands::access_apply,
+            commands::mcp_subscribe,
+            commands::mcp_status,
+            commands::mcp_configure,
+            commands::mcp_start,
+            commands::mcp_stop,
+            commands::mcp_disconnect,
+            commands::mcp_reply,
+            commands::mcp_test,
             commands::transfer_plan,
             commands::transfer_run,
             commands::backup_tools,

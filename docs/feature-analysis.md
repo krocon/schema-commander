@@ -133,7 +133,7 @@ Prompts) · **Stufe** = meine Empfehlung: **1** Grundlage (ohne das ist es kein 
 |---|---|---|---|---|---|
 | H1 | **Server-Monitor**: laufende Sitzungen und Abfragen, Sperren, Abfrage beenden; aktualisiert sich | HeidiSQL, pgAdmin | M | 3 | ☑ [046](../prompts/done/046-server-monitor.md) |
 | H2 | **Benutzer und Rechte** verwalten | HeidiSQL, Navicat | L | 3 | ☑ [047](../prompts/done/047-benutzer-rechte.md) |
-| H3 | **KI-Anbindung über MCP** wie in log-commander und editlicious: ein Assistent darf (nach Freigabe) Schema lesen, Abfragen vorschlagen und ausführen; dazu „Abfrage erklären“ und „Text → SQL“ | DataGrip AI, eigene Projekte | M–L | 3 | ☑ [048](../prompts/048-mcp-ki.md) |
+| H3 | **KI-Anbindung über MCP** wie in log-commander und editlicious: ein Assistent darf (nach Freigabe) Schema lesen, Abfragen vorschlagen und ausführen; dazu „Abfrage erklären“ und „Text → SQL“ | DataGrip AI, eigene Projekte | M–L | 3 | ☑ [048](../prompts/done/048-mcp-ki.md) |
 | H4 | **Testdaten erzeugen** für eine Tabelle | DBeaver, DataGrip | M | 3 | ☑ [049](../prompts/049-testdaten.md) |
 
 ## 3. Was ich nicht bauen würde

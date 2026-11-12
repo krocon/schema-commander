@@ -86,10 +86,13 @@
   **Benutzer und Rechte**: Benutzer, Rollen, Mitgliedschaften und Rechte mit Herkunft (selbst, über Rolle),
   Matrix Tabellen × Rechte, Änderungen gesammelt als Anweisungen mit markierten Gefahren; Passwort nie in
   Vorschau, Verlauf oder Log (Prompt 047);
+  **KI-Steuerung über MCP** (standardmäßig aus): Sidecar `schema-commander-mcp` + Brücke auf 127.0.0.1 mit
+  Token; Freigabe je Verbindung (aus, Struktur, lesen, Schreiben als Vorschlag), Grenzen für Zeilen, Zeichen
+  und versteckte Spalten, Protokoll, Vorschlagsdialog (Prompt 048, `docs/mcp.md`);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a, 036–047),
+  erledigt: 001–034, 035a, 036–048),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -108,6 +111,7 @@
 | Version | `pnpm version:check`, `pnpm version:set X.Y.Z` (Quelle `package.json`) |
 | Lizenzhinweise | `pnpm notices` (schreibt `THIRD-PARTY-NOTICES.txt`; nach jeder Änderung an Abhängigkeiten), `pnpm notices:check` |
 | Release-Notizen | `pnpm release:notes` (Conventional Commits seit dem letzten Tag); Ablauf in `docs/release.md` |
+| MCP-Sidecar | `pnpm mcp:dev` (Debug-Sidecar neben die Debug-App), `node scripts/mcp-sidecar.mjs [Ziel]` (für ein Paket, mit `--config src-tauri/tauri.sidecar.conf.json`) |
 | Treiber gegen echte Server | `sh scripts/db-test-servers.sh up` (Docker: PostgreSQL, MySQL, MariaDB, SQL Server, CockroachDB, TimescaleDB auf 127.0.0.1), `pnpm rust:test:db`, danach `sh scripts/db-test-servers.sh down` |
 | Texte | `pnpm texts` (kein Text im Template, kein Deutsch außerhalb von `*.de.ts`) |
 | Alles prüfen | `pnpm check` |
@@ -149,6 +153,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                catalogs.spec.ts (jeder Katalog vollständig in beiden Sprachen)
   app/core/history/            HistoryApi (history_*) + DTOs – spiegelt history.rs
   app/core/import/             DataImportApi (load_*) + DTOs – spiegelt data_import.rs und db/load.rs
+  app/core/mcp/                McpApi (mcp_subscribe, mcp_start, mcp_stop, mcp_configure, mcp_status,
+                               mcp_disconnect, mcp_reply, mcp_test) – spiegelt mcp.rs und commands.rs
   app/core/menu/               MenuApi (set_app_menu, set_menu_state, subscribe_menu) + DTOs – spiegelt app_menu.rs
   app/core/saved/              SavedApi (saved_*) + DTOs – spiegelt saved.rs
   app/core/monitor/            MonitorApi (monitor_activity, monitor_kill, monitor_close) – spiegelt db/monitor.rs
@@ -209,6 +215,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/guard/          GuardDialog (Rückfrage), GuardService, guard-logic.ts (rein)
   app/features/history/        HistoryDialog (Listbox, Vorschau), HistoryPanel (Ansicht der Seitenleiste),
                                HistoryService (Root: aufzeichnen, blättern), history-logic.ts (rein)
+  app/features/mcp/            McpDialog (Schalter, Grenzen, Stufen, Einrichten, Protokoll), McpProposalDialog,
+                               McpService (Root: ein/aus, Regeln ans Backend, Vorschläge), mcp-logic.ts (rein)
   app/features/menus/          menu-model.ts (rein: Menüs aus Aktions-Ids → Fenster / native Spec), MenuService
                                (Root: Menüleiste, Kontextmenü), MenuBar (APG-Menubar für Windows/Linux)
   app/features/palette/        die eine Palette: Befehle und „Springen zu allem“ (CommandPalette), palette-logic.ts
@@ -260,6 +268,11 @@ src-tauri/                     Rust
   src/about.rs                 Angaben für den About-Dialog, Ort der Lizenzhinweise (rein, getestet)
   src/session.rs               Sitzung der Tabs: session.json + tabs/<id>.sql (rein, getestet)
   src/textfile.rs              .sql lesen/schreiben mit Kodierung (UTF-8/-BOM, UTF-16, Windows-1252)
+  src/mcp.rs                   KI-Steuerung, die Seite der App: Stufen je Verbindung, die Werkzeuge, lesende
+                               Sitzung, Grenzen der Antwort (`shape`), Vorschläge ans Fenster (ohne Tauri;
+                               mcp_tests.rs gegen die Demo-Datenbank)
+  mcp/                         Crate `sc-mcp`: Sidecar `schema-commander-mcp` (MCP über stdio) und die Brücke
+                               (bridge, client, server, host, probe, tools) – nur std und serde
   src/menu.rs                  das Menü von macOS, solange das Fenster lädt (ohne Cmd+W)
   src/app_menu.rs              native Menüleiste aus der MenuSpec des Fensters: Prüfung, Beschleuniger (rein, getestet)
   src/db/mod.rs                Profile, DbKind, TlsMode, Session-Trait, Flavor und Capabilities (wer antwortet, was
@@ -325,6 +338,7 @@ src-tauri/                     Rust
   src/db/value.rs              Cell, ColKind, QueryResult (verlustfrei über die Brücke)
   src/db/manager.rs            ConnectionManager: Sitzungen, Schlüsselbund-Regeln, Abbruch
   src/db/profiles.rs           connections.json (nie ein Geheimnis); db/secrets.rs: Secret, Schlüsselbund
+  tests/mcp_bridge.rs          MCP von Ende zu Ende ohne Fenster: Client-Zeilen → Server → Brücke → Werkzeuge
   tests/db_integration.rs      Treiber gegen echte Server (ignoriert; pnpm rust:test:db)
   src/themes.rs                eigene Farbschemata: themes.json, Grenzen, Import/Export (rein, getestet)
   src/error.rs                 AppError { code, message, details } – details: was die Datenbank zum Fehler sagt
@@ -413,6 +427,11 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   `--`; das Passwort ist nie ein Argument und steht in keiner Zeile, die das Fenster bekommt; was ein Lauf
   schreibt, entfernt er, wenn er scheitert oder angehalten wird. Wiederherstellen entscheidet im Backend nach der
   Schutzstufe.
+- **KI-Steuerung (MCP)**: aus, bis der Nutzer sie einschaltet – dann erst gibt es Port und Datei. Was ein
+  Assistent darf, entscheidet nur `mcp.rs` (Stufe je Verbindung); lesend heißt: von `guard::classify` als lesend
+  eingestuft **und** auf einer Sitzung, die auf dem Server nur lesen darf. Schreibendes läuft nie aus einem
+  Werkzeug, nur als Vorschlag über `tab.run` nach dem Klick. Ein neues Werkzeug braucht seine Stufe, seine
+  Grenzen und den Schnappschuss (`tools.snapshot.json`). Die Einstellung `ai` bleibt in `LOCAL_KEYS`.
 - **Benutzer und Rechte**: Das Fenster sendet Änderungen (`Change`), nie SQL; ein Passwort ist kein Teil davon
   (`passwords[i]` daneben, `Secret`). Gezeigt und durch `admit` geprüft wird die maskierte Anweisung, die echte
   entsteht erst beim Lauf. Ein neues Recht gehört in `privileges.json` und in `access::privileges`.

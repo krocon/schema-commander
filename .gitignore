@@ -9,6 +9,7 @@ npm-debug.log
 
 # Rust
 /src-tauri/target
+/src-tauri/binaries
 /src-tauri/gen/schemas
 
 # IDEs and editors

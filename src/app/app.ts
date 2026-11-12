@@ -36,6 +36,10 @@ import { PlanDialog } from './features/plan/plan-dialog';
 import { PlanService } from './features/plan/plan.service';
 import { AccessDialog } from './features/access/access-dialog';
 import { AccessService } from './features/access/access.service';
+import { McpDialog } from './features/mcp/mcp-dialog';
+import { McpProposalDialog } from './features/mcp/mcp-proposal-dialog';
+import { McpService } from './features/mcp/mcp.service';
+import { MCP_TEXTS } from './features/mcp/mcp-texts';
 import { MonitorDialog } from './features/monitor/monitor-dialog';
 import { MonitorService } from './features/monitor/monitor.service';
 import { TransferDialog } from './features/transfer/transfer-dialog';
@@ -149,6 +153,8 @@ const SIDEBAR_MIN = 140;
     PlanDialog,
     TransferDialog,
     MonitorDialog,
+    McpDialog,
+    McpProposalDialog,
     AccessDialog,
     BackupDialog,
     StructureDialog,
@@ -411,6 +417,16 @@ const SIDEBAR_MIN = 140;
           <span class="tx-status" [class.failed]="tabs.active()?.tx() === 'failed'">{{ tx }}</span>
         }
         <span>{{ status() }}</span>
+        @if (mcp.status().connections > 0) {
+          <button
+            type="button"
+            class="status-button"
+            [title]="mcpTexts.badgeHint"
+            (click)="mcp.open.set(true)"
+          >
+            {{ mcpTexts.badge(mcp.status().connections) }}
+          </button>
+        }
         @if (formatter.visible()) {
           <span>{{ formatTexts.running }}</span>
           <button type="button" class="status-button" (click)="formatter.cancel()">
@@ -602,6 +618,20 @@ const SIDEBAR_MIN = 140;
         <app-access-dialog [connectionId]="managed" (closed)="access.close()" />
       }
     }
+    @if (mcp.open()) {
+      @defer (on immediate) {
+        <app-mcp-dialog (closed)="mcp.open.set(false)" />
+      }
+    }
+    @if (mcp.proposal(); as proposed) {
+      @defer (on immediate) {
+        <app-mcp-proposal-dialog
+          [proposal]="proposed"
+          [connection]="mcp.connectionName(proposed)"
+          (answered)="mcp.answer($event)"
+        />
+      }
+    }
     @if (monitor.connectionId(); as watched) {
       @defer (on immediate) {
         <app-monitor-dialog [connectionId]="watched" (closed)="monitor.close()" />
@@ -761,6 +791,8 @@ export class App implements OnInit, OnDestroy {
   protected readonly plans = inject(PlanService);
   protected readonly transfer = inject(TransferService);
   protected readonly monitor = inject(MonitorService);
+  protected readonly mcp = inject(McpService);
+  protected readonly mcpTexts = MCP_TEXTS;
   protected readonly access = inject(AccessService);
   protected readonly backup = inject(BackupService);
   protected readonly structure = inject(StructureService);
@@ -918,6 +950,8 @@ export class App implements OnInit, OnDestroy {
     // after the settings: they name the active connection; the tabs name theirs
     await this.connections.load();
     await this.tabs.load();
+    // AI control (prompt 048): on again only if the user had it on
+    void this.mcp.init();
     const notice = this.actions.startNotice();
     if (notice) this.ownNotice.set(notice);
     // the backup of a text that was just typed must not wait for its timer when the window goes
@@ -1209,6 +1243,7 @@ export class App implements OnInit, OnDestroy {
         () => this.serverSearch.open(),
         () => this.connections.activeState().kind === 'open',
       ),
+      this.actions.register('AI_CONTROL', () => this.mcp.open.set(true)),
       this.actions.register(
         'MANAGE_ACCESS',
         () => {

@@ -621,6 +621,8 @@ export const ACTIONS = [
   { id: 'SERVER_MONITOR', label: 'Server monitor …', group: 'Schema', scope: 'global' },
   // Users, roles and rights (prompt 047)
   { id: 'MANAGE_ACCESS', label: 'Users and rights …', group: 'Schema', scope: 'global' },
+  // AI control over MCP (prompt 048)
+  { id: 'AI_CONTROL', label: 'AI control (MCP) …', group: 'Schema', scope: 'global' },
   {
     id: 'SCHEMA_SEARCH',
     label: 'Search in this schema or table …',

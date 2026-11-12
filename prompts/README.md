@@ -70,7 +70,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 | 045 | [Daten zwischen Datenbanken kopieren](done/045-daten-kopieren.md) ([Design](done/045-daten-kopieren.design.md)) | F4 | 011, 033, 043 | L | ✅ 12.11.2026 |
 | 046 | [Server-Monitor](done/046-server-monitor.md) ([Design](done/046-server-monitor.design.md)) | H1 | 003, 012 | M | ✅ 12.11.2026 |
 | 047 | [Benutzer und Rechte](done/047-benutzer-rechte.md) ([Design](done/047-benutzer-rechte.design.md)) | H2 | 012, 019 | L | ✅ 12.11.2026 |
-| 048 | [KI-Anbindung über MCP](048-mcp-ki.md) | H3 | 005, 008, 012 | M–L | offen |
+| 048 | [KI-Anbindung über MCP](done/048-mcp-ki.md) ([Design](done/048-mcp-ki.design.md)) | H3 | 005, 008, 012 | M–L | ✅ 12.11.2026 |
 | 049 | [Testdaten erzeugen](049-testdaten.md) | H4 | 008, 012, 033 | M | offen |
 
 ## editlicious

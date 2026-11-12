@@ -159,6 +159,7 @@ export const ACTION_LABELS_DE: Readonly<Record<ActionId, string>> = {
   SEARCH_SERVER: 'Auf dem Server suchen …',
   SERVER_MONITOR: 'Server-Monitor …',
   MANAGE_ACCESS: 'Benutzer und Rechte …',
+  AI_CONTROL: 'KI-Steuerung (MCP) …',
   SCHEMA_SEARCH: 'In diesem Schema oder dieser Tabelle suchen …',
   SCHEMA_IMPORT_TABLE: 'Datei in die Tabelle importieren …',
   SCHEMA_DETAILS: 'Objekt-Details und DDL …',

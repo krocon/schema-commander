@@ -354,6 +354,7 @@ export const MENU_BAR: readonly TopMenu[] = [
           'SEARCH_SERVER',
           'SERVER_MONITOR',
           'MANAGE_ACCESS',
+          'AI_CONTROL',
           'COMPARE_SCHEMAS',
           'TOGGLE_SYSTEM_SCHEMAS',
           '-',

@@ -71,6 +71,9 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   commented out
 - ER diagram of a schema, or of a table with its neighbours: arranged by itself, tables can be moved, zoom,
   search, three levels of detail; the same as lists beside it; export as SVG, Mermaid or DBML
+- AI control over MCP (off by default): an assistant on the same computer reads the structure, runs reading
+  queries within limits and proposes statements you confirm – per connection, with a protocol of every call
+  ([docs/mcp.md](docs/mcp.md))
 - Users and rights: users, roles and memberships, what each may do and through which role, a matrix of
   tables × rights; changes are collected, shown as statements with what is dangerous marked, and run after
   asking – a password is never shown, never in the history
