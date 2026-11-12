@@ -351,9 +351,9 @@ fn unwritten(
 pub fn plan(kind: DbKind, request: &Request) -> AppResult<Plan> {
     if matches!(
         kind,
-        DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino
+        DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino | DbKind::D1
     ) {
-        // no generator for its dialect yet: nothing is written with another one's (review 035b 5)
+        // no generator for its dialect yet (D1: no transaction to write the change in): nothing is written with another one's (review 035b 5)
         return Err(super::not_yet(kind, "schema compare and structure editing"));
     }
     let steps = match request {

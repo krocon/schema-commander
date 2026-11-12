@@ -443,6 +443,15 @@ fn object_kind(word: &str) -> Option<ObjectKind> {
 /// The schemas of the connection: of the database it is connected to (PostgreSQL, SQL Server), the
 /// databases of the server (MySQL, MariaDB), the attached files (SQLite).
 pub fn schemas(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<SchemaInfo>> {
+    if kind == DbKind::D1 {
+        // one database, and D1 lets nobody ask which files are attached
+        return Ok(vec![SchemaInfo {
+            name: "main".to_owned(),
+            quoted: "main".to_owned(),
+            system: false,
+            current: true,
+        }]);
+    }
     let sql = match kind {
         DbKind::Postgres => {
             "SELECT n.nspname::text, \

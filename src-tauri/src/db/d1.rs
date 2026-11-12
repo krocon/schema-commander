@@ -20,9 +20,13 @@ use std::time::{Duration, Instant};
 use ureq::Agent;
 
 /// Longest statement accepted (bytes); D1 itself takes 100 KB.
-pub const MAX_SQL_LEN: usize = 100 * 1024;
-/// An answer at most (bytes).
-const MAX_ANSWER: u64 = 256 * 1024 * 1024;
+pub const MAX_SQL_LEN: usize = 100_000;
+/// An answer at most (bytes); Cloudflare itself stops at 50 MB.
+const MAX_ANSWER: u64 = 64 * 1024 * 1024;
+/// Values a statement may have: Cloudflare takes a hundred.
+pub const MAX_PARAMS: usize = 100;
+/// One request at most: Cloudflare itself ends one after 30 seconds.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(45);
 /// The host of the API when the profile names none.
 pub const API_HOST: &str = "api.cloudflare.com";
 
@@ -37,7 +41,6 @@ struct Wire {
 
 pub struct D1 {
     wire: Arc<Wire>,
-    version: String,
 }
 
 /// An id of Cloudflare (account: 32 hex digits, database: a UUID) – it becomes part of the address,
@@ -111,11 +114,22 @@ pub fn connect(profile: &Profile, secret: Option<&Secret>, stop: Stop) -> AppRes
             "D1 needs an API token of Cloudflare: give it as the password",
         ));
     }
-    if profile.tls == super::TlsMode::Off && !local(profile.host.trim()) {
-        return Err(AppError::new(
-            ErrorCode::InvalidProfile,
-            "the token is sent only over TLS: switch TLS on",
-        ));
+    // the token opens a whole account: it goes to Cloudflare, over TLS that checks who answers –
+    // or to this machine, for a test
+    let host = profile.host.trim();
+    if !local(host) {
+        if !host.eq_ignore_ascii_case(API_HOST) {
+            return Err(AppError::new(
+                ErrorCode::InvalidProfile,
+                format!("D1 is reached at {API_HOST}: the token is sent nowhere else"),
+            ));
+        }
+        if !profile.tls.checks_server() {
+            return Err(AppError::new(
+                ErrorCode::InvalidProfile,
+                "the token is sent only over TLS that checks the certificate: choose such a mode",
+            ));
+        }
     }
     let account = id("account id (as the user)", &profile.user)?;
     let database = id("id of the database", &profile.database)?;
@@ -129,22 +143,10 @@ pub fn connect(profile: &Profile, secret: Option<&Secret>, stop: Stop) -> AppRes
         on: format!("{} (D1 {database})", profile.host.trim()),
         tunnel: parking_lot::Mutex::new(None),
     });
-    let mut session = D1 {
-        wire,
-        version: String::new(),
-    };
-    // the first question says whether token, account and database are right
-    let rows = session.ask(
-        "SELECT sqlite_version()",
-        &[],
-        Some(super::CONNECT_TIMEOUT),
-        stop,
-    )?;
-    session.version = rows
-        .into_iter()
-        .next()
-        .and_then(|r| r.into_iter().next().flatten())
-        .unwrap_or_default();
+    let mut session = D1 { wire };
+    // the first question says whether token, account and database are right (D1 lets nobody ask
+    // for the version of its SQLite)
+    session.ask("SELECT 1", &[], Some(super::CONNECT_TIMEOUT), stop)?;
     Ok(session)
 }
 
@@ -192,6 +194,23 @@ fn kind_of(c: &Cell) -> Option<ColKind> {
     })
 }
 
+/// The kind of a column over all its values: the API writes a REAL of 2.0 as `2`, so one fraction
+/// makes the column one of fractions; values of different sorts make it none in particular.
+fn kind_over<'a>(cells: impl Iterator<Item = &'a Cell>) -> ColKind {
+    let mut kind: Option<ColKind> = None;
+    for k in cells.filter_map(kind_of) {
+        kind = Some(match (kind, k) {
+            (None, k) => k,
+            (Some(a), b) if a == b => a,
+            (Some(ColKind::Int), ColKind::Float) | (Some(ColKind::Float), ColKind::Int) => {
+                ColKind::Float
+            }
+            _ => return ColKind::Other,
+        });
+    }
+    kind.unwrap_or(ColKind::Other)
+}
+
 /// A value as the API binds it – a text, as its documentation asks: SQLite reads it as what the column
 /// is it is compared with.
 fn param(bind: &Bind) -> AppResult<Value> {
@@ -225,6 +244,9 @@ impl Wire {
             .post(&self.url)
             .header("Content-Type", "application/json")
             .header("Authorization", format!("Bearer {}", self.token.expose()))
+            .config()
+            .timeout_global(Some(REQUEST_TIMEOUT))
+            .build()
             .send(body.to_string().as_str())
             .map_err(|e| transport(&self.on, &e))?;
         let status = response.status().as_u16();
@@ -319,6 +341,7 @@ impl D1 {
                 Err(RecvTimeoutError::Timeout) => {}
             }
             if stop() {
+                // the request is left behind: what it changes it still changes
                 return Err(super::cancelled());
             }
             if timeout.is_some_and(|t| started.elapsed() >= t) {
@@ -369,6 +392,15 @@ impl Session for D1 {
                 "statement too long (D1 takes 100 KB)",
             ));
         }
+        if params.len() > MAX_PARAMS {
+            return Err(AppError::new(
+                ErrorCode::InvalidQuery,
+                format!(
+                    "D1 takes {MAX_PARAMS} values in a statement, this one has {}: choose fewer rows or values",
+                    params.len()
+                ),
+            ));
+        }
         let started = Instant::now();
         let params = params.iter().map(param).collect::<AppResult<Vec<_>>>()?;
         let answer = self.one(sql, params, limits.timeout, stop)?;
@@ -383,10 +415,7 @@ impl Session for D1 {
             .enumerate()
             .map(|(i, name)| Column {
                 name,
-                kind: rows
-                    .iter()
-                    .find_map(|row| row.get(i).and_then(kind_of))
-                    .unwrap_or(ColKind::Other),
+                kind: kind_over(rows.iter().filter_map(|row| row.get(i))),
                 type_name: String::new(),
             })
             .collect();
@@ -396,7 +425,13 @@ impl Session for D1 {
             sink.start(&columns);
             for row in rows {
                 if row.len() != columns.len() {
-                    continue;
+                    return Err(AppError::new(
+                        ErrorCode::ConnectionFailed,
+                        format!(
+                            "{}: the answer of the server could not be read",
+                            self.wire.on
+                        ),
+                    ));
                 }
                 sent += 1;
                 if !sink.row(row) {
@@ -424,7 +459,7 @@ impl Session for D1 {
     }
 
     fn server_version(&mut self, _stop: Stop) -> AppResult<String> {
-        Ok(format!("Cloudflare D1 (SQLite {})", self.version))
+        Ok("Cloudflare D1".to_owned())
     }
 
     fn is_open(&self) -> bool {

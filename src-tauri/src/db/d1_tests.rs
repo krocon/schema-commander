@@ -89,7 +89,7 @@ fn result(columns: &[&str], rows: Value, changes: u64) -> Value {
 }
 
 fn version() -> Value {
-    result(&["sqlite_version()"], json!([["3.47.0"]]), 0)
+    result(&["1"], json!([[1]]), 0)
 }
 
 fn sql_of(seen: &Seen) -> &str {
@@ -119,7 +119,7 @@ fn run(s: &mut D1, sql: &str, params: &[Bind]) -> AppResult<QueryResult> {
 fn sends_what_the_api_asks_for_and_reads_its_answer() {
     let (port, seen) = server(|request| {
         let sql = sql_of(request);
-        if sql.starts_with("SELECT sqlite_version") {
+        if sql == "SELECT 1" {
             ok(&[version()])
         } else if sql.starts_with("INSERT") {
             ok(&[result(&[], json!([]), 2)])
@@ -127,25 +127,15 @@ fn sends_what_the_api_asks_for_and_reads_its_answer() {
             ok(&[result(
                 &["i", "f", "t", "nul", "bin", "big"],
                 json!([
-                    [
-                        null,
-                        1.5,
-                        "Grüße 🚀",
-                        null,
-                        [0, 255, 16],
-                        9007199254740993u64
-                    ],
-                    [42, 2.0, "", null, [], 1]
+                    [null, 2, "Grüße 🚀", null, [0, 255, 16], 9007199254740992u64],
+                    [42, 1.5, "", null, [], 1]
                 ]),
                 0,
             )])
         }
     });
     let mut s = open(port);
-    assert_eq!(
-        s.server_version(&|| false).unwrap(),
-        "Cloudflare D1 (SQLite 3.47.0)"
-    );
+    assert_eq!(s.server_version(&|| false).unwrap(), "Cloudflare D1");
     assert_eq!(s.transaction_state(&|| false), TxState::Idle);
     let r = run(
         &mut s,
@@ -176,6 +166,7 @@ fn sends_what_the_api_asks_for_and_reads_its_answer() {
         kinds,
         [
             ColKind::Int,
+            // `2` and `1.5`: a column of fractions, whatever comes first
             ColKind::Float,
             ColKind::Text,
             ColKind::Other,
@@ -202,12 +193,18 @@ fn sends_what_the_api_asks_for_and_reads_its_answer() {
         json!(["it's"])
     );
     assert!(run(&mut s, "SELECT ?1", &[Bind::Int("1; DROP".into())]).is_err());
+    // Cloudflare takes a hundred values: said in words before anything is sent
+    let many: Vec<Bind> = (0..101).map(|i| Bind::Int(i.to_string())).collect();
+    let before = seen.lock().unwrap().len();
+    let e = run(&mut s, "SELECT 1", &many).unwrap_err();
+    assert!(e.message.contains("100"), "{}", e.message);
+    assert_eq!(seen.lock().unwrap().len(), before);
 }
 
 #[test]
 fn a_text_of_several_statements_answers_with_its_last_one() {
     let (port, _) = server(|request| {
-        if sql_of(request).starts_with("SELECT sqlite_version") {
+        if sql_of(request) == "SELECT 1" {
             ok(&[version()])
         } else {
             ok(&[result(&[], json!([]), 1), result(&["n"], json!([[3]]), 0)])
@@ -238,13 +235,13 @@ fn says_what_cloudflare_said_and_never_the_token() {
         };
         if request.authorization != "Bearer tok-123" {
             error(401, 10000, "Authentication error")
-        } else if sql.starts_with("SELECT sqlite_version") {
+        } else if sql == "SELECT 1" {
             ok(&[version()])
         } else if sql.contains("FRM") {
             error(
                 400,
                 7500,
-                "near \"FRM\": syntax error at offset 12: SQLITE_ERROR",
+                "near \"FRM\": syntax error at offset 13: SQLITE_ERROR",
             )
         } else if sql.contains("_cf_KV") {
             error(400, 7500, "access to _cf_KV.key is prohibited: SQLITE_AUTH")
@@ -276,7 +273,7 @@ fn says_what_cloudflare_said_and_never_the_token() {
     let d = syntax.details.unwrap();
     assert_eq!(d.sqlstate.as_deref(), Some("7500"));
     // the offset counts bytes, the place characters: `ü` is two bytes
-    assert_eq!(d.position, Some(12));
+    assert_eq!(d.position, Some(13));
     assert_eq!(
         run(&mut s, "SELECT * FROM _cf_KV", &[]).unwrap_err().code,
         ErrorCode::PermissionDenied
@@ -315,18 +312,39 @@ fn refuses_a_profile_that_would_leak_or_mislead() {
         let e = connect(&p, Some(&token), stop).err().unwrap();
         assert_eq!(e.code, ErrorCode::InvalidProfile, "{user} {database}");
     }
-    // the token goes over TLS or not at all
-    let mut far = profile(443);
-    far.host = API_HOST.into();
-    let e = connect(&far, Some(&token), stop).err().unwrap();
-    assert_eq!(e.code, ErrorCode::InvalidProfile);
-    assert!(!e.message.contains("tok-123"));
+    // the token goes to Cloudflare over TLS that checks who answers – or not at all
+    for (host, tls) in [
+        (API_HOST, TlsMode::Off),
+        (API_HOST, TlsMode::Require),
+        (API_HOST, TlsMode::Prefer),
+        ("api.cloudflare.com.evil.example", TlsMode::Verify),
+        ("d1.example.com", TlsMode::Verify),
+    ] {
+        let mut far = profile(443);
+        far.host = host.into();
+        far.tls = tls;
+        let e = connect(&far, Some(&token), stop).err().unwrap();
+        assert_eq!(e.code, ErrorCode::InvalidProfile, "{host} {tls:?}");
+        assert!(!e.message.contains("tok-123"));
+    }
+    // and never through a tunnel
+    let mut tunnelled = profile(443);
+    tunnelled.host = API_HOST.into();
+    tunnelled.tls = TlsMode::Verify;
+    tunnelled.ssh = Some(crate::ssh::SshTarget {
+        host: "jump.example.com".into(),
+        port: 0,
+        user: "me".into(),
+        auth: Default::default(),
+        key_file: String::new(),
+    });
+    assert!(crate::db::profiles::check(&tunnelled).is_err());
 }
 
 #[test]
 fn a_request_that_is_stopped_is_left_behind() {
     let (port, _) = server(|request| {
-        if sql_of(request).starts_with("SELECT sqlite_version") {
+        if sql_of(request) == "SELECT 1" {
             ok(&[version()])
         } else {
             std::thread::sleep(Duration::from_secs(3));

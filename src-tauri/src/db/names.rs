@@ -521,7 +521,11 @@ fn ask(s: &mut dyn Session, sql: &str, params: &[&str], stop: Stop) -> AppResult
 }
 
 /// The schemas of SQLite: the files that are attached.
-fn sqlite_files(s: &mut dyn Session, stop: Stop) -> AppResult<Vec<String>> {
+fn sqlite_files(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<String>> {
+    if kind == DbKind::D1 {
+        // one database, and D1 lets nobody ask which files are attached
+        return Ok(vec!["main".to_owned()]);
+    }
     Ok(ask(
         s,
         "SELECT name FROM pragma_database_list ORDER BY seq",
@@ -620,7 +624,7 @@ pub fn read_objects(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<
         )?,
         DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => {
             let mut rows = Vec::new();
-            for file in sqlite_files(s, stop)? {
+            for file in sqlite_files(s, kind, stop)? {
                 // a schema cannot be bound: its name goes in quoted (as in `meta.rs`)
                 let quoted = super::meta::quote_always(&file, DbKind::Sqlite);
                 rows.extend(ask(
@@ -726,7 +730,7 @@ pub fn read_columns(
         )?,
         DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => {
             let mut rows = Vec::new();
-            for file in sqlite_files(s, stop)? {
+            for file in sqlite_files(s, kind, stop)? {
                 let quoted = super::meta::quote_always(&file, DbKind::Sqlite);
                 rows.extend(ask(
                     s,
