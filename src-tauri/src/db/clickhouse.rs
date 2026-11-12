@@ -183,7 +183,14 @@ pub fn connect(profile: &Profile, secret: Option<&Secret>, stop: Stop) -> AppRes
         base: format!(
             "{}://{}:{}/",
             if secure { "https" } else { "http" },
-            profile.host.trim(),
+            {
+                let host = profile.host.trim();
+                if host.contains(':') && !host.starts_with('[') {
+                    format!("[{host}]")
+                } else {
+                    host.to_owned()
+                }
+            },
             profile.port_or_default()
         ),
         user: profile.user.trim().to_owned(),
@@ -296,10 +303,27 @@ fn cell(v: Option<String>, kind: ColKind) -> Cell {
     }
 }
 
+/// A text as the server reads a `param_…`: in its escaped form, where a backslash starts an escape
+/// and a tab or a line break ends the value (review 035d 1).
+fn escaped(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\0' => out.push_str("\\0"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 /// A value as the text of a `param_…` of the request; the placeholder says what it is.
 fn param(bind: &Bind) -> AppResult<String> {
     Ok(match bind {
-        Bind::Text(v) | Bind::Date(v) | Bind::Datetime(v) => v.clone(),
+        Bind::Text(v) | Bind::Date(v) | Bind::Datetime(v) => escaped(v),
         Bind::Int(v) => Bind::int(v)?.to_string(),
         Bind::Decimal(v) => {
             let t = v.trim();
@@ -422,10 +446,12 @@ impl Click {
             .send(sql.as_str());
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn one(
         &self,
         sql: &str,
         params: &[String],
+        timeout: Option<Duration>,
         with_session: bool,
         query_id: &str,
         sink: &mut dyn RowSink,
@@ -445,7 +471,17 @@ impl Click {
         for (i, value) in params.iter().enumerate() {
             request = request.query(format!("param_p{}", i + 1), value);
         }
-        let mut response = request.send(sql).map_err(|e| transport(&self.on, &e))?;
+        // with a time limit the request itself gives up some seconds after it, should the server not
+        // answer the stop any more; without one a statement may run as long as it takes
+        let mut response = match timeout {
+            Some(t) => request
+                .config()
+                .timeout_global(Some(t + Duration::from_secs(15)))
+                .build()
+                .send(sql),
+            None => request.send(sql),
+        }
+        .map_err(|e| transport(&self.on, &e))?;
         let status = response.status().as_u16();
         if !(200..300).contains(&status) {
             let body = response
@@ -465,11 +501,15 @@ impl Click {
             .and_then(|v| v.get("written_rows")?.as_str()?.parse::<u64>().ok());
         let mut lines = BufReader::with_capacity(256 * 1024, response.body_mut().as_reader());
         let mut line = String::new();
+        let mut bytes: Vec<u8> = Vec::new();
         let mut next = |line: &mut String| -> AppResult<bool> {
-            line.clear();
-            let read = lines.read_line(line).map_err(|e| {
+            // a String of ClickHouse holds any bytes: what is no UTF-8 is shown as such, the query goes on
+            bytes.clear();
+            let read = lines.read_until(b'\n', &mut bytes).map_err(|e| {
                 AppError::new(ErrorCode::ConnectionFailed, format!("{}: {e}", self.on))
             })?;
+            line.clear();
+            line.push_str(&String::from_utf8_lossy(&bytes));
             Ok(read > 0)
         };
         let cut = |line: &str| -> Vec<String> {
@@ -542,6 +582,9 @@ impl Click {
             rows += 1;
             if !sink.row(cells) {
                 truncated = true;
+                // no more rows are wanted: the server must not go on producing them (and keep the
+                // session busy with it)
+                self.kill(query_id);
                 break;
             }
         }
@@ -600,7 +643,7 @@ impl Click {
                 }
             }
             let _done = Done(&done);
-            self.one(sql, params, with_session, &query_id, sink, plain)
+            self.one(sql, params, timeout, with_session, &query_id, sink, plain)
         });
         match result {
             Err(_) if late.load(Ordering::Relaxed) => Err(AppError::new(
@@ -640,7 +683,7 @@ impl Session for Click {
         timeout: Option<Duration>,
         stop: Stop,
     ) -> AppResult<super::TextRows> {
-        let params: Vec<String> = params.iter().map(|p| (*p).to_owned()).collect();
+        let params: Vec<String> = params.iter().map(|p| escaped(p)).collect();
         let mut sink = TextSink(Vec::new());
         // in the session: what was set for it (read only) holds for the app's own questions too
         self.watched(sql, &params, timeout, true, &mut sink, true, stop)?;
@@ -850,6 +893,12 @@ mod tests {
         assert_eq!(param(&Bind::Decimal(" -12.50 ".into())).unwrap(), "-12.50");
         assert!(param(&Bind::Decimal("1e5; drop".into())).is_err());
         assert!(param(&Bind::Int("x".into())).is_err());
+        // the server reads a value in its escaped form
+        assert_eq!(
+            param(&Bind::Text("C:\\temp\ta\nb".into())).unwrap(),
+            "C:\\\\temp\\ta\\nb"
+        );
+        assert_eq!(escaped("\\N"), "\\\\N");
         assert_eq!(param(&Bind::Bool(true)).unwrap(), "true");
         assert_ne!(fresh_id("q"), fresh_id("q"));
         assert!(

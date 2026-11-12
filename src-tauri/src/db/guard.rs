@@ -188,7 +188,12 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
             i += 1;
             while i < n {
                 // Oracle knows no backslash escape, whatever the settings
-                if chars[i] == '\\' && quote != '`' && kind != DbKind::Oracle && i + 1 < n {
+                // ClickHouse takes it as an escape inside backticks too (review 035d 2)
+                if chars[i] == '\\'
+                    && (quote != '`' || kind == DbKind::Clickhouse)
+                    && kind != DbKind::Oracle
+                    && i + 1 < n
+                {
                     if chars[i + 1] == quote || chars[i + 1] == '\\' {
                         ambiguous = true;
                     }
@@ -727,6 +732,10 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
         // who may log in and what a role is: it gives away like a GRANT does (review 047 M1)
         class = Class::Dangerous;
     }
+    if kind == DbKind::Clickhouse && class == Class::Read && reaches_out(toks) {
+        // a table function that reads files of the server or calls another one: no plain reading
+        class = Class::Write;
+    }
     if class < Class::Dangerous && has(DANGEROUS_WORDS) {
         // ALTER … DROP …, a batch that also drops
         class = Class::Dangerous;
@@ -745,6 +754,42 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
         class = Class::Dangerous;
     }
     Some(class)
+}
+
+/// ClickHouse: a table function that leaves the database – a file of the server, another server, a
+/// program – called anywhere in the statement.
+fn reaches_out(toks: &[Tok]) -> bool {
+    const OUT: &[&str] = &[
+        "URL",
+        "URLCLUSTER",
+        "REMOTE",
+        "REMOTESECURE",
+        "CLUSTER",
+        "CLUSTERALLREPLICAS",
+        "FILE",
+        "FILECLUSTER",
+        "S3",
+        "S3CLUSTER",
+        "GCS",
+        "HDFS",
+        "HDFSCLUSTER",
+        "AZUREBLOBSTORAGE",
+        "MYSQL",
+        "POSTGRESQL",
+        "MONGODB",
+        "REDIS",
+        "SQLITE",
+        "ODBC",
+        "JDBC",
+        "EXECUTABLE",
+        "DELTALAKE",
+        "ICEBERG",
+        "HUDI",
+        "INPUT",
+    ];
+    toks.windows(2).any(|w| {
+        matches!(&w[0], Tok::Word(name) if OUT.contains(&name.as_str())) && w[1] == Tok::Open
+    })
 }
 
 /// An `UPDATE` or `DELETE` statement (also inside parentheses, as in a CTE) without a `WHERE` of its own.
@@ -957,6 +1002,19 @@ mod tests {
         assert_eq!(classify("OPTIMIZE TABLE t FINAL", k), Ddl);
         assert_eq!(classify("TRUNCATE TABLE t", k), Dangerous);
         assert_eq!(read_only_statement(k), Some("SET readonly = 1"));
+        // review 035d 2: a backslash escapes inside backticks there – what follows is seen
+        assert_eq!(
+            classify(
+                "SELECT 1 AS `a\\` , 2 AS ` ; DROP TABLE t ; SELECT ` , 3 AS `b`",
+                k
+            ),
+            Dangerous
+        );
+        // review 035d 7: table functions that leave the database are no plain reading
+        assert_eq!(classify("SELECT * FROM url('http://x/y', 'CSV')", k), Write);
+        assert_eq!(classify("SELECT * FROM remote('other', db.t)", k), Write);
+        assert_eq!(classify("SELECT * FROM file('x.csv')", k), Write);
+        assert_eq!(classify("SELECT file, url FROM t", k), Read);
     }
 
     /// DuckDB (prompt 035c): extensions are code from the net, files are written by statements.

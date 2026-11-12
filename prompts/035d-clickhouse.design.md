@@ -53,4 +53,22 @@ das nicht sicher.
 
 ## Review
 
-Siehe unten, sobald der zweite Blick durch ist.
+Ein zweiter, nur lesender Blick über den Branch. Behoben, je mit Test (die ersten drei gegen den Container bestätigt):
+
+| # | Befund | Behebung |
+|---|---|---|
+| 1 (hoch) | Der Server liest einen `param_…` in seiner maskierten Form: `C:\temp` kam als `C:<Tab>emp` an, ein echter Tab ließ die Anfrage scheitern | Werte werden maskiert (`\\`, `\t`, `\n`, `\r`, `\0`) |
+| 2 (hoch) | In Backticks ist `\` dort ein Escape (anders als bei MySQL): Ein Name mit `\`` beendete seine Quotes, und der Schutz sah ein `DROP` dahinter nicht | `meta::quote` schreibt den Backslash aus; `guard::scan` nimmt ihn in Backticks als Escape |
+| 3 | Bytes, die kein UTF-8 sind (`unhex('FF')`), brachen die Abfrage ab | Zeilen werden als Bytes gelesen, Unlesbares als Ersatzzeichen gezeigt |
+| 4 | Ohne Antwort des Servers hing eine Anfrage endlos | Mit Zeitlimit gibt auch die Anfrage selbst auf (Limit + 15 s). **Offen:** Ohne Limit und bei totem Netz wirkt „Abbrechen“ erst, wenn das Betriebssystem die Verbindung aufgibt |
+| 6 | Ein Tab im manuellen Modus schickte `BEGIN TRANSACTION` | Das Backend sagt, dass es dort keine Transaktionen gibt; der Umschalter im Fenster ebenso |
+| 7 | Tabellenfunktionen, die die Datenbank verlassen (`url`, `remote`, `file`, `s3` …), galten als lesend | für ClickHouse nicht mehr: Ein Assistent bekommt sie nicht ausgeführt |
+| 8 | Ein abgeschnittenes Ergebnis lief auf dem Server weiter | `KILL QUERY`, sobald keine Zeilen mehr gewollt sind |
+| 9 | Import und Kopieren blieben im Menü; vor einem abgelehnten Import hätte eine Tabelle entstehen können | Aktionen hängen am Flag `edit`; `create_table` lehnt ab |
+| 10 | IPv6-Adressen ohne Klammern | werden geklammert |
+
+Offen geblieben:
+
+- `#`-Kommentare, Heredocs (`$tag$…$tag$`) und verschachtelte Kommentare kennt weder der Treiber beim Zerlegen noch
+  das Fenster: Solche Skripte lehnt der Server ab (kein falscher Lauf).
+- Ein UInt64-Filterwert über 2⁶³ wird abgelehnt; `rows_affected` fehlt bei einem `INSERT` hinter einem Kommentar.

@@ -628,6 +628,16 @@ impl ConnectionManager {
             max_rows: MAX_ROWS,
             timeout,
         };
+        if manual && profile.kind == DbKind::Clickhouse {
+            // there is nothing to open: said in words instead of a refused BEGIN (review 035d 6)
+            return (
+                Err(super::not_yet(
+                    profile.kind,
+                    "transactions (switch the tab back to auto-commit)",
+                )),
+                *open.tx.lock(),
+            );
+        }
         if manual
             && *open.tx.lock() == TxState::Idle
             && !guard::is_transaction_control(sql, profile.kind)

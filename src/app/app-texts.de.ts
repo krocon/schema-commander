@@ -44,6 +44,8 @@ export const APP_DE: Translation<typeof APP_EN> = {
   trust: 'Vertrauen',
   txStillOpen:
     'Die Transaktion ist noch offen: erst Commit oder Rollback, dann zurück zu Auto-Commit.',
+  noTransactions:
+    'Diese Datenbank kennt keine Transaktionen: Jede Anweisung gilt, sobald sie gelaufen ist.',
   historyConnectionOn: 'Der Verlauf merkt sich die Anweisungen dieser Verbindung wieder.',
   historyConnectionOff: 'Der Verlauf merkt sich keine Anweisungen dieser Verbindung mehr.',
   historyOn: 'Der Verlauf ist eingeschaltet.',

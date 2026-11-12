@@ -1286,7 +1286,10 @@ export class App implements OnInit, OnDestroy {
             table: null,
           });
         },
-        () => this.connections.activeState().kind === 'open' && !this.transfer.running(),
+        () =>
+          this.connections.activeState().kind === 'open' &&
+          !this.transfer.running() &&
+          this.connections.capabilities(this.connections.active()?.id ?? '').edit,
       ),
       this.actions.register(
         'BACKUP_DATABASE',
@@ -1301,7 +1304,10 @@ export class App implements OnInit, OnDestroy {
       this.actions.register(
         'IMPORT_DATA',
         () => this.dataImporter.open(),
-        () => this.connections.activeState().kind === 'open' && !this.dataImporter.running(),
+        () =>
+          this.connections.activeState().kind === 'open' &&
+          !this.dataImporter.running() &&
+          this.connections.capabilities(this.connections.active()?.id ?? '').edit,
       ),
       this.actions.register(
         'CANCEL_EXPORT',
@@ -1328,6 +1334,11 @@ export class App implements OnInit, OnDestroy {
         () => {
           const t = tab();
           if (!t) return;
+          // a database without transactions has nothing to switch to (prompt 035d)
+          if (!t.manual() && !this.connections.capabilities(t.connectionId() ?? '').edit) {
+            this.ownNotice.set(APP_TEXTS.noTransactions);
+            return;
+          }
           if (t.manual() && txOpen(t.tx())) {
             this.ownNotice.set(APP_TEXTS.txStillOpen);
             return;

@@ -309,6 +309,38 @@ fn clickhouse_binds_values_and_a_read_only_session_cannot_write() {
         &[Bind::Text(evil.into())],
     );
     assert_eq!(rows(&found), json!([[7, "a \\ b"]]));
+    // review 035d 1: the server reads a parameter in its escaped form – a backslash, a tab and a line
+    // break arrive as they were given
+    let odd = "C:\\temp\ta\nb \\N";
+    let back = bound(
+        &mut s,
+        "SELECT {p1:String} AS v, length({p1:String})",
+        &[Bind::Text(odd.into())],
+    );
+    assert_eq!(rows(&back), json!([[odd, odd.len()]]));
+    // review 035d 3: bytes that are no text do not end the query
+    let binary = run(&mut s, "SELECT unhex('FF00FF') AS b, 1 AS one");
+    assert_eq!(rows(&binary)[0][1], json!(1));
+    // review 035d 2: a name with a backslash and a backtick stays one name
+    let name = "sc_c x\\`; DROP TABLE sc_c_customer; --";
+    let quoted = meta::quote(name, K);
+    run(
+        &mut s,
+        &format!("CREATE TABLE {quoted} (id UInt8) ENGINE = Memory"),
+    );
+    assert_eq!(
+        rows(&bound(
+            &mut s,
+            "SELECT count() FROM system.tables WHERE database = 'shop' AND name = {p1:String}",
+            &[Bind::Text(name.into())]
+        )),
+        json!([[1]])
+    );
+    run(&mut s, &format!("DROP TABLE {quoted}"));
+    assert_eq!(
+        rows(&run(&mut s, "SELECT count() FROM sc_c_customer")),
+        json!([[3]])
+    );
     let typed = bound(
         &mut s,
         "SELECT id FROM sc_c_order WHERE placed_at >= {p1:String} AND total > {p2:String} AND customer_id = {p3:Int64} AND {p4:Bool}",

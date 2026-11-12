@@ -347,7 +347,9 @@ pub fn quote(name: &str, kind: DbKind) -> String {
 /// A name in quotes, whatever it is.
 pub fn quote_always(name: &str, kind: DbKind) -> String {
     match kind {
-        DbKind::Mysql | DbKind::Clickhouse => format!("`{}`", name.replace('`', "``")),
+        DbKind::Mysql => format!("`{}`", name.replace('`', "``")),
+        // a backslash escapes inside backticks there (not in MySQL): written out as one
+        DbKind::Clickhouse => format!("`{}`", name.replace('\\', "\\\\").replace('`', "``")),
         DbKind::Sqlserver => format!("[{}]", name.replace(']', "]]")),
         DbKind::Postgres | DbKind::Sqlite | DbKind::Duckdb => {
             format!("\"{}\"", name.replace('"', "\"\""))
@@ -1294,6 +1296,18 @@ mod tests {
         // the others keep their rule
         assert_eq!(quote("COMMENT", DbKind::Postgres), "\"COMMENT\"");
         assert_eq!(quote("level", DbKind::Postgres), "level");
+    }
+
+    /// ClickHouse (035d): a backslash escapes inside backticks – a name cannot end its quotes with one.
+    #[test]
+    fn clickhouse_names_keep_their_backslash_inside_the_quotes() {
+        let q = |name: &str| quote(name, DbKind::Clickhouse);
+        assert_eq!(q("orders"), "orders");
+        assert_eq!(q("my table"), "`my table`");
+        assert_eq!(q("a`b"), "`a``b`");
+        assert_eq!(q("x\\`; DROP TABLE t; --"), "`x\\\\``; DROP TABLE t; --`");
+        // MySQL takes a backslash as it is there
+        assert_eq!(quote("a\\b", DbKind::Mysql), "`a\\b`");
     }
 
     #[test]
