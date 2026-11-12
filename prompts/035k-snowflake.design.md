@@ -31,7 +31,11 @@ und Kopieren gibt es dort nicht.
 - Bearbeiten, Import, Testdaten, Kopieren; Plan, Monitor, Rechte, Struktur.
 - Lager, Rolle und Schema je Verbindung wählen (sie kommen aus den Vorgaben des Benutzers); Anmeldung über den
   Browser (SSO), OAuth, Passwort mit zweitem Faktor; Schlüssel mit Passphrase.
-- Mehrere Anweisungen in einem Text (die API will dafür ihre Zahl wissen); Snowflake Scripting ohne `$$`.
+- Mehrere Anweisungen in einem Text (die API will dafür ihre Zahl wissen) – und damit alles, was eine Sitzung
+  meint: Transaktionen, `USE`, `ALTER SESSION`, Sitzungsvariablen lehnt der Treiber mit Worten ab; temporäre
+  Tabellen leben nur in ihrer einen Anweisung.
+- Der Name der Datenbank geht, wie getippt, an die API (dort zählt Groß und Klein). Ein Kontoname mit `_` steht
+  im Host mit `-`: Ob Snowflake ihn so in der Zusicherung des Schlüsselpaars annimmt, ist offen.
 - Fremdschlüssel (dort ein Versprechen, das niemand prüft), Routinen, Stages, Streams, Tasks im Baum.
 
 ## Nicht getestet
@@ -48,3 +52,27 @@ und Kopieren gibt es dort nicht.
   Token und Schlüsselpaar (Fingerabdruck gegen `openssl`, wo es da ist).
 - `filter.rs` (Tabellen-Ansicht, freie Bedingung), `guard.rs` (Kommentare, `$$`), `mod.rs` (Flags); im Fenster
   Zerlegen.
+
+## Review
+
+Ein zweiter Agent hat den Stand gegen Snowflakes Dokumentation gelesen (nur lesend): 13 Befunde, keiner ein Weg
+für Token oder Schlüssel nach außen. Behoben, jeder mit Test:
+
+| # | Befund | Behoben durch |
+|---|---|---|
+| 1 | `SELECT SYSTEM$CANCEL_ALL_QUERIES(…)`, `SYSTEM$SEND_EMAIL` und `seq.NEXTVAL` galten als lesend | `SYSTEM$…(` ist schreibend bis auf wenige, die nur Auskunft geben; `NEXTVAL` ebenso |
+| 2 | `BEGIN; UPDATE …; ROLLBACK` ging als drei Anfragen hinaus: Das `UPDATE` wäre geblieben | `needs_a_session`: Transaktion, `USE`, `ALTER SESSION`, `SET`/`UNSET` werden abgelehnt, nichts wird gesendet |
+| 3 | Ohne Vorgabe-Lager scheitert alles nach dem Verbinden, ohne dass man erfährt, was zu tun ist | Hinweis am Fehler („no active warehouse“ → `ALTER USER … SET DEFAULT_WAREHOUSE`); Lager und Rolle am Profil bleiben offen (oben) |
+| 4 | Ein Block von Snowflake Scripting ohne `$$` wurde an seinen `;` zerlegt, die Teile einzeln ausgeführt | Der Zerleger hält `[DECLARE …] BEGIN … END` zusammen (auch als Rumpf hinter `AS`), mit `IF`/`FOR`/`WHILE`/`LOOP`/`CASE` |
+| 5 | Ein Teil des Ergebnisses, der kein JSON oder leer war, fehlte still | unlesbare Antwort, Teil ohne Zeilen und andere Zeilenzahl als angekündigt sind Fehler |
+| 6 | Ein Stolpern beim Warten ließ die Anweisung unbemerkt weiterlaufen | Nachfragen (nie die Anweisung) wird bis zu dreimal wiederholt, danach abgebrochen; `timeout` geht mit |
+| 7 | `START`, `SAMPLE`, `QUALIFY` … standen ungequotet im SQL | `SNOWFLAKE_RESERVED` |
+| 8 | Der Namensindex fragte die ganze Datenbank auf einmal („returned too much data“) | Schema für Schema, der Name gebunden |
+| 9 | Ein Token ging auch an `localhost` | nur noch in den Tests |
+| 10 | Backslash galt auch in `"…"` als Escape: Die freie Bedingung las einen Namen anders als Snowflake | nur in `'…'` – im Schutz, in der freien Bedingung, im Zerleger |
+| 11 | Jede abgelehnte Anmeldung hieß nur „login failed“ | Grund nach der Nummer (Uhr, Kontoname, Schlüssel; 403: API nicht offen) – nie in den Worten des Servers |
+| 12 | Benutzername nur in ASCII groß geschrieben | `to_uppercase` |
+| 13 | `INSERT OVERWRITE`, `CREATE OR REPLACE TABLE` nicht als gefährlich eingestuft; Zahl mit Exponent abgelehnt | gefährlich (auch für BigQuery); als `REAL` gebunden |
+
+Offen geblieben: Lager, Rolle und Schema am Profil (3); die Schreibung des Kontos in der Zusicherung (12); das
+Zeitlimit von 60 s für das Laden eines Teils; ob ein `SELECT` je `stats` trägt.

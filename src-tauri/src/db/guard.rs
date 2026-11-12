@@ -244,6 +244,8 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                 if chars[i] == '\\'
                     && (quote != '`' || matches!(kind, DbKind::Clickhouse | DbKind::Bigquery))
                     && !matches!(kind, DbKind::Oracle | DbKind::Trino | DbKind::Firebird)
+                    // Snowflake: a quote in a name is doubled, a backslash there is a character
+                    && !(kind == DbKind::Snowflake && quote == '"')
                     && i + 1 < n
                 {
                     // (in BigQuery the backslash always is the escape: nothing to doubt)
@@ -595,6 +597,16 @@ const DDL_WORDS: &[&str] = &[
     "REFRESH", "ATTACH", "DETACH", "OPTIMIZE", "REPAIR", "SECURITY",
 ];
 
+/// Snowflake's `SYSTEM$` functions that only tell.
+const SNOWFLAKE_TELLING: &[&str] = &[
+    "SYSTEM$TYPEOF",
+    "SYSTEM$CLUSTERING_INFORMATION",
+    "SYSTEM$CLUSTERING_DEPTH",
+    "SYSTEM$GET_TAG",
+    "SYSTEM$STREAM_HAS_DATA",
+    "SYSTEM$LAST_CHANGE_COMMIT_TIME",
+];
+
 const DANGEROUS_WORDS: &[&str] = &["DROP", "TRUNCATE", "GRANT", "REVOKE", "DENY"];
 
 /// Pragmas of SQLite that only tell something.
@@ -797,6 +809,29 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
         && matches!(words.get(1).copied(), Some("ROLE" | "USER" | "LOGIN"))
     {
         // who may log in and what a role is: it gives away like a GRANT does (review 047 M1)
+        class = Class::Dangerous;
+    }
+    if kind == DbKind::Snowflake && class == Class::Read {
+        // `SYSTEM$…(…)` cancels queries, ends sessions, sends mail: writing, but for the few that only
+        // tell; a sequence moves when its next value is read
+        let system = toks.windows(2).any(|w| {
+            matches!(&w[0], Tok::Word(name) if name.starts_with("SYSTEM$")
+                && !SNOWFLAKE_TELLING.contains(&name.as_str()))
+                && w[1] == Tok::Open
+        });
+        if system || has(&["NEXTVAL"]) {
+            class = Class::Write;
+        }
+    }
+    if matches!(kind, DbKind::Snowflake | DbKind::Bigquery)
+        && class != Class::Dangerous
+        && ((start == "INSERT" && words.get(1).copied() == Some("OVERWRITE"))
+            || (start == "CREATE"
+                && words.get(1).copied() == Some("OR")
+                && words.get(2).copied() == Some("REPLACE")
+                && words.iter().skip(3).take(3).any(|w| *w == "TABLE")))
+    {
+        // both empty a table that is there, whatever it held
         class = Class::Dangerous;
     }
     if kind == DbKind::Bigquery
@@ -1137,6 +1172,28 @@ mod tests {
         }
         assert_eq!(classify("INSERT INTO T VALUES (1)", k), Write);
         assert_eq!(classify("DROP TABLE T", k), Dangerous);
+        // review 035k 1: functions that act, and a sequence that moves
+        for acts in [
+            "SELECT SYSTEM$CANCEL_ALL_QUERIES(123)",
+            "SELECT system$abort_session(1)",
+            "SELECT SYSTEM$SEND_EMAIL('i', 'a@b.c', 's', 'body')",
+            "SELECT SEQ.NEXTVAL",
+        ] {
+            assert_eq!(classify(acts, k), Write, "{acts}");
+        }
+        assert_eq!(classify("SELECT SYSTEM$TYPEOF(A) FROM T", k), Read);
+        // review 035k 13: both empty what is there
+        assert_eq!(
+            classify("INSERT OVERWRITE INTO T SELECT * FROM S", k),
+            Dangerous
+        );
+        assert_eq!(
+            classify("CREATE OR REPLACE TRANSIENT TABLE T (A INT)", k),
+            Dangerous
+        );
+        assert_eq!(classify("CREATE OR REPLACE VIEW V AS SELECT 1", k), Ddl);
+        // review 035k 10: a backslash in a name is a character – the name ends at its quote
+        assert_ne!(classify("SELECT \"a\\\" ; DROP TABLE T --\"", k), Read);
         assert_ne!(classify("CALL P()", k), Read);
         assert_ne!(classify("COPY INTO @stage FROM T", k), Read);
         assert_ne!(classify("PUT file:///x @stage", k), Read);

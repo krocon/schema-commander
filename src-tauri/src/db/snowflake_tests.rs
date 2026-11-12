@@ -332,7 +332,30 @@ fn says_what_snowflake_said_and_never_the_login() {
         &json!({"code": "390144", "message": "JWT token is invalid: eyJ…"}),
         "",
     );
-    assert_eq!(login.message, "login failed");
+    // why, by its number – and nothing of what the server quotes
+    assert!(
+        login
+            .message
+            .starts_with("login failed: the signed assertion")
+    );
+    assert!(!login.message.contains("eyJ"));
+    let refused = failed("h", 403, &json!({"message": "token pat-123 refused"}), "");
+    assert!(refused.message.contains("HTTP 403") && !refused.message.contains("pat-123"));
+    // a user without a default warehouse is told what to do: no USE lasts here
+    let cold = failed(
+        "h",
+        422,
+        &json!({"code": "000606", "sqlState": "57P03",
+            "message": "No active warehouse selected in the current session."}),
+        "SELECT 1",
+    );
+    assert!(
+        cold.details
+            .unwrap()
+            .hint
+            .unwrap()
+            .contains("DEFAULT_WAREHOUSE")
+    );
     assert_eq!(
         code(200, "390303", "Invalid OAuth access token."),
         ErrorCode::AuthFailed
@@ -443,4 +466,130 @@ fn logs_in_with_a_token_or_a_key_pair() {
         claims["iss"],
         json!(format!("127.ADA.SHA256:{fingerprint}"))
     );
+}
+
+/// Review 035k 2: what means the session cannot work one request per statement – said, not sent.
+#[test]
+fn statements_that_need_a_session_are_refused_in_words() {
+    for sql in [
+        "BEGIN",
+        "begin;",
+        "-- now\nBEGIN TRANSACTION",
+        "BEGIN WORK",
+        "START TRANSACTION",
+        "COMMIT",
+        "/* all */ rollback;",
+        "USE SCHEMA PUBLIC",
+        "// which\nuse warehouse WH",
+        "ALTER SESSION SET TIMEZONE = 'UTC'",
+        "SET x = 1",
+        "UNSET x",
+    ] {
+        assert!(needs_a_session(sql).is_some(), "{sql}");
+    }
+    for sql in [
+        "BEGIN\n  LET x := 1;\n  RETURN x;\nEND",
+        "BEGIN RETURN 1; END;",
+        "SELECT 1",
+        "ALTER TABLE T ADD COLUMN C INT",
+        "UPDATE T SET A = 1",
+        "SHOW TABLES",
+    ] {
+        assert_eq!(needs_a_session(sql), None, "{sql}");
+    }
+    let (port, seen) = server(|_| (200, one()));
+    let mut s = connect(&profile(port), None, &|| false).unwrap();
+    let before = seen.lock().unwrap().len();
+    let e = run(&mut s, "BEGIN", &[]).unwrap_err();
+    assert_eq!(e.code, ErrorCode::Unsupported);
+    assert_eq!(seen.lock().unwrap().len(), before, "nothing was sent");
+}
+
+/// Review 035k 5: a result with a hole is an error, never fewer rows.
+#[test]
+fn a_result_with_a_hole_is_an_error() {
+    let row_type =
+        || json!([{"name": "N", "type": "fixed", "scale": 0, "precision": 9, "nullable": false}]);
+    // the second part comes without its rows
+    let (port, _) = server(move |seen| {
+        if seen.path.contains("partition=1") {
+            (200, json!({"message": "ok"}).to_string())
+        } else if statement(seen).starts_with("SELECT N") {
+            (200, result(row_type(), json!([["1"]]), 2))
+        } else {
+            (200, one())
+        }
+    });
+    let mut s = connect(&profile(port), None, &|| false).unwrap();
+    let e = run(&mut s, "SELECT N FROM T", &[]).unwrap_err();
+    assert_eq!(e.code, ErrorCode::ConnectionFailed);
+    assert!(e.message.contains("incomplete"), "{}", e.message);
+
+    // fewer rows than the part announced
+    let (port, _) = server(move |seen| {
+        if statement(seen).starts_with("SELECT N") {
+            (200, result(row_type(), json!([]), 1))
+        } else {
+            (200, one())
+        }
+    });
+    let mut s = connect(&profile(port), None, &|| false).unwrap();
+    assert!(run(&mut s, "SELECT N FROM T", &[]).is_err());
+
+    // an answer that is no JSON
+    let (port, _) = server(move |seen| {
+        if statement(seen).starts_with("SELECT N") {
+            (200, "{\"data\": [[\"1\"".to_owned())
+        } else {
+            (200, one())
+        }
+    });
+    let mut s = connect(&profile(port), None, &|| false).unwrap();
+    let e = run(&mut s, "SELECT N FROM T", &[]).unwrap_err();
+    assert!(e.message.contains("cannot be read"), "{}", e.message);
+}
+
+/// Review 035k 6: a stumble while waiting is asked again; the statement is sent once.
+#[test]
+fn a_stumble_while_waiting_is_asked_again() {
+    let polls = Arc::new(Mutex::new(0u32));
+    let count = Arc::clone(&polls);
+    let (port, seen) = server(move |seen| {
+        if seen.method == "GET" {
+            let mut n = count.lock().unwrap();
+            *n += 1;
+            if *n <= 2 {
+                return (503, json!({"message": "busy"}).to_string());
+            }
+            return (200, one());
+        }
+        if statement(seen) == "SELECT SLOW" {
+            return (
+                202,
+                json!({"statementHandle": "01b2-aa", "message": "running"}).to_string(),
+            );
+        }
+        (200, one())
+    });
+    let mut s = connect(&profile(port), None, &|| false).unwrap();
+    let r = run(&mut s, "SELECT SLOW", &[]).unwrap();
+    assert_eq!(r.rows.len(), 1);
+    let sent = seen.lock().unwrap();
+    assert_eq!(
+        sent.iter()
+            .filter(|r| statement(r) == "SELECT SLOW")
+            .count(),
+        1
+    );
+    assert_eq!(*polls.lock().unwrap(), 3);
+}
+
+#[test]
+fn a_number_with_an_exponent_is_bound_as_a_real() {
+    assert_eq!(
+        binding(&Bind::Decimal("1e5".into())).unwrap(),
+        json!({"type": "REAL", "value": "1e5"})
+    );
+    assert!(binding(&Bind::Decimal("1e".into())).is_err());
+    assert!(binding(&Bind::Decimal("inf".into())).is_err());
 }

@@ -853,7 +853,9 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
                         if (matches!(
                             kind,
                             DbKind::Mysql | DbKind::Clickhouse | DbKind::Snowflake
-                        ) && close != b'`')
+                        ) && close != b'`'
+                            // Snowflake: in a quoted name a backslash is a character
+                            && !(kind == DbKind::Snowflake && close == b'"'))
                             || kind == DbKind::Bigquery =>
                     {
                         i += 2;
@@ -1156,6 +1158,8 @@ mod tests {
         };
         assert!(free("TOTAL > 100 AND NAME = 'it\\'s; fine'").is_ok());
         for no in [
+            // review 035k 10: the name ends at its quote, the rest would be a comment
+            "X = \"a\\\" -- \"",
             "A = 1 // and the rest",
             "A = $$ ' $$) ; DROP TABLE T ; SELECT ($$ ' $$",
             "A = ?",

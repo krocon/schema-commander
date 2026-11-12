@@ -29,6 +29,8 @@ use ureq::Agent;
 /// Longest statement accepted (bytes).
 pub const MAX_SQL_LEN: usize = 1_000_000;
 /// One request at most.
+/// How often a question that failed on the way is asked again (never the statement itself).
+const RETRIES: u64 = 3;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 /// A partition of a result at most (bytes, unpacked).
 const MAX_PART: u64 = 256 * 1024 * 1024;
@@ -190,7 +192,25 @@ fn failed(on: &str, status: u16, body: &Value, sql: &str) -> AppError {
     let message = field("message");
     let code = field("code");
     if matches!(status, 401 | 403) || matches!(code, "390144" | "390303" | "390100" | "390101") {
-        return AppError::new(ErrorCode::AuthFailed, "login failed");
+        // why, as far as the number says it – never in the words of the server, which may quote what
+        // was sent
+        return AppError::new(
+            ErrorCode::AuthFailed,
+            match (code, status) {
+                ("390144", _) => "login failed: the signed assertion was not accepted – check the clock \
+                                  of this machine, the account in the host name and that the public key \
+                                  is the user's (390144)"
+                    .to_owned(),
+                ("", 403) => "login failed: access refused (HTTP 403) – is the SQL API open to this \
+                              user and this network?"
+                    .to_owned(),
+                ("", _) => "login failed".to_owned(),
+                (code, _) if code.chars().all(|c| c.is_ascii_digit()) => {
+                    format!("login failed ({code})")
+                }
+                _ => "login failed".to_owned(),
+            },
+        );
     }
     if message.is_empty() {
         return AppError::new(ErrorCode::ConnectionFailed, format!("{on}: HTTP {status}"));
@@ -233,6 +253,10 @@ fn failed(on: &str, status: u16, body: &Value, sql: &str) -> AppError {
     };
     let state = field("sqlState");
     AppError::new(kind, clean(message)).with(ErrorDetails {
+        // there is no session a `USE WAREHOUSE` could last in: the warehouse is the user's default
+        hint: lower.contains("no active warehouse").then(|| {
+            "the user needs a default warehouse: ALTER USER … SET DEFAULT_WAREHOUSE = …".to_owned()
+        }),
         sqlstate: match (state.is_empty(), code.is_empty()) {
             (false, false) => Some(format!("{state} / {code}")),
             (false, true) => Some(state.to_owned()),
@@ -280,11 +304,18 @@ pub fn connect(profile: &Profile, secret: Option<&Secret>, stop: Stop) -> AppRes
             subject: format!(
                 "{}.{}",
                 account_of(host),
-                profile.user.trim().to_ascii_uppercase()
+                profile.user.trim().to_uppercase()
             ),
             signed: None,
         }
     } else if !token.is_empty() {
+        // a token opens the account wherever it is sent: only the tests talk to this machine
+        if local(host) && !cfg!(test) {
+            return Err(AppError::new(
+                ErrorCode::InvalidProfile,
+                "Snowflake is reached at <account>.snowflakecomputing.com: the login is sent nowhere else",
+            ));
+        }
         Login::Token(Secret::new(token))
     } else if local(host) {
         Login::None
@@ -411,6 +442,9 @@ fn binding(bind: &Bind) -> AppResult<Value> {
             let plain = digits.chars().any(|c| c.is_ascii_digit())
                 && digits.chars().all(|c| c.is_ascii_digit() || c == '.')
                 && digits.matches('.').count() <= 1;
+            if !plain && t.contains(['e', 'E']) && t.parse::<f64>().is_ok_and(f64::is_finite) {
+                return Ok(json!({"type": "REAL", "value": t}));
+            }
             if !plain {
                 return Err(AppError::new(
                     ErrorCode::InvalidQuery,
@@ -425,6 +459,46 @@ fn binding(bind: &Bind) -> AppResult<Value> {
         Bind::Bool(v) => ("BOOLEAN", v.to_string()),
     };
     Ok(json!({"type": kind, "value": value}))
+}
+
+/// A statement that means the session – which the SQL API does not keep between two requests: a
+/// transaction, `USE`, `ALTER SESSION`, a session variable. `BEGIN … END` (a block) is none of them.
+fn needs_a_session(sql: &str) -> Option<&'static str> {
+    let mut rest = sql.trim_start();
+    loop {
+        if let Some(after) = rest.strip_prefix("--").or_else(|| rest.strip_prefix("//")) {
+            rest = after.split_once('\n').map_or("", |(_, r)| r).trim_start();
+        } else if let Some(after) = rest.strip_prefix("/*") {
+            rest = after.split_once("*/").map_or("", |(_, r)| r).trim_start();
+        } else {
+            break;
+        }
+    }
+    let words: Vec<String> = rest
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '$'))
+        .filter(|w| !w.is_empty())
+        .take(2)
+        .map(str::to_ascii_uppercase)
+        .collect();
+    let second = words.get(1).map_or("", String::as_str);
+    // what follows the first word directly: `BEGIN;` and `BEGIN` alone open a transaction
+    let alone = rest
+        .trim_end()
+        .trim_end_matches(';')
+        .trim_end()
+        .chars()
+        .all(|c| c.is_ascii_alphabetic());
+    match words.first().map_or("", String::as_str) {
+        "BEGIN" if alone || matches!(second, "TRANSACTION" | "WORK" | "NAME") => {
+            Some("a transaction")
+        }
+        "START" if second == "TRANSACTION" => Some("a transaction"),
+        "COMMIT" | "ROLLBACK" => Some("a transaction"),
+        "USE" => Some("USE"),
+        "ALTER" if second == "SESSION" => Some("ALTER SESSION"),
+        "SET" | "UNSET" => Some("a session variable"),
+        _ => None,
+    }
 }
 
 /// What one statement gave.
@@ -526,7 +600,15 @@ impl Snowflake {
                 })?;
             bytes = unpacked;
         }
-        let v: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+        let read = serde_json::from_slice::<Value>(&bytes);
+        if read.is_err() && (200..300).contains(&status) {
+            // an answer that is cut or no JSON is no answer: rows are never left out silently
+            return Err(AppError::new(
+                ErrorCode::ConnectionFailed,
+                format!("{}: the answer cannot be read (HTTP {status})", self.on),
+            ));
+        }
+        let v = read.unwrap_or(Value::Null);
         if v.is_null() && !(200..300).contains(&status) {
             let said: String = String::from_utf8_lossy(&bytes).chars().take(200).collect();
             return Err(match status {
@@ -558,6 +640,10 @@ impl Snowflake {
         if !self.database.is_empty() {
             body["database"] = json!(self.database);
         }
+        if let Some(t) = timeout {
+            // the server ends it too, should this client be gone by then
+            body["timeout"] = json!(t.as_secs().saturating_add(10));
+        }
         if !bindings.is_empty() {
             body["bindings"] = Value::Object(
                 bindings
@@ -580,6 +666,7 @@ impl Snowflake {
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '-');
         let mut wait = Duration::from_millis(100);
+        let mut failures = 0;
         loop {
             match status {
                 200 => break,
@@ -600,8 +687,26 @@ impl Snowflake {
                     }
                     std::thread::sleep(wait);
                     wait = (wait * 2).min(Duration::from_secs(1));
-                    (status, page) =
-                        self.call("GET", &format!("/api/v2/statements/{handle}"), None)?;
+                    // asking again is safe; the statement itself is never sent twice
+                    match self.call("GET", &format!("/api/v2/statements/{handle}"), None) {
+                        Ok((s, p)) if s < 500 => {
+                            failures = 0;
+                            (status, page) = (s, p);
+                        }
+                        Ok(_) | Err(_) if failures < RETRIES => failures += 1,
+                        hit => {
+                            // nobody waits for it any more: it shall not run on unseen
+                            let _ = self.call(
+                                "POST",
+                                &format!("/api/v2/statements/{handle}/cancel"),
+                                None,
+                            );
+                            return Err(match hit {
+                                Ok((s, p)) => failed(&self.on, s, &p, sql),
+                                Err(e) => e,
+                            });
+                        }
+                    }
                 }
                 _ => return Err(failed(&self.on, status, &page, sql)),
             }
@@ -652,11 +757,43 @@ impl Snowflake {
         if answer.columns.is_empty() {
             return Ok(answer);
         }
+        if partitions > 1 && !handle_ok {
+            return Err(AppError::new(
+                ErrorCode::ConnectionFailed,
+                format!(
+                    "{}: a result in parts without a handle to ask for them",
+                    self.on
+                ),
+            ));
+        }
+        let expected = |page: &Value, part: usize| -> Option<u64> {
+            page.pointer("/resultSetMetaData/partitionInfo")
+                .and_then(Value::as_array)
+                .and_then(|p| p.get(part))
+                .and_then(|p| p.get("rowCount"))
+                .and_then(Value::as_u64)
+        };
+        let counts: Vec<Option<u64>> = (0..partitions).map(|p| expected(&page, p)).collect();
         sink.start(&answer.columns);
         let kinds: Vec<ColKind> = answer.columns.iter().map(|c| c.kind).collect();
         let mut part = 0;
         loop {
-            if let Some(rows) = page.get("data").and_then(Value::as_array) {
+            let rows = page.get("data").and_then(Value::as_array);
+            let came = rows.map_or(0, |r| r.len() as u64);
+            // a part without rows, or with other rows than announced, is a result with a hole
+            if (rows.is_none() && part > 0)
+                || counts
+                    .get(part)
+                    .copied()
+                    .flatten()
+                    .is_some_and(|n| n != came)
+            {
+                return Err(AppError::new(
+                    ErrorCode::ConnectionFailed,
+                    format!("{}: part {part} of the result is incomplete", self.on),
+                ));
+            }
+            if let Some(rows) = rows {
                 for row in rows {
                     let values = row.as_array();
                     let cells: Vec<Cell> = kinds
@@ -693,15 +830,24 @@ impl Snowflake {
                     "the statement took too long",
                 ));
             }
-            let (status, next) = self.call(
-                "GET",
-                &format!("/api/v2/statements/{handle}?partition={part}"),
-                None,
-            )?;
-            if status != 200 {
-                return Err(failed(&self.on, status, &next, sql));
-            }
-            page = next;
+            let mut failures = 0;
+            page = loop {
+                let got = self.call(
+                    "GET",
+                    &format!("/api/v2/statements/{handle}?partition={part}"),
+                    None,
+                );
+                match got {
+                    Ok((200, next)) => break next,
+                    // too many requests, or a server that stumbled: the part is asked for again
+                    Ok((s, _)) if (s == 429 || s >= 500) && failures < RETRIES => {}
+                    Err(e) if e.code == ErrorCode::ConnectionFailed && failures < RETRIES => {}
+                    Ok((s, next)) => return Err(failed(&self.on, s, &next, sql)),
+                    Err(e) => return Err(e),
+                }
+                failures += 1;
+                std::thread::sleep(Duration::from_millis(300 * failures));
+            };
         }
     }
 }
@@ -756,6 +902,15 @@ impl Session for Snowflake {
         }
         if sql.len() > MAX_SQL_LEN {
             return Err(AppError::new(ErrorCode::InvalidQuery, "statement too long"));
+        }
+        if let Some(what) = needs_a_session(sql) {
+            return Err(AppError::new(
+                ErrorCode::Unsupported,
+                format!(
+                    "{what}: every statement is a request of its own here, so this would not last to the \
+                     next one – name objects in full (database.schema.table); each statement is kept as it ran"
+                ),
+            ));
         }
         let started = Instant::now();
         let bindings = params.iter().map(binding).collect::<AppResult<Vec<_>>>()?;

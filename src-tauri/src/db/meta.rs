@@ -581,6 +581,29 @@ const BIGQUERY_RESERVED: &[&str] = &[
     "within",
 ];
 
+/// What Snowflake reserves beyond the common list (its documentation, „Reserved & limited keywords“).
+const SNOWFLAKE_RESERVED: &[&str] = &[
+    "ACCOUNT",
+    "CONNECT",
+    "CONNECTION",
+    "FOLLOWING",
+    "GSCLUSTER",
+    "ILIKE",
+    "INCREMENT",
+    "ISSUE",
+    "LATERAL",
+    "MINUS",
+    "ORGANIZATION",
+    "QUALIFY",
+    "REGEXP",
+    "RLIKE",
+    "SAMPLE",
+    "START",
+    "TABLESAMPLE",
+    "TRY_CAST",
+    "WHENEVER",
+];
+
 fn bigquery_reserved(name: &str) -> bool {
     BIGQUERY_RESERVED.contains(&name.to_ascii_lowercase().as_str())
 }
@@ -622,6 +645,7 @@ fn plain(name: &str, kind: DbKind) -> bool {
         && !(kind == DbKind::Oracle && oracle_reserved(name))
         && !(kind == DbKind::Firebird && firebird_reserved(name))
         && !(kind == DbKind::Bigquery && bigquery_reserved(name))
+        && !(kind == DbKind::Snowflake && SNOWFLAKE_RESERVED.contains(&name))
 }
 
 /// A name as it is written in SQL: as it is where that is safe, quoted otherwise (spaces, upper case in
@@ -2153,5 +2177,17 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    /// Review 035k 7: what Snowflake reserves is quoted, or the statement does not parse.
+    #[test]
+    fn snowflake_quotes_its_own_reserved_words() {
+        let k = DbKind::Snowflake;
+        assert_eq!(quote("START", k), "\"START\"");
+        assert_eq!(quote("SAMPLE", k), "\"SAMPLE\"");
+        assert_eq!(quote("QUALIFY", k), "\"QUALIFY\"");
+        assert_eq!(quote("STARTED_AT", k), "STARTED_AT");
+        // elsewhere the word is a name like any other
+        assert_eq!(quote("sample", DbKind::Postgres), "sample");
     }
 }
