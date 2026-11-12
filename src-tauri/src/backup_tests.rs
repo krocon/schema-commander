@@ -27,42 +27,44 @@ fn table(schema: &str, table: &str) -> TableName {
 
 #[test]
 fn finds_a_tool_in_the_path_then_in_the_usual_folders() {
-    let home = PathBuf::from("/home/u");
-    let path = std::env::join_paths(["/opt/tools", "relative/bin", "/usr/bin"]).unwrap();
-    let have =
-        |wanted: &'static [&'static str]| move |p: &Path| wanted.iter().any(|w| p == Path::new(w));
+    // absolute where the test runs: on Windows a path is absolute only with its drive
+    let root = Path::new(if cfg!(windows) { "C:\\" } else { "/" });
+    let home = root.join("home").join("u");
+    let tools = root.join("opt").join("tools");
+    let bin = root.join("usr").join("bin");
+    let path =
+        std::env::join_paths([tools.clone(), PathBuf::from("relative/bin"), bin.clone()]).unwrap();
+    let have = |wanted: PathBuf| move |p: &Path| p == wanted;
     let suffix = if cfg!(windows) { ".exe" } else { "" };
-    let in_path = format!("/opt/tools/pg_dump{suffix}");
-    let leaked: &'static str = Box::leak(in_path.clone().into_boxed_str());
+    let in_path = tools.join(format!("pg_dump{suffix}"));
     let found = find(
         Tool::PgDump,
         None,
         Some(path.as_os_str()),
         Some(&home),
-        &have(Box::leak(Box::new([leaked]))),
+        &have(in_path.clone()),
     );
-    assert_eq!(found.unwrap(), PathBuf::from(&in_path));
+    assert_eq!(found.unwrap(), in_path);
     // a relative folder of the PATH is never searched
-    let relative: &'static str =
-        Box::leak(format!("relative/bin/pg_dump{suffix}").into_boxed_str());
+    let relative = Path::new("relative/bin").join(format!("pg_dump{suffix}"));
     let none = find(
         Tool::PgDump,
         None,
         Some(path.as_os_str()),
         None,
-        &have(Box::leak(Box::new([relative]))),
+        &have(relative),
     );
     assert_eq!(none.unwrap_err().code, ErrorCode::ProgramNotFound);
     // MariaDB ships the tool under its own name
-    let maria: &'static str = Box::leak(format!("/usr/bin/mariadb-dump{suffix}").into_boxed_str());
+    let maria = bin.join(format!("mariadb-dump{suffix}"));
     let found = find(
         Tool::MysqlDump,
         None,
         Some(path.as_os_str()),
         None,
-        &have(Box::leak(Box::new([maria]))),
+        &have(maria.clone()),
     );
-    assert_eq!(found.unwrap(), PathBuf::from(maria));
+    assert_eq!(found.unwrap(), maria);
     // nothing anywhere
     let nothing = find(Tool::Psql, None, None, Some(&home), &|_| false);
     assert_eq!(nothing.unwrap_err().code, ErrorCode::ProgramNotFound);
@@ -129,6 +131,13 @@ fn pg_dump_gets_its_values_joined_to_the_options_and_no_password() {
     let target = Path::new("/backups/-file name.dump");
     let i = dump(&endpoint(DbKind::Postgres), &spec, target).unwrap();
     assert_eq!(i.tool, Tool::PgDump);
+    // beside the target, with the separator of the system
+    let file = format!(
+        "--file={}",
+        Path::new("/backups")
+            .join("-file name.dump.sc-part")
+            .display()
+    );
     assert_eq!(
         i.args,
         [
@@ -138,7 +147,7 @@ fn pg_dump_gets_its_values_joined_to_the_options_and_no_password() {
             "--dbname=shop",
             "--no-password",
             "--format=custom",
-            "--file=/backups/-file name.dump.sc-part",
+            file.as_str(),
             "--schema-only",
             "--no-owner",
             "--no-privileges",

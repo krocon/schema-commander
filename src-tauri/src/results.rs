@@ -1390,7 +1390,20 @@ mod tests {
         fs::create_dir_all(&old).unwrap();
         fs::write(old.join("1.rows"), b"x").unwrap();
         let long_ago = std::time::SystemTime::now() - Duration::from_secs(3 * 24 * 3600);
-        File::open(&old).unwrap().set_modified(long_ago).unwrap();
+        // Windows opens a folder only when asked to (FILE_FLAG_BACKUP_SEMANTICS), and sets its time only
+        // with the right to write attributes (FILE_WRITE_ATTRIBUTES)
+        #[cfg(windows)]
+        let folder = {
+            use std::os::windows::fs::OpenOptionsExt;
+            fs::OpenOptions::new()
+                .access_mode(0x0100)
+                .custom_flags(0x0200_0000)
+                .open(&old)
+                .unwrap()
+        };
+        #[cfg(not(windows))]
+        let folder = File::open(&old).unwrap();
+        folder.set_modified(long_ago).unwrap();
         let fresh = dir.path().join("results").join("999998");
         fs::create_dir_all(&fresh).unwrap();
         let _store = ResultStore::new(dir.path());
