@@ -44,8 +44,10 @@ export class ServerSearchService {
   readonly running = signal(false);
   readonly report = signal<FindReport | null>(null);
   readonly error = signal<string | null>(null);
-  /** The text of the search whose results are shown: what „show rows“ filters by. */
-  private searched = '';
+  /** The search whose results are shown: what „show rows“ filters by. */
+  private searched: SearchChoices | null = null;
+  /** Whether the rows of a hit can be shown as a table (not for a regular expression). */
+  readonly rowsOpen = signal(true);
   readonly hasHits = computed(
     () => this.results().tables.length > 0 || this.results().sources.length > 0,
   );
@@ -68,7 +70,8 @@ export class ServerSearchService {
     if (this.running()) return;
     const id = this.nextId++;
     this.job = id;
-    this.searched = choices.text;
+    this.searched = choices;
+    this.rowsOpen.set(choices.mode !== 'regex');
     this.results.set(NO_RESULTS);
     this.report.set(null);
     this.error.set(null);
@@ -105,13 +108,15 @@ export class ServerSearchService {
     table: string,
     column: string,
   ): Promise<void> {
+    const spec = this.searched ? hitFilter(column, this.searched) : null;
+    if (!spec) return;
     this.request.set(null);
     await this.tables.openWith(
       target.connectionId,
       schema === '' ? null : schema,
       table,
       table,
-      hitFilter(column, this.searched),
+      spec,
     );
   }
 

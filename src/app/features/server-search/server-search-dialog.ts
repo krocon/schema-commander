@@ -184,7 +184,7 @@ import { SERVER_SEARCH_TEXTS } from './server-search-texts';
                   <li>
                     <span class="place">{{ hit.column || t.anyColumn }}</span>
                     <span class="preview">{{ hit.preview }}</span>
-                    @if (hit.column) {
+                    @if (hit.column && search.rowsOpen()) {
                       <button
                         type="button"
                         class="link"

@@ -105,6 +105,8 @@ describe('ServerSearchDialog', () => {
       sources: 1,
       cancelled: false,
       lost: false,
+      resume: null,
+      moreSources: false,
     };
     const { el, type, click } = await open();
     // nothing typed: nothing to search
@@ -183,7 +185,7 @@ describe('ServerSearchDialog', () => {
     expect(queries.tableQueries.at(-1)?.query).toMatchObject({
       schema: 'public',
       table: 'customer',
-      conditions: [{ column: 'mail', op: 'contains', values: ["max' --"] }],
+      conditions: [{ column: 'mail', op: 'containsNoCase', values: ["max' --"] }],
     });
     expect(el).toBeTruthy();
   });

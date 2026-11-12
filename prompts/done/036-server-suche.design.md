@@ -13,7 +13,7 @@
 | E4 | Spalten | Art aus dem Typnamen: Texte (Vorgabe), Texte und Zahlen, alles außer Binärdaten. Eine Tabelle ohne passende Spalte wird ausgelassen und genannt | Aufgabe 1 |
 | E5 | Treffer | Je Tabelle höchstens *n* Zeilen (Vorgabe 20; eine mehr wird gelesen, um „weitere“ zu wissen). Zurück kommen die ersten 4000 Zeichen jeder gesuchten Spalte; **welche Spalte** traf, findet das Backend lokal und schneidet eine Vorschau um die Stelle. Sieht nur die Datenbank den Treffer (eigene Regeln für Buchstaben, Stelle hinter 4000 Zeichen), bleibt die Spalte leer | Aufgabe 5 „Spalte, Fundstelle, Vorschau“ |
 | E6 | Rücksicht | nur `SELECT`, eine Tabelle nach der anderen, Zeitlimit je Tabelle (Vorgabe 10 s), Tabellen über einer geschätzten Zeilenzahl (Vorgabe 1 Mio.) werden ausgelassen und genannt. Keine Parallelität | Aufgabe 6 |
-| E7 | Job | `find_on_server` mit Ereignissen (`start`, `table`, `rows`, `source`, `skipped`) und `cancel_job` (Ids ab 6 · 10⁹); läuft auf der Sitzung der Verbindung. Was gemeldet ist, bleibt nach einem Abbruch stehen | Akzeptanzkriterium 2 |
+| E7 | Job | `find_on_server` mit Ereignissen (`start`, `table`, `rows`, `source`, `skipped`) und `cancel_job` (Ids ab 6 · 10⁹); läuft auf einer **eigenen Sitzung** (Review). Was gemeldet ist, bleibt nach einem Abbruch stehen | Akzeptanzkriterium 2 |
 | E8 | Rechte | Lehnt der Server eine Tabelle ab, wird sie mit seinem Text als „ausgelassen“ gemeldet; die übrigen werden durchsucht | Akzeptanzkriterium 3 |
 | E9 | Ergebnis | **im Dialog**, nicht als Tab: Zeilen je Tabelle, Definitionen, Ausgelassenes – als Listen. „Zeilen zeigen“ öffnet die Tabelle als Tabellen-Ansicht mit der Bedingung „Spalte enthält Text“ (das Fenster nennt Spalte und Text, das Backend bindet); „Definition zeigen“ öffnet die Objekt-Details; „Treffer kopieren“ legt alles als TSV in die Zwischenablage | siehe „Nicht umgesetzt“ |
 | E10 | Aufruf | `SEARCH_SERVER` (`Mod+K Mod+G`, Menü Verbindung → Schema), `SCHEMA_SEARCH` am Knoten eines Schemas oder einer Tabelle (sucht nur dort) | jede Funktion ist eine Aktion |
@@ -27,7 +27,7 @@ skipRowsOver }`. Fenster: `FindApi` (`core/find/`), `ServerSearchService`, `Serv
 
 ## Geprüft
 
-- **Rust** (6 Tests, SQLite): Arten der Spalten; **der Text ist gebunden** und steht in keiner Anweisung (alle vier
+- **Rust** (9 Tests, SQLite): Arten der Spalten; **der Text ist gebunden** und steht in keiner Anweisung (alle vier
   Dialekte, böser Text, böser Spaltenname); Maskierung; Stelle und Vorschau eines Treffers; Suche über alle
   Tabellen mit und ohne Groß/Klein, `%` und `_` als Zeichen, Zahlen, eine Tabelle, Treffergrenze; Definitionen
   (View, Trigger, Tabelle) und Namen; **300 Tabellen: Abbruch, Gefundenes bleibt**.
@@ -45,7 +45,25 @@ skipRowsOver }`. Fenster: `FindApi` (`core/find/`), `ServerSearchService`, `Serv
 
 ## Review (zweiter Agent, nur lesend)
 
-REVIEW_PLACEHOLDER
+**Einschleusen:** kein Befund – in jede Anweisung gehen nur gequotete Namen, feste Wörter, Zahlen und Platzhalter;
+der Suchtext nur als gebundener Wert; `ESCAPE '!'` stimmt in allen vier Dialekten. Behoben (roter Test zuerst):
+
+| Befund | Behoben |
+|---|---|
+| **H1** Ein Zeitlimit je Tabelle beendete die ganze Suche und schloss die Verbindung der App: `Session::ask` bricht nicht auf dem Server ab, sondern lässt die Verbindung fallen | Die Datensuche läuft als Anweisung des Treibers (`execute_bound`): Eine zu langsame Tabelle wird **auf dem Server** beendet und ausgelassen, die Sitzung bleibt. Wo der Treiber das nicht kann (SQL Server), macht die Suche hinter der Tabelle auf einer **neuen Verbindung** weiter (`FindReport.resume`). Test gegen PostgreSQL, MySQL und SQL Server mit einer gesperrten Tabelle |
+| **H2** SQLite kannte in der Suche weder Zeitlimit noch Abbruch | derselbe Weg: `execute_bound` beachtet beides |
+| **M3** Die Suche hielt die Sitzung der Verbindung: Baum, Vervollständigung und Details warteten | eigene Sitzung (`ConnectionManager::ask_in`), nach der Suche geschlossen |
+| **M1** Ein Name, den die App nicht schreibt (über 256 Bytes), brach die ganze Suche ab; „kein regulärer Ausdruck“ kam erst bei der ersten Tabelle | die Tabelle wird ausgelassen und genannt; die Ablehnung kommt, bevor gesucht wird |
+| **M2** „Zeilen zeigen“ suchte anders als die Suche: ohne Groß/Klein gefunden, mit Groß/Klein gefiltert – null Zeilen | neuer Operator der Tabellen-Ansicht `containsNoCase` (`LOWER(…) LIKE LOWER(…)`, auch in der Filterzeile wählbar); für reguläre Ausdrücke gibt es den Knopf nicht |
+| **M4** Katalogabfragen, die scheitern, verschwanden still | als „ausgelassen“ gemeldet (Definitionen einer Art, Spalten eines Schemas) |
+| **M5** Ausdrücke, die nur der Server versteht (Rückverweise), lehnte die Suche ab | sie gehen an den Server; die Stelle im Wert bleibt dann offen |
+| Niedrig | Treffer in Definitionen werden schon beim Sammeln begrenzt, der Bericht sagt „mehr vorhanden“; Kommentare nur von Tabellen und Views; die Liste des Ausgelassenen ist im Fenster begrenzt; ausgelassene Schemata zählen im Bericht |
+
+Offen gelassen: Domänen- und Alias-Typen gelten als „andere“ (nur mit „alles außer Binärdaten“ durchsucht); mehr als
+400 Spalten einer Tabelle bleiben ungesucht; PostgreSQL-Spalten mit nicht deterministischer Sortierung lehnen
+`LIKE` ab (die Tabelle erscheint als ausgelassen); „genau“ folgt den Regeln der Datenbank für Leerzeichen am Ende;
+`detailOf` trennt „Tabelle.Teil“ am ersten Punkt (eine Tabelle mit Punkt im Namen führt zur falschen); die Suche
+ruft kein `admit` – sie baut nur `SELECT`s.
 
 ## Nicht umgesetzt
 
@@ -58,6 +76,5 @@ REVIEW_PLACEHOLDER
 - Auswahl einzelner **Tabellen** im Dialog (nur Schemata; eine einzelne Tabelle über ihren Knoten im Baum).
 - **Parallelität** als Einstellung; Rückfrage bei großen Tabellen (sie werden ausgelassen und genannt, die Grenze
   ist im Dialog änderbar).
-- SQL Server und SQLite: keine regulären Ausdrücke in den Daten (in Definitionen schon). SQL Server verliert nach
-  einem Zeitlimit die Sitzung – die Suche endet dann mit „Verbindung verloren“ und dem, was gefunden war.
+- SQL Server und SQLite: keine regulären Ausdrücke in den Daten (in Definitionen schon).
 - Schätzung der Größe: SQLite gibt keine – dort wird nichts ausgelassen.

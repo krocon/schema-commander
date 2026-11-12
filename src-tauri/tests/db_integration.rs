@@ -3273,6 +3273,7 @@ fn found(s: &mut Box<dyn Session>, kind: DbKind, spec: &FindSpec) -> Vec<String>
         s.as_mut(),
         kind,
         spec,
+        None,
         &|e| events.lock().unwrap().push(e),
         &|| false,
     )
@@ -3435,7 +3436,7 @@ fn a_text_is_found_on_every_server() {
         };
         if kind == DbKind::Sqlserver {
             assert_eq!(
-                find(s.as_mut(), kind, &regex, &|_| {}, &|| false)
+                find(s.as_mut(), kind, &regex, None, &|_| {}, &|| false)
                     .unwrap_err()
                     .code,
                 ErrorCode::Unsupported
@@ -3498,4 +3499,108 @@ fn a_table_without_the_right_to_read_is_left_out() {
     drop(reader);
     run(&mut admin, "DROP SCHEMA sc_find2 CASCADE");
     run(&mut admin, "DROP ROLE sc_reader");
+}
+
+/// Review 036: a table that does not answer in time (here: locked by another session) is left out –
+/// stopped on the server –, and the tables behind it are searched: on the same session where the driver
+/// can stop a statement, on a new one where it cannot (SQL Server).
+#[test]
+#[ignore]
+fn a_table_that_takes_too_long_is_left_out_and_the_search_goes_on() {
+    for (p, product, schema, lock) in [
+        (
+            pg(),
+            "postgres",
+            "public",
+            "LOCK TABLE public.sc_t_b IN ACCESS EXCLUSIVE MODE",
+        ),
+        (my(), "mysql", "shop", "LOCK TABLES shop.sc_t_b WRITE"),
+        (
+            ms(),
+            "sqlserver",
+            "dbo",
+            "SELECT COUNT(*) FROM dbo.sc_t_b WITH (TABLOCKX, HOLDLOCK)",
+        ),
+    ] {
+        let kind = p.kind;
+        let mut s = open(&p);
+        let mut other = open(&p);
+        for t in ["sc_t_a", "sc_t_b", "sc_t_c"] {
+            run(&mut s, &format!("DROP TABLE IF EXISTS {schema}.{t}"));
+            run(
+                &mut s,
+                &format!("CREATE TABLE {schema}.{t} (t varchar(40))"),
+            );
+            run(
+                &mut s,
+                &format!("INSERT INTO {schema}.{t} VALUES ('needle in {t}')"),
+            );
+        }
+        if kind == DbKind::Sqlserver {
+            run(&mut other, "BEGIN TRANSACTION");
+        } else if kind == DbKind::Postgres {
+            run(&mut other, "BEGIN");
+        }
+        run(&mut other, lock);
+        let spec = FindSpec {
+            sources: false,
+            table_timeout_ms: 700,
+            tables: ["sc_t_a", "sc_t_b", "sc_t_c"]
+                .iter()
+                .map(|t| (schema.to_owned(), (*t).to_owned()))
+                .collect(),
+            ..find_spec("needle", schema)
+        };
+        let events = std::sync::Mutex::new(Vec::new());
+        let tell = |e: FindEvent| events.lock().unwrap().push(e);
+        let started = Instant::now();
+        let mut report = find(s.as_mut(), kind, &spec, None, &tell, &|| false).unwrap();
+        if report.lost {
+            // the driver dropped the connection to stop the statement: go on with a new one
+            assert_eq!(kind, DbKind::Sqlserver, "{product}");
+            assert_eq!(report.resume, Some(2), "{product}");
+            let mut again = open(&p);
+            let next = find(again.as_mut(), kind, &spec, report.resume, &tell, &|| false).unwrap();
+            report = report.and(next);
+        } else {
+            assert!(s.is_open(), "{product}");
+        }
+        assert!(started.elapsed() < Duration::from_secs(8), "{product}");
+        assert_eq!(
+            (
+                report.tables,
+                report.searched,
+                report.skipped,
+                report.rows,
+                report.lost
+            ),
+            (3, 2, 1, 2, false),
+            "{product}: {report:?}"
+        );
+        let events = events.into_inner().unwrap();
+        let found: Vec<&str> = events
+            .iter()
+            .filter_map(|e| match e {
+                FindEvent::Rows { table, .. } => Some(table.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(found, ["sc_t_a", "sc_t_c"], "{product}");
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                FindEvent::Skipped { name, reason: Skip::Timeout, .. } if name == "sc_t_b"
+            )),
+            "{product}: {events:?}"
+        );
+        if kind == DbKind::Mysql {
+            run(&mut other, "UNLOCK TABLES");
+        } else {
+            run(&mut other, "ROLLBACK");
+        }
+        let mut s = open(&p);
+        for t in ["sc_t_a", "sc_t_b", "sc_t_c"] {
+            run(&mut s, &format!("DROP TABLE {schema}.{t}"));
+        }
+    }
 }

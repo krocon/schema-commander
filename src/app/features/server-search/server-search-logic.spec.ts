@@ -91,6 +91,8 @@ describe('server search logic', () => {
       sources: 2,
       cancelled: false,
       lost: false,
+      resume: null,
+      moreSources: false,
     };
     expect(reportLine(done)).toBe('1 Zeile, 2 Definitionen gefunden.');
     expect(reportLine({ ...done, skipped: 2 })).toBe(
@@ -102,15 +104,31 @@ describe('server search logic', () => {
 
   it('leads from a hit to its rows and to its definition', () => {
     // the text goes on as a value of a condition – never as SQL
-    expect(hitFilter('note', "x' OR '1'='1")).toEqual({
+    const insensitive = { text: "x' OR '1'='1", mode: 'contains', caseSensitive: false } as const;
+    expect(hitFilter('note', insensitive)).toEqual({
       conditions: [
-        { column: 'note', op: 'contains', values: ["x' OR '1'='1"], kind: 'number', typeName: '' },
+        {
+          column: 'note',
+          op: 'containsNoCase',
+          values: ["x' OR '1'='1"],
+          kind: 'number',
+          typeName: '',
+        },
       ],
       any: false,
       whereSql: '',
       order: [],
       limit: 1000,
     });
+    // review 036: the rows are found the way the search found them – with the case, or without
+    expect(
+      hitFilter('note', { text: 'Acme', mode: 'contains', caseSensitive: true })?.conditions[0].op,
+    ).toBe('contains');
+    expect(
+      hitFilter('note', { text: 'Acme', mode: 'exact', caseSensitive: false })?.conditions[0].op,
+    ).toBe('containsNoCase');
+    // a regular expression is no condition of a table view
+    expect(hitFilter('note', { text: 'a+', mode: 'regex', caseSensitive: false })).toBeNull();
     const hit = (kind: string, name: string) => ({ kind, schema: 's', name, line: 1, preview: '' });
     expect(detailOf(hit('view', 'prices'))).toEqual({ name: 'prices', kind: 'view' });
     expect(detailOf(hit('routine', 'twice'))).toEqual({ name: 'twice', kind: 'routine' });

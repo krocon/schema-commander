@@ -80,6 +80,10 @@ export interface FindReport {
   readonly sources: number;
   readonly cancelled: boolean;
   readonly lost: boolean;
+  /** After a lost connection: the table the backend goes on with (it does so itself). */
+  readonly resume: number | null;
+  /** More definitions hold the text than were told. */
+  readonly moreSources: boolean;
 }
 
 /**

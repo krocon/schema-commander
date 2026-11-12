@@ -33,6 +33,8 @@ pub enum Op {
     NotLike,
     /// The text occurs anywhere (`%` and `_` in it are characters, not wildcards).
     Contains,
+    /// The same, whatever the case of the letters (prompt 036: the rows of a hit of a search).
+    ContainsNoCase,
     In,
     Between,
     IsNull,
@@ -527,7 +529,7 @@ impl Builder {
                 self.text(&format!("{text}{not} LIKE "));
                 self.pattern(&c.values[0]);
             }
-            Op::Contains => {
+            Op::Contains | Op::ContainsNoCase => {
                 need(1)?;
                 // `!` escapes: the same in all four databases (a backslash is not)
                 let mut pattern = String::with_capacity(c.values[0].len() + 2);
@@ -540,9 +542,15 @@ impl Builder {
                 }
                 pattern.push('%');
                 let text = self.as_text(&column, c.kind);
-                self.text(&format!("{text} LIKE "));
-                self.pattern(&pattern);
-                self.text(" ESCAPE '!'");
+                if c.op == Op::ContainsNoCase {
+                    self.text(&format!("LOWER({text}) LIKE LOWER("));
+                    self.pattern(&pattern);
+                    self.text(") ESCAPE '!'");
+                } else {
+                    self.text(&format!("{text} LIKE "));
+                    self.pattern(&pattern);
+                    self.text(" ESCAPE '!'");
+                }
             }
         }
         Ok(())
@@ -1121,6 +1129,7 @@ mod tests {
             Op::Like,
             Op::NotLike,
             Op::Contains,
+            Op::ContainsNoCase,
             Op::In,
         ];
         for kind in ALL {
@@ -1148,7 +1157,7 @@ mod tests {
                                 built.params[0]
                             );
                         };
-                        if op == Op::Contains {
+                        if matches!(op, Op::Contains | Op::ContainsNoCase) {
                             assert!(bound.starts_with('%') && bound.ends_with('%'));
                         } else {
                             assert_eq!(bound, value);
@@ -1547,6 +1556,22 @@ mod tests {
         ] {
             assert_eq!(mssql_datetime(raw, "datetime").as_deref(), read, "{raw}");
             assert_eq!(mssql_datetime(raw, "date"), None, "{raw}");
+        }
+    }
+    /// Review 036: a hit of a search that ignored the case leads to rows found the same way.
+    #[test]
+    fn contains_can_ignore_the_case() {
+        for kind in ALL {
+            let q = query(vec![cond("city", Op::ContainsNoCase, &["Acme_%"])]);
+            let built = build(kind, &q).unwrap();
+            assert_eq!(built.params.len(), 1, "{kind:?}");
+            assert!(
+                built.sql.contains("LOWER(") && built.sql.contains(") ESCAPE '!'"),
+                "{kind:?}: {}",
+                built.sql
+            );
+            assert_eq!(built.sql.matches("LOWER(").count(), 2, "{kind:?}");
+            assert!(!built.sql.contains("Acme"), "{kind:?}");
         }
     }
 }

@@ -126,6 +126,7 @@ export function withEvent(r: SearchResults, e: FindEvent): SearchResults {
             tables: [...r.tables, { schema: e.schema, table: e.table, hits: e.hits, more: e.more }],
           };
     case 'skipped':
+      if (r.skipped.length >= MAX_SHOWN) return r;
       return {
         ...r,
         skipped: [
@@ -152,7 +153,8 @@ export function reportLine(report: FindReport): string {
   const found = t.found(report.rows, report.sources);
   if (report.lost) return `${t.lost} ${found}`;
   if (report.cancelled) return `${t.stopped} ${found}`;
-  return report.skipped > 0 ? `${found} ${t.leftOut(report.skipped)}` : found;
+  const more = report.moreSources ? ` ${t.moreSources}` : '';
+  return (report.skipped > 0 ? `${found} ${t.leftOut(report.skipped)}` : found) + more;
 }
 
 /** Why something was left out. */
@@ -172,12 +174,19 @@ export function skipText(s: Skipped): string {
 
 /**
  * The table view that shows the rows of a hit: the column holds the text. Told as a condition – the
- * backend builds the statement and binds the text.
+ * backend builds the statement and binds the text. `null`: such a search has no table view.
  */
-export function hitFilter(column: string, text: string): TableSpec {
+export function hitFilter(
+  column: string,
+  searched: Pick<SearchChoices, 'text' | 'mode' | 'caseSensitive'>,
+): TableSpec | null {
+  // a regular expression is no condition of a table view
+  if (searched.mode === 'regex') return null;
+  // found the way the search found it: with the case of the letters, or without
+  const op = searched.caseSensitive ? 'contains' : 'containsNoCase';
   return {
     // `number`: the column is compared as text, whatever it is
-    conditions: [{ column, op: 'contains', values: [text], kind: 'number', typeName: '' }],
+    conditions: [{ column, op, values: [searched.text], kind: 'number', typeName: '' }],
     any: false,
     whereSql: '',
     order: [],

@@ -1583,6 +1583,8 @@ export class FakeFindApi extends FindApi {
     sources: 0,
     cancelled: false,
     lost: false,
+    resume: null,
+    moreSources: false,
   };
   fail: { code: string; message: string } | null = null;
   hold = false;

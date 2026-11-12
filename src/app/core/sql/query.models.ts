@@ -69,6 +69,7 @@ export type FilterOp =
   | 'like'
   | 'notLike'
   | 'contains'
+  | 'containsNoCase'
   | 'in'
   | 'between'
   | 'isNull'

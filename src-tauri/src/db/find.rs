@@ -5,7 +5,8 @@
 
 use super::filter::name;
 use super::meta::{self, ObjectKind};
-use super::{DbKind, Flavor, Session, Stop, TextRows};
+use super::value::{Cell, VecSink};
+use super::{Bind, DbKind, Flavor, Limits, Session, Stop, TextRows};
 use crate::error::{AppError, AppResult, ErrorCode};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -166,6 +167,23 @@ pub struct FindReport {
     /// The search ended early: the connection was lost (a server that can stop a statement only by
     /// dropping it).
     pub lost: bool,
+    /// After a lost connection: the table to go on with on a new one.
+    pub resume: Option<usize>,
+    /// More definitions hold the text than are told.
+    pub more_sources: bool,
+}
+
+impl FindReport {
+    /// This report with what a search that went on from `resume` found.
+    pub fn and(mut self, next: FindReport) -> FindReport {
+        self.searched += next.searched;
+        self.skipped += next.skipped;
+        self.rows += next.rows;
+        self.cancelled = next.cancelled;
+        self.lost = next.lost;
+        self.resume = next.resume;
+        self
+    }
 }
 
 fn invalid(message: &str) -> AppError {
@@ -420,6 +438,8 @@ pub fn data_question(
 
 /// Finds the text in what came back from the server – for the place of a hit, and in the sources.
 pub struct Matcher {
+    /// A regular expression only the server understands: no place is found here.
+    blind: bool,
     regex: Option<regex::Regex>,
     text: String,
     exact: bool,
@@ -428,17 +448,18 @@ pub struct Matcher {
 
 impl Matcher {
     pub fn new(spec: &FindSpec) -> AppResult<Matcher> {
+        // the databases have their own dialects of regular expressions (back references, look-ahead):
+        // what is none of ours is left to them – the rows are found, the place in them is not
         let regex = match spec.mode {
-            Mode::Regex => Some(
-                regex::RegexBuilder::new(&spec.text)
-                    .case_insensitive(!spec.case_sensitive)
-                    .size_limit(1 << 20)
-                    .build()
-                    .map_err(|_| invalid("the regular expression cannot be read"))?,
-            ),
+            Mode::Regex => regex::RegexBuilder::new(&spec.text)
+                .case_insensitive(!spec.case_sensitive)
+                .size_limit(1 << 20)
+                .build()
+                .ok(),
             _ => None,
         };
         Ok(Matcher {
+            blind: spec.mode == Mode::Regex && regex.is_none(),
             regex,
             text: if spec.case_sensitive {
                 spec.text.clone()
@@ -452,6 +473,9 @@ impl Matcher {
 
     /// Where the text stands in a value (bytes), or `None`.
     pub fn find(&self, value: &str) -> Option<(usize, usize)> {
+        if self.blind {
+            return None;
+        }
         if let Some(regex) = &self.regex {
             return regex.find(value).map(|m| (m.start(), m.end()));
         }
@@ -613,7 +637,8 @@ fn source_questions(kind: DbKind, flavor: Flavor) -> Vec<&'static str> {
                  WHERE n.nspname = $1 AND c.relkind IN ('r', 'p')",
                 "SELECT 'comment', c.relname::text, pg_catalog.obj_description(c.oid, 'pg_class') \
                  FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
-                 WHERE n.nspname = $1 AND pg_catalog.obj_description(c.oid, 'pg_class') IS NOT NULL",
+                 WHERE n.nspname = $1 AND c.relkind IN ('r', 'p', 'v', 'm', 'f') \
+                   AND pg_catalog.obj_description(c.oid, 'pg_class') IS NOT NULL",
             ];
             if flavor != Flavor::Cockroach {
                 all.push(
@@ -671,8 +696,12 @@ fn source_hits(
     text: &str,
     matcher: &Matcher,
     out: &mut Vec<SourceHit>,
+    budget: usize,
 ) {
     for (n, line) in text.lines().enumerate() {
+        if out.len() > budget {
+            return;
+        }
         if let Some((at, end)) = matcher.find(line) {
             out.push(SourceHit {
                 kind: kind.to_owned(),
@@ -703,14 +732,25 @@ fn checked(spec: &FindSpec) -> AppResult<()> {
 
 /// Searches the server. `tell` hears what is found as it is found; what was told stays told when the
 /// search is stopped (`stop`) or the connection is lost.
+///
+/// `resume`: go on with the rows of the tables from this one on (after a connection was lost: see
+/// [`FindReport::resume`]) – names and definitions were searched already.
 pub fn find(
     s: &mut dyn Session,
     kind: DbKind,
     spec: &FindSpec,
+    resume: Option<usize>,
     tell: &dyn Fn(FindEvent),
     stop: Stop,
 ) -> AppResult<FindReport> {
     checked(spec)?;
+    // said before anything is searched, not at the first table
+    if spec.data && spec.mode == Mode::Regex && matches!(kind, DbKind::Sqlserver | DbKind::Sqlite) {
+        return Err(AppError::new(
+            ErrorCode::Unsupported,
+            "this database has no regular expressions",
+        ));
+    }
     let matcher = Matcher::new(spec)?;
     // for the sources: a value "is" never a whole definition
     let within = Matcher::new(&FindSpec {
@@ -743,7 +783,7 @@ pub fn find(
         false
     };
 
-    if spec.names {
+    if spec.names && resume.is_none() {
         match meta::search(s, kind, &spec.text, stop) {
             Ok(found) => {
                 for f in found.into_iter().filter(|f| schemas.contains(&f.schema)) {
@@ -764,7 +804,7 @@ pub fn find(
         }
     }
 
-    if spec.sources {
+    if spec.sources && resume.is_none() {
         let questions = source_questions(kind, s.flavor());
         'schemas: for schema in &schemas {
             for sql in &questions {
@@ -775,18 +815,29 @@ pub fn find(
                 let rows = match s.ask(sql, &[schema], Some(Duration::from_secs(60)), stop) {
                     Ok(rows) => rows,
                     Err(e) if ended(&e, s, &mut report) => return Ok(report),
-                    // a catalog that does not have this (an older server): the other kinds go on
-                    Err(_) => continue,
+                    // a catalog that does not have this (an older server), or may not be read: the
+                    // other kinds go on, and it is said that this one was not searched
+                    Err(e) => {
+                        tell(FindEvent::Skipped {
+                            schema: schema.clone(),
+                            name: String::new(),
+                            reason: Skip::Refused,
+                            message: e.message,
+                        });
+                        continue;
+                    }
                 };
                 let mut hits = Vec::new();
+                let budget = MAX_SOURCE_HITS.saturating_sub(report.sources);
                 for row in rows {
                     let [Some(what), Some(object), Some(text)] = row.as_slice() else {
                         continue;
                     };
-                    source_hits(what, schema, object, text, &within, &mut hits);
+                    source_hits(what, schema, object, text, &within, &mut hits, budget);
                 }
                 for hit in hits {
                     if report.sources >= MAX_SOURCE_HITS {
+                        report.more_sources = true;
                         break 'schemas;
                     }
                     report.sources += 1;
@@ -810,6 +861,7 @@ pub fn find(
             Ok(objects) => objects,
             Err(e) if ended(&e, s, &mut report) => return Ok(report),
             Err(e) => {
+                report.skipped += 1;
                 tell(FindEvent::Skipped {
                     schema: schema.clone(),
                     name: String::new(),
@@ -822,7 +874,16 @@ pub fn find(
         let columns = match columns_of(s, kind, schema, stop) {
             Ok(columns) => columns,
             Err(e) if ended(&e, s, &mut report) => return Ok(report),
-            Err(_) => Vec::new(),
+            Err(e) => {
+                report.skipped += 1;
+                tell(FindEvent::Skipped {
+                    schema: schema.clone(),
+                    name: String::new(),
+                    reason: Skip::Refused,
+                    message: e.message,
+                });
+                continue;
+            }
         };
         for object in objects
             .into_iter()
@@ -850,11 +911,14 @@ pub fn find(
         }
     }
     report.tables = tables.len();
-    tell(FindEvent::Start {
-        tables: tables.len(),
-    });
+    if resume.is_none() {
+        tell(FindEvent::Start {
+            tables: tables.len(),
+        });
+    }
+    let from = resume.unwrap_or(0);
     let timeout = (spec.table_timeout_ms > 0).then(|| Duration::from_millis(spec.table_timeout_ms));
-    for (done, (schema, table, rows, columns)) in tables.into_iter().enumerate() {
+    for (done, (schema, table, rows, columns)) in tables.into_iter().enumerate().skip(from) {
         if stop() {
             report.cancelled = true;
             break;
@@ -881,16 +945,42 @@ pub fn find(
             );
             continue;
         }
-        let Some((question, searched)) = data_question(kind, &schema, &table, &columns, spec)?
-        else {
-            skip(&mut report, Skip::NoColumns, String::new());
-            continue;
+        let (question, searched) = match data_question(kind, &schema, &table, &columns, spec) {
+            Ok(Some(found)) => found,
+            Ok(None) => {
+                skip(&mut report, Skip::NoColumns, String::new());
+                continue;
+            }
+            // a name the app does not write: this table is left out, the others are searched
+            Err(e) => {
+                skip(&mut report, Skip::Refused, e.message);
+                continue;
+            }
         };
-        let params: Vec<&str> = question.params.iter().map(String::as_str).collect();
-        match s.ask(&question.sql, &params, timeout, stop) {
-            Ok(mut found) => {
+        let wanted = spec.max_hits.clamp(1, 1_000) as usize;
+        // as a statement of the driver – not as a question of the app –, so that a table that takes
+        // too long is stopped **on the server** and the session goes on where the driver can do that
+        let binds: Vec<Bind> = question.params.iter().cloned().map(Bind::Text).collect();
+        let mut sink = VecSink::new(wanted + 1);
+        let limits = Limits {
+            max_rows: wanted + 1,
+            timeout,
+        };
+        match s.execute_bound(&question.sql, &binds, limits, &mut sink, stop) {
+            Ok(_) => {
                 report.searched += 1;
-                let wanted = spec.max_hits.clamp(1, 1_000) as usize;
+                let mut found: TextRows = sink
+                    .rows
+                    .into_iter()
+                    .map(|row| {
+                        row.into_iter()
+                            .map(|cell| match cell {
+                                Cell::Text(t) => Some(t),
+                                _ => None,
+                            })
+                            .collect()
+                    })
+                    .collect();
                 let more = found.len() > wanted;
                 found.truncate(wanted);
                 if !found.is_empty() {
@@ -907,14 +997,13 @@ pub fn find(
                 }
             }
             Err(e) => {
-                let timed_out = e.code == ErrorCode::Timeout;
                 if e.code == ErrorCode::Cancelled {
                     report.cancelled = true;
                     break;
                 }
                 skip(
                     &mut report,
-                    if timed_out {
+                    if e.code == ErrorCode::Timeout {
                         Skip::Timeout
                     } else {
                         Skip::Refused
@@ -922,7 +1011,10 @@ pub fn find(
                     e.message,
                 );
                 if !s.is_open() {
+                    // the driver could stop the statement only by dropping the connection: the
+                    // search goes on behind this table on a new one
                     report.lost = true;
+                    report.resume = Some(done + 1);
                     break;
                 }
             }
@@ -1113,12 +1205,15 @@ mod tests {
         })
         .unwrap();
         assert_eq!(regex.find("a COOL thing"), Some((3, 6)));
-        assert!(
+        // what is no expression of ours is the server's to judge: here it finds no place
+        assert_eq!(
             Matcher::new(&FindSpec {
                 mode: Mode::Regex,
                 ..spec("(")
             })
-            .is_err()
+            .unwrap()
+            .find("("),
+            None
         );
         // a preview is one line around the hit
         let long = format!("{}needle\nnext line{}", "a".repeat(500), "b".repeat(500));
@@ -1154,6 +1249,7 @@ mod tests {
             s,
             DbKind::Sqlite,
             spec,
+            None,
             &|e| events.lock().unwrap().push(e),
             &|| false,
         )
@@ -1300,6 +1396,7 @@ mod tests {
             &mut s,
             DbKind::Sqlite,
             &spec("needle"),
+            None,
             &|e| seen.lock().unwrap().push(e),
             &stop,
         )
@@ -1311,6 +1408,110 @@ mod tests {
         let events = seen.into_inner().unwrap();
         assert!(
             matches!(events.iter().find(|e| matches!(e, FindEvent::Start { .. })), Some(FindEvent::Start { tables }) if *tables >= 300)
+        );
+    }
+    /// Review 036: one name the app does not write (longer than any server allows but SQLite) leaves
+    /// out that table – not the search.
+    #[test]
+    fn a_table_that_cannot_be_asked_is_left_out_and_the_search_goes_on() {
+        let mut s = demo();
+        let long = "n".repeat(300);
+        s.execute_batch_for_tests(&format!(
+            "CREATE TABLE f_odd (\"{long}\" TEXT); INSERT INTO f_odd VALUES ('needle');
+             CREATE TABLE f_zz (t TEXT); INSERT INTO f_zz VALUES ('needle');"
+        ));
+        let (report, events) = run(&mut s, &spec("needle"));
+        assert!(events.iter().any(|e| matches!(
+            e,
+            FindEvent::Skipped { name, reason: Skip::Refused, .. } if name == "f_odd"
+        )));
+        assert_eq!(rows_of(&events), ["f_zz.t: needle"]);
+        assert!(report.skipped >= 1 && !report.lost);
+    }
+
+    /// Review 036: what a database cannot do is said before anything is searched; a regular expression
+    /// only the server understands still finds its rows.
+    #[test]
+    fn regular_expressions_are_refused_early_or_left_to_the_server() {
+        let mut s = demo();
+        let regex = FindSpec {
+            mode: Mode::Regex,
+            sources: true,
+            ..spec("old_.*")
+        };
+        let events = Mutex::new(Vec::new());
+        let refused = find(
+            &mut s,
+            DbKind::Sqlite,
+            &regex,
+            None,
+            &|e| events.lock().unwrap().push(e),
+            &|| false,
+        )
+        .unwrap_err();
+        assert_eq!(refused.code, ErrorCode::Unsupported);
+        assert!(events.lock().unwrap().is_empty());
+        // only in definitions: that is searched here, in every database
+        let sources = FindSpec {
+            data: false,
+            ..regex
+        };
+        assert!(run(&mut s, &sources).0.sources > 0);
+        // a back reference is no expression of ours: no place is found, nothing fails
+        let theirs = Matcher::new(&FindSpec {
+            mode: Mode::Regex,
+            ..spec("(a)\\1")
+        })
+        .unwrap();
+        assert_eq!(theirs.find("aa"), None);
+    }
+
+    /// Review 036: a search that lost its connection goes on behind the table it was at.
+    #[test]
+    fn goes_on_behind_a_table() {
+        let mut s = demo();
+        s.execute_batch_for_tests(
+            "CREATE TABLE h_a (t TEXT); INSERT INTO h_a VALUES ('needle a');
+             CREATE TABLE h_b (t TEXT); INSERT INTO h_b VALUES ('needle b');
+             CREATE TABLE h_c (t TEXT); INSERT INTO h_c VALUES ('needle c');",
+        );
+        let only = FindSpec {
+            sources: true,
+            tables: vec![
+                ("main".into(), "h_a".into()),
+                ("main".into(), "h_b".into()),
+                ("main".into(), "h_c".into()),
+            ],
+            ..spec("needle")
+        };
+        let events = Mutex::new(Vec::new());
+        let report = find(
+            &mut s,
+            DbKind::Sqlite,
+            &only,
+            Some(2),
+            &|e| events.lock().unwrap().push(e),
+            &|| false,
+        )
+        .unwrap();
+        let events = events.into_inner().unwrap();
+        // no second start, no definitions again – only what is left
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, FindEvent::Start { .. } | FindEvent::Source { .. }))
+        );
+        let rows: Vec<String> = events
+            .iter()
+            .filter_map(|e| match e {
+                FindEvent::Rows { table, .. } => Some(table.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rows, ["h_c"]);
+        assert_eq!(
+            (report.tables, report.searched, report.resume),
+            (3, 1, None)
         );
     }
 }

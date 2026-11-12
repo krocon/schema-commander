@@ -40,6 +40,7 @@ export const SERVER_SEARCH_DE: Translation<typeof SERVER_SEARCH_EN> = {
     `${n(rows, 'Zeile', 'Zeilen')}, ${n(sources, 'Definition', 'Definitionen')} gefunden.`,
   stopped: 'Abgebrochen.',
   lost: 'Die Verbindung ging verloren.',
+  moreSources: 'Mehr Definitionen enthalten den Text, als gezeigt werden.',
   leftOut: (count: number) => `${n(count, 'Tabelle', 'Tabellen')} ausgelassen.`,
   failed: (why: string) => `Die Suche ist gescheitert: ${why}`,
   rowsHeading: 'Zeilen',

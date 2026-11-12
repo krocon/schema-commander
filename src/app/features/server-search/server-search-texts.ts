@@ -41,6 +41,7 @@ export const SERVER_SEARCH_EN = {
     `${n(rows, 'row', 'rows')}, ${n(sources, 'definition', 'definitions')} found.`,
   stopped: 'Stopped.',
   lost: 'The connection was lost.',
+  moreSources: 'More definitions hold the text than are shown.',
   leftOut: (count: number) => `${n(count, 'table', 'tables')} left out.`,
   failed: (why: string) => `The search failed: ${why}`,
   rowsHeading: 'Rows',
