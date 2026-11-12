@@ -34,6 +34,8 @@ import { ErDiagramDialog } from './features/diagram/er-diagram-dialog';
 import { ExportDialog } from './features/export/export-dialog';
 import { PlanDialog } from './features/plan/plan-dialog';
 import { PlanService } from './features/plan/plan.service';
+import { AccessDialog } from './features/access/access-dialog';
+import { AccessService } from './features/access/access.service';
 import { MonitorDialog } from './features/monitor/monitor-dialog';
 import { MonitorService } from './features/monitor/monitor.service';
 import { TransferDialog } from './features/transfer/transfer-dialog';
@@ -147,6 +149,7 @@ const SIDEBAR_MIN = 140;
     PlanDialog,
     TransferDialog,
     MonitorDialog,
+    AccessDialog,
     BackupDialog,
     StructureDialog,
     ResultCompareDialog,
@@ -594,6 +597,11 @@ const SIDEBAR_MIN = 140;
         <app-transfer-dialog [source]="source" (closed)="transfer.close()" />
       }
     }
+    @if (access.connectionId(); as managed) {
+      @defer (on immediate) {
+        <app-access-dialog [connectionId]="managed" (closed)="access.close()" />
+      }
+    }
     @if (monitor.connectionId(); as watched) {
       @defer (on immediate) {
         <app-monitor-dialog [connectionId]="watched" (closed)="monitor.close()" />
@@ -753,6 +761,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly plans = inject(PlanService);
   protected readonly transfer = inject(TransferService);
   protected readonly monitor = inject(MonitorService);
+  protected readonly access = inject(AccessService);
   protected readonly backup = inject(BackupService);
   protected readonly structure = inject(StructureService);
   protected readonly resultCompare = inject(ResultCompareService);
@@ -1199,6 +1208,16 @@ export class App implements OnInit, OnDestroy {
         'SEARCH_SERVER',
         () => this.serverSearch.open(),
         () => this.connections.activeState().kind === 'open',
+      ),
+      this.actions.register(
+        'MANAGE_ACCESS',
+        () => {
+          const profile = this.connections.active();
+          if (profile) this.access.open(profile.id);
+        },
+        () =>
+          this.connections.activeState().kind === 'open' &&
+          this.connections.active()?.kind !== 'sqlite',
       ),
       this.actions.register(
         'SERVER_MONITOR',

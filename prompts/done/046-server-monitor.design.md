@@ -26,7 +26,7 @@
 - **SQL Server** zeigt eine Anweisung in ihrer parametrisierten Form (`@1` statt des Werts) und kann eine
   Anweisung nur zusammen mit ihrer Sitzung beenden (`canCancel: false`).
 - **MySQL 8** hält die Wartenden in `performance_schema.data_lock_waits`, MariaDB in
-  `information_schema.INNODB_LOCK_WAITS` – entschieden nach dem `Flavor` der Sitzung.
+  `information_schema.INNODB_LOCK_WAITS` – entschieden nach der Version, die der Server nennt.
 
 ## Geprüft
 
