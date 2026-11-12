@@ -77,6 +77,8 @@
   Tabellen-Ansicht, Bearbeiten, Suche; Plan, Monitor, Rechte und Struktur noch nicht (Prompt 035i);
   **BigQuery** über Googles REST-API mit der Schlüsseldatei eines Dienstkontos, zum Lesen und Ausführen –
   gegen den Emulator geprüft, nicht gegen Google (Prompt 035j);
+  **Snowflake** über dessen SQL-API mit Token oder Schlüsselpaar, zum Lesen und Ausführen – nach der
+  Dokumentation, nicht gegen Snowflake gelaufen (Prompt 035k);
   **Suche auf dem Server**: ein Text in den Zeilen aller Tabellen und in Definitionen, als lesender Job (Prompt 036);
   **ER-Diagramm** eines Schemas oder einer Tabelle mit Nachbarn: eigene Anordnung, verschiebbar, Listenansicht,
   Export als SVG, Mermaid, DBML (Prompt 037);
@@ -112,7 +114,7 @@
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a–035j, 036–049; von 035 offen: Firebird, BigQuery, Snowflake, Db2),
+  erledigt: 001–034, 035a–035k, 036–049; von 035 offen: Firebird, BigQuery, Snowflake, Db2),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -313,6 +315,8 @@ src-tauri/                     Rust
                                die Stücke des Katalogs (`TYPE`, `FOREIGN_KEYS`) für meta, details, diagram
   src/db/bigquery.rs           BigQuery über REST: Job starten, warten, Seiten; Anmeldung mit der Schlüsseldatei
                                eines Dienstkontos (JWT, nur zu Google); Tests gegen einen nachgestellten Server
+  src/db/snowflake.rs          Snowflake über die SQL-API: einreichen, warten, Partitionen; Token oder
+                               Schlüsselpaar (JWT); Tests gegen einen nachgestellten Server
   src/db/d1.rs                 Cloudflare D1 über die REST-API: eine Anfrage je Anweisung, keine Sitzung; Tests
                                gegen einen nachgestellten Server (d1_tests.rs)
   src/db/http.rs               was die HTTP-Treiber teilen: Client mit dem TLS des Profils, Adresse, Kodierung
@@ -445,6 +449,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   `firebird::control` aus, nichts sonst öffnet oder schließt eine. Ein Wert wird nur durch `firebird::bound` zu
   dem, was sein Platz ist (nie gerundet). Das eine Schema hat den leeren Namen: Nichts wird damit qualifiziert,
   Katalogabfragen binden es (`NO_SCHEMA`).
+- **Snowflake**: Token und Zusicherung gehen nur an `*.snowflakecomputing.com` über geprüftes TLS. Es gibt keine
+  Sitzung: nichts darf sich auf ein `USE …` oder eine offene Transaktion verlassen.
 - **BigQuery**: Der Schlüssel eines Dienstkontos geht nur an Googles Token-Adresse (`TOKEN_URI`) und das Token
   nur an `bigquery.googleapis.com` über geprüftes TLS – nie an den Host eines Profils, das etwas anderes nennt.
   Ein Dataset wird nie gebunden, sondern mit `meta::quote_always` gequotet. Literale schreiben `\'`, nie `''`.

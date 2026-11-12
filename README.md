@@ -15,7 +15,7 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
 
 ## What works
 
-- Connections to PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, ClickHouse, Trino/Presto, libSQL/Turso, Cloudflare D1, Firebird, BigQuery, DuckDB and SQLite files: profiles in folders with colour tags,
+- Connections to PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, ClickHouse, Trino/Presto, libSQL/Turso, Cloudflare D1, Firebird, BigQuery, Snowflake, DuckDB and SQLite files: profiles in folders with colour tags,
   passwords only in the keychain of your OS; a demo database in memory to try things out.
   Servers that speak PostgreSQL's protocol work as PostgreSQL connections – tested with CockroachDB,
   TimescaleDB and YugabyteDB: the app finds out who answers and adapts (cancel, transaction state, catalog).
@@ -42,7 +42,10 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   structure editing and the statement of a table are not there for Firebird yet.
   BigQuery is reached over Google's API with the key file of a service account: run, cancel, browse,
   filter and search; rows are not edited. Mind the cost: a table view reads the whole table there. Checked
-  against the emulator only, not against Google
+  against the emulator only, not against Google.
+  Snowflake is reached over its SQL API with a programmatic access token or a key pair: run, cancel, browse,
+  filter and search with the default warehouse and role of the user; rows are not edited. Written from
+  Snowflake's documentation and not yet run against a real account
 - Query tabs, each with its own connection and result. Nothing ever asks „save?“: every text is backed up a
   moment after you type and is there again after a restart or a crash; `.sql` files keep their encoding
 - SQL editor with syntax highlighting; <kbd>Ctrl/⌘</kbd>+<kbd>Enter</kbd> runs the selection or the statement

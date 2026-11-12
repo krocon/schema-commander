@@ -520,6 +520,15 @@ fn ask(s: &mut dyn Session, sql: &str, params: &[&str], stop: Stop) -> AppResult
     s.ask(sql, params, Some(TIMEOUT), stop)
 }
 
+/// Snowflake: the schemas whose names go into the index – not its own catalog, and not without end.
+fn snowflake_schemas(s: &mut dyn Session, stop: Stop) -> AppResult<Vec<super::meta::SchemaInfo>> {
+    Ok(super::meta::schemas(s, DbKind::Snowflake, stop)?
+        .into_iter()
+        .filter(|x| !x.system && x.name != "INFORMATION_SCHEMA")
+        .take(50)
+        .collect())
+}
+
 /// The schemas of SQLite: the files that are attached.
 fn sqlite_files(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<String>> {
     if kind == DbKind::D1 {
@@ -540,6 +549,22 @@ fn sqlite_files(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<
 /// Reads the objects of all schemas but the system's: kind, schema, name, detail.
 pub fn read_objects(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<NameIndex> {
     let rows = match kind {
+        // schema by schema: asked for a whole database at once, Snowflake may refuse („returned too
+        // much data“, review 035k 8)
+        DbKind::Snowflake => {
+            let mut rows = TextRows::new();
+            for schema in snowflake_schemas(s, stop)? {
+                rows.extend(ask(
+                    s,
+                    "SELECT CASE WHEN table_type LIKE '%VIEW%' THEN 'view' ELSE 'table' END, \
+                       table_schema, table_name, '' \
+                     FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = ?",
+                    &[schema.name.as_str()],
+                    stop,
+                )?);
+            }
+            rows
+        }
         // a dataset is named in the statement: one question each, the first fifty
         DbKind::Bigquery => {
             let mut rows = TextRows::new();
@@ -702,6 +727,22 @@ pub fn read_columns(
     stop: Stop,
 ) -> AppResult<()> {
     let rows = match kind {
+        DbKind::Snowflake => {
+            let mut rows = TextRows::new();
+            for schema in snowflake_schemas(s, stop)? {
+                rows.extend(ask(
+                    s,
+                    &format!(
+                        "SELECT table_schema, table_name, column_name, {} \
+                         FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = ?",
+                        super::meta::SNOWFLAKE_TYPE
+                    ),
+                    &[schema.name.as_str()],
+                    stop,
+                )?);
+            }
+            rows
+        }
         DbKind::Bigquery => {
             let mut rows = TextRows::new();
             for schema in super::meta::schemas(s, kind, stop)?.into_iter().take(50) {

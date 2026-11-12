@@ -17,6 +17,8 @@ import { offsetAt, placeIn } from '../../core/text/places';
  * - **firebird**: a procedure, function, trigger, package or `EXECUTE BLOCK` keeps the `;` of its body.
  * - **bigquery**: backslash escapes in strings and in backticks, no doubled quotes, strings of three
  *   quotes, `#` comments; a script runs whole (`splitForRun`).
+ * - **snowflake**: backslash escapes in strings, `//` comments, `$$ … $$` strings; a block of Snowflake
+ *   Scripting (`[DECLARE …] BEGIN … END`, also as the body of a procedure without `$$`) keeps its `;`.
  * - **trino**: the common rules – a quote is escaped only by doubling it.
  * - **oracle**: `q'[ … ]'` strings; PL/SQL (`BEGIN`, `DECLARE`, `CREATE … FUNCTION | PROCEDURE | PACKAGE |
  *   TRIGGER | TYPE`) keeps its `;` and ends at a line with only `/` – as in SQL*Plus. That line also ends
@@ -32,7 +34,8 @@ export type Dialect =
   | 'clickhouse'
   | 'trino'
   | 'firebird'
-  | 'bigquery';
+  | 'bigquery'
+  | 'snowflake';
 
 export interface Statement {
   /** The statement without its terminator, trimmed. */
@@ -89,6 +92,8 @@ function skipToken(s: Scan): boolean {
       dialect === 'mysql' ||
       dialect === 'clickhouse' ||
       dialect === 'bigquery' ||
+      // Snowflake: in a quoted name a backslash is a character
+      (dialect === 'snowflake' && c === "'") ||
       (dialect === 'postgres' &&
         c === "'" &&
         (prev === 'E' || prev === 'e') &&
@@ -108,6 +113,16 @@ function skipToken(s: Scan): boolean {
   }
   if (c === '-' && next === '-') {
     skipLine(s);
+    return true;
+  }
+  if (dialect === 'snowflake' && c === '/' && next === '/') {
+    skipLine(s);
+    return true;
+  }
+  if (dialect === 'snowflake' && c === '$' && next === '$') {
+    // a string between `$$` and `$$`, whatever it holds (the body of a procedure)
+    const close = script.indexOf('$$', s.i + 2);
+    s.i = close < 0 ? script.length : close + 2;
     return true;
   }
   if (c === '#' && (dialect === 'mysql' || dialect === 'bigquery')) {
@@ -285,6 +300,10 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
   let external = false;
   /** Oracle: the statement is PL/SQL (`null` = its first word was not seen yet). */
   let plsql: boolean | null = null;
+  /** Snowflake: the word before this one (`''` behind anything that is no word). */
+  let prev = '';
+  /** Snowflake: inside a block, where a statement of it begins. */
+  let fresh = false;
   const push = (end: number, next: number) => {
     const st = statement(script, start, end);
     if (st) out.push(st);
@@ -295,6 +314,8 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
     depth = 0;
     trigger = false;
     plsql = null;
+    prev = '';
+    fresh = false;
   };
   while (s.i < script.length) {
     if (skipToken(s)) continue;
@@ -339,6 +360,61 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
         delimiter = term.delimiter;
         s.i = term.end;
         continue;
+      }
+    }
+    if (dialect === 'snowflake') {
+      const word = wordAt(script, i);
+      if (word) {
+        const first = script.slice(start, i).trim() === '';
+        // `BEGIN;`, `BEGIN TRANSACTION`, `BEGIN WORK` open a transaction, not a block
+        const block =
+          word === 'BEGIN' &&
+          !/^\s*(?:;|$|(?:TRANSACTION|WORK|NAME)\b)/i.test(script.slice(i + 5, i + 40));
+        if (!trigger) {
+          if (word === 'DECLARE' && (first || prev === 'AS')) declaring = true;
+          else if (block && (first || prev === 'AS' || declaring)) {
+            trigger = true;
+            declaring = false;
+            depth = 1;
+          }
+        } else if (prev === 'END') {
+          // `END IF`, `END FOR`, `END LOOP` …: the word belongs to its END
+        } else if (word === 'END') {
+          depth--;
+          if (depth <= 0) trigger = false;
+        } else if (
+          word === 'CASE' ||
+          block ||
+          (fresh &&
+            (word === 'IF' ||
+              word === 'FOR' ||
+              word === 'WHILE' ||
+              word === 'LOOP' ||
+              word === 'REPEAT'))
+        ) {
+          depth++;
+        }
+        prev = word;
+        fresh =
+          trigger &&
+          (word === 'BEGIN' ||
+            word === 'THEN' ||
+            word === 'ELSE' ||
+            word === 'DO' ||
+            word === 'LOOP' ||
+            word === 'REPEAT');
+        s.i = i + word.length;
+        continue;
+      }
+      if (script[i] === ';' && (depth > 0 || declaring)) {
+        prev = '';
+        fresh = trigger;
+        s.i = i + 1;
+        continue;
+      }
+      if (!/\s/.test(script[i])) {
+        prev = '';
+        fresh = false;
       }
     }
     // with a terminator of its own a script says itself where a statement ends

@@ -211,7 +211,8 @@ pub fn activity(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Acti
         | DbKind::Clickhouse
         | DbKind::Trino
         | DbKind::Firebird
-        | DbKind::Bigquery => {
+        | DbKind::Bigquery
+        | DbKind::Snowflake => {
             return Err(super::not_yet(kind, "the server monitor"));
         }
         DbKind::Postgres => {
@@ -401,7 +402,8 @@ pub fn kill_statement(kind: DbKind, id: &str, terminate: bool) -> AppResult<Stri
             | DbKind::Clickhouse
             | DbKind::Trino
             | DbKind::Firebird
-            | DbKind::Bigquery,
+            | DbKind::Bigquery
+            | DbKind::Snowflake,
             _,
         ) => {
             return Err(super::not_yet(kind, "the server monitor"));

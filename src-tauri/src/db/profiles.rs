@@ -76,7 +76,7 @@ pub fn check(p: &Profile) -> AppResult<()> {
             return Err(invalid(format!("{what}: too long or control characters")));
         }
     }
-    if matches!(p.kind, DbKind::D1 | DbKind::Bigquery) && p.ssh.is_some() {
+    if matches!(p.kind, DbKind::D1 | DbKind::Bigquery | DbKind::Snowflake) && p.ssh.is_some() {
         // behind a tunnel the token would go on in the clear, and no certificate would fit
         return Err(invalid(
             "this service is reached at its own address directly: no SSH tunnel",
@@ -101,7 +101,7 @@ pub fn check(p: &Profile) -> AppResult<()> {
         }
     }
     // BigQuery and Snowflake log in with a key file (named as the client key): no certificate goes with it
-    let key_login = matches!(p.kind, DbKind::Bigquery);
+    let key_login = matches!(p.kind, DbKind::Bigquery | DbKind::Snowflake);
     if !key_login && p.client_cert.trim().is_empty() != p.client_key.trim().is_empty() {
         return Err(invalid(
             "a client certificate needs its key, and the other way round",

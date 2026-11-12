@@ -178,7 +178,11 @@ pub fn principals(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Ac
         DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => return Err(unsupported()),
         DbKind::Oracle => return Err(super::not_yet(kind, "users and rights")),
         DbKind::Duckdb => return Err(unsupported()),
-        DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird | DbKind::Bigquery => {
+        DbKind::Clickhouse
+        | DbKind::Trino
+        | DbKind::Firebird
+        | DbKind::Bigquery
+        | DbKind::Snowflake => {
             return Err(super::not_yet(kind, "users and rights"));
         }
         DbKind::Postgres => {
@@ -491,7 +495,11 @@ pub fn grants(s: &mut dyn Session, kind: DbKind, who: &Who, stop: Stop) -> AppRe
         DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => return Err(unsupported()),
         DbKind::Oracle => return Err(super::not_yet(kind, "users and rights")),
         DbKind::Duckdb => return Err(unsupported()),
-        DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird | DbKind::Bigquery => {
+        DbKind::Clickhouse
+        | DbKind::Trino
+        | DbKind::Firebird
+        | DbKind::Bigquery
+        | DbKind::Snowflake => {
             return Err(super::not_yet(kind, "users and rights"));
         }
         DbKind::Postgres => {
@@ -918,7 +926,11 @@ fn written(
                 DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => return Err(unsupported()),
                 DbKind::Oracle => return Err(super::not_yet(kind, "users and rights")),
                 DbKind::Duckdb => return Err(unsupported()),
-                DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird | DbKind::Bigquery => {
+                DbKind::Clickhouse
+                | DbKind::Trino
+                | DbKind::Firebird
+                | DbKind::Bigquery
+                | DbKind::Snowflake => {
                     return Err(super::not_yet(kind, "users and rights"));
                 }
             }
@@ -944,7 +956,11 @@ fn written(
                 DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => return Err(unsupported()),
                 DbKind::Oracle => return Err(super::not_yet(kind, "users and rights")),
                 DbKind::Duckdb => return Err(unsupported()),
-                DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird | DbKind::Bigquery => {
+                DbKind::Clickhouse
+                | DbKind::Trino
+                | DbKind::Firebird
+                | DbKind::Bigquery
+                | DbKind::Snowflake => {
                     return Err(super::not_yet(kind, "users and rights"));
                 }
             };
@@ -983,7 +999,14 @@ fn written(
                 (DbKind::Sqlite | DbKind::Libsql | DbKind::D1, _) => return Err(unsupported()),
                 (DbKind::Oracle, _) => return Err(super::not_yet(kind, "users and rights")),
                 (DbKind::Duckdb, _) => return Err(unsupported()),
-                (DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird | DbKind::Bigquery, _) => {
+                (
+                    DbKind::Clickhouse
+                    | DbKind::Trino
+                    | DbKind::Firebird
+                    | DbKind::Bigquery
+                    | DbKind::Snowflake,
+                    _,
+                ) => {
                     return Err(super::not_yet(kind, "users and rights"));
                 }
                 (_, true) => format!("GRANT {r} TO {m}"),
@@ -1136,7 +1159,11 @@ fn password_literal(
         DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => return Err(unsupported()),
         DbKind::Oracle => return Err(super::not_yet(kind, "users and rights")),
         DbKind::Duckdb => return Err(unsupported()),
-        DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird | DbKind::Bigquery => {
+        DbKind::Clickhouse
+        | DbKind::Trino
+        | DbKind::Firebird
+        | DbKind::Bigquery
+        | DbKind::Snowflake => {
             return Err(super::not_yet(kind, "users and rights"));
         }
     })
@@ -1279,7 +1306,8 @@ pub fn transactional(kind: DbKind, flavor: Flavor) -> bool {
         | DbKind::Clickhouse
         | DbKind::Trino
         | DbKind::Firebird
-        | DbKind::Bigquery => false,
+        | DbKind::Bigquery
+        | DbKind::Snowflake => false,
     }
 }
 

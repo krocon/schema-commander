@@ -384,6 +384,9 @@ pub fn create_table(
         // room for values longer than the ones seen
         let len = (g.max_len.max(1) * 2).clamp(20, 4000);
         match (g.kind, kind) {
+            (GuessKind::DateTime, DbKind::Snowflake) => "TIMESTAMP_NTZ".into(),
+            (GuessKind::Bool, DbKind::Snowflake) => "BOOLEAN".into(),
+            (GuessKind::Text, DbKind::Snowflake) => "VARCHAR".into(),
             (GuessKind::DateTime, DbKind::Bigquery) => "DATETIME".into(),
             (GuessKind::Bool, DbKind::Bigquery) => "BOOL".into(),
             (GuessKind::Text, DbKind::Bigquery) => "STRING".into(),

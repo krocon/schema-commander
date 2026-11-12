@@ -19,6 +19,7 @@ const DIALECTS: Dialect[] = [
   'trino',
   'firebird',
   'bigquery',
+  'snowflake',
 ];
 
 describe('a script of BigQuery', () => {

@@ -254,6 +254,27 @@ pub fn diagram(
                 stop,
             ),
         ),
+        DbKind::Snowflake => (
+            s.ask(
+                &format!(
+                    "SELECT c.table_name, c.column_name, {}, \
+                       CASE c.is_nullable WHEN 'YES' THEN 'true' ELSE 'false' END, 'false' \
+                     FROM INFORMATION_SCHEMA.COLUMNS c \
+                     JOIN INFORMATION_SCHEMA.TABLES t \
+                       ON t.table_schema = c.table_schema AND t.table_name = c.table_name \
+                     WHERE c.table_schema = ? AND t.table_type = 'BASE TABLE' \
+                     ORDER BY c.table_name, c.ordinal_position",
+                    super::meta::SNOWFLAKE_TYPE.replace("data_type", "c.data_type")
+                        .replace("numeric_", "c.numeric_")
+                        .replace("character_maximum_length", "c.character_maximum_length")
+                ),
+                one,
+                Some(TIMEOUT),
+                stop,
+            )?,
+            Vec::new(),
+            Ok(Vec::new()),
+        ),
         // tables without keys: the ones BigQuery knows are a promise nobody checks
         DbKind::Bigquery => (
             s.ask(

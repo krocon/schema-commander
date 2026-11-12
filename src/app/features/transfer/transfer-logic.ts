@@ -33,6 +33,7 @@ export function defaultSchema(kind: DbKind, database: string): string {
     case 'trino':
     case 'firebird':
     case 'bigquery':
+    case 'snowflake':
       // the database of the profile is the catalog; its schemas have names of their own
       return '';
     default:

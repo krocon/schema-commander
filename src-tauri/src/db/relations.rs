@@ -230,6 +230,8 @@ pub fn relations(
         DbKind::Trino => Vec::new(),
         // keys of BigQuery are a promise nobody checks: not followed
         DbKind::Bigquery => Vec::new(),
+        // keys of Snowflake are a promise nobody checks either
+        DbKind::Snowflake => Vec::new(),
         DbKind::Firebird => fold(&s.ask(
             &format!(
                 "{} AND {} AND (rc.rdb$relation_name = ? OR pk.rdb$relation_name = ?) \
