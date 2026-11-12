@@ -826,6 +826,41 @@ pub fn meta_diagram(
     })
 }
 
+/// What a schema is made of (prompt 038): tables with columns, keys, indexes and checks, views,
+/// routines, triggers – read from the catalog. To compare, and to keep as a file.
+#[tauri::command(async)]
+pub fn schema_snapshot(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    schema: String,
+) -> AppResult<crate::db::compare::Snapshot> {
+    manager.ask(&id, |session, kind, stop| {
+        crate::db::compare::snapshot(session, kind, &schema, stop)
+    })
+}
+
+/// The difference of two snapshots (of the same kind of database). Pure: nothing is asked or run.
+#[tauri::command(async)]
+pub fn schema_compare(
+    left: crate::db::compare::Snapshot,
+    right: crate::db::compare::Snapshot,
+    renames: Vec<crate::db::compare::Rename>,
+) -> AppResult<Vec<crate::db::compare::Item>> {
+    crate::db::compare::compare(&left, &right, &renames)
+}
+
+/// The script that would make `target` like `source`, for the chosen differences. A text for an
+/// editor: nothing runs here. Steps that may lose data are comments.
+#[tauri::command(async)]
+pub fn schema_script(
+    source: crate::db::compare::Snapshot,
+    target: crate::db::compare::Snapshot,
+    picks: Option<Vec<String>>,
+    renames: Vec<crate::db::compare::Rename>,
+) -> AppResult<String> {
+    crate::db::compare::script(&source, &target, picks.as_deref(), &renames)
+}
+
 /// Searches a text on the server (prompt 036): in the rows of tables and in definitions. A job that
 /// `cancel_job` stops; `on_event` hears every hit as it is found. Only statements that read run, built
 /// here; the text is bound.

@@ -3735,3 +3735,224 @@ fn every_server_gives_what_a_diagram_is_drawn_from() {
         }
     }
 }
+
+// ── Comparing schemas (prompt 038) ───────────────────────────────────────────
+
+/// The round trip on every server: two schemas that started the same, one of them changed; the script
+/// that is proposed, applied to the other (with its dangerous steps switched on), leaves no difference.
+/// Without them switched on nothing that holds data is gone.
+#[test]
+#[ignore]
+fn a_migration_script_applied_leaves_no_difference() {
+    use schema_commander_lib::db::compare::{
+        DANGER, State, compare, script, snapshot, with_danger,
+    };
+    for (p, product) in [
+        (pg(), "postgres"),
+        (my(), "mysql"),
+        (maria(), "mariadb"),
+        (ms(), "sqlserver"),
+    ] {
+        let kind = p.kind;
+        let mut s = open(&p);
+        let (a, b) = ("sc_cmp_a", "sc_cmp_b");
+        for schema in [a, b] {
+            match kind {
+                DbKind::Postgres => {
+                    run(&mut s, &format!("DROP SCHEMA IF EXISTS {schema} CASCADE"));
+                    run(&mut s, &format!("CREATE SCHEMA {schema}"));
+                }
+                DbKind::Mysql => {
+                    run(&mut s, &format!("DROP DATABASE IF EXISTS {schema}"));
+                    run(&mut s, &format!("CREATE DATABASE {schema}"));
+                }
+                _ => {
+                    for t in ["v_names", "v_stale"] {
+                        run(&mut s, &format!("DROP VIEW IF EXISTS {schema}.{t}"));
+                    }
+                    for t in ["book", "legacy", "author"] {
+                        run(&mut s, &format!("DROP TABLE IF EXISTS {schema}.{t}"));
+                    }
+                    run(&mut s, &format!("DROP SCHEMA IF EXISTS {schema}"));
+                    run(&mut s, &format!("CREATE SCHEMA {schema}"));
+                }
+            }
+            // what both start with
+            run(
+                &mut s,
+                &format!(
+                    "CREATE TABLE {schema}.author (id int NOT NULL PRIMARY KEY, name varchar(40) NOT NULL, \
+                     note varchar(20) NULL, age int NULL)"
+                ),
+            );
+            run(
+                &mut s,
+                &format!(
+                    "CREATE TABLE {schema}.legacy (id int NOT NULL PRIMARY KEY, gone varchar(10) NULL)"
+                ),
+            );
+            run(
+                &mut s,
+                &format!("CREATE INDEX author_note ON {schema}.author (note)"),
+            );
+            run(
+                &mut s,
+                &format!("CREATE VIEW {schema}.v_stale AS SELECT id FROM {schema}.legacy"),
+            );
+        }
+        // the source moves on
+        for sql in [
+            format!("DROP VIEW {a}.v_stale"),
+            format!("DROP TABLE {a}.legacy"),
+            format!(
+                "CREATE TABLE {a}.book (id int NOT NULL PRIMARY KEY, author_id int NOT NULL, \
+                 title varchar(200) NOT NULL, price decimal(8,2) NULL, \
+                 CONSTRAINT book_author FOREIGN KEY (author_id) REFERENCES {a}.author (id), \
+                 CONSTRAINT book_price CHECK (price >= 0))"
+            ),
+            format!("CREATE UNIQUE INDEX book_title ON {a}.book (title, author_id)"),
+            format!("DROP INDEX author_note ON {a}.author").replace(
+                &format!("DROP INDEX author_note ON {a}.author"),
+                &if kind == DbKind::Postgres {
+                    format!("DROP INDEX {a}.author_note")
+                } else {
+                    format!("DROP INDEX author_note ON {a}.author")
+                },
+            ),
+            format!("CREATE INDEX author_name ON {a}.author (name)"),
+            // a new column with a default, a wider type, a column that goes
+            match kind {
+                DbKind::Sqlserver => {
+                    format!("ALTER TABLE {a}.author ADD born int NOT NULL DEFAULT 1900")
+                }
+                _ => format!("ALTER TABLE {a}.author ADD COLUMN born int NOT NULL DEFAULT 1900"),
+            },
+            match kind {
+                DbKind::Postgres => {
+                    format!("ALTER TABLE {a}.author ALTER COLUMN note TYPE varchar(80)")
+                }
+                DbKind::Mysql => {
+                    format!("ALTER TABLE {a}.author MODIFY COLUMN note varchar(80) NULL")
+                }
+                _ => format!("ALTER TABLE {a}.author ALTER COLUMN note varchar(80) NULL"),
+            },
+            format!("ALTER TABLE {a}.author DROP COLUMN age"),
+            format!("CREATE VIEW {a}.v_names AS SELECT id, name FROM {a}.author"),
+        ] {
+            run(&mut s, &sql);
+        }
+        let read = |s: &mut Box<dyn Session>, schema: &str| {
+            snapshot(s.as_mut(), kind, schema, &|| false).unwrap()
+        };
+        let differing = |s: &mut Box<dyn Session>| -> Vec<String> {
+            let (left, right) = (read(s, a), read(s, b));
+            compare(&left, &right, &[])
+                .unwrap()
+                .into_iter()
+                .filter(|i| i.state != State::Same)
+                .map(|i| format!("{} {:?}", i.id, i.state))
+                .collect()
+        };
+        assert!(
+            differing(&mut s).len() >= 8,
+            "{product}: {:?}",
+            differing(&mut s)
+        );
+        let apply = |s: &mut Box<dyn Session>, sql: &str| {
+            // batches at GO (SQL Server), statements at the end of a line
+            for batch in sql.split("\nGO\n") {
+                let code: String = batch
+                    .lines()
+                    .filter(|l| !l.trim_start().starts_with("--") && l.trim() != "GO")
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let statements: Vec<&str> = if batch
+                    .trim_start()
+                    .to_uppercase()
+                    .starts_with("CREATE OR ALTER")
+                {
+                    vec![code.as_str()]
+                } else {
+                    code.split(";\n").collect()
+                };
+                for statement in statements {
+                    let statement = statement.trim().trim_end_matches(';');
+                    if !statement.is_empty() {
+                        s.query(statement, Limits::rows(1), &|| false)
+                            .unwrap_or_else(|e| panic!("{product}: {statement}\n→ {e}\n\n{sql}"));
+                    }
+                }
+            }
+        };
+        // as proposed: what may lose data did not run
+        let proposed = script(&read(&mut s, a), &read(&mut s, b), None, &[]).unwrap();
+        assert!(proposed.contains(DANGER), "{product}");
+        apply(&mut s, &proposed);
+        let left = differing(&mut s);
+        // (MySQL can only state a column anew to widen it: that is marked too)
+        let mut expected = vec!["table:author Different", "column:author.age OnlyRight"];
+        if kind == DbKind::Mysql {
+            expected.push("column:author.note Different");
+        }
+        expected.extend(["table:legacy OnlyRight", "view:v_stale OnlyRight"]);
+        assert_eq!(left, expected, "{product}:\n{proposed}");
+        // with the danger switched on: nothing is left
+        let rest = with_danger(&script(&read(&mut s, a), &read(&mut s, b), None, &[]).unwrap());
+        apply(&mut s, &rest);
+        assert_eq!(
+            differing(&mut s),
+            Vec::<String>::new(),
+            "{product}:\n{rest}"
+        );
+        // and the target takes rows as the source does
+        run(
+            &mut s,
+            &format!("INSERT INTO {b}.author (id, name) VALUES (1, 'a')"),
+        );
+        run(
+            &mut s,
+            &format!("INSERT INTO {b}.book (id, author_id, title, price) VALUES (1, 1, 't', 2.5)"),
+        );
+        assert!(
+            !try_run(
+                &mut s,
+                &format!(
+                    "INSERT INTO {b}.book (id, author_id, title, price) VALUES (2, 9, 'x', 1)"
+                )
+            ),
+            "{product}: the key of the target does not hold"
+        );
+        assert_eq!(
+            rows(&run(&mut s, &format!("SELECT born FROM {b}.author"))),
+            json!([[1900]]),
+            "{product}"
+        );
+        // sizes came along: two digits behind the point, and a title of 200 characters fits
+        let made = read(&mut s, b);
+        let book = made.tables.iter().find(|t| t.name == "book").unwrap();
+        let types: Vec<String> = book
+            .columns
+            .iter()
+            .map(|c| c.type_name.to_lowercase().replace(' ', ""))
+            .collect();
+        assert!(types[2].ends_with("(200)"), "{product}: {types:?}");
+        assert!(types[3].ends_with("(8,2)"), "{product}: {types:?}");
+        assert_eq!(
+            rows(&run(
+                &mut s,
+                &format!("SELECT CAST(price AS char(10)) FROM {b}.book")
+            ))[0][0]
+                .as_str()
+                .map(str::trim),
+            Some("2.50"),
+            "{product}"
+        );
+        run(
+            &mut s,
+            &format!(
+                "UPDATE {b}.book SET title = '{}' WHERE id = 1",
+                "t".repeat(200)
+            ),
+        );
+    }
+}

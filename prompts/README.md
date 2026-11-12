@@ -60,7 +60,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 | 035 | [Weitere Datenbanken](035-weitere-datenbanken.md) ([Design 035a](035a-postgres-protokoll.design.md)) | A6 | 003, 008 | L (je Treiber S–M) | teilweise: 035a ✅ 12.11.2026 (CockroachDB, TimescaleDB, Flags); übrige Datenbanken offen |
 | 036 | [Suche auf dem Server](done/036-server-suche.md) ([Design](done/036-server-suche.design.md)) | B4 | 008, 011 (Job-Engine) | M | ✅ 12.11.2026 |
 | 037 | [ER-Diagramm](done/037-er-diagramm.md) ([Design](done/037-er-diagramm.design.md)) | B5 | 008, 019 | L | ✅ 12.11.2026 |
-| 038 | [Schema-Vergleich](038-schema-vergleich.md) | B6 | 019 | L | offen |
+| 038 | [Schema-Vergleich](done/038-schema-vergleich.md) ([Design](done/038-schema-vergleich.design.md)) | B6 | 019 | L | ✅ 12.11.2026 |
 | 039 | [Ausführungsplan](039-ausfuehrungsplan.md) | C9 | 005, 012 | M–L | offen |
 | 040 | [Zeile als Formular](040-zeilen-formular.md) | D4 | 007 (026 und 031 für Wert-Ansicht/Bearbeiten) | S–M | offen |
 | 041 | [Mehrere Ergebnisse, Anpinnen, Vergleichen](041-ergebnisse-vergleichen.md) | D9 | 005, 006 | M | offen |

@@ -195,7 +195,20 @@ pub fn diagram(
         ),
         DbKind::Sqlserver => (
             s.ask(
-                "SELECT o.name, c.name, t.name, CASE WHEN c.is_nullable = 1 THEN 'true' ELSE 'false' END, \
+                // the type with its size: the name alone would be another type (`varchar` is `varchar(1)`)
+                "SELECT o.name, c.name, \
+                   CASE WHEN t.name IN ('varchar', 'char', 'varbinary', 'binary') THEN t.name + '(' \
+                       + CASE WHEN c.max_length = -1 THEN 'max' \
+                           ELSE CAST(c.max_length AS varchar(10)) END + ')' \
+                     WHEN t.name IN ('nvarchar', 'nchar') THEN t.name + '(' \
+                       + CASE WHEN c.max_length = -1 THEN 'max' \
+                           ELSE CAST(c.max_length / 2 AS varchar(10)) END + ')' \
+                     WHEN t.name IN ('decimal', 'numeric') THEN t.name + '(' \
+                       + CAST(c.precision AS varchar(10)) + ',' + CAST(c.scale AS varchar(10)) + ')' \
+                     WHEN t.name IN ('datetime2', 'time', 'datetimeoffset') THEN t.name + '(' \
+                       + CAST(c.scale AS varchar(10)) + ')' \
+                     ELSE t.name END, \
+                   CASE WHEN c.is_nullable = 1 THEN 'true' ELSE 'false' END, \
                    CASE WHEN EXISTS (SELECT 1 FROM sys.indexes i JOIN sys.index_columns ic \
                      ON ic.object_id = i.object_id AND ic.index_id = i.index_id \
                      WHERE i.object_id = o.object_id AND i.is_primary_key = 1 \

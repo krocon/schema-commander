@@ -63,10 +63,12 @@
   **Suche auf dem Server**: ein Text in den Zeilen aller Tabellen und in Definitionen, als lesender Job (Prompt 036);
   **ER-Diagramm** eines Schemas oder einer Tabelle mit Nachbarn: eigene Anordnung, verschiebbar, Listenansicht,
   Export als SVG, Mermaid, DBML (Prompt 037);
+  **Schema-Vergleich**: zwei Schemata oder Schnappschüsse, Unterschiede, Migrationsskript als Vorschlag mit
+  auskommentierten gefährlichen Schritten (Prompt 038);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a, 036, 037),
+  erledigt: 001–034, 035a, 036–038),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -109,6 +111,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                FileDialogApi (native Öffnen-/Speichern-Dialoge: einzige Quelle für Pfade),
                                ClipboardApi (copy_result, copy_text: die Zwischenablage gehört Rust),
                                ExportApi (export_result, export_query, cancel_job, reveal_export)
+  app/core/compare/            CompareApi (schema_snapshot, schema_compare, schema_script) – spiegelt db/compare.rs
   app/core/connections/        Profile (Modell), ConnectionsApi, ConnectionsStore (Root: Profile, Zustände, aktive
                                Verbindung, Passwortabfrage)
   app/core/errors/             AppError + ErrorDetails + toAppError (spiegelt src-tauri/src/error.rs), error-texts
@@ -173,6 +176,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/snippets/       SnippetDialog, snippet-logic.ts (rein: mitgelieferte je Dialekt, Variablen)
   app/features/schema/         SchemaTree (virtuelle Liste, APG-Baum), SchemaStore (Root: Zustand je Verbindung),
                                SchemaActions, schema-logic.ts (rein: Zeilen, Filter, Tasten, Vorlagen)
+  app/features/schema-compare/ SchemaCompareDialog (zwei Seiten, Liste, Definitionen nebeneinander), compare-logic.ts
+                               (rein: Filter, zeilenweiser Vergleich, Bericht, Umbenennungen)
   app/features/server-search/  ServerSearchDialog (Suche, Treffer als Listen), ServerSearchService (Root: ein Job,
                                Treffer öffnen), server-search-logic.ts (rein)
   app/features/settings/       SettingsDialog (Gruppen, Suche, Zurücksetzen, Export/Import), settings-logic.ts
@@ -237,6 +242,8 @@ src-tauri/                     Rust
                                auch böser Werte)
   src/db/guard.rs              Anweisungen einstufen (lesend/schreibend/DDL/gefährlich), Schutzstufen (rein, Katalog)
   src/db/diagram.rs            Tabellen, Schlüssel und eindeutige Spaltensätze eines Schemas für das ER-Diagramm
+  src/db/compare.rs            Schema-Vergleich: Schnappschuss, Unterschiede, Migrationsskript (rein bis auf das
+                               Lesen; Katalog böser Namen, Rundreise)
   src/db/details.rs            Objekt-Details als Listen + DDL je Datenbank (Katalog, gebundene Parameter)
   src/db/relations.rs          Fremdschlüssel einer Tabelle als Daten, je Datenbank (Katalog, gebundene Parameter)
   src/db/names.rs              Namensindex je Verbindung: Katalog lesen, Suche und Rangfolge (rein, Katalog als Test)
@@ -305,6 +312,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   Fenster; das Fenster zeigt den Text, den es bekommt.
 - **Werte**: Eine `Cell` trägt den ganzen Wert; gekürzt wird nur beim Schreiben der Zeile. Nichts aus einem
   Wert wird als Markup in die Seite gesetzt; Bilder nur innerhalb der Grenzen von `value-logic.ts` als `blob:`.
+- **Schema-Vergleich**: Das Migrationsskript führt die App nie aus. Jeder Schritt, der Daten kosten kann, steht
+  mit `-- DANGER: ` als Kommentar (`compare::danger`); neue Schritte in `script()` brauchen diese Prüfung.
 - **Suche auf dem Server**: nur `db/find.rs` baut ihre Anweisungen; der Suchtext ist immer gebunden. Ein Treffer
   führt über `TableViews.openWith` als Bedingung in eine Tabellen-Ansicht.
 - **Import**: Die Datei ist feindlich. Ihre Spaltennamen werden nie SQL (Zielspalten nennt die Zuordnung, gequotet
