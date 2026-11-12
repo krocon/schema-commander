@@ -2842,7 +2842,7 @@ pub fn testdata_keys(
             ));
         };
         let column = q(&key.ref_columns[0]);
-        let table = if kind == crate::db::DbKind::Sqlite || key.ref_schema.is_empty() {
+        let table = if kind.is_sqlite() || key.ref_schema.is_empty() {
             q(&key.ref_table)
         } else {
             format!("{}.{}", q(&key.ref_schema), q(&key.ref_table))
@@ -3078,9 +3078,12 @@ fn testdata_literal(
     match kind {
         ValueKind::Number if number => text.to_owned(),
         ValueKind::Bool => match (dialect, text == "true") {
-            (crate::db::DbKind::Sqlserver | crate::db::DbKind::Sqlite, yes) => {
-                if yes { "1" } else { "0" }.to_owned()
-            }
+            (
+                crate::db::DbKind::Sqlserver
+                | crate::db::DbKind::Sqlite
+                | crate::db::DbKind::Libsql,
+                yes,
+            ) => if yes { "1" } else { "0" }.to_owned(),
             (_, true) => "TRUE".to_owned(),
             (_, false) => "FALSE".to_owned(),
         },
@@ -3135,7 +3138,7 @@ pub fn testdata_export(
     let q = |n: &str| meta::quote_always(n, kind);
     let table = {
         let spec = generator.spec();
-        if kind == crate::db::DbKind::Sqlite || spec.schema.is_empty() {
+        if kind.is_sqlite() || spec.schema.is_empty() {
             q(&spec.table)
         } else {
             format!("{}.{}", q(&spec.schema), q(&spec.table))

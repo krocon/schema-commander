@@ -55,3 +55,31 @@ geht dort über das Netz – nur der Weg ist ein anderer, und was eine Datei vor
   DDL, Fremdschlüssel, Diagramm, Schnappschuss, Plan, Suche; Filtern, Sortieren und ein Schreibplan (ändern mit
   Sperre, einfügen mit Rückgabe) in einer Transaktion.
 - Unit-Tests: `libsql.rs` (Fehler, Werte, Anmeldung), `import.rs` (Turso-Adresse), `guard.rs`, `mod.rs` (Flags).
+
+## Review
+
+Ein zweiter, nur lesender Blick über den Branch, gegen den laufenden Server geprüft. Kein Weg des Tokens nach
+außen, keine Injektion gefunden; die Befunde betreffen Transaktionen, die verloren gingen, ohne dass es jemand
+erfuhr. Behoben, mit Tests (`review_a_lost_transaction_is_said_and_a_cut_result_does_not_hang`, `libsql.rs`):
+
+| # | Befund | Behebung |
+|---|---|---|
+| 1 (hoch) | Nach einem abgeschnittenen Ergebnis wirkten Stopp und Zeitlimit nicht mehr; ein Ergebnis ohne Ende wurde endlos gelesen | Ohne Transaktion wird die Anfrage zurückgelassen und ein neuer Stream genommen; in einer Transaktion wird der Rest gelesen und verworfen, Stopp und Zeitlimit gelten |
+| 2 (hoch) | `describe` nimmt an, was der Cursor ablehnt (`VACUUM`, `ATTACH`, mehrere Anweisungen): Die Transaktion war weg, gemeldet wurde nur „unsupported statement“ | Eine Regel: Kostet ein Fehler den Stream, während eine Transaktion offen ist, sagt die Meldung, dass sie zurückgerollt ist. Mehrere Anweisungen in einem Text sind ein Fehler der Anweisung |
+| 3 (hoch) | Die Frage nach dem Zustand verschluckte den Hinweis „Transaktion verloren“; im manuellen Modus lief das nächste Schreiben danach ohne Transaktion | Den Hinweis gibt nur die nächste Anweisung (einmal); der Zustand ist bis dahin „keine“ |
+| 4 | Stopp, Zeitlimit und Netzfehler in einer Transaktion gaben den Stream auf, ohne es zu sagen | dieselbe Regel wie in 2; ein Stopp ist dann ein Fehler, der sagt, was er gekostet hat |
+| 5 | „Abgebrochen“ heißt dort: Die Anweisung läuft auf dem Server zu Ende | steht in der Meldung zum Zeitlimit und im Design (E7). **Bleibt so** – das Protokoll kann es nicht |
+| 6 | Durch einen SSH-Tunnel ging ein Token ohne TLS weiter (der Treiber sah nur `127.0.0.1`) | geprüft wird vor dem Umschreiben der Adresse; ohne TLS nur, wenn der Server der Sprung-Host selbst ist |
+| 7 | Herzschlag: eine Antwort ohne `baton` oder ohne lesbaren Zustand galt als „keine Transaktion“ | gilt als verlorene Transaktion |
+| 8 | Der Herzschlag einer geschlossenen Sitzung konnte weiterlaufen; das Schließen wartete auf das Netz | Marke „geschlossen“; das Schließen des Streams läuft auf einem eigenen Thread |
+| 9 | Eine Zeile mit falscher Zellenzahl wurde still verworfen; ±Unendlich kommt als `null` | ist ein Fehler; Unendlich wird als nicht lesbar gezeigt (welches es war, sagt der Server nicht) |
+| 10 | Die Stelle eines Fehlers zählte Zeichen, der Server Bytes; in einer Transaktion fehlte sie | umgerechnet; auch `(at offset N)` wird gelesen |
+| 11, 12 | drei Vergleiche nur mit `Sqlite`; Sicherungsdialog zeigte ein Schema-Feld; der Verbindungsdialog nannte das Token „Passwort“ | behoben |
+
+Offen geblieben:
+
+- Der Cursor hat kein Lese-Zeitlimit: Eine zurückgelassene Anfrage auf einer toten Verbindung lebt, bis das
+  Betriebssystem sie aufgibt.
+- Ein zurückgelassener Stream hält in einer Transaktion die Schreibsperre von SQLite, bis der Server ihn verwirft
+  (etwa zehn Sekunden nach dem Ende der Anweisung): Das nächste Schreiben kann so lange `SQLITE_BUSY` bekommen.
+- Das Feld „Datenbank“ im Verbindungsdialog wird für libSQL gezeigt und nicht gebraucht.

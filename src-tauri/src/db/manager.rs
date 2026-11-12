@@ -387,6 +387,18 @@ impl ConnectionManager {
     ) -> AppResult<Box<dyn Session>> {
         match tunnel {
             Some(tunnel) => {
+                // behind the tunnel the way goes on in the clear: a token of libSQL does not take it
+                // unless the server is the jump host itself (review 035g 6)
+                if profile.kind == DbKind::Libsql
+                    && profile.tls == super::TlsMode::Off
+                    && secret.is_some_and(|s| !s.is_empty())
+                    && !super::libsql::local(profile.host.trim())
+                {
+                    return Err(AppError::new(
+                        ErrorCode::InvalidProfile,
+                        "a token or password is sent only over TLS (or to the jump host itself): switch TLS on",
+                    ));
+                }
                 let mut local = profile.clone();
                 local.host = "127.0.0.1".to_string();
                 local.port = tunnel.port();

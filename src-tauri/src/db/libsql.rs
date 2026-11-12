@@ -56,6 +56,8 @@ struct Stream {
     busy: bool,
     /// The stream was lost while a transaction was open: said once, with the next statement.
     lost_tx: bool,
+    /// The session is gone: the heartbeat ends, whoever still holds the wire.
+    closed: bool,
     used: Option<Instant>,
 }
 
@@ -73,6 +75,7 @@ fn failed(code: &str, message: &str, sql: &str) -> AppError {
     let said = message
         .strip_prefix("SQLite error: ")
         .or_else(|| message.strip_prefix("SQL string could not be parsed: "))
+        .or_else(|| message.strip_prefix("SQL input error: "))
         .unwrap_or(message);
     // the parser of the server names line and column: `syntax error around L1:6: …`
     let place = message.split_once(" around L").and_then(|(_, rest)| {
@@ -80,17 +83,29 @@ fn failed(code: &str, message: &str, sql: &str) -> AppError {
         let column: String = rest.chars().take_while(char::is_ascii_digit).collect();
         Some((line.parse::<u32>().ok()?, column.parse::<u32>().ok()?))
     });
-    let position = place.and_then(|(line, column)| {
-        if line == 0 || column == 0 {
-            return None;
-        }
-        let before: usize = sql
-            .split('\n')
-            .take(line as usize - 1)
-            .map(|l| l.chars().count() + 1)
-            .sum();
-        u32::try_from(before).ok().map(|b| b + column)
-    });
+    // the server counts the column in bytes, the editor in characters
+    let position = place
+        .and_then(|(line, column)| {
+            if line == 0 || column == 0 {
+                return None;
+            }
+            let mut lines = sql.split('\n');
+            let before: usize = lines
+                .by_ref()
+                .take(line as usize - 1)
+                .map(|l| l.chars().count() + 1)
+                .sum();
+            let here = lines.next()?;
+            let within = here.get(..(column as usize - 1).min(here.len()))?;
+            u32::try_from(before + within.chars().count() + 1).ok()
+        })
+        .or_else(|| {
+            // `… (at offset 7)`: bytes from the start of the statement, from 0
+            let rest = message.split("(at offset ").nth(1)?;
+            let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+            let before = sql.get(..digits.parse::<usize>().ok()?.min(sql.len()))?;
+            u32::try_from(before.chars().count() + 1).ok()
+        });
     AppError::new(kind, clean(said)).with(ErrorDetails {
         sqlstate: (!code.is_empty()).then(|| code.to_owned()),
         position,
@@ -123,7 +138,7 @@ fn stream_gone(status: u16, body: &str) -> bool {
 fn unreadable(body: &str) -> Option<String> {
     let said = serde_json::from_str::<Value>(body).ok()?;
     let said = said.get("error")?.as_str()?;
-    let at = said.find("SQL string could not be parsed: ")?;
+    let at = said.find("SQL string ")?;
     Some(said[at..].trim_end_matches('`').to_owned())
 }
 
@@ -132,6 +147,24 @@ fn lost_transaction() -> AppError {
         ErrorCode::ConnectionFailed,
         "the server closed the session, and with it the open transaction: its changes are rolled back",
     )
+}
+
+/// An error that cost the stream while a transaction was open: said with what it cost. A stop is no
+/// error for the user – the lost transaction is one.
+fn with_lost_transaction(cause: AppError) -> AppError {
+    let code = match cause.code {
+        ErrorCode::Cancelled => ErrorCode::ConnectionFailed,
+        other => other,
+    };
+    let mut e = AppError::new(
+        code,
+        format!(
+            "{} – the session on the server ended with it, and with it the open transaction: its changes are rolled back",
+            cause.message
+        ),
+    );
+    e.details = cause.details;
+    e
 }
 
 /// How the profile logs in: a token alone (Turso, `sqld` with a JWT key) as `Bearer`, a user with a
@@ -187,7 +220,7 @@ pub fn connect(profile: &Profile, secret: Option<&Secret>, stop: Stop) -> AppRes
     Ok(session)
 }
 
-fn local(host: &str) -> bool {
+pub fn local(host: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "::1" | "[::1]")
 }
 
@@ -203,6 +236,9 @@ fn beat(wire: Weak<Wire>) {
                 };
                 let baton = {
                     let mut stream = wire.stream.lock();
+                    if stream.closed {
+                        return;
+                    }
                     let due = stream.used.is_none_or(|at| at.elapsed() >= BEAT);
                     if stream.busy || !stream.in_tx || !due {
                         continue;
@@ -218,11 +254,12 @@ fn beat(wire: Weak<Wire>) {
                 stream.busy = false;
                 stream.used = Some(Instant::now());
                 match state {
-                    Ok((baton, autocommit)) => {
-                        stream.baton = baton;
+                    Ok((Some(baton), autocommit)) => {
+                        stream.baton = Some(baton);
                         stream.in_tx = !autocommit;
                     }
-                    Err(_) => {
+                    // no stream to go on with, or no answer: the transaction is gone
+                    Ok((None, _)) | Err(_) => {
                         stream.baton = None;
                         stream.in_tx = false;
                         stream.lost_tx = true;
@@ -249,9 +286,10 @@ fn cell(v: &Value) -> Cell {
             Some(Value::Number(n)) => n.as_i64().map_or(Cell::Decimal(n.to_string()), Cell::I64),
             _ => Cell::Unreadable("integer".into()),
         },
+        // JSON has no infinity: the server writes null for one, and which it was is lost
         "float" => match v.get("value").and_then(Value::as_f64) {
             Some(f) => Cell::F64(f),
-            None => Cell::Unreadable("float".into()),
+            None => Cell::Unreadable("float (not finite)".into()),
         },
         "text" => Cell::Text(text(
             v.get("value").and_then(Value::as_str).unwrap_or_default(),
@@ -359,10 +397,15 @@ impl Wire {
         let v = self
             .pipeline(baton, json!([{"type": "get_autocommit"}]))
             .map_err(|(_, e)| e)?;
-        let autocommit = v
+        let Some(autocommit) = v
             .pointer("/results/0/response/is_autocommit")
             .and_then(Value::as_bool)
-            .unwrap_or(true);
+        else {
+            return Err(AppError::new(
+                ErrorCode::ConnectionFailed,
+                format!("{}: the answer of the server could not be read", self.on),
+            ));
+        };
         Ok((
             v.get("baton").and_then(Value::as_str).map(str::to_owned),
             autocommit,
@@ -475,7 +518,14 @@ impl Wire {
                         .and_then(Value::as_array)
                         .map(|row| row.iter().map(cell).collect())
                         .unwrap_or_default();
-                    cells.len() != columns || say(Event::Row(cells))
+                    if cells.len() != columns {
+                        say(Event::Failed(AppError::new(
+                            ErrorCode::ConnectionFailed,
+                            format!("{}: the answer of the server could not be read", self.on),
+                        )));
+                        return;
+                    }
+                    say(Event::Row(cells))
                 }
                 "step_end" => say(Event::Changed(
                     v.get("affected_row_count")
@@ -513,10 +563,14 @@ struct Answer {
 
 impl Libsql {
     /// Takes the stream for a request; a transaction the server dropped meanwhile is said here, once.
-    fn take(&self) -> AppResult<Option<String>> {
+    fn take(&self, report: bool) -> AppResult<Option<String>> {
         let deadline = Instant::now() + SMALL;
         loop {
             let mut stream = self.wire.stream.lock();
+            if stream.lost_tx && !report {
+                // only a statement says it (and may then go on): the state is simply „none“
+                return Err(lost_transaction());
+            }
             if stream.lost_tx {
                 stream.lost_tx = false;
                 return Err(lost_transaction());
@@ -558,7 +612,7 @@ impl Libsql {
         stop: Stop,
     ) -> AppResult<Answer> {
         let started = Instant::now();
-        let mut baton = self.take()?;
+        let mut baton = self.take(true)?;
         let had_tx = self.wire.stream.lock().in_tx;
         if had_tx && baton.is_some() {
             // a statement the server cannot read costs the cursor its stream – and with it the open
@@ -584,7 +638,7 @@ impl Libsql {
                 }
                 Err((false, e)) => {
                     self.give(None, None);
-                    return Err(e);
+                    return Err(with_lost_transaction(e));
                 }
             }
         }
@@ -617,7 +671,7 @@ impl Libsql {
                 // nobody listens any more: whatever the stream held is given up with it
                 left.store(true, Ordering::Relaxed);
                 this.give(None, None);
-                Err(e)
+                Err(if had_tx { with_lost_transaction(e) } else { e })
             };
             let outcome: AppResult<()> = loop {
                 match incoming.recv_timeout(Duration::from_millis(50)) {
@@ -629,14 +683,20 @@ impl Libsql {
                         answer.columns = columns;
                     }
                     Ok(Event::Row(cells)) => {
-                        if answer.truncated {
-                            continue;
-                        }
-                        answer.rows += 1;
-                        if !sink.row(cells) {
-                            // no more rows are wanted; the rest of the answer is read and dropped,
-                            // so the stream stays usable
-                            answer.truncated = true;
+                        if !answer.truncated {
+                            answer.rows += 1;
+                            if !sink.row(cells) {
+                                answer.truncated = true;
+                                if !had_tx {
+                                    // no more rows are wanted and nothing hangs on the stream:
+                                    // the request is left behind, the next statement opens a new one
+                                    left.store(true, Ordering::Relaxed);
+                                    self.give(None, None);
+                                    return Ok(answer);
+                                }
+                                // inside a transaction the stream must live: the rest of the
+                                // answer is read and dropped – until it ends or the work is stopped
+                            }
                         }
                     }
                     Ok(Event::Changed(n)) => answer.changed = n,
@@ -660,7 +720,10 @@ impl Libsql {
                 if timeout.is_some_and(|t| started.elapsed() >= t) {
                     return leave(
                         self,
-                        AppError::new(ErrorCode::Timeout, "the statement took too long"),
+                        AppError::new(
+                            ErrorCode::Timeout,
+                            "the statement took too long (the server cannot be told to stop it: it may still finish there)",
+                        ),
                     );
                 }
             };
@@ -681,14 +744,16 @@ impl Libsql {
                     self.give(next, None);
                     Ok(answer)
                 }
-                // what the server said about the statement: the stream goes on
+                // what the server said about the statement: the stream goes on – if it still has one
+                // (a statement the cursor cannot read costs it)
                 Err(e) if super::keeps_connection(e.code) => {
+                    let lost = had_tx && next.is_none();
                     self.give(next, None);
-                    Err(e)
+                    Err(if lost { with_lost_transaction(e) } else { e })
                 }
                 Err(e) => {
                     self.give(None, None);
-                    Err(e)
+                    Err(if had_tx { with_lost_transaction(e) } else { e })
                 }
             };
         }
@@ -698,8 +763,9 @@ impl Libsql {
 
     /// Asks the server whether a transaction is open and remembers it for the heartbeat.
     fn refresh(&mut self) -> TxState {
-        let Ok(baton) = self.take() else {
-            return TxState::Unknown;
+        // a transaction the server dropped is none; saying so is left to the next statement
+        let Ok(baton) = self.take(false) else {
+            return TxState::Idle;
         };
         if baton.is_none() {
             // no stream, no transaction
@@ -807,14 +873,21 @@ impl Drop for Libsql {
         // the stream is given back; an open transaction ends with it
         let baton = {
             let mut stream = self.wire.stream.lock();
+            stream.closed = true;
+            stream.in_tx = false;
             if stream.busy {
                 return;
             }
-            stream.in_tx = false;
             stream.baton.take()
         };
         if baton.is_some() {
-            let _ = self.wire.pipeline(baton, json!([{"type": "close"}]));
+            // not on this thread: whoever closes a connection must not wait for the network
+            let wire = Arc::clone(&self.wire);
+            let _ = std::thread::Builder::new()
+                .name("sc-libsql-close".into())
+                .spawn(move || {
+                    let _ = wire.pipeline(baton, json!([{"type": "close"}]));
+                });
         }
     }
 }
@@ -859,6 +932,33 @@ mod tests {
         assert_eq!(e.code, ErrorCode::InvalidQuery);
         assert_eq!(e.details.unwrap().position, Some(9 + 8));
         assert_eq!(unreadable("<html>500</html>"), None);
+        // review 035g 2: also a text of several statements is a statement error
+        let many = unreadable(
+            r#"{"error":"Internal Error: `SQL string contains more than one statement`"}"#,
+        )
+        .unwrap();
+        assert_eq!(failed("", &many, "").code, ErrorCode::InvalidQuery);
+        // review 035g 10: the column counts bytes; inside a transaction the place is an offset
+        let e = failed(
+            "SQL_PARSE_ERROR",
+            "SQL string could not be parsed: syntax error around L1:22: `x`",
+            "select 'üüü' frm x y",
+        );
+        assert_eq!(e.details.unwrap().position, Some(19));
+        let e = failed(
+            "SQL_INPUT_ERROR",
+            "SQL input error: near \"frm\": syntax error (at offset 16)",
+            "select 'üüü' frm x y",
+        );
+        assert!(e.message.starts_with("near"));
+        assert_eq!(e.details.unwrap().position, Some(14));
+        // review 035g 2, 4: what cost the transaction is said with what it cost
+        let lost = with_lost_transaction(crate::db::cancelled());
+        assert_eq!(lost.code, ErrorCode::ConnectionFailed);
+        assert!(lost.message.contains("rolled back"));
+        let lost = with_lost_transaction(failed("X", "unsupported statement: VACUUM", ""));
+        assert_eq!(lost.code, ErrorCode::InvalidQuery);
+        assert!(lost.message.starts_with("unsupported statement: VACUUM –"));
     }
 
     #[test]

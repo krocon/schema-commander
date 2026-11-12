@@ -193,7 +193,9 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
               (input)="patch({ user: user.value })"
             />
 
-            <label for="conn-password">{{ t.password }}</label>
+            <label for="conn-password">{{
+              draft().kind === 'libsql' ? t.tokenOrPassword : t.password
+            }}</label>
             <span class="row">
               <input
                 #password

@@ -639,3 +639,89 @@ fn a_table_is_filtered_sorted_and_edited() {
     assert!(orphan.is_err(), "{orphan:?}");
     unshop(&mut s, p);
 }
+
+/// What the review of 035g found (the numbers are its findings).
+#[test]
+#[ignore]
+fn review_a_lost_transaction_is_said_and_a_cut_result_does_not_hang() {
+    const ENDLESS: &str = "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT x, hex(randomblob(100)) FROM c";
+    let stop = &|| false;
+    let mut s = open();
+    // 1: a result without an end, cut at a limit, comes back at once and the session goes on
+    let started = Instant::now();
+    let cut = s.query(ENDLESS, Limits::rows(5), stop).unwrap();
+    assert!(cut.truncated && cut.rows.len() == 5);
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(rows(&run(&mut s, "SELECT 1")), json!([[1]]));
+    // 2: several statements in one text are a statement error
+    let many = try_run(&mut s, "SELECT 1; SELECT 2").unwrap_err();
+    assert_eq!(many.code, ErrorCode::InvalidQuery, "{}", many.message);
+
+    script(
+        &mut s,
+        &[
+            "DROP TABLE IF EXISTS sc_l_rv",
+            "CREATE TABLE sc_l_rv (id INTEGER PRIMARY KEY, n TEXT)",
+        ],
+    );
+    // 1: inside a transaction a cut result leaves it open
+    run(&mut s, "BEGIN");
+    run(&mut s, "INSERT INTO sc_l_rv (n) VALUES ('a'), ('b'), ('c')");
+    let cut = s
+        .query("SELECT * FROM sc_l_rv", Limits::rows(1), stop)
+        .unwrap();
+    assert!(cut.truncated);
+    assert_eq!(s.transaction_state(stop), TxState::Active);
+    // 2: a statement the server reads for `describe` but not at the cursor costs the transaction –
+    // and says so
+    let lost = try_run(&mut s, "VACUUM").unwrap_err();
+    assert!(lost.message.contains("rolled back"), "{}", lost.message);
+    assert_eq!(s.transaction_state(stop), TxState::Idle);
+    assert_eq!(
+        rows(&run(&mut s, "SELECT count(*) FROM sc_l_rv")),
+        json!([[0]])
+    );
+    // 4: a statement stopped inside a transaction: an error that says what it cost, not a quiet stop
+    run(&mut s, "BEGIN");
+    run(&mut s, "INSERT INTO sc_l_rv (n) VALUES ('held')");
+    let stopped = s
+        .query(ENDLESS, Limits::rows(MAX_ROWS), &|| true)
+        .unwrap_err();
+    assert_eq!(
+        stopped.code,
+        ErrorCode::ConnectionFailed,
+        "{}",
+        stopped.message
+    );
+    assert!(stopped.message.contains("rolled back"));
+    // 3: asking for the state does not swallow anything, and the next statement runs
+    assert_eq!(s.transaction_state(stop), TxState::Idle);
+    assert_eq!(s.transaction_state(stop), TxState::Idle);
+    // the stream that was left behind holds its lock until the server drops it
+    let mut other = open();
+    let mut count = None;
+    for _ in 0..40 {
+        if let Ok(r) = try_run(&mut other, "SELECT count(*) FROM sc_l_rv") {
+            count = Some(rows(&r));
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    assert_eq!(count, Some(json!([[0]])));
+    // 10: the place of an error counts characters
+    let e = try_run(&mut s, "select 'üüü' frm x y").unwrap_err();
+    assert_eq!(e.details.unwrap().position, Some(19), "{}", e.message);
+    let mut dropped = false;
+    for _ in 0..60 {
+        if try_run(&mut s, "DROP TABLE sc_l_rv").is_ok() {
+            dropped = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    assert!(dropped);
+}
