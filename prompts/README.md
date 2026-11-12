@@ -57,7 +57,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 | 033 | [Import aus CSV und JSON](done/033-import.md) ([Design](done/033-import.design.md)) | F2 | 008, 011 | M–L | ✅ 12.11.2026 |
 | 034 | [Release und Verteilung](done/034-release.md) ([Design](done/034-release.design.md)) | G6 | – (sinnvoll nach Stufe 1) | M | ✅ 12.11.2026 (vorbereitet; kein Tag, kein Paket) |
 | | **Stufe 3 – nach Bedarf** | | | | |
-| 035 | [Weitere Datenbanken](035-weitere-datenbanken.md) ([Design 035a](035a-postgres-protokoll.design.md)) | A6 | 003, 008 | L (je Treiber S–M) | teilweise: 035a ✅ 12.11.2026 (CockroachDB, TimescaleDB, Flags); übrige Datenbanken offen |
+| 035 | [Weitere Datenbanken](035-weitere-datenbanken.md) ([Design 035a](035a-postgres-protokoll.design.md), [035b](035b-oracle.design.md)) | A6 | 003, 008 | L (je Treiber S–M) | teilweise: 035a ✅ 12.11.2026 (CockroachDB, TimescaleDB, Flags), 035b ✅ 12.11.2026 (Oracle; Plan, Monitor, Rechte, Struktur noch offen); übrige Datenbanken offen |
 | 036 | [Suche auf dem Server](done/036-server-suche.md) ([Design](done/036-server-suche.design.md)) | B4 | 008, 011 (Job-Engine) | M | ✅ 12.11.2026 |
 | 037 | [ER-Diagramm](done/037-er-diagramm.md) ([Design](done/037-er-diagramm.design.md)) | B5 | 008, 019 | L | ✅ 12.11.2026 |
 | 038 | [Schema-Vergleich](done/038-schema-vergleich.md) ([Design](done/038-schema-vergleich.design.md)) | B6 | 019 | L | ✅ 12.11.2026 |

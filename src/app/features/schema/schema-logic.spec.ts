@@ -290,6 +290,9 @@ describe('names and templates', () => {
   it('selects the first rows in the dialect', () => {
     expect(selectTemplate('postgres', 'orders')).toBe('SELECT *\nFROM orders\nLIMIT 200;');
     expect(selectTemplate('sqlserver', '[my table]')).toBe('SELECT TOP 200 *\nFROM [my table];');
+    expect(selectTemplate('oracle', 'SHOP.ORDERS')).toBe(
+      'SELECT *\nFROM SHOP.ORDERS\nFETCH FIRST 200 ROWS ONLY;',
+    );
     expect(selectTemplate('mysql', 'orders', [col('id'), col('Größe')], 10)).toBe(
       'SELECT id, "Größe"\nFROM orders\nLIMIT 10;',
     );

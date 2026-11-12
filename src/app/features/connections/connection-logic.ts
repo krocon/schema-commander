@@ -89,6 +89,10 @@ export function profileProblems(p: Profile): Partial<Record<Field, string>> {
     out.host = t.hostInvalid;
   }
   if (!p.user.trim()) out.user = t.userMissing;
+  if (p.kind === 'oracle') {
+    if (!p.database.trim()) out.database = t.serviceMissing;
+    if (p.tls === 'prefer' || p.tls === 'require') out.tls = t.oracleTlsChecked;
+  }
   if (!p.clientCert.trim() !== !p.clientKey.trim()) {
     out.clientKey = t.certPair;
   }
@@ -118,6 +122,7 @@ export function withKind(p: Profile, kind: DbKind): Profile {
     mysql: 'root',
     sqlserver: 'sa',
     sqlite: '',
+    oracle: 'system',
   };
   const usual = Object.values(users);
   return {

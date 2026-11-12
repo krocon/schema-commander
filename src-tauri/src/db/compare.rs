@@ -238,6 +238,7 @@ fn index_rows(s: &mut dyn Session, kind: DbKind, schema: &str, stop: Stop) -> Ap
             Some(TIMEOUT),
             stop,
         ),
+        DbKind::Oracle => Err(super::not_yet(kind, "schema compare and structure editing")),
     }
 }
 
@@ -291,6 +292,9 @@ pub fn snapshot(
     schema: &str,
     stop: Stop,
 ) -> AppResult<Snapshot> {
+    if kind == DbKind::Oracle {
+        return Err(super::not_yet(kind, "schema compare and structure editing"));
+    }
     let data = diagram::diagram(s, kind, schema, stop)?;
     let mut tables: BTreeMap<String, Table> = data
         .tables
@@ -1608,6 +1612,7 @@ fn grouped(
                                     }
                                 }
                             }
+                            DbKind::Oracle => return Err(super::not_yet(kind, "schema compare and structure editing")),
                             DbKind::Sqlite => sqls.push(note(&format!(
                                 "{}.{}: SQLite cannot change a column – the table must be rebuilt ({} → {})",
                                 table,
@@ -1840,6 +1845,7 @@ fn written(
                 DbKind::Mysql => "MySQL / MariaDB",
                 DbKind::Sqlserver => "SQL Server",
                 DbKind::Sqlite => "SQLite",
+                DbKind::Oracle => "Oracle",
             }
         )),
         note(

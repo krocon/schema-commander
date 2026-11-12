@@ -14,6 +14,8 @@ export const CONNECTION_DIALOG_DE: Translation<typeof CONNECTION_DIALOG_EN> = {
   host: 'Host',
   port: 'Port',
   serverDefault: '(Vorgabe des Servers)',
+  serviceName: 'Dienstname',
+  serviceExample: 'zum Beispiel FREEPDB1 oder ORCLPDB1',
   user: 'Benutzer',
   password: 'Passwort',
   unchanged: '(unverändert)',
@@ -76,6 +78,9 @@ export const CONNECTION_DIALOG_DE: Translation<typeof CONNECTION_DIALOG_EN> = {
   nameInvalid: 'Der Name ist nicht erlaubt.',
   portRange: 'Der Port liegt zwischen 1 und 65535.',
   fileMissing: 'Bitte eine Datei wählen.',
+  serviceMissing: 'Oracle braucht den Dienstnamen der Datenbank.',
+  oracleTlsChecked:
+    'Verbindungen zu Oracle prüfen das Zertifikat immer: einen Modus wählen, der es prüft, oder kein TLS.',
   hostMissing: 'Bitte einen Host eingeben.',
   hostInvalid: 'Nur der Name oder die Adresse des Rechners, ohne Leerzeichen, Pfad oder Benutzer.',
   userMissing: 'Bitte einen Benutzer eingeben.',

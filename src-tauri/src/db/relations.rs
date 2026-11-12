@@ -116,6 +116,17 @@ const MYSQL: &str = "SELECT k.CONSTRAINT_NAME, k.TABLE_SCHEMA, k.TABLE_NAME, k.C
          OR (k.REFERENCED_TABLE_SCHEMA = ? AND k.REFERENCED_TABLE_NAME = ?)) \
      ORDER BY k.TABLE_SCHEMA, k.TABLE_NAME, k.CONSTRAINT_NAME, k.ORDINAL_POSITION";
 
+const ORACLE: &str = "SELECT c.constraint_name, c.owner, c.table_name, cc.column_name, \
+       r.owner, r.table_name, rc.column_name \
+     FROM all_constraints c \
+     JOIN all_constraints r ON r.owner = c.r_owner AND r.constraint_name = c.r_constraint_name \
+     JOIN all_cons_columns cc ON cc.owner = c.owner AND cc.constraint_name = c.constraint_name \
+     JOIN all_cons_columns rc ON rc.owner = r.owner AND rc.constraint_name = r.constraint_name \
+       AND rc.position = cc.position \
+     WHERE c.constraint_type = 'R' \
+       AND ((c.owner = :1 AND c.table_name = :2) OR (r.owner = :3 AND r.table_name = :4)) \
+     ORDER BY c.owner, c.table_name, c.constraint_name, cc.position";
+
 const MSSQL: &str = "SELECT f.name, cs.name, ct.name, cc.name, ps.name, pt.name, pc.name \
      FROM sys.foreign_keys f \
      JOIN sys.foreign_key_columns fc ON fc.constraint_object_id = f.object_id \
@@ -203,6 +214,9 @@ pub fn relations(
         }
         DbKind::Sqlserver => fold(&s.ask(MSSQL, &[schema, table], Some(TIMEOUT), stop)?),
         DbKind::Sqlite => sqlite(s, schema, table, stop)?,
+        DbKind::Oracle => {
+            fold(&s.ask(ORACLE, &[schema, table, schema, table], Some(TIMEOUT), stop)?)
+        }
     };
     // SQLite compares names of tables without case, and so do MySQL on some systems and SQL Server by
     // collation: the catalog was asked with the name as given, so what came back belongs to the table

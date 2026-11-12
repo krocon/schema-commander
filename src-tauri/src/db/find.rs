@@ -306,6 +306,7 @@ fn as_text(column: &str, kind: DbKind) -> String {
         DbKind::Mysql => format!("CAST({column} AS CHAR)"),
         DbKind::Sqlserver => format!("CAST({column} AS nvarchar(max))"),
         DbKind::Sqlite => format!("CAST({column} AS TEXT)"),
+        DbKind::Oracle => format!("TO_CHAR({column})"),
     }
 }
 
@@ -342,6 +343,7 @@ pub fn data_question(
             DbKind::Mysql => "?".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
             DbKind::Sqlite => format!("?{n}"),
+            DbKind::Oracle => format!(":{n}"),
         }
     };
     let sensitive = spec.case_sensitive;
@@ -353,6 +355,7 @@ pub fn data_question(
         let text = as_text(&quoted, kind);
         selected.push(match kind {
             DbKind::Sqlite => format!("substr({text}, 1, {VALUE_CHARS})"),
+            DbKind::Oracle => format!("SUBSTR({text}, 1, {VALUE_CHARS})"),
             DbKind::Postgres | DbKind::Mysql | DbKind::Sqlserver => {
                 format!("LEFT({text}, {VALUE_CHARS})")
             }
@@ -412,6 +415,25 @@ pub fn data_question(
             (DbKind::Sqlite, _) => {
                 format!("{text} = {} COLLATE NOCASE", place(spec.text.clone()))
             }
+            // Oracle compares as the session sorts: with the case as it is, unless told otherwise
+            (DbKind::Oracle, Mode::Contains) if sensitive => {
+                format!("{text} LIKE {} ESCAPE '{ESCAPE}'", place(pattern.clone()))
+            }
+            (DbKind::Oracle, Mode::Contains) => format!(
+                "UPPER({text}) LIKE UPPER({}) ESCAPE '{ESCAPE}'",
+                place(pattern.clone())
+            ),
+            (DbKind::Oracle, Mode::Exact) if sensitive => {
+                format!("{text} = {}", place(spec.text.clone()))
+            }
+            (DbKind::Oracle, Mode::Exact) => {
+                format!("UPPER({text}) = UPPER({})", place(spec.text.clone()))
+            }
+            (DbKind::Oracle, Mode::Regex) => format!(
+                "REGEXP_LIKE({text}, {}, '{}')",
+                place(spec.text.clone()),
+                if sensitive { "c" } else { "i" }
+            ),
         });
     }
     let from = if schema.is_empty() {
@@ -423,6 +445,7 @@ pub fn data_question(
     let limit = spec.max_hits.clamp(1, 1_000) + 1;
     let (top, tail) = match kind {
         DbKind::Sqlserver => (format!("TOP ({limit}) "), String::new()),
+        DbKind::Oracle => (String::new(), format!(" FETCH FIRST {limit} ROWS ONLY")),
         _ => (String::new(), format!(" LIMIT {limit}")),
     };
     let sql = format!(
@@ -596,6 +619,15 @@ fn columns_of(
             limit,
             stop,
         )?,
+        DbKind::Oracle => s.ask(
+            "SELECT c.table_name, c.column_name, c.data_type FROM all_tab_cols c \
+             JOIN all_tables t ON t.owner = c.owner AND t.table_name = c.table_name \
+             WHERE c.owner = :1 AND c.hidden_column = 'NO' AND c.table_name NOT LIKE 'BIN$%' \
+             ORDER BY c.table_name, c.column_id",
+            &[schema],
+            limit,
+            stop,
+        )?,
     };
     Ok(rows
         .into_iter()
@@ -689,6 +721,21 @@ pub(super) fn source_questions(kind: DbKind, flavor: Flavor) -> Vec<&'static str
         DbKind::Sqlite => vec![
             "SELECT type, name, sql FROM sqlite_master \
              WHERE sql IS NOT NULL AND type IN ('view', 'trigger', 'table') AND ?1 = ?1",
+        ],
+        // the text of a view and the body of a trigger are LONGs: read whole, searched here. The
+        // source of routines comes line by line and is put together again
+        DbKind::Oracle => vec![
+            "SELECT 'view', v.view_name, v.text FROM all_views v WHERE v.owner = :1",
+            "SELECT 'trigger', t.table_name || '.' || t.trigger_name, t.trigger_body \
+             FROM all_triggers t WHERE t.owner = :1",
+            "SELECT 'routine', s.name, \
+               XMLCAST(XMLAGG(XMLELEMENT(e, s.text) ORDER BY s.line) AS CLOB) \
+             FROM all_source s \
+             WHERE s.owner = :1 AND s.type IN ('PROCEDURE', 'FUNCTION', 'PACKAGE', 'PACKAGE BODY') \
+             GROUP BY s.name, s.type",
+            "SELECT 'check', c.table_name || '.' || c.constraint_name, c.search_condition \
+             FROM all_constraints c WHERE c.owner = :1 AND c.constraint_type = 'C' \
+               AND c.generated = 'USER NAME'",
         ],
     }
 }

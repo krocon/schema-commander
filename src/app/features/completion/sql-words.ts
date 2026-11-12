@@ -95,6 +95,7 @@ const NOT_IN: Readonly<Record<Dialect, readonly string[]>> = {
   mysql: ['FULL JOIN', 'RETURNING', 'NULLS FIRST', 'NULLS LAST', 'ON CONFLICT'],
   sqlserver: ['LIMIT', 'RETURNING', 'NULLS FIRST', 'NULLS LAST', 'ON CONFLICT', 'USING'],
   sqlite: [],
+  oracle: ['LIMIT', 'ON CONFLICT'],
 };
 const ALSO: Readonly<Record<Dialect, Readonly<Record<string, readonly string[]>>>> = {
   postgres: { WHERE: ['ILIKE'], FROM: ['LATERAL'] },
@@ -106,6 +107,11 @@ const ALSO: Readonly<Record<Dialect, Readonly<Record<string, readonly string[]>>
     SELECT: ['TOP'],
   },
   sqlite: { VALUES: ['ON CONFLICT'] },
+  oracle: {
+    FROM: ['CROSS APPLY', 'OUTER APPLY', 'LATERAL'],
+    'ORDER BY': ['OFFSET', 'FETCH FIRST'],
+    WHERE: ['CONNECT BY', 'START WITH'],
+  },
 };
 
 export function keywordsAfter(clause: string, dialect: Dialect): string[] {
@@ -182,6 +188,21 @@ const TYPES: Readonly<Record<Dialect, readonly string[]>> = {
     'real',
   ],
   sqlite: ['INTEGER', 'TEXT', 'REAL', 'NUMERIC', 'BLOB'],
+  oracle: [
+    'number',
+    'varchar2',
+    'nvarchar2',
+    'char',
+    'date',
+    'timestamp',
+    'timestamp with time zone',
+    'clob',
+    'blob',
+    'raw',
+    'binary_double',
+    'boolean',
+    'json',
+  ],
 };
 
 export const typesOf = (dialect: Dialect): readonly string[] => TYPES[dialect];
@@ -277,6 +298,27 @@ const BUILTINS: Readonly<Record<Dialect, readonly Builtin[]>> = {
       'strftime(format, value)',
       'json_extract(document, path)',
       'row_number()',
+    ].map(f),
+  ],
+  oracle: [
+    ...COMMON,
+    ...[
+      'sysdate',
+      'systimestamp',
+      'nvl(value, fallback)',
+      'nvl2(value, if_set, if_null)',
+      'decode(value, search, result, fallback)',
+      'to_char(value, format)',
+      'to_date(text, format)',
+      'to_number(text)',
+      'trunc(value)',
+      'substr(text, start, count)',
+      'instr(text, part)',
+      'length(text)',
+      'listagg(value, separator)',
+      'regexp_like(text, pattern)',
+      'add_months(date, count)',
+      'months_between(date, date)',
     ].map(f),
   ],
 };

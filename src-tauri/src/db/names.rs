@@ -572,6 +572,23 @@ pub fn read_objects(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<
             &[],
             stop,
         )?,
+        DbKind::Oracle => ask(
+            s,
+            "SELECT CASE o.object_type WHEN 'TABLE' THEN 'table' WHEN 'VIEW' THEN 'view' \
+               WHEN 'MATERIALIZED VIEW' THEN 'matview' WHEN 'SEQUENCE' THEN 'sequence' \
+               ELSE 'routine' END, o.owner, o.object_name, \
+               CASE WHEN o.object_type IN ('PROCEDURE', 'FUNCTION', 'PACKAGE') \
+                 THEN LOWER(o.object_type) ELSE '' END \
+             FROM all_objects o \
+             WHERE o.oracle_maintained = 'N' AND o.generated = 'N' \
+               AND o.object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW', 'SEQUENCE', 'PROCEDURE', \
+                 'FUNCTION', 'PACKAGE') \
+               AND o.object_name NOT LIKE 'BIN$%' \
+               AND NOT (o.object_type = 'TABLE' AND EXISTS (SELECT 1 FROM all_mviews m \
+                 WHERE m.owner = o.owner AND m.mview_name = o.object_name))",
+            &[],
+            stop,
+        )?,
         DbKind::Sqlite => {
             let mut rows = Vec::new();
             for file in sqlite_files(s, stop)? {
@@ -644,6 +661,15 @@ pub fn read_columns(
              JOIN sys.schemas s ON s.schema_id = o.schema_id \
              JOIN sys.types t ON t.user_type_id = c.user_type_id \
              WHERE o.type IN ('U', 'V') AND o.is_ms_shipped = 0",
+            &[],
+            stop,
+        )?,
+        DbKind::Oracle => ask(
+            s,
+            "SELECT c.owner, c.table_name, c.column_name, c.data_type \
+             FROM all_tab_cols c \
+             WHERE c.hidden_column = 'NO' AND c.table_name NOT LIKE 'BIN$%' \
+               AND c.owner IN (SELECT u.username FROM all_users u WHERE u.oracle_maintained = 'N')",
             &[],
             stop,
         )?,

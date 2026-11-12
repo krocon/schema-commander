@@ -83,6 +83,22 @@ describe('finding parameters (catalog)', () => {
     ).toEqual([':kunde', '${ab}']);
   });
 
+  it('Oracle: :name is a value, := and the :new / :old of a trigger are not', () => {
+    const sql =
+      'begin if :new.total <> :old.total then x := :limit; end if; select :new from dual; end;';
+    expect(
+      findParams(sql, 'oracle', DEFAULT_FORMS.oracle).map((u) => sql.slice(u.start, u.end)),
+    ).toEqual([':limit', ':new']);
+    // a q-quote is one string: nothing in it is a value (review 035b 8)
+    expect(
+      findParams("select q'[it's :x]', :y from dual", 'oracle', DEFAULT_FORMS.oracle).map(
+        (u) => u.key,
+      ),
+    ).toEqual(['y']);
+    // a question mark means nothing there unless the user says so
+    expect(findParams('select ? from dual', 'oracle', DEFAULT_FORMS.oracle)).toEqual([]);
+  });
+
   it('takes the forms a connection is set to', () => {
     // `?` switched on for PostgreSQL: now it is a parameter – but the operators stay operators
     expect(keys("select ?, j ?| array['a']", 'postgres', ['question'])).toEqual(['?1']);
@@ -253,6 +269,10 @@ describe('writing a statement for the driver', () => {
       'select * from t where k = ?1 and d >= ?2 and n = ?3 and id in (?4, ?5, ?6) and p < ?7 and x is NULL and y in (NULL)',
     );
     expect(bound('sqlite').params.length).toBe(7);
+    // Oracle: numbered, no casts – the driver binds numbers and dates as what they are
+    expect(bound('oracle').sql).toBe(
+      'select * from t where k = :1 and d >= :2 and n = :3 and id in (:4, :5, :6) and p < :7 and x is NULL and y in (NULL)',
+    );
   });
 
   it('a name used twice is bound twice; numbered and anonymous ones keep their order', () => {

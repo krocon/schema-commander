@@ -24,6 +24,9 @@ export function defaultSchema(kind: DbKind, database: string): string {
       return 'dbo';
     case 'sqlite':
       return 'main';
+    case 'oracle':
+      // a schema is a user: the caller fills in the one of the connection
+      return '';
     default:
       // MySQL: a schema is a database
       return database;

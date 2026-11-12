@@ -77,6 +77,22 @@ export function lex(sql: string, dialect: Dialect): Token[] {
       const end = close < 0 ? sql.length : close + 2;
       push('comment', i, end, undefined, close < 0);
       i = end;
+    } else if (
+      c === "'" &&
+      dialect === 'oracle' &&
+      i + 1 < sql.length &&
+      /^n?q$/i.test(tokens[tokens.length - 1]?.text ?? '') &&
+      tokens[tokens.length - 1].end === i
+    ) {
+      // q'[ … ]': one string from its q to the closing sign and quote, quotes inside as they are
+      const open = sql[i + 1];
+      const close =
+        ({ '[': ']', '(': ')', '{': '}', '<': '>' } as Record<string, string>)[open] ?? open;
+      const at = sql.indexOf(close + "'", i + 2);
+      const end = at < 0 ? sql.length : at + 2;
+      const start = tokens.pop()!.start;
+      push('string', start, end, sql.slice(i + 2, at < 0 ? sql.length : at), at < 0);
+      i = end;
     } else if (c === "'") {
       const q = quoted(i, "'", dialect === 'mysql');
       push('string', i, q.end, q.value, q.open);

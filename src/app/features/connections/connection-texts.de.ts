@@ -21,6 +21,7 @@ export const CONNECTION_DE: Translation<typeof CONNECTION_EN> = {
     mysql: 'MySQL / MariaDB',
     sqlserver: 'SQL Server',
     sqlite: 'SQLite (Datei)',
+    oracle: 'Oracle',
   },
   password: 'Passwort',
   sshSecretTitle: 'SSH-Tunnel: Passwort oder Passphrase',

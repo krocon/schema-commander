@@ -350,6 +350,7 @@ export function selectTemplate(
   limit = OPEN_ROWS,
 ): string {
   const list = columns.length > 0 ? columns.map((c) => c.quoted).join(', ') : '*';
+  if (kind === 'oracle') return `SELECT ${list}\nFROM ${name}\nFETCH FIRST ${limit} ROWS ONLY;`;
   return kind === 'sqlserver'
     ? `SELECT TOP ${limit} ${list}\nFROM ${name};`
     : `SELECT ${list}\nFROM ${name}\nLIMIT ${limit};`;

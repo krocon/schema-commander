@@ -36,12 +36,20 @@ const b = (
 ): BuiltinSnippet => ({ prefix, description, body, ...(dialects ? { dialects } : {}) });
 
 const NOT_MSSQL: readonly Dialect[] = ['postgres', 'mysql', 'sqlite'];
+const ORACLE: readonly Dialect[] = ['oracle'];
 
 export const BUILTIN_SNIPPETS: readonly BuiltinSnippet[] = [
   b('sel', 'SELECT … FROM …', 'SELECT ${1:*}\nFROM ${2:$TABLE}$0'),
   b('selw', 'SELECT … FROM … WHERE …', 'SELECT ${1:*}\nFROM ${2:$TABLE}\nWHERE ${3:condition}$0'),
   b('selc', 'SELECT count(*) FROM …', 'SELECT count(*)\nFROM ${1:$TABLE}$0'),
   b('sell', 'SELECT … LIMIT …', 'SELECT ${1:*}\nFROM ${2:$TABLE}\nLIMIT ${3:100}$0', NOT_MSSQL),
+  b(
+    'sell',
+    'SELECT … FETCH FIRST …',
+    'SELECT ${1:*}\nFROM ${2:$TABLE}\nFETCH FIRST ${3:100} ROWS ONLY$0',
+    ORACLE,
+  ),
+  b('blk', 'BEGIN … END; /', 'BEGIN\n  ${1:$SELECTION}\nEND;\n/$0', ORACLE),
   b('selt', 'SELECT TOP … FROM …', 'SELECT TOP ${1:100} ${2:*}\nFROM ${3:$TABLE}$0', ['sqlserver']),
   b(
     'grp',

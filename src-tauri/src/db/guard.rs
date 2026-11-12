@@ -187,7 +187,8 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
             let start = i + 1;
             i += 1;
             while i < n {
-                if chars[i] == '\\' && quote != '`' && i + 1 < n {
+                // Oracle knows no backslash escape, whatever the settings
+                if chars[i] == '\\' && quote != '`' && kind != DbKind::Oracle && i + 1 < n {
                     if chars[i + 1] == quote || chars[i + 1] == '\\' {
                         ambiguous = true;
                     }
@@ -260,6 +261,30 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                 i += 1;
             }
             let word: String = chars[start..i].iter().collect();
+            // Oracle's q'[ … ]': a string that ends at its closing sign followed by a quote, and
+            // holds quotes as they are
+            if kind == DbKind::Oracle
+                && matches!(word.to_ascii_uppercase().as_str(), "Q" | "NQ")
+                && chars.get(i) == Some(&'\'')
+                && i + 1 < n
+            {
+                let close = match chars[i + 1] {
+                    '[' => ']',
+                    '(' => ')',
+                    '{' => '}',
+                    '<' => '>',
+                    other => other,
+                };
+                let body = i + 2;
+                let end = find(&chars, body, &[close, '\'']).unwrap_or(n);
+                let text: String = chars[body.min(n)..end]
+                    .iter()
+                    .collect::<String>()
+                    .to_uppercase();
+                i = (end + 2).min(n);
+                toks.push(Tok::Str(text));
+                continue;
+            }
             toks.push(Tok::Word(word.to_uppercase()));
         } else {
             toks.push(Tok::Other);
@@ -646,6 +671,7 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
         } else if has(WRITE_WORDS)
             || (kind == DbKind::Sqlserver && has(TSQL_WRITE_WORDS))
             || calls_writing_function(toks)
+            || (kind == DbKind::Oracle && has(&["NEXTVAL"]))
             || pairs("NEXT", "VALUE")
             || pairs("PREVIOUS", "VALUE")
         {
@@ -863,6 +889,9 @@ pub fn read_only_statement(kind: DbKind) -> Option<&'static str> {
         DbKind::Sqlite => Some("PRAGMA query_only = ON"),
         // SQL Server has no read-only session; the classification is all there is
         DbKind::Sqlserver => None,
+        // Oracle has it only for one transaction (and reads a stale snapshot inside it): the
+        // classification is all there is, and a reading call runs in a transaction that is rolled back
+        DbKind::Oracle => None,
     }
 }
 
@@ -871,12 +900,61 @@ mod tests {
     use super::*;
     use Class::{Dangerous, Ddl, Read, Write};
 
-    const ALL: [DbKind; 4] = [
+    const ALL: [DbKind; 5] = [
         DbKind::Postgres,
         DbKind::Mysql,
         DbKind::Sqlserver,
         DbKind::Sqlite,
+        DbKind::Oracle,
     ];
+
+    /// Oracle (prompt 035b): a q-quote holds quotes as they are, a backslash escapes nothing, and a
+    /// PL/SQL block is judged by what it holds.
+    #[test]
+    fn oracle_strings_blocks_and_what_only_reads() {
+        let k = DbKind::Oracle;
+        assert_eq!(
+            classify("SELECT q'[it's; DROP TABLE t]' FROM dual", k),
+            Read
+        );
+        assert_eq!(classify("SELECT nq'{a'b}' FROM dual", k), Read);
+        // what follows the q-quote is code again
+        assert_eq!(
+            classify("BEGIN x := q'[']'; DELETE FROM t; END;", k),
+            Dangerous
+        );
+        assert_eq!(
+            classify("SELECT q'!x!' FROM dual; DROP TABLE t", k),
+            Dangerous
+        );
+        // no backslash escape: the string ends at its quote, the rest is code
+        assert_eq!(classify("SELECT 'a\\' FROM dual", k), Read);
+        assert_eq!(
+            classify("SELECT 'a\\'; DROP TABLE t; --' FROM dual", k),
+            Dangerous
+        );
+        assert_eq!(classify("BEGIN NULL; END;", k), Write);
+        assert_eq!(classify("DECLARE n NUMBER; BEGIN n := 1; END;", k), Write);
+        assert_eq!(
+            classify("BEGIN EXECUTE IMMEDIATE 'DROP TABLE t'; END;", k),
+            Dangerous
+        );
+        assert_eq!(classify("CALL p(1)", k), Write);
+        // a sequence moves on: no reading
+        assert_eq!(classify("SELECT seq.NEXTVAL FROM dual", k), Write);
+        assert_eq!(classify("SELECT * FROM t FOR UPDATE", k), Write);
+        assert_eq!(
+            classify(
+                "MERGE INTO t USING s ON (t.id = s.id) WHEN MATCHED THEN UPDATE SET t.a = 1",
+                k
+            ),
+            Write
+        );
+        assert_eq!(classify("TRUNCATE TABLE t", k), Dangerous);
+        // a session setting is no reading: the app sends this one itself
+        assert_eq!(classify("SET TRANSACTION READ ONLY", k), Write);
+        assert_eq!(read_only_statement(k), None);
+    }
 
     /// Statements every dialect is asked about.
     const COMMON: &[(&str, Class)] = &[

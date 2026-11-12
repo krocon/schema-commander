@@ -2855,10 +2855,16 @@ pub fn testdata_keys(
             crate::db::DbKind::Mysql => format!("CAST({column} AS CHAR)"),
             crate::db::DbKind::Sqlserver => format!("CAST({column} AS nvarchar(4000))"),
             crate::db::DbKind::Sqlite => format!("CAST({column} AS TEXT)"),
+            crate::db::DbKind::Oracle => format!("TO_CHAR({column})"),
         };
         let sql = if kind == crate::db::DbKind::Sqlserver {
             format!(
                 "SELECT TOP {limit} {text} FROM {table} WHERE {column} IS NOT NULL ORDER BY {column}"
+            )
+        } else if kind == crate::db::DbKind::Oracle {
+            format!(
+                "SELECT {text} FROM {table} WHERE {column} IS NOT NULL ORDER BY {column} \
+                 FETCH FIRST {limit} ROWS ONLY"
             )
         } else {
             format!(

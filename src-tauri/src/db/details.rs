@@ -141,6 +141,7 @@ pub fn details(
         DbKind::Mysql => mysql::read(&mut r, schema, name, object)?,
         DbKind::Sqlserver => mssql::read(&mut r, schema, name, object)?,
         DbKind::Sqlite => sqlite::read(&mut r, schema, name, object)?,
+        DbKind::Oracle => oracle::read(&mut r, schema, name, object)?,
     };
     if ddl.is_none() {
         r.notes.push("ddl".into());
@@ -1651,6 +1652,323 @@ mod sqlite {
             .map(|row| format!("{};\n", at(row, 0).trim_end().trim_end_matches(';')))
             .collect();
         Ok(Some(statements.join("\n")))
+    }
+}
+
+mod oracle {
+    use super::*;
+
+    /// The columns of a constraint, in their order.
+    const COLUMNS_OF: &str = "(SELECT LISTAGG(cc.column_name, ', ') WITHIN GROUP (ORDER BY cc.position) \
+        FROM all_cons_columns cc WHERE cc.owner = c.owner AND cc.constraint_name = c.constraint_name)";
+
+    pub fn read(
+        r: &mut Reader,
+        schema: &str,
+        name: &str,
+        object: ObjectKind,
+    ) -> AppResult<Option<String>> {
+        let p = &[schema, name];
+        let relation = matches!(
+            object,
+            ObjectKind::Table | ObjectKind::View | ObjectKind::Matview
+        );
+        if relation {
+            relation_sections(r, p, object)?;
+        }
+        if object == ObjectKind::Routine {
+            r.section(
+                "parameters",
+                &["name", "type", "mode"],
+                "SELECT COALESCE(a.argument_name, '(result)'), a.data_type, a.in_out \
+                 FROM all_arguments a \
+                 WHERE a.owner = :1 AND a.object_name = :2 AND a.package_name IS NULL \
+                   AND a.data_level = 0 ORDER BY a.position",
+                p,
+            )?;
+        }
+        if object == ObjectKind::Sequence {
+            r.section(
+                "properties",
+                &["property", "value"],
+                "SELECT 'min', TO_CHAR(s.min_value) FROM all_sequences s \
+                   WHERE s.sequence_owner = :1 AND s.sequence_name = :2 \
+                 UNION ALL SELECT 'max', TO_CHAR(s.max_value) FROM all_sequences s \
+                   WHERE s.sequence_owner = :3 AND s.sequence_name = :4 \
+                 UNION ALL SELECT 'increment', TO_CHAR(s.increment_by) FROM all_sequences s \
+                   WHERE s.sequence_owner = :5 AND s.sequence_name = :6 \
+                 UNION ALL SELECT 'last number', TO_CHAR(s.last_number) FROM all_sequences s \
+                   WHERE s.sequence_owner = :7 AND s.sequence_name = :8",
+                &[schema, name, schema, name, schema, name, schema, name],
+            )?;
+        }
+        r.section(
+            "privileges",
+            &["grantee", "privilege", "grantable", "grantor"],
+            "SELECT t.grantee, t.privilege, LOWER(t.grantable), t.grantor FROM all_tab_privs t \
+             WHERE t.table_schema = :1 AND t.table_name = :2 ORDER BY 1, 2",
+            p,
+        )?;
+        ddl(r, schema, name, object)
+    }
+
+    fn relation_sections(r: &mut Reader, p: &[&str], object: ObjectKind) -> AppResult<()> {
+        r.section(
+            "columns",
+            &["name", "type", "nullable", "default", "key", "extra", "comment"],
+            "SELECT c.column_name, \
+               c.data_type || CASE \
+                 WHEN c.data_type IN ('VARCHAR2', 'NVARCHAR2', 'CHAR', 'NCHAR') \
+                   THEN '(' || c.char_length || CASE c.char_used WHEN 'C' THEN ' CHAR' ELSE '' END || ')' \
+                 WHEN c.data_type = 'RAW' THEN '(' || c.data_length || ')' \
+                 WHEN c.data_type = 'NUMBER' AND c.data_precision IS NOT NULL \
+                   THEN '(' || c.data_precision || CASE WHEN c.data_scale > 0 \
+                     THEN ', ' || c.data_scale ELSE '' END || ')' \
+                 ELSE '' END, \
+               CASE c.nullable WHEN 'Y' THEN 'yes' ELSE 'no' END, c.data_default, \
+               CASE WHEN EXISTS (SELECT 1 FROM all_constraints k JOIN all_cons_columns kc \
+                   ON kc.owner = k.owner AND kc.constraint_name = k.constraint_name \
+                   WHERE k.owner = c.owner AND k.table_name = c.table_name \
+                     AND k.constraint_type = 'P' AND kc.column_name = c.column_name) THEN 'pk' \
+                 WHEN EXISTS (SELECT 1 FROM all_constraints k JOIN all_cons_columns kc \
+                   ON kc.owner = k.owner AND kc.constraint_name = k.constraint_name \
+                   WHERE k.owner = c.owner AND k.table_name = c.table_name \
+                     AND k.constraint_type = 'R' AND kc.column_name = c.column_name) THEN 'fk' \
+                 ELSE '' END, \
+               CASE WHEN c.identity_column = 'YES' THEN 'identity' \
+                 WHEN c.virtual_column = 'YES' THEN 'generated virtual' ELSE '' END, \
+               (SELECT m.comments FROM all_col_comments m WHERE m.owner = c.owner \
+                 AND m.table_name = c.table_name AND m.column_name = c.column_name) \
+             FROM all_tab_cols c \
+             WHERE c.owner = :1 AND c.table_name = :2 AND c.hidden_column = 'NO' \
+             ORDER BY c.column_id",
+            p,
+        )?;
+        if object == ObjectKind::View {
+            return Ok(());
+        }
+        r.section(
+            "indexes",
+            &["name", "definition", "unique", "primary", "method", "size"],
+            "SELECT i.index_name, (SELECT LISTAGG(ic.column_name, ', ') \
+                 WITHIN GROUP (ORDER BY ic.column_position) FROM all_ind_columns ic \
+               WHERE ic.index_owner = i.owner AND ic.index_name = i.index_name), \
+               CASE i.uniqueness WHEN 'UNIQUE' THEN 'yes' ELSE 'no' END, \
+               CASE WHEN EXISTS (SELECT 1 FROM all_constraints k WHERE k.owner = i.table_owner \
+                 AND k.table_name = i.table_name AND k.constraint_type = 'P' \
+                 AND k.index_name = i.index_name) THEN 'yes' ELSE 'no' END, \
+               LOWER(i.index_type), NULL \
+             FROM all_indexes i WHERE i.table_owner = :1 AND i.table_name = :2 ORDER BY 1",
+            p,
+        )?;
+        // the condition of a check is a LONG: read as it is. NOT NULL is kept as a check of its own
+        // and shown with the column
+        let checks = r.rows(
+            &format!(
+                "SELECT c.constraint_name, CASE c.constraint_type WHEN 'P' THEN 'PRIMARY KEY' \
+                   WHEN 'U' THEN 'UNIQUE' ELSE 'CHECK' END, \
+                   CASE WHEN c.constraint_type IN ('P', 'U') THEN {COLUMNS_OF} END, \
+                   c.search_condition \
+                 FROM all_constraints c \
+                 WHERE c.owner = :1 AND c.table_name = :2 AND c.constraint_type IN ('P', 'U', 'C') \
+                 ORDER BY c.constraint_type DESC, c.constraint_name"
+            ),
+            p,
+        )?;
+        let rows: TextRows = checks
+            .into_iter()
+            .filter_map(|row| {
+                let (kind, columns, condition) = (at(&row, 1), at(&row, 2), at(&row, 3));
+                let definition = if kind == "CHECK" {
+                    let condition = condition.trim().to_owned();
+                    if condition.ends_with("IS NOT NULL") && !condition.contains(" AND ") {
+                        return None;
+                    }
+                    condition
+                } else {
+                    columns
+                };
+                Some(vec![Some(at(&row, 0)), Some(kind), Some(definition)])
+            })
+            .collect();
+        r.push("constraints", &["name", "type", "definition"], rows);
+        r.section(
+            "references",
+            &[
+                "name",
+                "columns",
+                "refSchema",
+                "refName",
+                "refColumns",
+                "onUpdate",
+                "onDelete",
+            ],
+            &format!(
+                "SELECT c.constraint_name, {COLUMNS_OF}, r.owner, r.table_name, \
+                   (SELECT LISTAGG(rc.column_name, ', ') WITHIN GROUP (ORDER BY rc.position) \
+                     FROM all_cons_columns rc \
+                     WHERE rc.owner = r.owner AND rc.constraint_name = r.constraint_name), \
+                   'no action', LOWER(c.delete_rule) \
+                 FROM all_constraints c \
+                 JOIN all_constraints r ON r.owner = c.r_owner \
+                   AND r.constraint_name = c.r_constraint_name \
+                 WHERE c.owner = :1 AND c.table_name = :2 AND c.constraint_type = 'R' \
+                 ORDER BY c.constraint_name"
+            ),
+            p,
+        )?;
+        r.section(
+            "referencedBy",
+            &[
+                "name",
+                "refSchema",
+                "refName",
+                "columns",
+                "onUpdate",
+                "onDelete",
+            ],
+            &format!(
+                "SELECT c.constraint_name, c.owner, c.table_name, {COLUMNS_OF}, 'no action', \
+                   LOWER(c.delete_rule) \
+                 FROM all_constraints c \
+                 JOIN all_constraints r ON r.owner = c.r_owner \
+                   AND r.constraint_name = c.r_constraint_name \
+                 WHERE r.owner = :1 AND r.table_name = :2 AND c.constraint_type = 'R' \
+                 ORDER BY c.owner, c.table_name, c.constraint_name"
+            ),
+            p,
+        )?;
+        r.section(
+            "triggers",
+            &["name", "definition", "enabled"],
+            "SELECT t.trigger_name, t.trigger_type || ' ' || t.triggering_event, \
+               CASE t.status WHEN 'ENABLED' THEN 'yes' ELSE 'no' END \
+             FROM all_triggers t WHERE t.table_owner = :1 AND t.table_name = :2 ORDER BY 1",
+            p,
+        )?;
+        r.section(
+            "stats",
+            &["property", "value"],
+            "SELECT 'rows (estimated)', TO_CHAR(t.num_rows) FROM all_tables t \
+               WHERE t.owner = :1 AND t.table_name = :2 AND t.num_rows IS NOT NULL \
+             UNION ALL SELECT 'last analyzed', TO_CHAR(t.last_analyzed, 'YYYY-MM-DD HH24:MI:SS') \
+               FROM all_tables t \
+               WHERE t.owner = :3 AND t.table_name = :4 AND t.last_analyzed IS NOT NULL",
+            &[p[0], p[1], p[0], p[1]],
+        )
+    }
+
+    /// The statement that makes the object, as the database writes it (`DBMS_METADATA`): storage
+    /// and segment details are left out, they belong to a server, not to a definition. Who may
+    /// not ask gets no DDL (noted as such).
+    fn ddl(
+        r: &mut Reader,
+        schema: &str,
+        name: &str,
+        object: ObjectKind,
+    ) -> AppResult<Option<String>> {
+        let word = match object {
+            ObjectKind::Table => "TABLE".to_owned(),
+            ObjectKind::View => "VIEW".to_owned(),
+            ObjectKind::Matview => "MATERIALIZED_VIEW".to_owned(),
+            ObjectKind::Sequence => "SEQUENCE".to_owned(),
+            ObjectKind::Type => "TYPE".to_owned(),
+            // a routine is a procedure, a function or a package: the catalog says which
+            ObjectKind::Routine => {
+                let Some(kind) = r.text(
+                    "SELECT o.object_type FROM all_objects o WHERE o.owner = :1 AND o.object_name = :2 \
+                       AND o.object_type IN ('PROCEDURE', 'FUNCTION', 'PACKAGE') \
+                     ORDER BY o.object_type",
+                    &[schema, name],
+                )?
+                else {
+                    return Ok(None);
+                };
+                kind
+            }
+        };
+        // storage and segment belong to a server, not to a definition: left out for this session
+        let _ = r.rows(
+            "BEGIN \
+               DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.SESSION_TRANSFORM, 'SEGMENT_ATTRIBUTES', FALSE); \
+               DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.SESSION_TRANSFORM, 'STORAGE', FALSE); \
+               DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.SESSION_TRANSFORM, 'SQLTERMINATOR', FALSE); \
+             END;",
+            &[],
+        )?;
+        let text = r.text(
+            "SELECT DBMS_METADATA.GET_DDL(:1, :2, :3) FROM dual",
+            &[&word, name, schema],
+        )?;
+        let Some(mut text) = text.map(|t| tidy(&t)).filter(|t| !t.is_empty()) else {
+            return Ok(None);
+        };
+        if object == ObjectKind::Table {
+            // its indexes that are no constraint, and its comments
+            for row in r.rows(
+                "SELECT DBMS_METADATA.GET_DDL('INDEX', i.index_name, i.owner) FROM all_indexes i \
+                 WHERE i.table_owner = :1 AND i.table_name = :2 AND NOT EXISTS (SELECT 1 \
+                   FROM all_constraints k WHERE k.owner = i.table_owner AND k.table_name = i.table_name \
+                     AND k.index_name = i.index_name) ORDER BY i.index_name",
+                &[schema, name],
+            )? {
+                let index = tidy(&at(&row, 0));
+                if !index.is_empty() {
+                    text.push('\n');
+                    text.push_str(&index);
+                }
+            }
+        }
+        Ok(Some(text))
+    }
+
+    /// The text of `DBMS_METADATA`, trimmed, ending with the separator a script needs (`/` on a line
+    /// for PL/SQL, `;` else).
+    fn tidy(ddl: &str) -> String {
+        let out = ddl
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_owned();
+        if out.is_empty() {
+            return out;
+        }
+        let plsql = out.to_uppercase().split_whitespace().take(6).any(|word| {
+            matches!(
+                word,
+                "FUNCTION" | "PROCEDURE" | "PACKAGE" | "TRIGGER" | "TYPE"
+            )
+        });
+        if plsql {
+            format!("{}\n/\n", out.trim_end_matches('/').trim_end())
+        } else {
+            format!("{};\n", out.trim_end_matches(';'))
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::tidy;
+
+        #[test]
+        fn the_ddl_is_trimmed_and_gets_its_separator() {
+            let table = tidy("\n  CREATE TABLE \"SHOP\".\"T\" \n   (\t\"ID\" NUMBER(9,0)\n   ) ");
+            assert_eq!(
+                table,
+                "CREATE TABLE \"SHOP\".\"T\"\n   (\t\"ID\" NUMBER(9,0)\n   );\n"
+            );
+            let routine = tidy_of(
+                "CREATE OR REPLACE EDITIONABLE FUNCTION \"SHOP\".\"F\" return number as begin return 1; end;",
+            );
+            assert!(routine.ends_with("end;\n/\n"), "{routine}");
+            assert_eq!(tidy_of("  "), "");
+        }
+
+        fn tidy_of(text: &str) -> String {
+            tidy(text)
+        }
     }
 }
 

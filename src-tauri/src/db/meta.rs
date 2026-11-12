@@ -240,6 +240,76 @@ const RESERVED: &[&str] = &[
     "write",
 ];
 
+/// Words Oracle reserves beyond the common ones (its documentation, „Oracle SQL Reserved Words“):
+/// a column called `COMMENT` or `LEVEL` needs its quotes.
+const ORACLE_RESERVED: &[&str] = &[
+    "ACCESS",
+    "ADD",
+    "AUDIT",
+    "CHAR",
+    "CLUSTER",
+    "COLUMN_VALUE",
+    "COMMENT",
+    "COMPRESS",
+    "CONNECT",
+    "CURRENT",
+    "DATE",
+    "DECIMAL",
+    "EXCLUSIVE",
+    "FILE",
+    "FLOAT",
+    "IDENTIFIED",
+    "IMMEDIATE",
+    "INCREMENT",
+    "INITIAL",
+    "INTEGER",
+    "INTERSECT",
+    "LEVEL",
+    "LOCK",
+    "LONG",
+    "MAXEXTENTS",
+    "MINUS",
+    "MLSLABEL",
+    "MODE",
+    "MODIFY",
+    "NESTED_TABLE_ID",
+    "NOAUDIT",
+    "NOCOMPRESS",
+    "NOWAIT",
+    "NUMBER",
+    "OFFLINE",
+    "ONLINE",
+    "OPTION",
+    "PCTFREE",
+    "PRIOR",
+    "PUBLIC",
+    "RAW",
+    "RENAME",
+    "RESOURCE",
+    "ROW",
+    "ROWID",
+    "ROWNUM",
+    "ROWS",
+    "SESSION",
+    "SHARE",
+    "SIZE",
+    "SMALLINT",
+    "START",
+    "SUCCESSFUL",
+    "SYNONYM",
+    "SYSDATE",
+    "TRIGGER",
+    "UID",
+    "VALIDATE",
+    "VARCHAR",
+    "VARCHAR2",
+    "WHENEVER",
+];
+
+fn oracle_reserved(name: &str) -> bool {
+    ORACLE_RESERVED.contains(&name.to_ascii_uppercase().as_str())
+}
+
 fn reserved(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     RESERVED.binary_search(&lower.as_str()).is_ok()
@@ -253,13 +323,16 @@ fn plain(name: &str, kind: DbKind) -> bool {
     let first_ok = match kind {
         // PostgreSQL folds unquoted names to lower case: an upper case letter needs quotes
         DbKind::Postgres => first.is_ascii_lowercase() || first == '_',
+        // Oracle folds unquoted names to upper case: a lower case letter needs quotes
+        DbKind::Oracle => first.is_ascii_uppercase(),
         _ => first.is_ascii_alphabetic() || first == '_',
     };
     let rest_ok = name.chars().all(|c| match kind {
         DbKind::Postgres => c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_',
+        DbKind::Oracle => c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_',
         _ => c.is_ascii_alphanumeric() || c == '_',
     });
-    first_ok && rest_ok && !reserved(name)
+    first_ok && rest_ok && !reserved(name) && !(kind == DbKind::Oracle && oracle_reserved(name))
 }
 
 /// A name as it is written in SQL: as it is where that is safe, quoted otherwise (spaces, upper case in
@@ -277,6 +350,9 @@ pub fn quote_always(name: &str, kind: DbKind) -> String {
         DbKind::Mysql => format!("`{}`", name.replace('`', "``")),
         DbKind::Sqlserver => format!("[{}]", name.replace(']', "]]")),
         DbKind::Postgres | DbKind::Sqlite => format!("\"{}\"", name.replace('"', "\"\"")),
+        // Oracle has no way to write a quote inside a quoted name (and allows none in a name): one that
+        // came from somewhere else is dropped, so the name cannot end its quotes
+        DbKind::Oracle => format!("\"{}\"", name.replace(['"', '\0'], "")),
     }
 }
 
@@ -360,6 +436,12 @@ pub fn schemas(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<S
         DbKind::Sqlite => {
             "SELECT name, 'false', CASE WHEN name = 'main' THEN 'true' ELSE 'false' END \
              FROM pragma_database_list ORDER BY seq"
+        }
+        // a schema is a user; those Oracle ships are marked as its own
+        DbKind::Oracle => {
+            "SELECT u.username, CASE WHEN u.oracle_maintained = 'Y' THEN 'true' ELSE 'false' END, \
+             CASE WHEN u.username = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') THEN 'true' ELSE 'false' END \
+             FROM all_users u ORDER BY 1"
         }
     };
     Ok(ask(s, sql, &[], stop)?
@@ -448,6 +530,22 @@ pub fn objects(
         ],
         DbKind::Sqlite => &["SELECT type, name, '', NULL FROM pragma_table_list \
              WHERE schema = ?1 AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'"],
+        // a materialized view is also listed as a table of its name; dropped tables wait as BIN$…
+        DbKind::Oracle => &[
+            "SELECT CASE o.object_type WHEN 'TABLE' THEN 'table' WHEN 'VIEW' THEN 'view' \
+               WHEN 'MATERIALIZED VIEW' THEN 'matview' WHEN 'SEQUENCE' THEN 'sequence' \
+               WHEN 'TYPE' THEN 'type' ELSE 'routine' END, o.object_name, \
+             CASE WHEN o.object_type IN ('PROCEDURE', 'FUNCTION', 'PACKAGE') \
+               THEN LOWER(o.object_type) ELSE '' END, \
+             CASE WHEN o.object_type = 'TABLE' THEN (SELECT TO_CHAR(t.num_rows) FROM all_tables t \
+               WHERE t.owner = o.owner AND t.table_name = o.object_name) END \
+             FROM all_objects o \
+             WHERE o.owner = :1 AND o.object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW', 'SEQUENCE', \
+               'TYPE', 'PROCEDURE', 'FUNCTION', 'PACKAGE') \
+               AND o.object_name NOT LIKE 'BIN$%' AND o.generated = 'N' \
+               AND NOT (o.object_type = 'TABLE' AND EXISTS (SELECT 1 FROM all_mviews m \
+                 WHERE m.owner = o.owner AND m.mview_name = o.object_name))",
+        ],
     };
     let mut out = Vec::new();
     for sql in questions {
@@ -729,6 +827,126 @@ fn mssql_table(s: &mut dyn Session, schema: &str, table: &str, stop: Stop) -> Ap
     })
 }
 
+/// Oracle: the `ALL_` views show what the user may see. `LISTAGG` joins the columns of a key.
+fn oracle_table(
+    s: &mut dyn Session,
+    schema: &str,
+    table: &str,
+    stop: Stop,
+) -> AppResult<TableInfo> {
+    let p = &[schema, table];
+    const COLUMNS_OF: &str = "(SELECT LISTAGG(cc.column_name, ', ') WITHIN GROUP (ORDER BY cc.position) \
+        FROM all_cons_columns cc WHERE cc.owner = c.owner AND cc.constraint_name = c.constraint_name)";
+    let columns = ask(
+        s,
+        "SELECT c.column_name, \
+           c.data_type || CASE \
+             WHEN c.data_type IN ('VARCHAR2', 'NVARCHAR2', 'CHAR', 'NCHAR') \
+               THEN '(' || c.char_length || CASE c.char_used WHEN 'C' THEN ' CHAR' ELSE '' END || ')' \
+             WHEN c.data_type = 'RAW' THEN '(' || c.data_length || ')' \
+             WHEN c.data_type = 'NUMBER' AND c.data_precision IS NOT NULL \
+               THEN '(' || c.data_precision || CASE WHEN c.data_scale > 0 THEN ', ' || c.data_scale \
+                 ELSE '' END || ')' \
+             ELSE '' END, \
+           CASE c.nullable WHEN 'Y' THEN 'true' ELSE 'false' END, c.data_default, \
+           CASE WHEN EXISTS (SELECT 1 FROM all_constraints k JOIN all_cons_columns kc \
+               ON kc.owner = k.owner AND kc.constraint_name = k.constraint_name \
+               WHERE k.owner = c.owner AND k.table_name = c.table_name AND k.constraint_type = 'P' \
+                 AND kc.column_name = c.column_name) THEN 'pk' \
+             WHEN EXISTS (SELECT 1 FROM all_constraints k JOIN all_cons_columns kc \
+               ON kc.owner = k.owner AND kc.constraint_name = k.constraint_name \
+               WHERE k.owner = c.owner AND k.table_name = c.table_name AND k.constraint_type = 'R' \
+                 AND kc.column_name = c.column_name) THEN 'fk' \
+             ELSE '' END \
+         FROM all_tab_cols c \
+         WHERE c.owner = :1 AND c.table_name = :2 AND c.hidden_column = 'NO' \
+         ORDER BY c.column_id",
+        p,
+        stop,
+    )?;
+    let indexes = ask(
+        s,
+        "SELECT i.index_name, CASE i.uniqueness WHEN 'UNIQUE' THEN 'unique ' ELSE '' END \
+           || LOWER(i.index_type) || ' (' || (SELECT LISTAGG(ic.column_name, ', ') \
+               WITHIN GROUP (ORDER BY ic.column_position) FROM all_ind_columns ic \
+             WHERE ic.index_owner = i.owner AND ic.index_name = i.index_name) || ')' \
+         FROM all_indexes i WHERE i.table_owner = :1 AND i.table_name = :2 ORDER BY 1",
+        p,
+        stop,
+    )?;
+    let mut keys = ask(
+        s,
+        &format!(
+            "SELECT c.constraint_name, CASE c.constraint_type WHEN 'P' THEN 'PRIMARY KEY' \
+               ELSE 'UNIQUE' END || ' (' || {COLUMNS_OF} || ')' \
+             FROM all_constraints c \
+             WHERE c.owner = :1 AND c.table_name = :2 AND c.constraint_type IN ('P', 'U') \
+             ORDER BY c.constraint_type, c.constraint_name"
+        ),
+        p,
+        stop,
+    )?;
+    keys.extend(ask(
+        s,
+        &format!(
+            "SELECT c.constraint_name, 'FOREIGN KEY (' || {COLUMNS_OF} || ') REFERENCES ' \
+               || r.owner || '.' || r.table_name || ' (' || (SELECT LISTAGG(rc.column_name, ', ') \
+                   WITHIN GROUP (ORDER BY rc.position) FROM all_cons_columns rc \
+                 WHERE rc.owner = r.owner AND rc.constraint_name = r.constraint_name) || ')' \
+             FROM all_constraints c \
+             JOIN all_constraints r ON r.owner = c.r_owner AND r.constraint_name = c.r_constraint_name \
+             WHERE c.owner = :1 AND c.table_name = :2 AND c.constraint_type = 'R' \
+             ORDER BY c.constraint_name"
+        ),
+        p,
+        stop,
+    )?);
+    // the condition is a LONG: it can be read, not searched. „"X" IS NOT NULL“ is how NOT NULL is kept
+    let checks = ask(
+        s,
+        "SELECT c.constraint_name, c.search_condition FROM all_constraints c \
+         WHERE c.owner = :1 AND c.table_name = :2 AND c.constraint_type = 'C' \
+         ORDER BY c.constraint_name",
+        p,
+        stop,
+    )?;
+    keys.extend(
+        checks
+            .into_iter()
+            .filter(|row| {
+                !at(row, 1).trim().ends_with("IS NOT NULL") || at(row, 1).contains(" AND ")
+            })
+            .map(|row| {
+                vec![
+                    Some(at(&row, 0)),
+                    Some(format!("CHECK ({})", at(&row, 1).trim())),
+                ]
+            }),
+    );
+    let triggers = ask(
+        s,
+        "SELECT t.trigger_name, t.trigger_type || ' ' || t.triggering_event FROM all_triggers t \
+         WHERE t.table_owner = :1 AND t.table_name = :2 ORDER BY 1",
+        p,
+        stop,
+    )?;
+    let mut columns = column_rows(&columns, DbKind::Oracle);
+    for column in &mut columns {
+        // a default is kept with the blank it was typed with
+        column.default = column
+            .default
+            .take()
+            .map(|d| d.trim().to_owned())
+            .filter(|d| !d.is_empty());
+    }
+    Ok(TableInfo {
+        columns,
+        indexes: parts(&indexes),
+        keys: parts(&keys),
+        triggers: parts(&triggers),
+    })
+}
+
 fn sqlite_table(
     s: &mut dyn Session,
     schema: &str,
@@ -832,6 +1050,7 @@ pub fn table(
         DbKind::Mysql => mysql_table(s, schema, table, stop),
         DbKind::Sqlserver => mssql_table(s, schema, table, stop),
         DbKind::Sqlite => sqlite_table(s, schema, table, stop),
+        DbKind::Oracle => oracle_table(s, schema, table, stop),
     }
 }
 
@@ -872,6 +1091,17 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
              WHERE name LIKE ?1 ESCAPE '\\' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' \
              ORDER BY 3, 1 LIMIT 200"
         }
+        DbKind::Oracle => {
+            "SELECT o.owner, CASE o.object_type WHEN 'VIEW' THEN 'view' \
+               WHEN 'MATERIALIZED VIEW' THEN 'matview' ELSE 'table' END, o.object_name \
+             FROM all_objects o \
+             WHERE o.object_type IN ('TABLE', 'VIEW', 'MATERIALIZED VIEW') \
+               AND UPPER(o.object_name) LIKE UPPER(:1) ESCAPE '\\' AND o.oracle_maintained = 'N' \
+               AND o.object_name NOT LIKE 'BIN$%' AND o.generated = 'N' \
+               AND NOT (o.object_type = 'TABLE' AND EXISTS (SELECT 1 FROM all_mviews m \
+                 WHERE m.owner = o.owner AND m.mview_name = o.object_name)) \
+             ORDER BY 3, 1 FETCH FIRST 200 ROWS ONLY"
+        }
     };
     Ok(ask(s, sql, &[&pattern], stop)?
         .iter()
@@ -892,6 +1122,26 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
 mod tests {
     use super::*;
     use crate::db::sqlite;
+
+    /// Oracle (035b): unquoted names are upper case there, and it reserves words of its own.
+    #[test]
+    fn oracle_names_are_plain_only_in_upper_case_and_when_not_reserved() {
+        let q = |name: &str| quote(name, DbKind::Oracle);
+        assert_eq!(q("ORDERS"), "ORDERS");
+        assert_eq!(q("ORDER_ITEMS2"), "ORDER_ITEMS2");
+        assert_eq!(q("orders"), "\"orders\"");
+        assert_eq!(q("Order Items"), "\"Order Items\"");
+        for word in [
+            "COMMENT", "LEVEL", "DATE", "NUMBER", "SIZE", "ROWID", "SELECT", "TABLE",
+        ] {
+            assert_eq!(q(word), format!("\"{word}\""));
+        }
+        // a quote cannot be written inside a quoted name there: it is dropped, the name stays closed
+        assert_eq!(q("a\"; DROP TABLE t; --"), "\"a; DROP TABLE t; --\"");
+        // the others keep their rule
+        assert_eq!(quote("COMMENT", DbKind::Postgres), "\"COMMENT\"");
+        assert_eq!(quote("level", DbKind::Postgres), "level");
+    }
 
     #[test]
     fn the_reserved_words_are_sorted_for_the_search() {
