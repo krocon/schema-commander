@@ -32,6 +32,7 @@ export const FILTER_EN = {
     gt: '>',
     ge: '≥',
     contains: 'contains',
+    containsNoCase: 'contains (any case)',
     like: 'LIKE',
     notLike: 'NOT LIKE',
     in: 'IN',

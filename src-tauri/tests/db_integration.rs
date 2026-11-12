@@ -3245,3 +3245,362 @@ fn timescale_shows_a_hypertable_as_one_table() {
     );
     run(&mut s, "DROP TABLE sc_metric");
 }
+
+// ── Search on the server (prompt 036) ────────────────────────────────────────
+
+use schema_commander_lib::db::find::{Columns, FindEvent, FindSpec, Mode, Skip, find};
+
+fn find_spec(text: &str, schema: &str) -> FindSpec {
+    FindSpec {
+        text: text.into(),
+        mode: Mode::Contains,
+        case_sensitive: false,
+        columns: Columns::Text,
+        schemas: vec![schema.into()],
+        tables: Vec::new(),
+        data: true,
+        sources: true,
+        names: false,
+        max_hits: 20,
+        table_timeout_ms: 5_000,
+        skip_rows_over: 0,
+    }
+}
+
+fn found(s: &mut Box<dyn Session>, kind: DbKind, spec: &FindSpec) -> Vec<String> {
+    let events = std::sync::Mutex::new(Vec::new());
+    find(
+        s.as_mut(),
+        kind,
+        spec,
+        None,
+        &|e| events.lock().unwrap().push(e),
+        &|| false,
+    )
+    .unwrap();
+    let mut lines: Vec<String> = events
+        .into_inner()
+        .unwrap()
+        .into_iter()
+        .flat_map(|e| match e {
+            FindEvent::Rows { table, hits, .. } => hits
+                .into_iter()
+                .map(|h| format!("row {table}.{}: {}", h.column, h.preview))
+                .collect::<Vec<_>>(),
+            FindEvent::Source { hit } => vec![format!("{} {}", hit.kind, hit.name)],
+            FindEvent::Skipped { name, reason, .. } => vec![format!("skipped {name} {reason:?}")],
+            _ => Vec::new(),
+        })
+        .collect();
+    lines.sort();
+    lines.dedup();
+    lines
+}
+
+/// A text is found in the rows and in the definitions of every server: with the wildcards of `LIKE` as
+/// plain characters, with and without case, in numbers when asked, by a regular expression where the
+/// database has them.
+#[test]
+#[ignore]
+fn a_text_is_found_on_every_server() {
+    for (p, product, schema) in [
+        (pg(), "postgres", "sc_find"),
+        (crdb(), "cockroach", "sc_find"),
+        (my(), "mysql", "shop"),
+        (maria(), "mariadb", "shop"),
+        (ms(), "sqlserver", "dbo"),
+    ] {
+        let kind = p.kind;
+        let mut s = open(&p);
+        if kind == DbKind::Postgres {
+            run(&mut s, "DROP SCHEMA IF EXISTS sc_find CASCADE");
+            run(&mut s, "CREATE SCHEMA sc_find");
+        }
+        let t = |name: &str| format!("{schema}.{name}");
+        run(&mut s, &format!("DROP VIEW IF EXISTS {}", t("sc_f_prices")));
+        run(
+            &mut s,
+            &format!("DROP TABLE IF EXISTS {}", t("sc_f_orders")),
+        );
+        run(
+            &mut s,
+            &format!("DROP TABLE IF EXISTS {}", t("sc_f_people")),
+        );
+        let text = if kind == DbKind::Sqlserver {
+            "nvarchar(200)"
+        } else {
+            "varchar(200)"
+        };
+        run(
+            &mut s,
+            &format!(
+                "CREATE TABLE {} (id int NOT NULL PRIMARY KEY, name {text}, mail {text})",
+                t("sc_f_people")
+            ),
+        );
+        run(
+            &mut s,
+            &format!(
+                "CREATE TABLE {} (id int NOT NULL PRIMARY KEY, note {text}, old_price decimal(8,2) DEFAULT 0)",
+                t("sc_f_orders")
+            ),
+        );
+        run(
+            &mut s,
+            &format!(
+                "INSERT INTO {} VALUES (1, 'Max Mustermann', 'max.mustermann@example.com'), \
+                 (2, 'Zoë', 'zoe@example.com'), (3, '100% sure_thing [x]', NULL)",
+                t("sc_f_people")
+            ),
+        );
+        run(
+            &mut s,
+            &format!(
+                "INSERT INTO {} VALUES (42, 'for MAX.mustermann@example.com', 12.50)",
+                t("sc_f_orders")
+            ),
+        );
+        run(
+            &mut s,
+            &format!(
+                "CREATE VIEW {} AS SELECT id, old_price * 2 AS doubled FROM {}",
+                t("sc_f_prices"),
+                t("sc_f_orders")
+            ),
+        );
+        let mine = |lines: Vec<String>| -> Vec<String> {
+            lines.into_iter().filter(|l| l.contains("sc_f_")).collect()
+        };
+        // in the rows, whatever the case
+        let rows = mine(found(
+            &mut s,
+            kind,
+            &find_spec("max.mustermann@example.com", schema),
+        ));
+        assert_eq!(
+            rows,
+            [
+                "row sc_f_orders.note: for MAX.mustermann@example.com",
+                "row sc_f_people.mail: max.mustermann@example.com"
+            ],
+            "{product}"
+        );
+        let sensitive = FindSpec {
+            case_sensitive: true,
+            ..find_spec("max.mustermann@example.com", schema)
+        };
+        assert_eq!(
+            mine(found(&mut s, kind, &sensitive)),
+            ["row sc_f_people.mail: max.mustermann@example.com"],
+            "{product}"
+        );
+        // the wildcards of LIKE are characters
+        for (text, hits) in [
+            ("100%", 1),
+            ("sure_", 1),
+            ("%", 1),
+            ("[x]", 1),
+            ("_thing [", 1),
+            ("!", 0),
+        ] {
+            let rows = mine(found(&mut s, kind, &find_spec(text, schema)));
+            assert_eq!(rows.len(), hits, "{product}: {text} → {rows:?}");
+        }
+        // a text that tries
+        let evil = "x' OR '1'='1";
+        assert!(
+            mine(found(&mut s, kind, &find_spec(evil, schema))).is_empty(),
+            "{product}"
+        );
+        // numbers when asked; unicode
+        let numbers = FindSpec {
+            columns: Columns::Numbers,
+            ..find_spec("12.5", schema)
+        };
+        assert!(
+            mine(found(&mut s, kind, &numbers))
+                .iter()
+                .any(|l| l.starts_with("row sc_f_orders.old_price: 12.5")),
+            "{product}"
+        );
+        assert_eq!(
+            mine(found(&mut s, kind, &find_spec("zoë", schema))),
+            ["row sc_f_people.name: Zoë"],
+            "{product}"
+        );
+        // a regular expression, where the database has one
+        let regex = FindSpec {
+            mode: Mode::Regex,
+            sources: false,
+            ..find_spec("^max.*mann$", schema)
+        };
+        if kind == DbKind::Sqlserver {
+            assert_eq!(
+                find(s.as_mut(), kind, &regex, None, &|_| {}, &|| false)
+                    .unwrap_err()
+                    .code,
+                ErrorCode::Unsupported
+            );
+        } else {
+            assert_eq!(
+                mine(found(&mut s, kind, &regex)),
+                ["row sc_f_people.name: Max Mustermann"],
+                "{product}"
+            );
+        }
+        // in definitions: the view that reads the column, the default of the column
+        let sources = FindSpec {
+            data: false,
+            ..find_spec("old_price", schema)
+        };
+        let hits = mine(found(&mut s, kind, &sources));
+        assert!(
+            hits.iter().any(|l| l == "view sc_f_prices"),
+            "{product}: {hits:?}"
+        );
+        run(&mut s, &format!("DROP VIEW {}", t("sc_f_prices")));
+        run(&mut s, &format!("DROP TABLE {}", t("sc_f_orders")));
+        run(&mut s, &format!("DROP TABLE {}", t("sc_f_people")));
+    }
+}
+
+/// A table the user may not read is left out and named; the others are searched.
+#[test]
+#[ignore]
+fn a_table_without_the_right_to_read_is_left_out() {
+    let mut admin = open(&pg());
+    for sql in [
+        "DROP SCHEMA IF EXISTS sc_find2 CASCADE",
+        "DROP ROLE IF EXISTS sc_reader",
+        "CREATE ROLE sc_reader LOGIN PASSWORD 'Sc-test-003!'",
+        "CREATE SCHEMA sc_find2",
+        "CREATE TABLE sc_find2.open_t (t text)",
+        "CREATE TABLE sc_find2.secret_t (t text)",
+        "INSERT INTO sc_find2.open_t VALUES ('needle in the open')",
+        "INSERT INTO sc_find2.secret_t VALUES ('needle in the dark')",
+        "GRANT USAGE ON SCHEMA sc_find2 TO sc_reader",
+        "GRANT SELECT ON sc_find2.open_t TO sc_reader",
+    ] {
+        run(&mut admin, sql);
+    }
+    let mut reader = open(&profile(DbKind::Postgres, 25432, "sc_reader", "postgres"));
+    let spec = FindSpec {
+        sources: false,
+        ..find_spec("needle", "sc_find2")
+    };
+    assert_eq!(
+        found(&mut reader, DbKind::Postgres, &spec),
+        [
+            "row open_t.t: needle in the open",
+            "skipped secret_t Refused"
+        ]
+    );
+    assert!(matches!(Skip::Refused, Skip::Refused));
+    drop(reader);
+    run(&mut admin, "DROP SCHEMA sc_find2 CASCADE");
+    run(&mut admin, "DROP ROLE sc_reader");
+}
+
+/// Review 036: a table that does not answer in time (here: locked by another session) is left out –
+/// stopped on the server –, and the tables behind it are searched: on the same session where the driver
+/// can stop a statement, on a new one where it cannot (SQL Server).
+#[test]
+#[ignore]
+fn a_table_that_takes_too_long_is_left_out_and_the_search_goes_on() {
+    for (p, product, schema, lock) in [
+        (
+            pg(),
+            "postgres",
+            "public",
+            "LOCK TABLE public.sc_t_b IN ACCESS EXCLUSIVE MODE",
+        ),
+        (my(), "mysql", "shop", "LOCK TABLES shop.sc_t_b WRITE"),
+        (
+            ms(),
+            "sqlserver",
+            "dbo",
+            "SELECT COUNT(*) FROM dbo.sc_t_b WITH (TABLOCKX, HOLDLOCK)",
+        ),
+    ] {
+        let kind = p.kind;
+        let mut s = open(&p);
+        let mut other = open(&p);
+        for t in ["sc_t_a", "sc_t_b", "sc_t_c"] {
+            run(&mut s, &format!("DROP TABLE IF EXISTS {schema}.{t}"));
+            run(
+                &mut s,
+                &format!("CREATE TABLE {schema}.{t} (t varchar(40))"),
+            );
+            run(
+                &mut s,
+                &format!("INSERT INTO {schema}.{t} VALUES ('needle in {t}')"),
+            );
+        }
+        if kind == DbKind::Sqlserver {
+            run(&mut other, "BEGIN TRANSACTION");
+        } else if kind == DbKind::Postgres {
+            run(&mut other, "BEGIN");
+        }
+        run(&mut other, lock);
+        let spec = FindSpec {
+            sources: false,
+            table_timeout_ms: 700,
+            tables: ["sc_t_a", "sc_t_b", "sc_t_c"]
+                .iter()
+                .map(|t| (schema.to_owned(), (*t).to_owned()))
+                .collect(),
+            ..find_spec("needle", schema)
+        };
+        let events = std::sync::Mutex::new(Vec::new());
+        let tell = |e: FindEvent| events.lock().unwrap().push(e);
+        let started = Instant::now();
+        let mut report = find(s.as_mut(), kind, &spec, None, &tell, &|| false).unwrap();
+        if report.lost {
+            // the driver dropped the connection to stop the statement: go on with a new one
+            assert_eq!(kind, DbKind::Sqlserver, "{product}");
+            assert_eq!(report.resume, Some(2), "{product}");
+            let mut again = open(&p);
+            let next = find(again.as_mut(), kind, &spec, report.resume, &tell, &|| false).unwrap();
+            report = report.and(next);
+        } else {
+            assert!(s.is_open(), "{product}");
+        }
+        assert!(started.elapsed() < Duration::from_secs(8), "{product}");
+        assert_eq!(
+            (
+                report.tables,
+                report.searched,
+                report.skipped,
+                report.rows,
+                report.lost
+            ),
+            (3, 2, 1, 2, false),
+            "{product}: {report:?}"
+        );
+        let events = events.into_inner().unwrap();
+        let found: Vec<&str> = events
+            .iter()
+            .filter_map(|e| match e {
+                FindEvent::Rows { table, .. } => Some(table.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(found, ["sc_t_a", "sc_t_c"], "{product}");
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                FindEvent::Skipped { name, reason: Skip::Timeout, .. } if name == "sc_t_b"
+            )),
+            "{product}: {events:?}"
+        );
+        if kind == DbKind::Mysql {
+            run(&mut other, "UNLOCK TABLES");
+        } else {
+            run(&mut other, "ROLLBACK");
+        }
+        let mut s = open(&p);
+        for t in ["sc_t_a", "sc_t_b", "sc_t_c"] {
+            run(&mut s, &format!("DROP TABLE {schema}.{t}"));
+        }
+    }
+}

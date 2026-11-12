@@ -13,6 +13,7 @@ export const SCHEMA_DE: Translation<typeof SCHEMA_EN> = {
   openData: 'Daten öffnen',
   exportTable: 'Exportieren …',
   importTable: 'Datei importieren …',
+  searchHere: 'Hier suchen …',
   insertName: 'Name in den Editor einfügen',
   copyName: 'Name kopieren',
   copyQualified: 'Qualifizierten Namen kopieren',

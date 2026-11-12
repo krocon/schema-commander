@@ -30,6 +30,8 @@ import { DataImportDialog } from './features/data-import/data-import-dialog';
 import { DataImportService } from './features/data-import/data-import.service';
 import { AboutDialog } from './features/about/about-dialog';
 import { ExportDialog } from './features/export/export-dialog';
+import { ServerSearchDialog } from './features/server-search/server-search-dialog';
+import { ServerSearchService } from './features/server-search/server-search.service';
 import { ExportService } from './features/export/export.service';
 import { FormatMode } from './core/format/format-api';
 import { FormatService } from './features/format/format.service';
@@ -124,6 +126,7 @@ const SIDEBAR_MIN = 140;
     ConnectionList,
     ContextMenu,
     ExportDialog,
+    ServerSearchDialog,
     AboutDialog,
     DataImportDialog,
     GuardDialog,
@@ -530,6 +533,11 @@ const SIDEBAR_MIN = 140;
         <app-data-import-dialog [target]="target" (closed)="dataImporter.close()" />
       }
     }
+    @if (serverSearch.request(); as target) {
+      @defer (on immediate) {
+        <app-server-search-dialog [target]="target" (closed)="serverSearch.close()" />
+      }
+    }
     @if (aboutOpen()) {
       @defer (on immediate) {
         <app-about-dialog (closed)="aboutOpen.set(false)" />
@@ -671,6 +679,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly badge = computed(() => badgeText(this.connections.active()));
   protected readonly exporter = inject(ExportService);
   protected readonly dataImporter = inject(DataImportService);
+  protected readonly serverSearch = inject(ServerSearchService);
   protected readonly formatter = inject(FormatService);
   protected readonly saved = inject(SavedStore);
   protected readonly paramService = inject(ParamService);
@@ -1018,6 +1027,11 @@ export class App implements OnInit, OnDestroy {
         'EXPORT_RESULT',
         () => this.exportResult(),
         () => this.copier.current() !== null && !this.exporter.running(),
+      ),
+      this.actions.register(
+        'SEARCH_SERVER',
+        () => this.serverSearch.open(),
+        () => this.connections.activeState().kind === 'open',
       ),
       this.actions.register(
         'IMPORT_DATA',

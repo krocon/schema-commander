@@ -82,6 +82,7 @@ export const OPS: readonly { readonly op: FilterOp; readonly values: 0 | 1 | 2 |
   { op: 'gt', values: 1 },
   { op: 'ge', values: 1 },
   { op: 'contains', values: 1 },
+  { op: 'containsNoCase', values: 1 },
   { op: 'like', values: 1 },
   { op: 'notLike', values: 1 },
   { op: 'in', values: 'many' },

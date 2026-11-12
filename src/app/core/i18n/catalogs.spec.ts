@@ -26,6 +26,7 @@ import '../../features/params/param-texts';
 import '../../features/results/results-texts';
 import '../../features/saved/saved-texts';
 import '../../features/schema/schema-texts';
+import '../../features/server-search/server-search-texts';
 import '../../features/settings/settings-texts';
 import '../../features/shortcuts/shortcut-dialog-texts';
 import '../../features/snippets/snippet-texts';
@@ -43,6 +44,8 @@ import '../theme/tokens';
 
 /** The same in both languages on purpose: names, symbols, technical terms. */
 const SAME = new Set<string>([
+  'Check',
+  'Trigger',
   'Build',
   'Linux',
   'MIT',
@@ -115,7 +118,7 @@ const SAME = new Set<string>([
   '~/.pgpass (PostgreSQL)',
 ]);
 
-const CATALOG_FILES = 38;
+const CATALOG_FILES = 39;
 const SAMPLE_ARGS: unknown[] = [2, 'x', 3, 4];
 
 function walk(path: string, en: unknown, de: unknown, problems: string[], same: string[]): void {

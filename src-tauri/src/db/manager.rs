@@ -1111,6 +1111,32 @@ impl ConnectionManager {
         result
     }
 
+    /// As [`ConnectionManager::ask`], on a session of its own (named like the session of a tab): long
+    /// work of the app (prompt 036: the search on the server) that must not hold the session the tree
+    /// and the completion ask. A session that was lost is opened anew by the next call.
+    pub fn ask_in<T>(
+        &self,
+        id: &str,
+        name: &str,
+        f: impl FnOnce(&mut dyn Session, DbKind, super::Stop) -> AppResult<T>,
+    ) -> AppResult<T> {
+        let (key, open, profile) = self.session_of(id, Some(name))?;
+        let mut session = open.session.lock();
+        open.stop.store(false, Ordering::Relaxed);
+        let result = f(session.as_mut(), profile.kind, &|| {
+            open.stop.load(Ordering::Relaxed)
+        });
+        let lost = !session.is_open();
+        drop(session);
+        if lost {
+            let mut all = self.open.lock();
+            if all.get(&key).is_some_and(|o| Arc::ptr_eq(o, &open)) {
+                all.remove(&key);
+            }
+        }
+        result
+    }
+
     /// Stops the statement that runs on a connection (nothing happens when none does).
     pub fn cancel(&self, id: &str) {
         self.cancel_in(id, None);

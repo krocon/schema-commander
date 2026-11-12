@@ -30,6 +30,7 @@ export const FILTER_DE: Translation<typeof FILTER_EN> = {
     gt: '>',
     ge: '≥',
     contains: 'enthält',
+    containsNoCase: 'enthält (Groß/Klein egal)',
     like: 'LIKE',
     notLike: 'NOT LIKE',
     in: 'IN',

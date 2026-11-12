@@ -45,6 +45,9 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   (<kbd>Ctrl/⌘</kbd>+<kbd>⌫</kbd>), paste a block of cells from a spreadsheet (<kbd>Ctrl/⌘</kbd>+<kbd>V</kbd>
   in the grid – over the rows below the cursor and on into new rows), fill down
   (<kbd>Ctrl/⌘</kbd>+<kbd>D</kbd>). Everything is written together: deletes, then changes, then inserts
+- Search on the server (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>G</kbd>): where does a text stand – in the rows of all tables (one
+  after the other, with limits of hits and time, the text always bound) and in the definitions of views,
+  routines, triggers, checks and defaults; a hit opens the table filtered, or the definition
 - Import a file into a table: CSV/TSV, JSON or NDJSON (also gzip, any common encoding), read as a stream. The
   dialog shows the start of the file as it is read, maps columns by name, proposes a `CREATE TABLE` for a new
   table, and writes with bound values – all or nothing, or block by block with the refused rows in an error file

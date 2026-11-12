@@ -60,10 +60,11 @@
   in eine vorhandene oder neue Tabelle: Vorschau, Zuordnung, gebundene Stapel-`INSERT`s, Fehlerdatei, als Job
   (Prompt 033); **Release** vorbereitet: Workflow für Pakete je System, Lizenzhinweise, About-Dialog (Prompt 034);
   **CockroachDB und TimescaleDB** über den PostgreSQL-Treiber, Fähigkeits-Flags je Verbindung (Prompt 035a);
+  **Suche auf dem Server**: ein Text in den Zeilen aller Tabellen und in Definitionen, als lesender Job (Prompt 036);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034),
+  erledigt: 001–034, 035a, 036),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -111,6 +112,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/errors/             AppError + ErrorDetails + toAppError (spiegelt src-tauri/src/error.rs), error-texts
                                (Text je Code), error-position.ts (rein: Angabe der Datenbank → Stelle im Editor,
                                Katalog error-position.cases.json)
+  app/core/find/               FindApi (find_on_server, cancel_job) + DTOs – spiegelt db/find.rs
   app/core/format/             FormatApi (format_sql, cancel_job) + Stil und Modus – spiegelt format.rs
   app/core/i18n/               i18n.ts (translatable, phrasebook, language, locale), common-texts,
                                catalogs.spec.ts (jeder Katalog vollständig in beiden Sprachen)
@@ -166,6 +168,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/snippets/       SnippetDialog, snippet-logic.ts (rein: mitgelieferte je Dialekt, Variablen)
   app/features/schema/         SchemaTree (virtuelle Liste, APG-Baum), SchemaStore (Root: Zustand je Verbindung),
                                SchemaActions, schema-logic.ts (rein: Zeilen, Filter, Tasten, Vorlagen)
+  app/features/server-search/  ServerSearchDialog (Suche, Treffer als Listen), ServerSearchService (Root: ein Job,
+                               Treffer öffnen), server-search-logic.ts (rein)
   app/features/settings/       SettingsDialog (Gruppen, Suche, Zurücksetzen, Export/Import), settings-logic.ts
                                (rein: Schema des Dialogs, Suche, Datei)
   app/features/shortcuts/      Kürzel-Editor und -Übersicht (ShortcutDialog, shortcut-logic.ts)
@@ -222,6 +226,8 @@ src-tauri/                     Rust
   src/db/import.rs             Verbindungs-URLs und fremde Dateien lesen (rein, Katalog), eigener Export
   src/db/edit.rs               die Anweisungen eines Schreib-Plans: DELETE, UPDATE, gebündelte INSERTs (in dieser
                                Reihenfolge), Schlüssel, Sperre über alte Werte – alles gebunden (rein, Katalog)
+  src/db/find.rs               Suche auf dem Server: Anweisung je Tabelle mit gebundenem Text, Definitionen aus dem
+                               Katalog, Stelle und Vorschau eines Treffers (rein, Katalog böser Texte)
   src/db/filter.rs             das SELECT einer Tabellen-Ansicht: Namen gequotet, Werte gebunden (rein, Katalog
                                auch böser Werte)
   src/db/guard.rs              Anweisungen einstufen (lesend/schreibend/DDL/gefährlich), Schutzstufen (rein, Katalog)
@@ -293,6 +299,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   Fenster; das Fenster zeigt den Text, den es bekommt.
 - **Werte**: Eine `Cell` trägt den ganzen Wert; gekürzt wird nur beim Schreiben der Zeile. Nichts aus einem
   Wert wird als Markup in die Seite gesetzt; Bilder nur innerhalb der Grenzen von `value-logic.ts` als `blob:`.
+- **Suche auf dem Server**: nur `db/find.rs` baut ihre Anweisungen; der Suchtext ist immer gebunden. Ein Treffer
+  führt über `TableViews.openWith` als Bedingung in eine Tabellen-Ansicht.
 - **Import**: Die Datei ist feindlich. Ihre Spaltennamen werden nie SQL (Zielspalten nennt die Zuordnung, gequotet
   im Backend), ihre Werte nur gebunden (`db/load.rs` über `edit::steps`); das Fenster zeigt Werte nur als Text.
 - **Parameter**: Werte des Nutzers gehen nur als `Bind` über `run_query` und werden vom Treiber gebunden

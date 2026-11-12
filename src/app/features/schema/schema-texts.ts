@@ -14,6 +14,7 @@ export const SCHEMA_EN = {
   openData: 'Open data',
   exportTable: 'Export …',
   importTable: 'Import a file …',
+  searchHere: 'Search here …',
   insertName: 'Insert name into the editor',
   copyName: 'Copy name',
   copyQualified: 'Copy qualified name',

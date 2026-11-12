@@ -813,6 +813,61 @@ pub fn export_query(
     Ok(done)
 }
 
+/// Searches a text on the server (prompt 036): in the rows of tables and in definitions. A job that
+/// `cancel_job` stops; `on_event` hears every hit as it is found. Only statements that read run, built
+/// here; the text is bound.
+#[tauri::command(async)]
+pub fn find_on_server(
+    manager: State<'_, ConnectionManager>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    id: String,
+    spec: crate::db::find::FindSpec,
+    on_event: Channel<crate::db::find::FindEvent>,
+) -> AppResult<crate::db::find::FindReport> {
+    use std::sync::atomic::Ordering;
+    /// The session the search runs on: its own, so the tree and the completion are not held up.
+    const SESSION: &str = "sc-find";
+    let stop = jobs.start(job_id, None);
+    let mut report: Option<crate::db::find::FindReport> = None;
+    // a driver that can stop a table that takes too long only by dropping the connection (SQL Server)
+    // loses it there: the search goes on behind that table on a new one
+    let result = loop {
+        let resume = report.as_ref().and_then(|r| r.resume);
+        let part = manager.ask_in(&id, SESSION, |session, kind, stopped| {
+            crate::db::find::find(
+                session,
+                kind,
+                &spec,
+                resume,
+                &|event| {
+                    let _ = on_event.send(event);
+                },
+                &|| stop.load(Ordering::Relaxed) || stopped(),
+            )
+        });
+        match (part, report.take()) {
+            (Ok(next), before) => {
+                let all = match before {
+                    Some(before) => before.and(next),
+                    None => next,
+                };
+                let again = all.lost && all.resume.is_some() && !all.cancelled;
+                if !again || stop.load(Ordering::Relaxed) {
+                    break Ok(all);
+                }
+                report = Some(all);
+            }
+            // no new connection: what was found so far is the report
+            (Err(_), Some(before)) => break Ok(before),
+            (Err(e), None) => break Err(e),
+        }
+    };
+    jobs.end(job_id);
+    manager.close_session(&id, SESSION);
+    result
+}
+
 /// What the About dialog shows (prompt 034): name, version, build, platform. Nothing about the user.
 #[tauri::command(async)]
 pub fn app_info(app: AppHandle) -> crate::about::AppInfo {
@@ -1058,7 +1113,8 @@ fn format_error(e: format::FormatError) -> AppError {
     AppError::new(code, message)
 }
 
-/// Stops a job (its statement on the server too).
+/// Stops a job (its statement on the server too; the search on the server runs on a session of its
+/// own, which is stopped as well).
 #[tauri::command(async)]
 pub fn cancel_job(manager: State<'_, ConnectionManager>, jobs: State<'_, Jobs>, job_id: u64) {
     let connection = {
