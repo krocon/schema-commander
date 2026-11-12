@@ -381,6 +381,9 @@ pub fn create_table(
         // room for values longer than the ones seen
         let len = (g.max_len.max(1) * 2).clamp(20, 4000);
         match (g.kind, kind) {
+            (GuessKind::DateTime, DbKind::Clickhouse) => "DateTime64(6)".into(),
+            (GuessKind::Bool, DbKind::Clickhouse) => "Bool".into(),
+            (GuessKind::Text, DbKind::Clickhouse) => "String".into(),
             (GuessKind::DateTime, DbKind::Duckdb) => "timestamp".into(),
             (GuessKind::Bool, DbKind::Duckdb) => "boolean".into(),
             (GuessKind::Text, DbKind::Duckdb) => "varchar".into(),

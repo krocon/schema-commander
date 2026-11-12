@@ -374,12 +374,13 @@ impl Builder {
                 DbKind::Sqlserver => format!("@P{n}"),
                 DbKind::Sqlite => format!("?{n}"),
                 DbKind::Oracle => format!(":{n}"),
+                DbKind::Clickhouse => format!("{{p{n}:String}}"),
             };
             let around = |inner: &str| match self.kind {
                 DbKind::Postgres => format!("decode({inner}, 'hex')"),
                 DbKind::Mysql => format!("UNHEX({inner})"),
                 DbKind::Sqlserver => format!("CONVERT(varbinary(max), {inner}, 2)"),
-                DbKind::Sqlite | DbKind::Duckdb => format!("unhex({inner})"),
+                DbKind::Sqlite | DbKind::Duckdb | DbKind::Clickhouse => format!("unhex({inner})"),
                 DbKind::Oracle => format!("HEXTORAW({inner})"),
             };
             self.sql.push_str(&around(&placeholder));
@@ -442,6 +443,12 @@ impl Builder {
             DbKind::Sqlserver => format!("@P{n}"),
             DbKind::Sqlite => format!("?{n}"),
             DbKind::Oracle => format!(":{n}"),
+            // the placeholder names the type: a text is read by the server as what it is compared with
+            DbKind::Clickhouse => match &bind {
+                Bind::Int(_) => format!("{{p{n}:Int64}}"),
+                Bind::Bool(_) => format!("{{p{n}:Bool}}"),
+                _ => format!("{{p{n}:String}}"),
+            },
         };
         let literal = match &bind {
             Bind::Int(v) | Bind::Decimal(v) => v.clone(),
@@ -492,6 +499,7 @@ impl Builder {
             DbKind::Mysql => format!("CAST({column} AS char)"),
             DbKind::Sqlserver => format!("CAST({column} AS nvarchar(max))"),
             DbKind::Oracle => format!("TO_CHAR({column})"),
+            DbKind::Clickhouse => format!("toString({column})"),
         }
     }
 
@@ -586,6 +594,19 @@ impl Builder {
                 self.text(&format!("{text}{not} LIKE "));
                 self.pattern(&c.values[0]);
             }
+            // ClickHouse has no ESCAPE for LIKE: where a text stands says the same without a pattern
+            Op::Contains | Op::ContainsNoCase if self.kind == DbKind::Clickhouse => {
+                need(1)?;
+                let text = self.as_text(&column, c.kind);
+                let function = if c.op == Op::ContainsNoCase {
+                    "positionCaseInsensitiveUTF8"
+                } else {
+                    "position"
+                };
+                self.text(&format!("{function}({text}, "));
+                self.pattern(&c.values[0]);
+                self.text(") > 0");
+            }
             Op::Contains | Op::ContainsNoCase => {
                 need(1)?;
                 // `!` escapes: the same in all four databases (a backslash is not)
@@ -647,7 +668,9 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
         let close = match c {
             b'\'' => Some(b'\''),
             b'"' => Some(b'"'),
-            b'`' if kind == DbKind::Mysql || kind == DbKind::Sqlite => Some(b'`'),
+            b'`' if matches!(kind, DbKind::Mysql | DbKind::Sqlite | DbKind::Clickhouse) => {
+                Some(b'`')
+            }
             b'[' if kind == DbKind::Sqlserver => Some(b']'),
             _ => None,
         };
@@ -657,7 +680,11 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
                 match b.get(i) {
                     None => return refuse("a string or a quoted name is not closed"),
                     // MySQL reads a backslash in a string as an escape
-                    Some(b'\\') if kind == DbKind::Mysql && close != b'`' => i += 2,
+                    Some(b'\\')
+                        if matches!(kind, DbKind::Mysql | DbKind::Clickhouse) && close != b'`' =>
+                    {
+                        i += 2;
+                    }
                     Some(&x) if x == close => {
                         if b.get(i + 1) == Some(&close) {
                             i += 2;
@@ -690,6 +717,11 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
             b'$' if kind == DbKind::Duckdb => {
                 return refuse("no `$`");
             }
+            // `{p1:String}` would be read as one of the values of the conditions
+            b'{' if kind == DbKind::Clickhouse => {
+                return refuse("no placeholders");
+            }
+            b'#' if kind == DbKind::Clickhouse => return refuse("no comments"),
             b'?' if matches!(kind, DbKind::Mysql | DbKind::Sqlite) => {
                 return refuse("no placeholders");
             }
@@ -807,7 +839,11 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
             let column = name(&o.column, kind)?;
             let native = matches!(
                 kind,
-                DbKind::Postgres | DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb
+                DbKind::Postgres
+                    | DbKind::Sqlite
+                    | DbKind::Oracle
+                    | DbKind::Duckdb
+                    | DbKind::Clickhouse
             );
             if let (Some(nulls), false) = (o.nulls, native) {
                 // no NULLS FIRST/LAST there: a key before the column says where the NULLs go

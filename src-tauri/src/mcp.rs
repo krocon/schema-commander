@@ -437,6 +437,7 @@ fn kind_name(kind: DbKind) -> &'static str {
         DbKind::Sqlite => "sqlite",
         DbKind::Oracle => "oracle",
         DbKind::Duckdb => "duckdb",
+        DbKind::Clickhouse => "clickhouse",
     }
 }
 

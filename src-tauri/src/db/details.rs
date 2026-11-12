@@ -143,6 +143,7 @@ pub fn details(
         DbKind::Sqlite => sqlite::read(&mut r, schema, name, object)?,
         DbKind::Oracle => oracle::read(&mut r, schema, name, object)?,
         DbKind::Duckdb => duckdb::read(&mut r, schema, name, object)?,
+        DbKind::Clickhouse => clickhouse::read(&mut r, schema, name)?,
     };
     if ddl.is_none() {
         r.notes.push("ddl".into());
@@ -1653,6 +1654,68 @@ mod sqlite {
             .map(|row| format!("{};\n", at(row, 0).trim_end().trim_end_matches(';')))
             .collect();
         Ok(Some(statements.join("\n")))
+    }
+}
+
+mod clickhouse {
+    use super::*;
+
+    const HERE: &str = "database = {p1:String} AND table = {p2:String}";
+
+    pub fn read(r: &mut Reader, schema: &str, name: &str) -> AppResult<Option<String>> {
+        let p = &[schema, name];
+        r.section(
+            "columns",
+            &[
+                "name", "type", "nullable", "default", "key", "extra", "comment",
+            ],
+            &format!(
+                "SELECT name, type, if(type LIKE 'Nullable(%', 'yes', 'no'), \
+                   if(default_expression = '', NULL, default_kind || ' ' || default_expression), \
+                   if(is_in_primary_key, 'pk', ''), \
+                   arrayStringConcat(arrayFilter(x -> x != '', [ \
+                     if(is_in_sorting_key, 'sorting key', ''), \
+                     if(is_in_partition_key, 'partition key', ''), \
+                     if(compression_codec = '', '', compression_codec)]), ', '), \
+                   comment \
+                 FROM system.columns WHERE {HERE} ORDER BY position"
+            ),
+            p,
+        )?;
+        r.section(
+            "indexes",
+            &["name", "definition", "unique", "primary", "method", "size"],
+            &format!(
+                "SELECT name, expr, 'no', 'no', type_full, formatReadableSize(data_compressed_bytes) \
+                 FROM system.data_skipping_indices WHERE {HERE} ORDER BY 1"
+            ),
+            p,
+        )?;
+        r.section(
+            "stats",
+            &["property", "value"],
+            "SELECT 'engine', engine FROM system.tables \
+               WHERE database = {p1:String} AND name = {p2:String} \
+             UNION ALL SELECT 'sorted by', sorting_key FROM system.tables \
+               WHERE database = {p1:String} AND name = {p2:String} AND sorting_key != '' \
+             UNION ALL SELECT 'partitioned by', partition_key FROM system.tables \
+               WHERE database = {p1:String} AND name = {p2:String} AND partition_key != '' \
+             UNION ALL SELECT 'rows', toString(total_rows) FROM system.tables \
+               WHERE database = {p1:String} AND name = {p2:String} AND total_rows IS NOT NULL \
+             UNION ALL SELECT 'size', formatReadableSize(total_bytes) FROM system.tables \
+               WHERE database = {p1:String} AND name = {p2:String} AND total_bytes IS NOT NULL",
+            p,
+        )?;
+        // the statement as the server keeps it
+        let ddl = r.text(
+            "SELECT create_table_query FROM system.tables \
+             WHERE database = {p1:String} AND name = {p2:String}",
+            p,
+        )?;
+        Ok(ddl
+            .map(|t| t.trim().to_owned())
+            .filter(|t| !t.is_empty())
+            .map(|t| format!("{};\n", t.trim_end_matches(';'))))
     }
 }
 

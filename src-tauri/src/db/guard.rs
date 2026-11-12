@@ -677,6 +677,10 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
         // them is the first half of running foreign code
         return Some(Class::Dangerous);
     }
+    if kind == DbKind::Clickhouse && matches!(start, "SYSTEM" | "KILL") {
+        // the server itself: stop it, drop its caches, end what others run
+        return Some(Class::Dangerous);
+    }
     let mut class = if READ_STARTS.contains(&start) {
         Class::Read
     } else if DANGEROUS_WORDS.contains(&start) {
@@ -917,6 +921,9 @@ pub fn read_only_statement(kind: DbKind) -> Option<&'static str> {
         // classification is all there is, and a reading call runs in a transaction that is rolled back
         // DuckDB can be read only for a whole file, not for a session of an open one
         DbKind::Oracle | DbKind::Duckdb => None,
+        // kept by the session of the server; once set it cannot be taken back there
+        // (1, not 2: with 2 an INSERT INTO FUNCTION file(…) still writes)
+        DbKind::Clickhouse => Some("SET readonly = 1"),
     }
 }
 
@@ -925,14 +932,32 @@ mod tests {
     use super::*;
     use Class::{Dangerous, Ddl, Read, Write};
 
-    const ALL: [DbKind; 6] = [
+    const ALL: [DbKind; 7] = [
         DbKind::Postgres,
         DbKind::Mysql,
         DbKind::Sqlserver,
         DbKind::Sqlite,
         DbKind::Oracle,
         DbKind::Duckdb,
+        DbKind::Clickhouse,
     ];
+
+    /// ClickHouse (prompt 035d).
+    #[test]
+    fn clickhouse_commands_for_the_server_ask_first() {
+        let k = DbKind::Clickhouse;
+        assert_eq!(classify("SYSTEM SHUTDOWN", k), Dangerous);
+        assert_eq!(classify("KILL QUERY WHERE user = 'x'", k), Dangerous);
+        assert_eq!(classify("SELECT count() FROM t", k), Read);
+        assert_eq!(
+            classify("INSERT INTO FUNCTION file('x.csv') SELECT 1", k),
+            Write
+        );
+        assert_eq!(classify("ALTER TABLE t DELETE WHERE id = 1", k), Ddl);
+        assert_eq!(classify("OPTIMIZE TABLE t FINAL", k), Ddl);
+        assert_eq!(classify("TRUNCATE TABLE t", k), Dangerous);
+        assert_eq!(read_only_statement(k), Some("SET readonly = 1"));
+    }
 
     /// DuckDB (prompt 035c): extensions are code from the net, files are written by statements.
     #[test]

@@ -347,7 +347,7 @@ pub fn quote(name: &str, kind: DbKind) -> String {
 /// A name in quotes, whatever it is.
 pub fn quote_always(name: &str, kind: DbKind) -> String {
     match kind {
-        DbKind::Mysql => format!("`{}`", name.replace('`', "``")),
+        DbKind::Mysql | DbKind::Clickhouse => format!("`{}`", name.replace('`', "``")),
         DbKind::Sqlserver => format!("[{}]", name.replace(']', "]]")),
         DbKind::Postgres | DbKind::Sqlite | DbKind::Duckdb => {
             format!("\"{}\"", name.replace('"', "\"\""))
@@ -438,6 +438,13 @@ pub fn schemas(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<S
         DbKind::Sqlite => {
             "SELECT name, 'false', CASE WHEN name = 'main' THEN 'true' ELSE 'false' END \
              FROM pragma_database_list ORDER BY seq"
+        }
+        // a schema is a database of the server
+        DbKind::Clickhouse => {
+            "SELECT name, \
+             if(name IN ('system', 'INFORMATION_SCHEMA', 'information_schema'), 'true', 'false'), \
+             if(name = currentDatabase(), 'true', 'false') \
+             FROM system.databases ORDER BY 1"
         }
         // the schemas of the file that is open (its own catalog is another database, `system`)
         DbKind::Duckdb => {
@@ -539,6 +546,11 @@ pub fn objects(
         ],
         DbKind::Sqlite => &["SELECT type, name, '', NULL FROM pragma_table_list \
              WHERE schema = ?1 AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'"],
+        // the engine says what it is; the hidden tables of materialized views are left out
+        DbKind::Clickhouse => &["SELECT multiIf(engine = 'MaterializedView', 'matview', \
+               engine LIKE '%View', 'view', 'table'), name, engine, toString(total_rows) \
+             FROM system.tables \
+             WHERE database = {p1:String} AND NOT is_temporary AND name NOT LIKE '.inner%'"],
         DbKind::Duckdb => &[
             "SELECT 'table', table_name, '', CAST(estimated_size AS VARCHAR) FROM duckdb_tables() \
              WHERE database_name = current_database() AND schema_name = $1 AND NOT internal",
@@ -844,6 +856,52 @@ fn mssql_table(s: &mut dyn Session, schema: &str, table: &str, stop: Stop) -> Ap
     })
 }
 
+/// ClickHouse: `system.columns`. The „primary key“ is what the table is sorted by – it says where rows
+/// lie, not that they are unique.
+fn clickhouse_table(
+    s: &mut dyn Session,
+    schema: &str,
+    table: &str,
+    stop: Stop,
+) -> AppResult<TableInfo> {
+    let p = &[schema, table];
+    let columns = ask(
+        s,
+        "SELECT name, type, if(type LIKE 'Nullable(%', 'true', 'false'), \
+           if(default_expression = '', NULL, default_expression), \
+           if(is_in_primary_key, 'pk', '') \
+         FROM system.columns WHERE database = {p1:String} AND table = {p2:String} \
+         ORDER BY position",
+        p,
+        stop,
+    )?;
+    let keys = ask(
+        s,
+        "SELECT 'engine', engine_full FROM system.tables \
+           WHERE database = {p1:String} AND name = {p2:String} AND engine_full != '' \
+         UNION ALL SELECT 'ORDER BY', sorting_key FROM system.tables \
+           WHERE database = {p1:String} AND name = {p2:String} AND sorting_key != '' \
+         UNION ALL SELECT 'PARTITION BY', partition_key FROM system.tables \
+           WHERE database = {p1:String} AND name = {p2:String} AND partition_key != ''",
+        p,
+        stop,
+    )?;
+    let indexes = ask(
+        s,
+        "SELECT name, type_full || ' (' || expr || ')' FROM system.data_skipping_indices \
+         WHERE database = {p1:String} AND table = {p2:String} ORDER BY 1",
+        p,
+        stop,
+    )
+    .unwrap_or_default();
+    Ok(TableInfo {
+        columns: column_rows(&columns, DbKind::Clickhouse),
+        indexes: parts(&indexes),
+        keys: parts(&keys),
+        triggers: Vec::new(),
+    })
+}
+
 /// DuckDB: its own table functions (`duckdb_columns()` …) of the database that is open.
 fn duckdb_table(
     s: &mut dyn Session,
@@ -1126,6 +1184,7 @@ pub fn table(
         DbKind::Sqlite => sqlite_table(s, schema, table, stop),
         DbKind::Oracle => oracle_table(s, schema, table, stop),
         DbKind::Duckdb => duckdb_table(s, schema, table, stop),
+        DbKind::Clickhouse => clickhouse_table(s, schema, table, stop),
     }
 }
 
@@ -1164,6 +1223,15 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
         DbKind::Sqlite => {
             "SELECT schema, type, name FROM pragma_table_list \
              WHERE name LIKE ?1 ESCAPE '\\' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' \
+             ORDER BY 3, 1 LIMIT 200"
+        }
+        DbKind::Clickhouse => {
+            "SELECT database, multiIf(engine = 'MaterializedView', 'matview', \
+               engine LIKE '%View', 'view', 'table'), name \
+             FROM system.tables \
+             WHERE name ILIKE {p1:String} AND NOT is_temporary \
+               AND database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema') \
+               AND name NOT LIKE '.inner%' \
              ORDER BY 3, 1 LIMIT 200"
         }
         DbKind::Duckdb => {

@@ -178,6 +178,7 @@ pub fn principals(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Ac
         DbKind::Sqlite => return Err(unsupported()),
         DbKind::Oracle => return Err(super::not_yet(kind, "users and rights")),
         DbKind::Duckdb => return Err(unsupported()),
+        DbKind::Clickhouse => return Err(super::not_yet(kind, "users and rights")),
         DbKind::Postgres => {
             for row in asked(s, PG_ROLES, &[], stop)? {
                 let mut attributes = Vec::new();
@@ -488,6 +489,7 @@ pub fn grants(s: &mut dyn Session, kind: DbKind, who: &Who, stop: Stop) -> AppRe
         DbKind::Sqlite => return Err(unsupported()),
         DbKind::Oracle => return Err(super::not_yet(kind, "users and rights")),
         DbKind::Duckdb => return Err(unsupported()),
+        DbKind::Clickhouse => return Err(super::not_yet(kind, "users and rights")),
         DbKind::Postgres => {
             let cockroach = s.flavor() == Flavor::Cockroach;
             let sql = if cockroach {
@@ -912,6 +914,7 @@ fn written(
                 DbKind::Sqlite => return Err(unsupported()),
                 DbKind::Oracle => return Err(super::not_yet(kind, "users and rights")),
                 DbKind::Duckdb => return Err(unsupported()),
+                DbKind::Clickhouse => return Err(super::not_yet(kind, "users and rights")),
             }
         }
         Change::Drop { who, role } => {
@@ -935,6 +938,7 @@ fn written(
                 DbKind::Sqlite => return Err(unsupported()),
                 DbKind::Oracle => return Err(super::not_yet(kind, "users and rights")),
                 DbKind::Duckdb => return Err(unsupported()),
+                DbKind::Clickhouse => return Err(super::not_yet(kind, "users and rights")),
             };
             // the password this connection logs in with would no longer fit
             let dangers = if mine(who) { vec!["lockout"] } else { vec![] };
@@ -971,6 +975,9 @@ fn written(
                 (DbKind::Sqlite, _) => return Err(unsupported()),
                 (DbKind::Oracle, _) => return Err(super::not_yet(kind, "users and rights")),
                 (DbKind::Duckdb, _) => return Err(unsupported()),
+                (DbKind::Clickhouse, _) => {
+                    return Err(super::not_yet(kind, "users and rights"));
+                }
                 (_, true) => format!("GRANT {r} TO {m}"),
                 (_, false) => format!("REVOKE {r} FROM {m}"),
             };
@@ -1121,6 +1128,7 @@ fn password_literal(
         DbKind::Sqlite => return Err(unsupported()),
         DbKind::Oracle => return Err(super::not_yet(kind, "users and rights")),
         DbKind::Duckdb => return Err(unsupported()),
+        DbKind::Clickhouse => return Err(super::not_yet(kind, "users and rights")),
     })
 }
 
@@ -1252,7 +1260,9 @@ pub fn transactional(kind: DbKind, flavor: Flavor) -> bool {
     match kind {
         DbKind::Postgres => flavor != Flavor::Cockroach,
         DbKind::Sqlserver => true,
-        DbKind::Mysql | DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb => false,
+        DbKind::Mysql | DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse => {
+            false
+        }
     }
 }
 

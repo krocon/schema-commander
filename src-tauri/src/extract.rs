@@ -136,7 +136,7 @@ pub fn sql_text(text: &str, dialect: DbKind) -> String {
         match c {
             '\'' => out.push_str("''"),
             // MySQL takes the backslash as an escape unless told otherwise
-            '\\' if dialect == DbKind::Mysql => out.push_str("\\\\"),
+            '\\' if matches!(dialect, DbKind::Mysql | DbKind::Clickhouse) => out.push_str("\\\\"),
             c => out.push(c),
         }
     }
@@ -183,7 +183,7 @@ pub fn literal(cell: &Value, kind: ColKind, dialect: DbKind) -> String {
                 DbKind::Sqlserver => format!("0x{hex}"),
                 DbKind::Mysql | DbKind::Sqlite => format!("X'{hex}'"),
                 DbKind::Oracle => format!("HEXTORAW('{hex}')"),
-                DbKind::Duckdb => format!("unhex('{hex}')"),
+                DbKind::Duckdb | DbKind::Clickhouse => format!("unhex('{hex}')"),
             },
             // only the head of a big value is kept (prompt 006): better no value than a wrong one
             Some((bytes, _)) => format!("NULL /* binary, {bytes} bytes: not copied */"),

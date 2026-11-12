@@ -318,6 +318,10 @@ fn check_insert(row: &RowInsert) -> AppResult<()> {
 /// that name the same columns share an `INSERT` (up to [`MAX_BATCH_ROWS`] rows and as many values as a
 /// statement takes).
 pub fn steps(kind: DbKind, plan: &UpdatePlan) -> AppResult<Vec<Step>> {
+    if kind == DbKind::Clickhouse {
+        // no transactions, no unique keys: a changed cell cannot be written safely there
+        return Err(super::not_yet(kind, "editing and importing rows"));
+    }
     let total = plan.rows.len() + plan.deletes.len() + plan.inserts.len();
     if total == 0 {
         return Err(invalid("nothing to write"));
@@ -397,6 +401,9 @@ pub fn single_inserts(
 /// One `UPDATE` per changed row of the plan, in its order (the plan's deletes and inserts are not
 /// looked at: see [`steps`]).
 pub fn build(kind: DbKind, plan: &UpdatePlan) -> AppResult<Vec<Built>> {
+    if kind == DbKind::Clickhouse {
+        return Err(super::not_yet(kind, "editing and importing rows"));
+    }
     if plan.rows.is_empty() {
         return Err(invalid("nothing to write"));
     }

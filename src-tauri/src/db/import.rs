@@ -344,6 +344,8 @@ pub fn parse_url(text: &str) -> AppResult<Candidate> {
     } else if lower.starts_with("oracle:thin:@//") {
         // jdbc:oracle:thin:@//host:1521/service – the user is not part of it
         url_form(DbKind::Oracle, after("oracle:thin:@//"))?
+    } else if lower.starts_with("clickhouse://") {
+        url_form(DbKind::Clickhouse, after("clickhouse://"))?
     } else if lower.starts_with("oracle://") {
         url_form(DbKind::Oracle, after("oracle://"))?
     } else if lower.starts_with("sqlite:") {
@@ -396,6 +398,8 @@ fn dbeaver_kind(provider: &str, driver: &str) -> Option<DbKind> {
         Some(DbKind::Sqlserver)
     } else if both.contains("oracle") {
         Some(DbKind::Oracle)
+    } else if both.contains("clickhouse") {
+        Some(DbKind::Clickhouse)
     } else if both.contains("duckdb") {
         Some(DbKind::Duckdb)
     } else if both.contains("sqlite") {

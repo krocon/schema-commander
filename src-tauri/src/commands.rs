@@ -2857,6 +2857,7 @@ pub fn testdata_keys(
             crate::db::DbKind::Sqlite => format!("CAST({column} AS TEXT)"),
             crate::db::DbKind::Oracle => format!("TO_CHAR({column})"),
             crate::db::DbKind::Duckdb => format!("CAST({column} AS VARCHAR)"),
+            crate::db::DbKind::Clickhouse => format!("toString({column})"),
         };
         let sql = if kind == crate::db::DbKind::Sqlserver {
             format!(

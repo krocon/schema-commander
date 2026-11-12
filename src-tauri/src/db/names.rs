@@ -572,6 +572,16 @@ pub fn read_objects(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<
             &[],
             stop,
         )?,
+        DbKind::Clickhouse => ask(
+            s,
+            "SELECT multiIf(engine = 'MaterializedView', 'matview', engine LIKE '%View', 'view', \
+               'table'), database, name, engine \
+             FROM system.tables \
+             WHERE NOT is_temporary AND name NOT LIKE '.inner%' \
+               AND database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')",
+            &[],
+            stop,
+        )?,
         DbKind::Duckdb => ask(
             s,
             "SELECT 'table', schema_name, table_name, '' FROM duckdb_tables() \
@@ -672,6 +682,14 @@ pub fn read_columns(
              JOIN sys.schemas s ON s.schema_id = o.schema_id \
              JOIN sys.types t ON t.user_type_id = c.user_type_id \
              WHERE o.type IN ('U', 'V') AND o.is_ms_shipped = 0",
+            &[],
+            stop,
+        )?,
+        DbKind::Clickhouse => ask(
+            s,
+            "SELECT database, table, name, type FROM system.columns \
+             WHERE database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema') \
+               AND table NOT LIKE '.inner%'",
             &[],
             stop,
         )?,

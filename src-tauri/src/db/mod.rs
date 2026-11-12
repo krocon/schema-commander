@@ -5,6 +5,7 @@
 //! Rust, TLS over rustls with the roots of the OS.
 
 pub mod access;
+pub mod clickhouse;
 pub mod compare;
 pub mod details;
 pub mod diagram;
@@ -55,6 +56,8 @@ pub enum DbKind {
     Oracle,
     /// DuckDB (prompt 035c): a file, or `:memory:` – embedded, like SQLite.
     Duckdb,
+    /// ClickHouse (prompt 035d), over its HTTP interface.
+    Clickhouse,
 }
 
 impl DbKind {
@@ -71,6 +74,7 @@ impl DbKind {
             DbKind::Sqlite => 0,
             DbKind::Oracle => 1521,
             DbKind::Duckdb => 0,
+            DbKind::Clickhouse => 8123,
         }
     }
 }
@@ -270,6 +274,8 @@ pub struct Capabilities {
     pub access: bool,
     /// The app can edit the structure of a table and compare schemas.
     pub structure: bool,
+    /// Rows can be changed in the grid and files imported (needs transactions and keys).
+    pub edit: bool,
 }
 
 /// The capabilities of a database of a kind and flavour.
@@ -284,20 +290,31 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
         (DbKind::Sqlite, _) => "SQLite",
         (DbKind::Oracle, _) => "Oracle",
         (DbKind::Duckdb, _) => "DuckDB",
+        (DbKind::Clickhouse, _) => "ClickHouse",
     };
     Capabilities {
         product: product.to_owned(),
         // the SQL Server and the Oracle driver have no way to stop a statement but to drop the connection
         cancel: !matches!(kind, DbKind::Sqlserver | DbKind::Oracle),
-        foreign_keys: true,
+        // ClickHouse has no foreign keys
+        foreign_keys: kind != DbKind::Clickhouse,
         schemas: kind != DbKind::Sqlite,
-        triggers: flavor != Flavor::Cockroach && kind != DbKind::Duckdb,
-        routines: !matches!(kind, DbKind::Sqlite | DbKind::Duckdb),
-        plan: !matches!(kind, DbKind::Oracle | DbKind::Duckdb),
+        triggers: flavor != Flavor::Cockroach
+            && !matches!(kind, DbKind::Duckdb | DbKind::Clickhouse),
+        routines: !matches!(kind, DbKind::Sqlite | DbKind::Duckdb | DbKind::Clickhouse),
+        plan: !matches!(kind, DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse),
         // an embedded database has no server to watch and no users
-        monitor: !matches!(kind, DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb),
-        access: !matches!(kind, DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb),
-        structure: !matches!(kind, DbKind::Oracle | DbKind::Duckdb),
+        monitor: !matches!(
+            kind,
+            DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse
+        ),
+        access: !matches!(
+            kind,
+            DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse
+        ),
+        structure: !matches!(kind, DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse),
+        // without transactions and unique keys a changed cell cannot be written safely
+        edit: kind != DbKind::Clickhouse,
     }
 }
 
@@ -335,6 +352,8 @@ pub fn begin_statement(kind: DbKind) -> &'static str {
         DbKind::Sqlserver => "BEGIN TRANSACTION",
         // Oracle opens a transaction with the first change; this opens one on purpose (see oracle.rs)
         DbKind::Oracle => "SET TRANSACTION READ WRITE",
+        // there are no transactions: who needs one refuses ClickHouse before it comes to this
+        DbKind::Clickhouse => "BEGIN TRANSACTION",
     }
 }
 
@@ -472,6 +491,7 @@ pub fn connect(
         DbKind::Sqlite => Box::new(sqlite::open(profile)?),
         DbKind::Oracle => Box::new(oracle::connect(profile, secret, stop)?),
         DbKind::Duckdb => Box::new(duckdb::open(profile)?),
+        DbKind::Clickhouse => Box::new(clickhouse::connect(profile, secret, stop)?),
     })
 }
 
@@ -887,6 +907,11 @@ mod tests {
         let pg = of(DbKind::Postgres, Flavor::Plain);
         assert!(pg.plan && pg.monitor && pg.access && pg.structure);
         assert!(!of(DbKind::Sqlite, Flavor::Plain).monitor);
+        // ClickHouse (035d): no keys, no transactions – read, do not edit
+        let ch = of(DbKind::Clickhouse, Flavor::Plain);
+        assert_eq!(ch.product, "ClickHouse");
+        assert!(ch.cancel && ch.schemas && !ch.foreign_keys && !ch.edit && !ch.plan);
+        assert!(pg.edit && oracle.edit);
         let lite = of(DbKind::Sqlite, Flavor::Plain);
         assert!(!lite.schemas && !lite.routines && lite.triggers && lite.cancel);
         let json = serde_json::to_value(&crdb).unwrap();
