@@ -86,10 +86,36 @@ export interface LoadedProfiles {
   readonly notice: string | null;
 }
 
+/**
+ * Mirrors `Capabilities` in src-tauri/src/db/mod.rs (prompt 035): what a connection can do, so the window
+ * hides what would only fail.
+ */
+export interface Capabilities {
+  /** What the server is: `PostgreSQL`, `CockroachDB`, `MariaDB` … */
+  readonly product: string;
+  /** A statement that is stopped ends on the server and the session goes on. */
+  readonly cancel: boolean;
+  readonly foreignKeys: boolean;
+  readonly schemas: boolean;
+  readonly triggers: boolean;
+  readonly routines: boolean;
+}
+
+/** What is assumed of a connection that has not said what it can do: everything. */
+export const ALL_CAPABILITIES: Capabilities = {
+  product: '',
+  cancel: true,
+  foreignKeys: true,
+  schemas: true,
+  triggers: true,
+  routines: true,
+};
+
 /** Mirrors `ConnectionInfo`. */
 export interface ConnectionInfo {
   readonly id: string;
   readonly serverVersion: string;
+  readonly capabilities?: Capabilities;
 }
 
 export const DEMO_ID = 'demo';
@@ -99,7 +125,8 @@ export const DB_KINDS: readonly {
   readonly label: string;
   readonly port: number;
 }[] = [
-  { kind: 'postgres', label: 'PostgreSQL', port: 5432 },
+  // servers that speak its protocol are found out when the connection opens (prompt 035)
+  { kind: 'postgres', label: 'PostgreSQL · CockroachDB · TimescaleDB', port: 5432 },
   { kind: 'mysql', label: 'MySQL / MariaDB', port: 3306 },
   { kind: 'sqlserver', label: 'SQL Server', port: 1433 },
   {

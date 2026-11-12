@@ -55,6 +55,29 @@ describe('ConnectionsStore', () => {
     expect(api.opened.map((o) => o.id)).toEqual(['demo']);
   });
 
+  it('keeps what an opened connection says it can do (prompt 035)', async () => {
+    // nothing said (not open, or an older backend): everything is assumed
+    expect(store.capabilities('pg').foreignKeys).toBe(true);
+    api.capabilities = {
+      product: 'CockroachDB',
+      cancel: true,
+      foreignKeys: true,
+      schemas: true,
+      triggers: false,
+      routines: true,
+    };
+    await store.load();
+    await settle();
+    expect(store.capabilities('demo')).toMatchObject({ product: 'CockroachDB', triggers: false });
+    const state = store.state('demo');
+    expect(state.kind === 'open' && state.capabilities.product).toBe('CockroachDB');
+    // a backend that says nothing: all of it, no product
+    api.capabilities = undefined;
+    await store.disconnect('demo');
+    await store.connect('demo');
+    expect(store.capabilities('demo')).toMatchObject({ product: '', triggers: true });
+  });
+
   it('does not connect at the start when another connection is the active one', async () => {
     settings.update({ activeConnection: 'pg' });
     await store.load();
@@ -81,7 +104,7 @@ describe('ConnectionsStore', () => {
     expect(store.passwordRequest()).toEqual({ id: 'pg', wrong: true, kind: 'database' });
     store.answerPassword('richtig');
     expect(await done).toBe(true);
-    expect(store.state('pg')).toEqual({ kind: 'open', serverVersion: 'Fake 1.0' });
+    expect(store.state('pg')).toMatchObject({ kind: 'open', serverVersion: 'Fake 1.0' });
     expect(store.passwordRequest()).toBeNull();
     expect(api.opened.filter((o) => o.id === 'pg').map((o) => o.password)).toEqual([
       null,

@@ -59,6 +59,7 @@
   geschrieben als Löschen → Ändern → Einfügen (Prompt 032); **Import** einer Datei (CSV/TSV, JSON, NDJSON, gzip)
   in eine vorhandene oder neue Tabelle: Vorschau, Zuordnung, gebundene Stapel-`INSERT`s, Fehlerdatei, als Job
   (Prompt 033); **Release** vorbereitet: Workflow für Pakete je System, Lizenzhinweise, About-Dialog (Prompt 034);
+  **CockroachDB und TimescaleDB** über den PostgreSQL-Treiber, Fähigkeits-Flags je Verbindung (Prompt 035a);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
@@ -81,7 +82,7 @@
 | Version | `pnpm version:check`, `pnpm version:set X.Y.Z` (Quelle `package.json`) |
 | Lizenzhinweise | `pnpm notices` (schreibt `THIRD-PARTY-NOTICES.txt`; nach jeder Änderung an Abhängigkeiten), `pnpm notices:check` |
 | Release-Notizen | `pnpm release:notes` (Conventional Commits seit dem letzten Tag); Ablauf in `docs/release.md` |
-| Treiber gegen echte Server | `sh scripts/db-test-servers.sh up` (Docker: PostgreSQL, MySQL, MariaDB, SQL Server auf 127.0.0.1), `pnpm rust:test:db`, danach `sh scripts/db-test-servers.sh down` |
+| Treiber gegen echte Server | `sh scripts/db-test-servers.sh up` (Docker: PostgreSQL, MySQL, MariaDB, SQL Server, CockroachDB, TimescaleDB auf 127.0.0.1), `pnpm rust:test:db`, danach `sh scripts/db-test-servers.sh down` |
 | Texte | `pnpm texts` (kein Text im Template, kein Deutsch außerhalb von `*.de.ts`) |
 | Alles prüfen | `pnpm check` |
 | Produktions-Build unter CSP | `pnpm build && pnpm preview:csp` → http://localhost:1461 (ohne Backend; prüft Editor-Worker, WebAssembly, Styles) |
@@ -195,7 +196,8 @@ src-tauri/                     Rust
   src/textfile.rs              .sql lesen/schreiben mit Kodierung (UTF-8/-BOM, UTF-16, Windows-1252)
   src/menu.rs                  das Menü von macOS, solange das Fenster lädt (ohne Cmd+W)
   src/app_menu.rs              native Menüleiste aus der MenuSpec des Fensters: Prüfung, Beschleuniger (rein, getestet)
-  src/db/mod.rs                Profile, DbKind, TlsMode, Session-Trait, Laufzeit, Fehler in Worten
+  src/db/mod.rs                Profile, DbKind, TlsMode, Session-Trait, Flavor und Capabilities (wer antwortet, was
+                               er kann), Laufzeit, Fehler in Worten
   src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
   src/results.rs               Ergebnisspeicher: Zeilen + Offsets, Auslagern, Fenster, Grenzen, StoreSink; ganze Werte
                                getrennt (`<id>.values`) und stückweise (`value`) (rein, getestet)
@@ -264,6 +266,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   vorn ist. Höchstens zwei Tab-Gruppen; alle `QueryPane` bleiben Kinder des einen Rasters in `app.ts` und
   wechseln nur die Zelle (nie im DOM umhängen: der Editor ginge verloren). Der Text eines Tabs wird nie bei jedem Tastendruck über die Brücke geschickt: `TabsStore.textChanged`
   plant die Sicherung, die den Text einmal holt. Nichts fragt „Speichern?“.
+- **Verwandte Server** (CockroachDB, TimescaleDB): keine eigene `DbKind`. Abweichungen hängen am `Flavor` der
+  Sitzung (`Session::flavor`), nie an einem Vergleich von Versionstexten außerhalb des Treibers.
 - **Bezeichner** quotet nur `meta::quote` in Rust; Knoten und DTOs bringen `quoted` mit. Katalogabfragen nur über
   `Session::ask` mit gebundenen Parametern.
 - **Formatieren** ändert nur Leerraum und die Schreibung von Schlüsselwörtern; `format.rs` prüft jedes Ergebnis

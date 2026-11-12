@@ -251,7 +251,11 @@ export class ConnectionList {
   protected title(p: Profile): string {
     const state = this.store.state(p.id);
     const version = state.kind === 'open' ? `\n${state.serverVersion}` : '';
-    return `${kindName(p.kind)} · ${whereLabel(p)}${version}`;
+    // what answered, when it is not what the profile says (CockroachDB behind PostgreSQL)
+    const product = state.kind === 'open' ? state.capabilities.product : '';
+    const kind = kindName(p.kind);
+    const named = product && product !== kind ? `${product} (${kind})` : kind;
+    return `${named} · ${whereLabel(p)}${version}`;
   }
 
   protected connect(id: string): void {

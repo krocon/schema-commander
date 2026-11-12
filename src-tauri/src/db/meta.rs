@@ -335,7 +335,9 @@ pub fn schemas(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<S
     let sql = match kind {
         DbKind::Postgres => {
             "SELECT n.nspname::text, \
-             (n.nspname = 'information_schema' OR n.nspname LIKE 'pg\\_%')::text, \
+             (n.nspname = 'information_schema' OR n.nspname LIKE 'pg\\_%' \
+               OR n.nspname = 'crdb_internal' OR n.nspname LIKE '\\_timescaledb\\_%' \
+               OR n.nspname IN ('timescaledb_information', 'timescaledb_experimental'))::text, \
              (n.nspname = current_schema())::text \
              FROM pg_catalog.pg_namespace n \
              WHERE n.nspname NOT LIKE 'pg\\_temp\\_%' AND n.nspname NOT LIKE 'pg\\_toast%' \
@@ -410,7 +412,7 @@ pub fn objects(
              FROM pg_catalog.pg_class c \
              JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
              WHERE n.nspname = $1 AND c.relkind IN ('r', 'p', 'f', 'v', 'm', 'S') \
-               AND NOT c.relispartition",
+               AND c.relispartition IS NOT TRUE",
             "SELECT 'routine', p.proname::text, \
              pg_catalog.pg_get_function_identity_arguments(p.oid)::text, NULL::text \
              FROM pg_catalog.pg_proc p \
@@ -516,17 +518,22 @@ fn pg_table(s: &mut dyn Session, schema: &str, table: &str, stop: Stop) -> AppRe
         p,
         stop,
     )?;
-    let triggers = ask(
-        s,
-        &format!(
-            "SELECT t.tgname::text, regexp_replace(pg_catalog.pg_get_triggerdef(t.oid), \
-               '^CREATE (CONSTRAINT )?TRIGGER \\S+ ', '') \
-             FROM pg_catalog.pg_trigger t \
-             WHERE t.tgrelid = (SELECT c.oid {WHICH}) AND NOT t.tgisinternal ORDER BY 1"
-        ),
-        p,
-        stop,
-    )?;
+    // CockroachDB has no `pg_get_triggerdef`: its triggers are not listed (capability `triggers`)
+    let triggers = if s.flavor() == super::Flavor::Cockroach {
+        Default::default()
+    } else {
+        ask(
+            s,
+            &format!(
+                "SELECT t.tgname::text, regexp_replace(pg_catalog.pg_get_triggerdef(t.oid), \
+                   '^CREATE (CONSTRAINT )?TRIGGER \\S+ ', '') \
+                 FROM pg_catalog.pg_trigger t \
+                 WHERE t.tgrelid = (SELECT c.oid {WHICH}) AND NOT t.tgisinternal ORDER BY 1"
+            ),
+            p,
+            stop,
+        )?
+    };
     Ok(TableInfo {
         columns: column_rows(&columns, DbKind::Postgres),
         indexes: parts(&indexes),

@@ -2,6 +2,8 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { AppError, describeError, toAppError } from '../errors/app-error';
 import { SettingsService } from '../settings/settings.service';
 import {
+  ALL_CAPABILITIES,
+  Capabilities,
   DEMO_ID,
   ImportPick,
   ImportPreview,
@@ -17,7 +19,11 @@ import { ConnectionsApi } from './connections-api';
 export type ConnectionState =
   | { readonly kind: 'closed' }
   | { readonly kind: 'connecting' }
-  | { readonly kind: 'open'; readonly serverVersion: string }
+  | {
+      readonly kind: 'open';
+      readonly serverVersion: string;
+      readonly capabilities: Capabilities;
+    }
   | { readonly kind: 'failed'; readonly message: string };
 
 /** The app asks for the password of a connection. */
@@ -83,6 +89,12 @@ export class ConnectionsStore {
     return this.states()[id] ?? CLOSED;
   }
 
+  /** What a connection can do (prompt 035); one that is not open is assumed to do everything. */
+  capabilities(id: string): Capabilities {
+    const state = this.state(id);
+    return state.kind === 'open' ? state.capabilities : ALL_CAPABILITIES;
+  }
+
   /** Reads the profiles (at the start) and opens the demo database when it is the active one. */
   async load(): Promise<void> {
     try {
@@ -131,7 +143,11 @@ export class ConnectionsStore {
       this.setState(id, { kind: 'connecting' });
       try {
         const info = await this.api.open(id, password, { secret: sshSecret, trustFingerprint });
-        this.setState(id, { kind: 'open', serverVersion: info.serverVersion });
+        this.setState(id, {
+          kind: 'open',
+          serverVersion: info.serverVersion,
+          capabilities: { ...ALL_CAPABILITIES, ...info.capabilities },
+        });
         return true;
       } catch (e) {
         const error = toAppError(e);

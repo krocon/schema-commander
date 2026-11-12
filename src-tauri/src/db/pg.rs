@@ -33,6 +33,9 @@ pub struct Pg {
     /// To ask the server to cancel a statement: a second connection and the id of this one's backend.
     options: PgConnectOptions,
     backend: Option<i32>,
+    /// Which server answers (prompt 035), and – CockroachDB – the id of this session there.
+    flavor: super::Flavor,
+    session_id: Option<String>,
     /// For the error texts (never holds the password).
     profile: Profile,
 }
@@ -79,6 +82,8 @@ pub fn connect(
         conn: Some(conn),
         options,
         backend: None,
+        flavor: super::Flavor::Plain,
+        session_id: None,
         profile: profile.clone(),
     };
     // without the id the statement can still be stopped: the connection is dropped then
@@ -89,7 +94,45 @@ pub fn connect(
             Some(Cell::I64(pid)) => i32::try_from(*pid).ok(),
             _ => None,
         });
+    pg.find_flavor(stop);
     Ok(pg)
+}
+
+/// What stops the statements of a CockroachDB session, asked on a second connection. The id is the
+/// server's own, and still only written when it is nothing but hex digits.
+fn cockroach_cancel(session_id: &str) -> Option<String> {
+    (!session_id.is_empty()
+        && session_id.len() <= 64
+        && session_id.bytes().all(|b| b.is_ascii_hexdigit()))
+    .then(|| {
+        format!(
+            "CANCEL QUERIES (SELECT query_id FROM [SHOW CLUSTER STATEMENTS] \
+             WHERE session_id = '{session_id}')"
+        )
+    })
+}
+
+/// Which server this is, from how it names itself.
+fn flavor_of(version: &str) -> super::Flavor {
+    if version.trim_start().starts_with("CockroachDB") {
+        super::Flavor::Cockroach
+    } else {
+        super::Flavor::Plain
+    }
+}
+
+/// What CockroachDB's `SHOW TRANSACTION STATUS` means.
+fn cockroach_tx(status: &str) -> super::TxState {
+    use super::TxState;
+    match status {
+        "NoTxn" => TxState::Idle,
+        "Open" => TxState::Active,
+        // `Aborted`, `RestartWait`: only a rollback (or a retry from the savepoint) gets out
+        "Aborted" | "RestartWait" => TxState::Failed,
+        // `CommitWait`: released, waiting for the COMMIT
+        "CommitWait" => TxState::Active,
+        _ => TxState::Unknown,
+    }
 }
 
 fn kind(type_name: &str) -> ColKind {
@@ -203,21 +246,60 @@ fn cell(row: &PgRow, i: usize, kind: ColKind, type_name: &str) -> Cell {
 }
 
 impl Pg {
+    /// Finds out which server answers. Nothing here may fail the connection: a server that does not
+    /// know a question is simply not that server.
+    fn find_flavor(&mut self, stop: Stop) {
+        let text = |pg: &mut Pg, sql: &str| -> Option<String> {
+            let limits = Limits {
+                max_rows: 1,
+                timeout: Some(std::time::Duration::from_secs(5)),
+            };
+            match pg.query(sql, limits, stop).ok()?.rows.first()?.first()? {
+                Cell::Text(t) => Some(t.clone()),
+                _ => None,
+            }
+        };
+        self.flavor = text(self, "SELECT version()")
+            .map(|v| flavor_of(&v))
+            .unwrap_or_default();
+        match self.flavor {
+            super::Flavor::Cockroach => self.session_id = text(self, "SHOW session_id"),
+            _ => {
+                if text(
+                    self,
+                    "SELECT extversion::text FROM pg_catalog.pg_extension WHERE extname = 'timescaledb'",
+                )
+                .is_some()
+                {
+                    self.flavor = super::Flavor::Timescale;
+                }
+            }
+        }
+    }
+
+    /// The statement that stops what this session runs, for a second connection.
+    fn cancel_statement(&self) -> Option<String> {
+        match self.flavor {
+            super::Flavor::Cockroach => self.session_id.as_deref().and_then(cockroach_cancel),
+            _ => self
+                .backend
+                .map(|pid| format!("SELECT pg_cancel_backend({pid})")),
+        }
+    }
+
     /// Asks the server to cancel what this connection runs, over a second connection.
     async fn cancel(
         options: PgConnectOptions,
-        backend: Option<i32>,
+        statement: Option<String>,
         tunnel: Option<std::sync::Arc<crate::ssh::Tunnel>>,
     ) {
-        let Some(pid) = backend else { return };
+        let Some(statement) = statement else { return };
         // the side connection goes through the tunnel like the session itself
         if let Some(tunnel) = &tunnel {
             tunnel.permit();
         }
         if let Ok(mut side) = PgConnection::connect_with(&options).await {
-            let _ = side
-                .execute(AssertSqlSafe(format!("SELECT pg_cancel_backend({pid})")))
-                .await;
+            let _ = side.execute(AssertSqlSafe(statement)).await;
             let _ = side.close().await;
         }
     }
@@ -377,14 +459,19 @@ impl Session for Pg {
         stop: Stop,
     ) -> AppResult<Outcome> {
         let profile = self.profile.clone();
+        let statement = self.cancel_statement();
         let conn = self.conn.as_mut().ok_or_else(closed)?;
-        let cancel = Self::cancel(self.options.clone(), self.backend, self.tunnel.clone());
+        let cancel = Self::cancel(self.options.clone(), statement, self.tunnel.clone());
         let run = Self::run(conn, sql, params, sink, &profile);
         let (r, ended) = block_cancelling(limits.timeout, stop, run, cancel);
         if r.as_ref().is_ok_and(|o| o.truncated) {
             // Rows were left unread: end the statement on the server, so the connection is free at once.
             // Its „cancelled“ answer is still on the wire: it is read here, not by the next statement.
-            let cancel = Self::cancel(self.options.clone(), self.backend, self.tunnel.clone());
+            let cancel = Self::cancel(
+                self.options.clone(),
+                self.cancel_statement(),
+                self.tunnel.clone(),
+            );
             let settled = match self.conn.as_mut() {
                 Some(conn) => block(Some(super::CANCEL_GRACE * 2), &|| false, async {
                     cancel.await;
@@ -412,6 +499,17 @@ impl Session for Pg {
             max_rows: 1,
             timeout: Some(std::time::Duration::from_secs(5)),
         };
+        // CockroachDB runs every statement in a transaction of its own (`now()` never is the statement's
+        // time) – and says what its state is
+        if self.flavor == super::Flavor::Cockroach {
+            return match self.query("SHOW TRANSACTION STATUS", limits, stop) {
+                Ok(r) => match r.rows.first().and_then(|row| row.first()) {
+                    Some(Cell::Text(t)) => cockroach_tx(t),
+                    _ => TxState::Unknown,
+                },
+                Err(_) => TxState::Unknown,
+            };
+        }
         match self.query(
             "SELECT (now() <> statement_timestamp())::text",
             limits,
@@ -427,6 +525,10 @@ impl Session for Pg {
             }
             Err(_) => TxState::Unknown,
         }
+    }
+
+    fn flavor(&self) -> super::Flavor {
+        self.flavor
     }
 
     fn server_version(&mut self, stop: Stop) -> AppResult<String> {
@@ -462,5 +564,38 @@ mod tests {
         assert_eq!(kind("TIMESTAMPTZ"), ColKind::TimestampTz);
         assert_eq!(kind("JSONB"), ColKind::Json);
         assert_eq!(kind("INTERVAL"), ColKind::Other);
+    }
+    /// Prompt 035: CockroachDB is told from PostgreSQL by how it names itself; its session id is the
+    /// server's own, and still only written into the statement that stops a query when it is hex.
+    #[test]
+    fn knows_cockroach_and_what_it_says() {
+        use crate::db::{Flavor, TxState};
+        assert_eq!(
+            flavor_of("CockroachDB CCL v24.3.37 (aarch64-unknown-linux-gnu)"),
+            Flavor::Cockroach
+        );
+        assert_eq!(
+            flavor_of("PostgreSQL 17.11 on aarch64-unknown-linux-musl"),
+            Flavor::Plain
+        );
+        // a PostgreSQL whose version text merely mentions the other one is not it
+        assert_eq!(
+            flavor_of("PostgreSQL 16 (fork of CockroachDB)"),
+            Flavor::Plain
+        );
+        let sql = cockroach_cancel("18e722aa995c8a9d0000000000000001").unwrap();
+        assert!(sql.ends_with("WHERE session_id = '18e722aa995c8a9d0000000000000001')"));
+        for evil in [
+            "",
+            "x' OR '1'='1",
+            "18e7'; DROP TABLE t; --",
+            &"a".repeat(65),
+        ] {
+            assert_eq!(cockroach_cancel(evil), None, "{evil}");
+        }
+        assert_eq!(cockroach_tx("NoTxn"), TxState::Idle);
+        assert_eq!(cockroach_tx("Open"), TxState::Active);
+        assert_eq!(cockroach_tx("Aborted"), TxState::Failed);
+        assert_eq!(cockroach_tx("something new"), TxState::Unknown);
     }
 }

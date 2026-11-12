@@ -204,6 +204,62 @@ pub const CANCEL_GRACE: Duration = Duration::from_secs(3);
 /// `true` when the work is stopped (cancelled, tab closed): requests end with [`cancelled`].
 pub type Stop<'a> = &'a (dyn Fn() -> bool + Sync);
 
+/// Which server answers behind a protocol (prompt 035): several databases speak PostgreSQL's and differ
+/// in what their catalog and their functions know.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Flavor {
+    /// The database the kind names.
+    #[default]
+    Plain,
+    /// CockroachDB: no `pg_cancel_backend`, no `pg_get_triggerdef`, every statement is a transaction.
+    Cockroach,
+    /// PostgreSQL with the TimescaleDB extension: the same server, more schemas of its own.
+    Timescale,
+    /// MariaDB behind the MySQL protocol.
+    Maria,
+}
+
+/// What a connection can do (prompt 035), so the window hides what would only fail. Mirrored by
+/// `Capabilities` in `src/app/core/connections/connection.models.ts`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Capabilities {
+    /// What the server is, in a word or two: `PostgreSQL`, `CockroachDB`, `MariaDB` …
+    pub product: String,
+    /// A statement that is stopped ends on the server and the session goes on (else it is closed).
+    pub cancel: bool,
+    /// Foreign keys are in the catalog: follow them, show relations.
+    pub foreign_keys: bool,
+    /// Objects live in schemas of their own names (not: one database, one namespace).
+    pub schemas: bool,
+    /// Triggers of a table can be listed.
+    pub triggers: bool,
+    /// Functions and procedures exist.
+    pub routines: bool,
+}
+
+/// The capabilities of a database of a kind and flavour.
+pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
+    let product = match (kind, flavor) {
+        (DbKind::Postgres, Flavor::Cockroach) => "CockroachDB",
+        (DbKind::Postgres, Flavor::Timescale) => "TimescaleDB",
+        (DbKind::Postgres, _) => "PostgreSQL",
+        (DbKind::Mysql, Flavor::Maria) => "MariaDB",
+        (DbKind::Mysql, _) => "MySQL",
+        (DbKind::Sqlserver, _) => "SQL Server",
+        (DbKind::Sqlite, _) => "SQLite",
+    };
+    Capabilities {
+        product: product.to_owned(),
+        // the SQL Server driver has no way to stop a statement but to drop the connection
+        cancel: kind != DbKind::Sqlserver,
+        foreign_keys: true,
+        schemas: kind != DbKind::Sqlite,
+        triggers: flavor != Flavor::Cockroach,
+        routines: kind != DbKind::Sqlite,
+    }
+}
+
 /// Whether a session is inside a transaction (prompt 013) – as the server says, not as we guess.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -340,6 +396,10 @@ pub trait Session: Send {
     fn transaction_state(&mut self, stop: Stop) -> TxState;
     /// Product and version as the server names itself.
     fn server_version(&mut self, stop: Stop) -> AppResult<String>;
+    /// Which server it is behind its protocol; found out when the connection was opened.
+    fn flavor(&self) -> Flavor {
+        Flavor::Plain
+    }
     fn is_open(&self) -> bool;
 }
 
@@ -744,5 +804,28 @@ mod tests {
         assert_eq!(json["savePassword"], false);
         assert_eq!(json["kind"], "postgres");
         assert!(json.get("password").is_none());
+    }
+    /// Prompt 035: what a connection can do, by kind and by the server behind the protocol.
+    #[test]
+    fn says_what_each_database_can_do() {
+        let of = |kind, flavor| capabilities(kind, flavor);
+        let pg = of(DbKind::Postgres, Flavor::Plain);
+        assert_eq!(pg.product, "PostgreSQL");
+        assert!(pg.cancel && pg.foreign_keys && pg.schemas && pg.triggers && pg.routines);
+        let crdb = of(DbKind::Postgres, Flavor::Cockroach);
+        assert_eq!(crdb.product, "CockroachDB");
+        assert!(crdb.cancel && crdb.foreign_keys && !crdb.triggers);
+        assert_eq!(
+            of(DbKind::Postgres, Flavor::Timescale).product,
+            "TimescaleDB"
+        );
+        assert_eq!(of(DbKind::Mysql, Flavor::Maria).product, "MariaDB");
+        assert_eq!(of(DbKind::Mysql, Flavor::Plain).product, "MySQL");
+        assert!(!of(DbKind::Sqlserver, Flavor::Plain).cancel);
+        let lite = of(DbKind::Sqlite, Flavor::Plain);
+        assert!(!lite.schemas && !lite.routines && lite.triggers && lite.cancel);
+        let json = serde_json::to_value(&crdb).unwrap();
+        assert_eq!(json["foreignKeys"], true);
+        assert_eq!(json["product"], "CockroachDB");
     }
 }

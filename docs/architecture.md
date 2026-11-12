@@ -70,12 +70,14 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | A50 | Zeilen einfügen und löschen gehören in denselben Puffer und denselben Plan wie geänderte Zellen: Geschrieben wird als Löschen → Ändern → Einfügen in einer Transaktion; jede Anweisung muss genau die Zeilen treffen, die sie abdeckt. Neue Zeilen mit denselben Spalten teilen sich ein `INSERT` (bis 200 Zeilen); scheitert ein solches, wird die Zeile in einer zweiten, immer zurückgerollten Transaktion gesucht. Undo ist ein Schnappschuss des Puffers. Eingefügte Blöcke liest ein reiner Parser | Design 032 E1–E6 |
 | A51 | Eine Datei wird als Strom gelesen (`data_import.rs`: Kodierung → UTF-8, CSV/JSON Datensatz für Datensatz) und über die gebündelten, gebundenen `INSERT`s aus `edit.rs` geschrieben (`db/load.rs`) – kein `COPY`, kein `LOAD DATA`: Fehler je Zeile, ein Schreibweg für alle Treiber. Die Datei ist feindlich: Ihre Namen werden nur gequotet, ihre Werte nur gebunden; ein PostgreSQL-`CAST` trägt nie eine Größe (er würde kürzen). Eine Transaktion oder blockweise; der Schutz sieht das `INSERT` und das `DELETE` des Plans | Design 033 E1–E13 |
 | A52 | Ein Release entsteht aus einem Tag: Version aus `package.json`, Pakete je System über `tauri-action` als Entwurf, Prüfsummen, Notizen aus den Commits. Signierung nur über Secrets der CI. Die Lizenztexte aller ausgelieferten Teile erzeugt ein eigenes Skript; `pnpm check` hält die Datei aktuell, jedes Paket trägt sie, der About-Dialog zeigt sie. Auto-Update bewusst noch nicht (braucht Schlüsselpaar, Signatur, erstes Release) | Design 034 E1–E10 |
+| A53 | Server, die das Protokoll einer unterstützten Datenbank sprechen, sind keine eigene Art: Der Treiber stellt beim Verbinden fest, wer antwortet (`Flavor`), und weicht nur dort ab, wo der Server es verlangt (Abbruch, Zustand der Transaktion, Katalog). Was eine Verbindung kann, sagt sie dem Fenster als `Capabilities` | Design 035a E1–E5 |
 | A34 | Texte in typisierten Katalogen (Englisch Quelle, Deutsch typgeprüft), Sprache als Signal, Wechsel zur Laufzeit; `pnpm texts` hält Texte aus Templates und Deutsch aus dem Code. Ersetzt A10 | Design 017 E1–E6 |
 | A35 | Einstellungen bleiben ein flaches, je Wert geprüftes Objekt; der Dialog hat ein eigenes Schema, ein Test hält beide zusammen. Keine Formularschicht: jede Änderung wirkt sofort | Design 017 E8, E9 |
 
 ## Offene Architekturfragen (entscheidet der jeweilige Prompt)
 
-- **Treiber**: entschieden und umgesetzt (Design 003); Oracle, DuckDB und weitere mit Prompt 035.
+- **Treiber**: entschieden und umgesetzt (Design 003); CockroachDB und TimescaleDB über den PostgreSQL-Treiber
+  (Design 035a); DuckDB, ClickHouse, Oracle und weitere bleiben mit Prompt 035 offen (Reihenfolge dort).
 - **Große Ergebnisse**: entschieden und umgesetzt (Design 006).
 - **Vervollständigung**: Schema-Metadaten in Rust zwischenspeichern; der Editor braucht dafür eine Schnittstelle für
   Vorschläge von außen (Erweiterung in editlicious).

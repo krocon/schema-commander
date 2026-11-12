@@ -16,7 +16,9 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
 ## What works
 
 - Connections to PostgreSQL, MySQL/MariaDB, SQL Server and SQLite files: profiles in folders with colour tags,
-  passwords only in the keychain of your OS; a demo database in memory to try things out
+  passwords only in the keychain of your OS; a demo database in memory to try things out.
+  Servers that speak PostgreSQL's protocol work as PostgreSQL connections – tested with CockroachDB and
+  TimescaleDB: the app finds out who answers and adapts (cancel, transaction state, catalog)
 - Query tabs, each with its own connection and result. Nothing ever asks „save?“: every text is backed up a
   moment after you type and is there again after a restart or a crash; `.sql` files keep their encoding
 - SQL editor with syntax highlighting; <kbd>Ctrl/⌘</kbd>+<kbd>Enter</kbd> runs the selection or the statement

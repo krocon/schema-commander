@@ -1,7 +1,8 @@
 #!/bin/sh
 # Throwaway database servers for the ignored integration tests (src-tauri/tests/db_integration.rs):
-# PostgreSQL 17, MySQL 8.4, MariaDB 11.4 and SQL Server 2022 in Docker, each on 127.0.0.1 only, with a test
-# password and nothing kept. After log-commander's scripts/db-test-servers.sh.
+# PostgreSQL 17, MySQL 8.4, MariaDB 11.4 and SQL Server 2022 in Docker – and, for the servers that speak
+# PostgreSQL's protocol (prompt 035), CockroachDB 24.3 (insecure, single node) and TimescaleDB on PostgreSQL 17 –,
+# each on 127.0.0.1 only, with a test password and nothing kept. After log-commander's scripts/db-test-servers.sh.
 #
 #   sh scripts/db-test-servers.sh up      # starts the containers, waits until all answer
 #   pnpm rust:test:db                     # runs the tests against them
@@ -21,6 +22,10 @@ up)
     -e MARIADB_DATABASE=shop mariadb:11.4 >/dev/null
   docker run -d --rm --name sc-dbtest-ms --platform linux/amd64 -p 127.0.0.1:21433:1433 -e ACCEPT_EULA=Y \
     -e MSSQL_SA_PASSWORD="$pw" mcr.microsoft.com/mssql/server:2022-latest >/dev/null
+  docker run -d --rm --name sc-dbtest-crdb -p 127.0.0.1:25434:26257 cockroachdb/cockroach:latest-v24.3 \
+    start-single-node --insecure >/dev/null
+  docker run -d --rm --name sc-dbtest-tsdb -p 127.0.0.1:25433:5432 -e POSTGRES_PASSWORD="$pw" \
+    timescale/timescaledb:latest-pg17 >/dev/null
   printf "waiting for the servers"
   for _ in $(seq 1 120); do
     ok=0
@@ -28,7 +33,9 @@ up)
     docker exec sc-dbtest-my mysqladmin ping -uroot -p"$pw" --silent 2>/dev/null | grep -q alive && ok=$((ok + 1))
     docker exec sc-dbtest-maria healthcheck.sh --connect 2>/dev/null && ok=$((ok + 1))
     docker logs sc-dbtest-ms 2>&1 | grep -q "Recovery is complete" && ok=$((ok + 1))
-    [ "$ok" -eq 4 ] && { echo " ready"; exit 0; }
+    docker exec sc-dbtest-crdb cockroach sql --insecure -e "select 1" >/dev/null 2>&1 && ok=$((ok + 1))
+    docker exec sc-dbtest-tsdb pg_isready -q -U postgres 2>/dev/null && ok=$((ok + 1))
+    [ "$ok" -eq 6 ] && { echo " ready"; exit 0; }
     printf "."
     sleep 2
   done
@@ -36,7 +43,8 @@ up)
   exit 1
   ;;
 down)
-  docker rm -f sc-dbtest-pg sc-dbtest-my sc-dbtest-maria sc-dbtest-ms >/dev/null 2>&1 || true
+  docker rm -f sc-dbtest-pg sc-dbtest-my sc-dbtest-maria sc-dbtest-ms sc-dbtest-crdb sc-dbtest-tsdb \
+    >/dev/null 2>&1 || true
   ;;
 *)
   echo "usage: $0 up|down" >&2
