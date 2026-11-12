@@ -97,6 +97,32 @@ pub fn class_of(kind: DbKind, type_name: &str) -> Class {
             _ => Class::Other,
         };
     }
+    if kind == DbKind::Oracle {
+        return match base.as_str() {
+            "number" | "numeric" | "decimal" => match size.as_slice() {
+                [p, s] => Class::Numeric(Some((*p, *s))),
+                [p] if *p <= 4 => Class::SmallInt,
+                [p] if *p <= 9 => Class::Int,
+                [p] if *p <= 18 => Class::BigInt,
+                [p] => Class::Numeric(Some((*p, 0))),
+                _ => Class::Numeric(None),
+            },
+            "integer" | "int" | "smallint" => Class::Numeric(Some((38, 0))),
+            "float" | "binary_double" => Class::Double,
+            "binary_float" => Class::Real,
+            "boolean" => Class::Bool,
+            "char" | "nchar" => Class::Char(first),
+            "varchar2" | "nvarchar2" | "varchar" => Class::Varchar(first),
+            "clob" | "nclob" | "long" => Class::Text,
+            // an Oracle DATE has a time of day
+            "date" => Class::Timestamp,
+            "json" => Class::Json,
+            "raw" | "blob" | "long raw" => Class::Bytes,
+            b if b.starts_with("timestamp") && t.contains("time zone") => Class::TimestampTz,
+            b if b.starts_with("timestamp") => Class::Timestamp,
+            _ => Class::Other,
+        };
+    }
     match base.as_str() {
         "tinyint" if kind == DbKind::Mysql && first == Some(1) => Class::Bool,
         "bit" if kind == DbKind::Sqlserver || first == Some(1) => Class::Bool,
@@ -253,6 +279,41 @@ pub fn type_for(to: DbKind, class: Class) -> (String, Option<&'static str>) {
             Class::Bytes => own("varbinary(max)"),
             Class::Other => (
                 "nvarchar(max)".to_owned(),
+                Some("a type this app does not know: copied as text"),
+            ),
+        },
+        DbKind::Oracle => match class {
+            Class::SmallInt => own("number(5)"),
+            Class::Int => own("number(10)"),
+            Class::BigInt => own("number(19)"),
+            Class::Numeric(Some((p, s))) if p <= 38 => (format!("number({p},{s})"), None),
+            Class::Numeric(_) => own("number"),
+            Class::Real => own("binary_float"),
+            Class::Double => own("binary_double"),
+            // BOOLEAN came with 23ai: a number is there everywhere
+            Class::Bool => (
+                "number(1)".to_owned(),
+                Some("stored as 1 and 0: Oracle before 23ai has no boolean"),
+            ),
+            Class::Char(Some(n)) if n > 0 && n <= 2000 => (format!("char({n} char)"), None),
+            Class::Varchar(Some(n)) if n > 0 && n <= 4000 => (format!("varchar2({n} char)"), None),
+            Class::Char(_) | Class::Varchar(_) | Class::Text => own("clob"),
+            Class::Uuid => own("varchar2(36)"),
+            // an Oracle DATE has a time of day: a date fits
+            Class::Date => own("date"),
+            Class::Time => (
+                "varchar2(18)".to_owned(),
+                Some("Oracle has no time of day alone: copied as text"),
+            ),
+            Class::Timestamp => own("timestamp"),
+            Class::TimestampTz => own("timestamp with time zone"),
+            Class::Json => (
+                "clob".to_owned(),
+                Some("stored as text: nothing checks that it is JSON"),
+            ),
+            Class::Bytes => own("blob"),
+            Class::Other => (
+                "clob".to_owned(),
                 Some("a type this app does not know: copied as text"),
             ),
         },

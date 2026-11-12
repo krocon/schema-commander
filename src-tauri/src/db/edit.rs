@@ -6,7 +6,7 @@
 
 use super::DbKind;
 use super::filter::{Builder, Built, MAX_PARAMS, ValueKind, invalid, name};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult, ErrorCode};
 use serde::Deserialize;
 
 /// Rows written at once at most (deleted, changed and new ones together).
@@ -253,6 +253,13 @@ fn insert(
         // nothing given: the row the database makes of its own
         b.text(&match kind {
             DbKind::Mysql => format!("INSERT INTO {table} () VALUES ()"),
+            // Oracle has no statement for a row of defaults only
+            DbKind::Oracle => {
+                return Err(AppError::new(
+                    ErrorCode::Unsupported,
+                    "Oracle cannot insert a row without a value: give at least one column",
+                ));
+            }
             _ => format!("INSERT INTO {table} DEFAULT VALUES"),
         });
     } else {
@@ -347,6 +354,9 @@ pub fn steps(kind: DbKind, plan: &UpdatePlan) -> AppResult<Vec<Step>> {
         // rows without any value cannot share a statement (`DEFAULT VALUES` makes one row)
         while width > 0
             && end < plan.inserts.len()
+            // Oracle before 23ai takes one row per INSERT (and INSERT ALL would give every row the
+            // same number of an identity column)
+            && kind != DbKind::Oracle
             && end - at < MAX_BATCH_ROWS
             && (end - at + 1) * width <= MAX_PARAMS
             && same_columns(&plan.inserts[at], &plan.inserts[end])

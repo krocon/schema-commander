@@ -420,6 +420,7 @@ fn kind_name(kind: DbKind) -> &'static str {
         DbKind::Mysql => "mysql",
         DbKind::Sqlserver => "sqlserver",
         DbKind::Sqlite => "sqlite",
+        DbKind::Oracle => "oracle",
     }
 }
 

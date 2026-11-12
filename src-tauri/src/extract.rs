@@ -157,12 +157,32 @@ pub fn literal(cell: &Value, kind: ColKind, dialect: DbKind) -> String {
         Value::Number(n) => n.to_string(),
         // big integers and decimals are stored as text, digit by digit
         Value::String(s) if is_number(kind) && plain_number(s) => s.clone(),
+        // Oracle reads a text as a date by the format of the session: a literal of its own says what it is
+        Value::String(s)
+            if dialect == DbKind::Oracle
+                && matches!(
+                    kind,
+                    ColKind::Date | ColKind::Timestamp | ColKind::TimestampTz
+                ) =>
+        {
+            let spoken = s.replace('T', " ");
+            let spoken = match spoken.strip_suffix('Z') {
+                Some(utc) => format!("{utc} +00:00"),
+                None => spoken,
+            };
+            if kind == ColKind::Date && spoken.len() == 10 {
+                format!("DATE {}", sql_text(&spoken, dialect))
+            } else {
+                format!("TIMESTAMP {}", sql_text(&spoken, dialect))
+            }
+        }
         Value::String(s) => sql_text(s, dialect),
         other => match binary(other) {
             Some((bytes, hex)) if bytes * 2 == hex.len() as u64 => match dialect {
                 DbKind::Postgres => format!("'\\x{hex}'"),
                 DbKind::Sqlserver => format!("0x{hex}"),
                 DbKind::Mysql | DbKind::Sqlite => format!("X'{hex}'"),
+                DbKind::Oracle => format!("HEXTORAW('{hex}')"),
             },
             // only the head of a big value is kept (prompt 006): better no value than a wrong one
             Some((bytes, _)) => format!("NULL /* binary, {bytes} bytes: not copied */"),

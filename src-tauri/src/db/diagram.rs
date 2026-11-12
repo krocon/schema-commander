@@ -254,6 +254,50 @@ pub fn diagram(
                 stop,
             ),
         ),
+        DbKind::Oracle => (
+            s.ask(
+                "SELECT c.table_name, c.column_name, c.data_type, \
+                   CASE c.nullable WHEN 'Y' THEN 'true' ELSE 'false' END, \
+                   CASE WHEN EXISTS (SELECT 1 FROM all_constraints k JOIN all_cons_columns kc \
+                     ON kc.owner = k.owner AND kc.constraint_name = k.constraint_name \
+                     WHERE k.owner = c.owner AND k.table_name = c.table_name \
+                       AND k.constraint_type = 'P' AND kc.column_name = c.column_name) \
+                     THEN 'true' ELSE 'false' END \
+                 FROM all_tab_cols c \
+                 JOIN all_tables t ON t.owner = c.owner AND t.table_name = c.table_name \
+                 WHERE c.owner = :1 AND c.hidden_column = 'NO' AND c.table_name NOT LIKE 'BIN$%' \
+                 ORDER BY c.table_name, c.column_id",
+                one,
+                Some(TIMEOUT),
+                stop,
+            )?,
+            s.ask(
+                "SELECT c.constraint_name, c.owner, c.table_name, cc.column_name, \
+                   r.owner, r.table_name, rc.column_name \
+                 FROM all_constraints c \
+                 JOIN all_constraints r ON r.owner = c.r_owner \
+                   AND r.constraint_name = c.r_constraint_name \
+                 JOIN all_cons_columns cc ON cc.owner = c.owner \
+                   AND cc.constraint_name = c.constraint_name \
+                 JOIN all_cons_columns rc ON rc.owner = r.owner \
+                   AND rc.constraint_name = r.constraint_name AND rc.position = cc.position \
+                 WHERE c.constraint_type = 'R' AND c.owner = :1 \
+                 ORDER BY c.table_name, c.constraint_name, cc.position",
+                one,
+                Some(TIMEOUT),
+                stop,
+            )?,
+            s.ask(
+                "SELECT i.table_name, i.index_name, ic.column_name \
+                 FROM all_indexes i JOIN all_ind_columns ic \
+                   ON ic.index_owner = i.owner AND ic.index_name = i.index_name \
+                 WHERE i.table_owner = :1 AND i.uniqueness = 'UNIQUE' \
+                 ORDER BY 1, 2, ic.column_position",
+                one,
+                Some(TIMEOUT),
+                stop,
+            ),
+        ),
         // the file that is open: SQLite has one namespace
         DbKind::Sqlite => (
             s.ask(

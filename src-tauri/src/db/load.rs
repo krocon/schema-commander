@@ -381,6 +381,15 @@ pub fn create_table(
         // room for values longer than the ones seen
         let len = (g.max_len.max(1) * 2).clamp(20, 4000);
         match (g.kind, kind) {
+            (GuessKind::Int, DbKind::Oracle) => "number(19)".into(),
+            (GuessKind::Decimal, DbKind::Oracle) => "number".into(),
+            // BOOLEAN came with 23ai: a number is there everywhere
+            (GuessKind::Bool, DbKind::Oracle) => "number(1)".into(),
+            (GuessKind::DateTime, DbKind::Oracle) => "timestamp".into(),
+            (GuessKind::Text, DbKind::Oracle) if g.max_len <= 1000 => {
+                format!("varchar2({len} char)")
+            }
+            (GuessKind::Text, DbKind::Oracle) => "clob".into(),
             (GuessKind::Int, DbKind::Sqlite) => "integer".into(),
             (GuessKind::Int, _) => "bigint".into(),
             (GuessKind::Decimal, DbKind::Postgres | DbKind::Sqlite) => "numeric".into(),

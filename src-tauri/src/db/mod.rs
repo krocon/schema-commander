@@ -20,6 +20,7 @@ pub mod monitor;
 pub mod mssql;
 pub mod mysql;
 pub mod names;
+pub mod oracle;
 pub mod pg;
 pub mod plan;
 pub mod profiles;
@@ -49,6 +50,8 @@ pub enum DbKind {
     Mysql,
     Sqlserver,
     Sqlite,
+    /// Oracle Database (prompt 035b): `database` of the profile is the service name.
+    Oracle,
 }
 
 impl DbKind {
@@ -58,6 +61,7 @@ impl DbKind {
             DbKind::Mysql => 3306,
             DbKind::Sqlserver => 1433,
             DbKind::Sqlite => 0,
+            DbKind::Oracle => 1521,
         }
     }
 }
@@ -261,16 +265,29 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
         (DbKind::Mysql, _) => "MySQL",
         (DbKind::Sqlserver, _) => "SQL Server",
         (DbKind::Sqlite, _) => "SQLite",
+        (DbKind::Oracle, _) => "Oracle",
     };
     Capabilities {
         product: product.to_owned(),
-        // the SQL Server driver has no way to stop a statement but to drop the connection
-        cancel: kind != DbKind::Sqlserver,
+        // the SQL Server and the Oracle driver have no way to stop a statement but to drop the connection
+        cancel: !matches!(kind, DbKind::Sqlserver | DbKind::Oracle),
         foreign_keys: true,
         schemas: kind != DbKind::Sqlite,
         triggers: flavor != Flavor::Cockroach,
         routines: kind != DbKind::Sqlite,
     }
+}
+
+/// A part of the app that is not there for a database yet (prompt 035): said in words, never a
+/// statement that would only fail.
+pub fn not_yet(kind: DbKind, what: &str) -> AppError {
+    AppError::new(
+        ErrorCode::Unsupported,
+        format!(
+            "{what}: not available for {} yet",
+            capabilities(kind, Flavor::Plain).product
+        ),
+    )
 }
 
 /// Whether a session is inside a transaction (prompt 013) – as the server says, not as we guess.
@@ -293,6 +310,8 @@ pub fn begin_statement(kind: DbKind) -> &'static str {
         DbKind::Postgres | DbKind::Sqlite => "BEGIN",
         DbKind::Mysql => "START TRANSACTION",
         DbKind::Sqlserver => "BEGIN TRANSACTION",
+        // Oracle opens a transaction with the first change; this opens one on purpose (see oracle.rs)
+        DbKind::Oracle => "SET TRANSACTION READ WRITE",
     }
 }
 
@@ -428,6 +447,7 @@ pub fn connect(
         DbKind::Mysql => Box::new(mysql::connect(profile, secret, stop)?),
         DbKind::Sqlserver => Box::new(mssql::connect(profile, secret, stop)?),
         DbKind::Sqlite => Box::new(sqlite::open(profile)?),
+        DbKind::Oracle => Box::new(oracle::connect(profile, secret, stop)?),
     })
 }
 

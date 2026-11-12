@@ -373,12 +373,14 @@ impl Builder {
                 DbKind::Mysql => "?".to_owned(),
                 DbKind::Sqlserver => format!("@P{n}"),
                 DbKind::Sqlite => format!("?{n}"),
+                DbKind::Oracle => format!(":{n}"),
             };
             let around = |inner: &str| match self.kind {
                 DbKind::Postgres => format!("decode({inner}, 'hex')"),
                 DbKind::Mysql => format!("UNHEX({inner})"),
                 DbKind::Sqlserver => format!("CONVERT(varbinary(max), {inner}, 2)"),
                 DbKind::Sqlite => format!("unhex({inner})"),
+                DbKind::Oracle => format!("HEXTORAW({inner})"),
             };
             self.sql.push_str(&around(&placeholder));
             self.display.push_str(&around(&format!("'{raw}'")));
@@ -403,6 +405,14 @@ impl Builder {
                     },
                     _ => match (self.kind, mssql_datetime(raw, type_name)) {
                         (DbKind::Sqlserver, Some(iso)) => Bind::Text(iso),
+                        // a text is compared with a date by the session's format there: the value
+                        // travels as a date instead
+                        (DbKind::Oracle, _) if oracle_instant(type_name) => {
+                            match super::oracle::datetime_text(raw) {
+                                Some(iso) => Bind::Datetime(iso),
+                                None => Bind::Text(raw.to_owned()),
+                            }
+                        }
                         _ => Bind::Text(raw.to_owned()),
                     },
                 };
@@ -414,6 +424,7 @@ impl Builder {
             DbKind::Mysql => "?".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
             DbKind::Sqlite => format!("?{n}"),
+            DbKind::Oracle => format!(":{n}"),
         };
         let literal = match &bind {
             Bind::Int(v) | Bind::Decimal(v) => v.clone(),
@@ -429,6 +440,9 @@ impl Builder {
                 if self.kind == DbKind::Postgres && v.contains('\\') =>
             {
                 format!("E'{}'", v.replace('\\', "\\\\").replace('\'', "''"))
+            }
+            Bind::Date(v) | Bind::Datetime(v) if self.kind == DbKind::Oracle => {
+                format!("TIMESTAMP {}", sql_text(v, self.kind))
             }
             Bind::Text(v) | Bind::Date(v) | Bind::Datetime(v) => sql_text(v, self.kind),
         };
@@ -459,6 +473,7 @@ impl Builder {
             DbKind::Postgres | DbKind::Sqlite => format!("CAST({column} AS text)"),
             DbKind::Mysql => format!("CAST({column} AS char)"),
             DbKind::Sqlserver => format!("CAST({column} AS nvarchar(max))"),
+            DbKind::Oracle => format!("TO_CHAR({column})"),
         }
     }
 
@@ -753,7 +768,7 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
                 b.text(", ");
             }
             let column = name(&o.column, kind)?;
-            let native = matches!(kind, DbKind::Postgres | DbKind::Sqlite);
+            let native = matches!(kind, DbKind::Postgres | DbKind::Sqlite | DbKind::Oracle);
             if let (Some(nulls), false) = (o.nulls, native) {
                 // no NULLS FIRST/LAST there: a key before the column says where the NULLs go
                 let (null, other) = if nulls == Nulls::First {
@@ -779,7 +794,11 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
         }
     }
     if let (Some(n), false) = (q.limit, kind == DbKind::Sqlserver || q.count) {
-        b.text(&format!("\nLIMIT {n}"));
+        if kind == DbKind::Oracle {
+            b.text(&format!("\nFETCH FIRST {n} ROWS ONLY"));
+        } else {
+            b.text(&format!("\nLIMIT {n}"));
+        }
     }
     // refused here, before the statement is shown anywhere, not later by the driver
     if b.params.len() > MAX_PARAMS {
@@ -790,6 +809,12 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
         params: b.params,
         display: b.display,
     })
+}
+
+/// Whether a column of Oracle holds a point in time (`DATE`, `TIMESTAMP …`).
+fn oracle_instant(type_name: &str) -> bool {
+    let t = type_name.trim().to_ascii_uppercase();
+    t.starts_with("DATE") || t.starts_with("TIMESTAMP")
 }
 
 #[cfg(test)]
