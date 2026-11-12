@@ -1,0 +1,171 @@
+<!doctype html>
+<!-- Schema Commander – product site, databases and connections. See index.html for how the site is built. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Databases and connections – Schema Commander</title>
+<meta name="description" content="Schema Commander connects to PostgreSQL, MySQL, MariaDB, SQL Server and SQLite, also CockroachDB and TimescaleDB: profiles, keychain, SSH tunnels, TLS, import from other tools, and protection for production.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0f1216" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="Databases and connections – Schema Commander">
+<meta property="og:image" content="img/icon.png">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="stylesheet" href="site.css">
+<script src="site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="index.html"><img src="img/icon.png" width="30" height="30" alt=""><span>Schema Commander</span></a>
+    <nav class="nav-links" aria-label="Pages">
+      <a href="features.html">Features</a>
+      <a href="databases.html" aria-current="page">Databases</a>
+      <a href="ai.html">AI control</a>
+      <a href="keyboard.html">Keyboard</a>
+      <a class="gh" href="https://github.com/krocon/schema-commander">GitHub</a>
+      <a class="btn btn-primary btn-sm" href="https://github.com/krocon/schema-commander/releases">Download</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="sub-hero" id="top" style="--hue:var(--ok)">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw kw-ok">CONNECT</b> to …</p>
+      <h1 class="h1 split">Your databases, as they are.</h1>
+      <p class="lead reveal">Four server protocols, a file format, and two relatives of PostgreSQL the app recognises on its own. Each dialect keeps its rules: quoting, script separators, plans, transactions.</p>
+    </div>
+  </section>
+
+  <section class="sec-tight" id="kinds">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw">FROM</b> seven kinds of server</p>
+      <h2 class="h2 split">What it speaks.</h2>
+      <div class="dbs">
+        <article class="card reveal" style="--c:var(--fn)"><h3>PostgreSQL</h3><p>Dollar quoting in scripts, <code>EXPLAIN</code> as JSON, sessions that are read only on the server, roles with SCRAM.</p><b>pg_dump · pg_restore · psql</b></article>
+        <article class="card reveal" style="--d:1;--c:var(--warn)"><h3>MySQL</h3><p><code>DELIMITER</code> in scripts, backticks for names, users with hosts. One driver for MySQL and MariaDB.</p><b>mysqldump · mysql</b></article>
+        <article class="card reveal" style="--d:2;--c:var(--warn)"><h3>MariaDB</h3><p>Recognised by what the server says about itself. Its own tools (<code>mariadb-dump</code>, <code>mariadb</code>) are found as well.</p><b>mariadb-dump · mariadb</b></article>
+        <article class="card reveal" style="--c:var(--error)"><h3>SQL Server</h3><p><code>GO</code> splits batches, names in brackets, plans as XML, logins and users.</p><b>simple SQL export</b></article>
+        <article class="card reveal" style="--d:1;--c:var(--ok)"><h3>SQLite</h3><p>A file on your disk. And a demo database in memory, there from the first start, to try everything without a server.</p><b>a copy of the file</b></article>
+        <article class="card reveal" style="--d:2;--c:var(--ident)"><h3>CockroachDB · TimescaleDB</h3><p>They speak PostgreSQL’s protocol. The app finds out who answers and adapts: cancel, transaction state, catalog.</p><b>connect as PostgreSQL</b></article>
+      </div>
+      <p class="note reveal">The drivers are tested against real servers of all seven kinds, started in containers.</p>
+    </div>
+  </section>
+
+  <section class="sec sec-line" id="connect">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw kw-str">USING</b> a profile</p>
+      <h2 class="h2 split">Connecting.</h2>
+      <p class="lead reveal">A connection is a profile: where, as whom, how secured. Profiles live in folders, carry a colour that marks their tabs, and never hold a secret.</p>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>Passwords in the keychain</h3>
+          <p class="tagline">Not in a file. Not in an export.</p>
+          <p>After a login that worked, the password goes to the keychain of your system: Keychain on macOS, Credential Manager on Windows, the Secret Service on Linux. The file with the profiles can be read by anyone without telling them anything.</p>
+        </div>
+        <figure class="win scene">
+          <div class="win-bar"><i></i><i></i><i></i><span>connections.json</span></div>
+          <pre class="code"><span>{ <span class="s">"name"</span>: <span class="s">"shop-live"</span>,</span><span>  <span class="s">"kind"</span>: <span class="s">"postgres"</span>,</span><span>  <span class="s">"host"</span>: <span class="s">"db.internal"</span>, <span class="s">"port"</span>: <span class="n">5432</span>,</span><span>  <span class="s">"user"</span>: <span class="s">"marc"</span>, <span class="s">"database"</span>: <span class="s">"shop"</span>,</span><span>  <span class="s">"protection"</span>: <span class="s">"ask"</span>, <span class="s">"color"</span>: <span class="n">7</span> }</span><span><span class="c">// no password here, ever</span></span></pre>
+        </figure>
+      </article>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>SSH tunnel</h3>
+          <p class="tagline">For the database that is not on the internet. Most are not.</p>
+          <p>Sign in with the SSH agent, a key or a password. The host key is checked against your <code>known_hosts</code>; an unknown key asks you to confirm its fingerprint, a changed key is refused. <code>~/.ssh/config</code> is read for host names and users, and nothing in it is ever executed.</p>
+        </div>
+        <figure class="win scene">
+          <div class="win-bar"><i></i><i></i><i></i><span>shop-live · tunnel</span></div>
+          <pre class="code"><span><span class="c"># you → bastion → database</span></span><span>ssh   marc@bastion.example.com:<span class="n">22</span></span><span>      key   ~/.ssh/id_ed25519 <span class="c">(agent)</span></span><span>      host  <span class="s">SHA256:… known</span></span><span>then  db.internal:<span class="n">5432</span>  <span class="c">TLS verify-full</span></span></pre>
+        </figure>
+      </article>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>TLS, the way your server wants it</h3>
+          <p class="tagline">From “off” to “verify everything”.</p>
+          <p>Choose the mode per connection, bring your own certificate authority, and a client certificate if the server asks for one. The same settings are handed to the backup tools, so a dump runs as securely as the session.</p>
+        </div>
+        <figure class="win scene">
+          <div class="win-bar"><i></i><i></i><i></i><span>shop-live · TLS</span></div>
+          <pre class="code"><span>mode         <span class="s">verify the certificate and the host name</span></span><span>CA           /certs/company-ca.pem</span><span>client cert  /certs/marc.pem</span><span>client key   /certs/marc.key</span></pre>
+          <div class="bar-line" style="border-bottom:0"><span class="pill ok">connected</span><span>PostgreSQL · certificate and host name checked · through bastion.example.com</span></div>
+        </figure>
+      </article>
+
+      <div class="minis">
+        <article class="card reveal"><span class="glyph">postgres://user@host/db</span><h3>From a URL</h3><p>Paste a connection URL and the profile is filled in. A password in the URL goes to the keychain, not into the profile.</p></article>
+        <article class="card reveal" style="--d:1"><span class="glyph">DBeaver · DataGrip</span><h3>From other tools</h3><p>Read the connections of DBeaver and DataGrip, and what <code>.pgpass</code>, <code>pg_service.conf</code>, <code>.my.cnf</code> and the environment know.</p></article>
+        <article class="card reveal" style="--d:2"><span class="glyph">export</span><h3>Take them with you</h3><p>Export your profiles to a file and import them elsewhere. Without passwords.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec sec-line" id="protection">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw kw-error">REVOKE</b> the accident</p>
+      <h2 class="h2 split">Protection for production.</h2>
+      <p class="lead reveal">Every connection has a level. The backend classifies each statement as reading, writing, DDL or dangerous and decides; the window only shows the question.</p>
+      <div class="levels" style="grid-template-columns:repeat(3,1fr)">
+        <article class="card reveal" style="--c:var(--ok)"><span class="glyph">free</span><h3>Free</h3><p>Only what is dangerous asks first: a <code>DELETE</code> or <code>UPDATE</code> without <code>WHERE</code>, a <code>DROP</code>, a <code>TRUNCATE</code>.</p></article>
+        <article class="card reveal" style="--d:1;--c:var(--warn)"><span class="glyph">ask</span><h3>Ask</h3><p>Everything but reading asks first. For what is dangerous you type the name of the connection.</p></article>
+        <article class="card reveal" style="--d:2;--c:var(--error)"><span class="glyph">read only</span><h3>Read only</h3><p>Nothing but reading runs. Editing, importing, copying into it and restoring are refused in the backend.</p></article>
+      </div>
+      <p class="note reveal">The same check guards everything that writes: the editor, the grid, structure changes, import, copying tables, test data, rights, ending a session.</p>
+    </div>
+  </section>
+
+  <section class="sec sec-line" id="differences">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw">CASE</b> dialect</p>
+      <h2 class="h2 split">What differs, and how the app deals with it.</h2>
+      <div class="table-scroll reveal">
+        <table>
+          <thead><tr><th scope="col"></th><th scope="col">PostgreSQL</th><th scope="col">MySQL · MariaDB</th><th scope="col">SQL Server</th><th scope="col">SQLite</th></tr></thead>
+          <tbody>
+            <tr><td>Scripts are split at</td><td><code>;</code>, with dollar quoting</td><td><code>;</code> and <code>DELIMITER</code></td><td><code>;</code> and <code>GO</code></td><td><code>;</code></td></tr>
+            <tr><td>Names are quoted as</td><td><code>"name"</code></td><td><code>`name`</code></td><td><code>[name]</code></td><td><code>"name"</code></td></tr>
+            <tr><td>Parameters</td><td colspan="4"><code>:name</code>, <code>${name}</code>, <code>?</code>, <code>$1</code>: which forms count is set per connection; the driver binds the values</td></tr>
+            <tr><td>Reading only, for an assistant</td><td>read-only transaction on the server</td><td>read-only session on the server</td><td>a transaction that is rolled back</td><td><code>query_only</code></td></tr>
+            <tr><td>Back up and restore</td><td>pg_dump, pg_restore, psql</td><td>mysqldump or mariadb-dump, mysql</td><td>simple SQL export</td><td>a copy of the file</td></tr>
+            <tr><td>Without tools</td><td colspan="4">a simple SQL export written by the app, and its restore</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note reveal">Plans, object details, DDL, the ER diagram, schema compare, the monitor and rights read the catalog of each database with bound parameters.</p>
+    </div>
+  </section>
+
+  <section class="cta sec-line" id="get">
+    <div class="wrap">
+      <p class="prompt reveal">SELECT * FROM your_database;</p>
+      <h2 class="h2 split">Run it.</h2>
+      <div class="actions reveal">
+        <a class="btn btn-primary" href="https://github.com/krocon/schema-commander/releases">Download from GitHub</a>
+        <a class="btn btn-ghost" href="ai.html">AI control</a>
+      </div>
+      <p class="note reveal">Free and open source under the MIT license. The packages are not signed yet.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <ul>
+      <li><a href="https://github.com/krocon/schema-commander">Source on GitHub</a></li>
+      <li><a href="https://github.com/krocon/schema-commander/issues">Report a problem</a></li>
+      <li><a href="https://github.com/krocon/schema-commander/blob/main/LICENSE">MIT license</a></li>
+      <li><a href="https://krocon.de">Imprint and privacy (krocon.de)</a></li>
+    </ul>
+    <p>© Marc Kronberg. This page sets no cookies and loads nothing from other servers.</p>
+  </div>
+</footer>
+</body>
+</html>

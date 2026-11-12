@@ -1,0 +1,240 @@
+<!doctype html>
+<!--
+  Schema Commander – product site, keyboard and questions. See index.html for how the site is built.
+  The rows between the keymap markers are written by `node site/build.mjs` from the action catalog and the
+  keymaps of the app – do not edit them here.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keyboard and questions – Schema Commander</title>
+<meta name="description" content="All default keyboard shortcuts of Schema Commander for macOS, Windows and Linux, and answers to common questions.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0f1216" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="Keyboard and questions – Schema Commander">
+<meta property="og:image" content="img/icon.png">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="stylesheet" href="site.css">
+<script src="site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="index.html"><img src="img/icon.png" width="30" height="30" alt=""><span>Schema Commander</span></a>
+    <nav class="nav-links" aria-label="Pages">
+      <a href="features.html">Features</a>
+      <a href="databases.html">Databases</a>
+      <a href="ai.html">AI control</a>
+      <a href="keyboard.html" aria-current="page">Keyboard</a>
+      <a class="gh" href="https://github.com/krocon/schema-commander">GitHub</a>
+      <a class="btn btn-primary btn-sm" href="https://github.com/krocon/schema-commander/releases">Download</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="sub-hero" id="top" style="--hue:var(--kw)">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw">SHOW</b> keys</p>
+      <h1 class="h1 split">Hands on the keys.</h1>
+      <p class="lead reveal">Every function of the app is an action. An action has a name, a place in the menu, an entry in the command palette (<kbd>Cmd/Ctrl+Shift+P</kbd>) and a shortcut you can change.</p>
+    </div>
+  </section>
+
+  <section class="sec-tight" id="shortcuts">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw kw-ok">DEFAULT</b> shortcuts per system</p>
+      <h2 class="h2 split">The defaults.</h2>
+      <p class="lead reveal">Two strokes in a row are a chord: <kbd>⌘K</kbd> <kbd>⌘X</kbd> means press one, then the other. Change any of them in the shortcut editor, <kbd>Cmd/Ctrl+K</kbd> <kbd>Cmd/Ctrl+S</kbd>. The keys of the editor itself (copy, paste, undo, find) stay with the editor.</p>
+      <input class="filter reveal" type="search" placeholder="Filter … try “plan” or “result”" aria-label="Filter the shortcuts" data-filter="#keymap tbody tr" data-none="#keymap-none" autocomplete="off" spellcheck="false">
+      <div class="table-scroll reveal">
+        <table id="keymap">
+          <thead><tr><th scope="col">Action</th><th scope="col">macOS</th><th scope="col">Windows · Linux</th></tr></thead>
+          <tbody>
+            <!-- keymap:start -->
+            <tr class="group-row"><th colspan="3" scope="colgroup">Query</th></tr>
+            <tr><td>Run the selection or the statement under the cursor</td><td><kbd>⌘↵</kbd></td><td><kbd>Ctrl+Enter</kbd></td></tr>
+            <tr><td>Show the plan of the statement</td><td><kbd>⌘K</kbd> <kbd>⌘X</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+X</kbd></td></tr>
+            <tr><td>Run the whole script</td><td><kbd>⇧⌘↵</kbd></td><td><kbd>Ctrl+Shift+Enter</kbd></td></tr>
+            <tr><td>Run again with the same parameter values</td><td><kbd>⌥⌘↵</kbd></td><td><kbd>Ctrl+Alt+Enter</kbd></td></tr>
+            <tr><td>Expand * to the list of columns</td><td><kbd>⌘K</kbd> <kbd>⌘8</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+8</kbd></td></tr>
+            <tr><td>Format the selection or the statement under the cursor</td><td><kbd>⇧⌘F</kbd></td><td><kbd>Ctrl+Shift+F</kbd></td></tr>
+            <tr><td>Format the whole script</td><td><kbd>⌘K</kbd> <kbd>⌘F</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+F</kbd></td></tr>
+            <tr><td>Toggle line comment</td><td><kbd>⌘/</kbd></td><td><kbd>Ctrl+/</kbd></td></tr>
+            <tr><td>Result: pin (keep over the next run)</td><td><kbd>⌘K</kbd> <kbd>⌘I</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+I</kbd></td></tr>
+            <tr><td>Compare two results …</td><td><kbd>⌘K</kbd> <kbd>⌘B</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+B</kbd></td></tr>
+            <tr><td>Run again and compare with the previous result</td><td><kbd>⌘K</kbd> <kbd>⌘Y</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+Y</kbd></td></tr>
+            <tr><td>Table: filter by the value of the cell</td><td><kbd>⌘K</kbd> <kbd>⌘E</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+E</kbd></td></tr>
+            <tr><td>Result: reset filter and order</td><td><kbd>⌘K</kbd> <kbd>⌘R</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+R</kbd></td></tr>
+            <tr><td>Result: search …</td><td><kbd>⌘F</kbd></td><td><kbd>Ctrl+F</kbd></td></tr>
+            <tr><td>Result: next hit</td><td><kbd>F3</kbd></td><td><kbd>F3</kbd></td></tr>
+            <tr><td>Result: previous hit</td><td><kbd>⇧F3</kbd></td><td><kbd>Shift+F3</kbd></td></tr>
+            <tr><td>Edit: edit the cell</td><td><kbd>F2</kbd></td><td><kbd>F2</kbd></td></tr>
+            <tr><td>Edit: new row</td><td><kbd>⇧⌘I</kbd></td><td><kbd>Ctrl+Shift+I</kbd></td></tr>
+            <tr><td>Edit: duplicate the rows</td><td><kbd>⇧⌘D</kbd></td><td><kbd>Ctrl+Shift+D</kbd></td></tr>
+            <tr><td>Edit: delete the rows (or keep them)</td><td><kbd>⌘⌫</kbd></td><td><kbd>Ctrl+Backspace</kbd></td></tr>
+            <tr><td>Edit: fill down</td><td><kbd>⌘D</kbd></td><td><kbd>Ctrl+D</kbd></td></tr>
+            <tr><td>Edit: undo the change</td><td><kbd>⌘Z</kbd></td><td><kbd>Ctrl+Z</kbd></td></tr>
+            <tr><td>Edit: redo the change</td><td><kbd>⇧⌘Z</kbd></td><td><kbd>Ctrl+Shift+Z</kbd></td></tr>
+            <tr><td>Edit: preview the changes …</td><td><kbd>⌘K</kbd> <kbd>⌘P</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+P</kbd></td></tr>
+            <tr><td>Result: summarize the column</td><td><kbd>⌘K</kbd> <kbd>⌘A</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+A</kbd></td></tr>
+            <tr><td>Commit transaction</td><td><kbd>⌥⌘C</kbd></td><td><kbd>Ctrl+Alt+C</kbd></td></tr>
+            <tr><td>Roll back transaction</td><td><kbd>⌥⌘R</kbd></td><td><kbd>Ctrl+Alt+R</kbd></td></tr>
+            <tr><td>Open history</td><td><kbd>⇧⌘H</kbd></td><td><kbd>Ctrl+Shift+H</kbd></td></tr>
+            <tr><td>Previous statement from the history</td><td><kbd>⌥⌘↑</kbd></td><td><kbd>Ctrl+Alt+↑</kbd></td></tr>
+            <tr><td>Next statement from the history</td><td><kbd>⌥⌘↓</kbd></td><td><kbd>Ctrl+Alt+↓</kbd></td></tr>
+            <tr><td>Result: copy as …</td><td><kbd>⇧⌘C</kbd></td><td><kbd>Ctrl+Shift+C</kbd></td></tr>
+            <tr><td>Cancel the running statement</td><td><kbd>⌘.</kbd></td><td><kbd>Ctrl+.</kbd></td></tr>
+            <tr class="group-row"><th colspan="3" scope="colgroup">View</th></tr>
+            <tr><td>Result: show as a chart</td><td><kbd>⌘K</kbd> <kbd>⌘T</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+T</kbd></td></tr>
+            <tr><td>Result: show the filter row</td><td><kbd>⌥⌘F</kbd></td><td><kbd>Ctrl+Alt+F</kbd></td></tr>
+            <tr><td>Result: show the row as a form</td><td><kbd>⌘K</kbd> <kbd>⌘L</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+L</kbd></td></tr>
+            <tr><td>Result: show the value panel</td><td><kbd>⌘K</kbd> <kbd>⌘V</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+V</kbd></td></tr>
+            <tr><td>Result: columns …</td><td><kbd>⌘K</kbd> <kbd>⌘C</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+C</kbd></td></tr>
+            <tr><td>Result: move the column left</td><td><kbd>⌥⇧←</kbd></td><td><kbd>Alt+Shift+←</kbd></td></tr>
+            <tr><td>Result: move the column right</td><td><kbd>⌥⇧→</kbd></td><td><kbd>Alt+Shift+→</kbd></td></tr>
+            <tr><td>Show or hide the sidebar</td><td><kbd>⌘B</kbd></td><td><kbd>Ctrl+B</kbd></td></tr>
+            <tr><td>Split view: side by side</td><td><kbd>⌘K</kbd> <kbd>⌘→</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+→</kbd></td></tr>
+            <tr><td>Split view: one above the other</td><td><kbd>⌘K</kbd> <kbd>⌘↓</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+↓</kbd></td></tr>
+            <tr><td>Move tab to the other group</td><td><kbd>⌘K</kbd> <kbd>⌘M</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+M</kbd></td></tr>
+            <tr><td>Switch to the other group</td><td><kbd>⌘K</kbd> <kbd>⌘O</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+O</kbd></td></tr>
+            <tr><td>Join the groups</td><td><kbd>⌘K</kbd> <kbd>⌘U</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+U</kbd></td></tr>
+            <tr><td>Show or hide the result area</td><td><kbd>⌘J</kbd></td><td><kbd>Ctrl+J</kbd></td></tr>
+            <tr><td>Result area at the bottom / on the right</td><td><kbd>⌘K</kbd> <kbd>⌘J</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+J</kbd></td></tr>
+            <tr><td>Maximize or restore the result area</td><td><kbd>⇧⌘M</kbd></td><td><kbd>Ctrl+Shift+M</kbd></td></tr>
+            <tr><td>Sidebar: connections and schema</td><td><kbd>⌘K</kbd> <kbd>⌘D</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+D</kbd></td></tr>
+            <tr><td>Sidebar: history</td><td><kbd>⌘K</kbd> <kbd>⌘H</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+H</kbd></td></tr>
+            <tr><td>Sidebar: saved queries</td><td><kbd>⌘K</kbd> <kbd>⌘Q</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+Q</kbd></td></tr>
+            <tr><td>Zen mode (only the queries)</td><td><kbd>⌘K</kbd> <kbd>⌘N</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+N</kbd></td></tr>
+            <tr><td>Choose colour scheme …</td><td><kbd>⌥⌘T</kbd></td><td><kbd>Ctrl+Alt+T</kbd></td></tr>
+            <tr><td>Settings …</td><td><kbd>⌘,</kbd></td><td><kbd>Ctrl+,</kbd></td></tr>
+            <tr class="group-row"><th colspan="3" scope="colgroup">Navigation</th></tr>
+            <tr><td>Result: next result tab</td><td><kbd>⌥⌘→</kbd></td><td><kbd>Ctrl+Alt+→</kbd></td></tr>
+            <tr><td>Result: previous result tab</td><td><kbd>⌥⌘←</kbd></td><td><kbd>Ctrl+Alt+←</kbd></td></tr>
+            <tr><td>Result: go to row …</td><td><kbd>⌘G</kbd></td><td><kbd>Ctrl+G</kbd></td></tr>
+            <tr><td>Result: next other value in the column</td><td><kbd>⌥↓</kbd></td><td><kbd>Alt+↓</kbd></td></tr>
+            <tr><td>Result: next NULL in the column</td><td><kbd>⌥⇧↓</kbd></td><td><kbd>Alt+Shift+↓</kbd></td></tr>
+            <tr><td>Relations: go to the referenced row</td><td><kbd>F4</kbd></td><td><kbd>F4</kbd></td></tr>
+            <tr><td>Relations: look at the referenced row</td><td><kbd>⇧F4</kbd></td><td><kbd>Shift+F4</kbd></td></tr>
+            <tr><td>Relations: referenced by …</td><td><kbd>⌥F7</kbd></td><td><kbd>Alt+F7</kbd></td></tr>
+            <tr><td>Relations: back</td><td><kbd>⌥←</kbd></td><td><kbd>Alt+←</kbd></td></tr>
+            <tr><td>Relations: forward</td><td><kbd>⌥→</kbd></td><td><kbd>Alt+→</kbd></td></tr>
+            <tr><td>Go to saved query …</td><td><kbd>⌥⌘O</kbd></td><td><kbd>Ctrl+Alt+O</kbd></td></tr>
+            <tr><td>Command palette</td><td><kbd>⇧⌘P</kbd> <span class="no">or</span> <kbd>F1</kbd></td><td><kbd>Ctrl+Shift+P</kbd> <span class="no">or</span> <kbd>F1</kbd></td></tr>
+            <tr><td>Go to the editor</td><td><kbd>⌘1</kbd></td><td><kbd>Ctrl+1</kbd></td></tr>
+            <tr><td>Go to the result</td><td><kbd>⌘2</kbd></td><td><kbd>Ctrl+2</kbd></td></tr>
+            <tr><td>Go to the sidebar</td><td><kbd>⌘0</kbd></td><td><kbd>Ctrl+0</kbd></td></tr>
+            <tr><td>Next area</td><td><kbd>F6</kbd></td><td><kbd>F6</kbd></td></tr>
+            <tr><td>Previous area</td><td><kbd>⇧F6</kbd></td><td><kbd>Shift+F6</kbd></td></tr>
+            <tr><td>Go to table, view, tab …</td><td><kbd>⌘P</kbd></td><td><kbd>Ctrl+P</kbd></td></tr>
+            <tr class="group-row"><th colspan="3" scope="colgroup">File</th></tr>
+            <tr><td>Export result …</td><td><kbd>⇧⌘E</kbd></td><td><kbd>Ctrl+Shift+E</kbd></td></tr>
+            <tr><td>Open SQL file …</td><td><kbd>⌘O</kbd></td><td><kbd>Ctrl+O</kbd></td></tr>
+            <tr><td>Save tab as file</td><td><kbd>⌘S</kbd></td><td><kbd>Ctrl+S</kbd></td></tr>
+            <tr><td>Save tab as …</td><td><kbd>⇧⌘S</kbd></td><td><kbd>Ctrl+Shift+S</kbd></td></tr>
+            <tr><td>Save as query …</td><td><kbd>⌥⌘S</kbd></td><td><kbd>Ctrl+Alt+S</kbd></td></tr>
+            <tr class="group-row"><th colspan="3" scope="colgroup">Connection</th></tr>
+            <tr><td>New connection …</td><td><kbd>⇧⌘N</kbd></td><td><kbd>Ctrl+Shift+N</kbd></td></tr>
+            <tr class="group-row"><th colspan="3" scope="colgroup">Schema</th></tr>
+            <tr><td>Refresh schema</td><td><kbd>F5</kbd></td><td><kbd>F5</kbd></td></tr>
+            <tr><td>Filter the schema</td><td><kbd>⇧⌘O</kbd></td><td><kbd>Ctrl+Shift+O</kbd></td></tr>
+            <tr><td>Search on the server …</td><td><kbd>⌘K</kbd> <kbd>⌘G</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+G</kbd></td></tr>
+            <tr><td>Object details and DDL …</td><td><kbd>⌘I</kbd></td><td><kbd>Ctrl+I</kbd></td></tr>
+            <tr class="group-row"><th colspan="3" scope="colgroup">Tabs</th></tr>
+            <tr><td>New tab</td><td><kbd>⌘T</kbd></td><td><kbd>Ctrl+T</kbd></td></tr>
+            <tr><td>Close tab</td><td><kbd>⌘W</kbd></td><td><kbd>Ctrl+W</kbd></td></tr>
+            <tr><td>Reopen closed tab</td><td><kbd>⇧⌘T</kbd></td><td><kbd>Ctrl+Shift+T</kbd></td></tr>
+            <tr><td>Next tab</td><td><kbd>⌃Tab</kbd></td><td><kbd>Ctrl+Tab</kbd></td></tr>
+            <tr><td>Previous tab</td><td><kbd>⌃⇧Tab</kbd></td><td><kbd>Ctrl+Shift+Tab</kbd></td></tr>
+            <tr class="group-row"><th colspan="3" scope="colgroup">Help</th></tr>
+            <tr><td>Edit keyboard shortcuts …</td><td><kbd>⌘K</kbd> <kbd>⌘S</kbd></td><td><kbd>Ctrl+K</kbd> <kbd>Ctrl+S</kbd></td></tr>
+            <tr><td>Show keyboard shortcuts</td><td><kbd>?</kbd></td><td><kbd>?</kbd></td></tr>
+            <!-- keymap:end -->
+          </tbody>
+        </table>
+      </div>
+      <p class="note" id="keymap-none" hidden>No shortcut matches. The action may exist without a default key: look in the command palette.</p>
+      <p class="note reveal">Actions without a default shortcut are not listed. They are all in the command palette and in the menu.</p>
+    </div>
+  </section>
+
+  <section class="sec sec-line" id="widgets">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw">WITH</b> focus</p>
+      <h2 class="h2 split">Where a key acts.</h2>
+      <p class="lead reveal">A shortcut never surprises you in the wrong place: plain keys do not reach an action while you type, and the grid has keys of its own.</p>
+      <div class="minis">
+        <article class="card reveal"><span class="glyph">editor</span><h3>In the SQL editor</h3><p>Copy, cut, paste, select all, undo, find (<kbd>Cmd/Ctrl+F</kbd>, <kbd>F3</kbd>) and completion (<kbd>Ctrl+Space</kbd>) belong to the editor. Plain keys and AltGr characters are always text.</p></article>
+        <article class="card reveal" style="--d:1"><span class="glyph">grid</span><h3>In a result</h3><p>Arrows, <kbd>Shift</kbd> + arrows for a range, <kbd>Cmd/Ctrl+F</kbd> searches the result (not the editor), <kbd>F2</kbd> edits a cell, <kbd>F4</kbd> follows a foreign key.</p></article>
+        <article class="card reveal" style="--d:2"><span class="glyph">tree · menu · dialog</span><h3>In lists, menus, dialogs</h3><p>Trees, menus, list boxes and splitters follow the ARIA authoring practices: arrows, <kbd>Home</kbd>, <kbd>End</kbd>, type to find, <kbd>Esc</kbd> closes.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec sec-line" id="questions">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw kw-fn">EXPLAIN</b> questions</p>
+      <h2 class="h2 split">Asked before.</h2>
+      <div class="faq">
+        <details>
+          <summary>Where are my passwords?</summary>
+          <p>In the keychain of your system (Keychain on macOS, Credential Manager on Windows, the Secret Service on Linux), or nowhere: a connection can ask each time. The file with the connection profiles never holds a secret, and neither does an export of them.</p>
+        </details>
+        <details>
+          <summary>Does the app send anything anywhere?</summary>
+          <p>No. There is no account, no telemetry and no update check. The app talks to the databases you connect it to, and to an SSH server if you set up a tunnel. The AI control is off until you switch it on, and then it listens on this computer only.</p>
+        </details>
+        <details>
+          <summary>What happens to my text when the app crashes?</summary>
+          <p>Every tab is backed up a moment after you type. After a restart or a crash the tabs are there again, with their text, their connection and the caret. That is why nothing asks “save?”. A tab that is a <code>.sql</code> file is saved to it with <kbd>Cmd/Ctrl+S</kbd> and keeps its encoding.</p>
+        </details>
+        <details>
+          <summary>Can I break production by accident?</summary>
+          <p>Less easily. Give the connection a protection level: “ask” puts a question before everything that is not reading, “read only” runs nothing else. The statement is classified in the backend, not by the window. Editing data, importing, copying tables and changing structure all go through the same check.</p>
+        </details>
+        <details>
+          <summary>How large may a result be?</summary>
+          <p>Results are kept by the backend, first in memory and above a limit in a file, with limits you can set. The grid asks for the rows on screen. Sorting, filtering, searching and the figures of a selection work on the stored result without running the statement again.</p>
+        </details>
+        <details>
+          <summary>Why does macOS or Windows warn me when I open the app?</summary>
+          <p>The packages are not signed yet, so the system does not know the publisher. On macOS, open the app once with a right click and “Open”. On Windows, choose “More info” and “Run anyway”. The source of every release is the tag on GitHub; the packages are built there by a public workflow.</p>
+        </details>
+        <details>
+          <summary>What is it built with?</summary>
+          <p>Tauri 2 with a Rust backend and an Angular window. The SQL editor is <a href="https://krocon.de/products/editlicious/">editlicious</a>, the grids are the <a href="https://gui.expert">GuiExpert Table</a>. Every package carries the licences of what is inside; Help → About shows them.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta sec-line" id="get">
+    <div class="wrap">
+      <p class="prompt reveal">SELECT * FROM your_database;</p>
+      <h2 class="h2 split">Run it.</h2>
+      <div class="actions reveal">
+        <a class="btn btn-primary" href="https://github.com/krocon/schema-commander/releases">Download from GitHub</a>
+        <a class="btn btn-ghost" href="features.html">All features</a>
+      </div>
+      <p class="note reveal">Free and open source under the MIT license. The packages are not signed yet.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <ul>
+      <li><a href="https://github.com/krocon/schema-commander">Source on GitHub</a></li>
+      <li><a href="https://github.com/krocon/schema-commander/issues">Report a problem</a></li>
+      <li><a href="https://github.com/krocon/schema-commander/blob/main/LICENSE">MIT license</a></li>
+      <li><a href="https://krocon.de">Imprint and privacy (krocon.de)</a></li>
+    </ul>
+    <p>© Marc Kronberg. This page sets no cookies and loads nothing from other servers.</p>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,457 @@
+<!doctype html>
+<!-- Schema Commander – product site, all features. See index.html for how the site is built. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Features – Schema Commander</title>
+<meta name="description" content="Everything Schema Commander does: writing SQL with completion and formatting, reading large results, editing data with a preview, plans, diagrams and schema compare, backup, import, monitor and rights.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0f1216" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="Features – Schema Commander">
+<meta property="og:image" content="img/icon.png">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="stylesheet" href="site.css">
+<script src="site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="index.html"><img src="img/icon.png" width="30" height="30" alt=""><span>Schema Commander</span></a>
+    <nav class="nav-links" aria-label="Pages">
+      <a href="features.html" aria-current="page">Features</a>
+      <a href="databases.html">Databases</a>
+      <a href="ai.html">AI control</a>
+      <a href="keyboard.html">Keyboard</a>
+      <a class="gh" href="https://github.com/krocon/schema-commander">GitHub</a>
+      <a class="btn btn-primary btn-sm" href="https://github.com/krocon/schema-commander/releases">Download</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="sub-hero" id="top">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw">SELECT</b> * FROM features</p>
+      <h1 class="h1 split">Everything it does.</h1>
+      <p class="lead reveal">Six chapters: write a statement, read what comes back, change data, understand a schema, run the server, and make the app yours.</p>
+    </div>
+  </section>
+
+  <nav class="subnav" aria-label="Chapters">
+    <div class="wrap">
+      <ul>
+        <li><a href="#write">1 · Write</a></li>
+        <li><a href="#read">2 · Read</a></li>
+        <li><a href="#change">3 · Change</a></li>
+        <li><a href="#understand">4 · Understand</a></li>
+        <li><a href="#operate">5 · Operate</a></li>
+        <li><a href="#app">6 · The app</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- ───────── 1 write ───────── -->
+  <section id="write">
+    <div class="wrap">
+      <header class="group-head">
+        <p class="eyebrow reveal"><b class="kw">SELECT</b> chapter 1 · write</p>
+        <h2 class="h2 split">An editor that knows the database.</h2>
+        <p class="lead reveal">Tabs that never ask to be saved, completion from the catalog, and a run that takes the selection, the statement under the caret or the whole script.</p>
+      </header>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>Run</h3>
+          <p class="tagline">The selection, the statement, or the script.</p>
+          <p>A script is split by the rules of its database: dollar quoting in PostgreSQL, <code>DELIMITER</code> in MySQL, <code>GO</code> in SQL Server. Each statement gets a result tab with its title and row count, messages come with timings.</p>
+          <p>Cancel ends the statement on the server and keeps the session. A time limit is optional.</p>
+          <div class="keys"><kbd>Cmd/Ctrl+Enter</kbd> statement · <kbd>Cmd/Ctrl+Shift+Enter</kbd> script · <kbd>Cmd/Ctrl+.</kbd> cancel</div>
+        </div>
+        <figure class="win scene">
+          <div class="win-bar"><i></i><i></i><i></i><span>report.sql</span></div>
+          <pre class="code"><span><span class="k">CREATE TEMP TABLE</span> late <span class="k">AS</span></span><span>  <span class="k">SELECT</span> * <span class="k">FROM</span> orders <span class="k">WHERE</span> shipped_at <span class="k">IS NULL</span>;</span><span></span><span class="run cur"><span class="k">SELECT</span> status, <span class="f">count</span>(*) <span class="k">FROM</span> late <span class="k">GROUP BY</span> status;</span><span></span><span><span class="k">DROP TABLE</span> late;</span></pre>
+          <div class="bar-line"><span class="pill ok">1 · CREATE</span><span class="pill ok">2 · status · 3 rows</span><span class="pill">3 · running …</span></div>
+        </figure>
+      </article>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>Completion</h3>
+          <p class="tagline">Tables, the columns of an alias, the join.</p>
+          <p>Behind <code>FROM</code> come tables and views, behind <code>o.</code> the columns of what <code>o</code> stands for, behind <code>JOIN</code> the condition from the foreign key. Keywords and types fit the database of the tab.</p>
+          <p>“Go to anything” finds a table, view, routine, column, tab or connection across all schemas from a few letters.</p>
+          <div class="keys"><kbd>Ctrl+Space</kbd> complete · <kbd>Cmd/Ctrl+P</kbd> go to anything</div>
+        </div>
+        <figure class="win scene" style="position:relative">
+          <div class="win-bar"><i></i><i></i><i></i><span>query.sql</span></div>
+          <pre class="code" style="min-height:190px"><span><span class="k">SELECT</span> o.id, o.<i class="caret"></i></span><span><span class="k">FROM</span>   orders o</span></pre>
+          <div class="pop" style="left:150px;top:68px">
+            <div class="on"><span>customer_id</span><small>int4 · → customers</small></div>
+            <div><span>placed_at</span><small>date</small></div>
+            <div><span>shipped_at</span><small>date · null</small></div>
+            <div><span>status</span><small>text</small></div>
+            <div><span>total</span><small>numeric</small></div>
+          </div>
+        </figure>
+      </article>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>Errors where they happen</h3>
+          <p class="tagline">Underlined in the editor, explained beside it.</p>
+          <p>The place the database names is marked and the caret jumps there. Code, detail and hint of the server are shown apart, not as one long line.</p>
+        </div>
+        <figure class="win scene">
+          <div class="win-bar"><i></i><i></i><i></i><span>query.sql</span></div>
+          <pre class="code"><span><span class="k">SELECT</span> name, <span class="err">contry</span></span><span><span class="k">FROM</span>   customers;</span></pre>
+          <div class="bar-line" style="white-space:normal;line-height:1.5;padding-block:8px"><span class="pill bad">42703</span><span><b>column "contry" does not exist</b> · Hint: perhaps you meant “customers.country”. · line 1, column 14</span></div>
+        </figure>
+      </article>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>Format SQL</h3>
+          <p class="tagline">Only white space and keyword case change. Checked.</p>
+          <p>The selection, the statement or the script, as one undo step. Keyword case, indentation, line width, commas and <code>AND</code>/<code>OR</code> are settings with a live preview.</p>
+          <p>Strings, comments and quoted names are never touched: the formatter compares the tokens of its result with those of your text and leaves the text alone if they differ.</p>
+          <div class="keys"><kbd>Cmd/Ctrl+Shift+F</kbd> format · <kbd>Cmd/Ctrl+/</kbd> comment</div>
+        </div>
+        <figure class="win scene">
+          <div class="win-bar"><i></i><i></i><i></i><span>before · after</span></div>
+          <pre class="code"><span><span class="c">select c.name,sum(o.total) from customers c join orders o on …</span></span><span></span><span><span class="k">SELECT</span> c.name,</span><span>       <span class="f">sum</span>(o.total)</span><span><span class="k">FROM</span>   customers c</span><span><span class="k">JOIN</span>   orders o <span class="k">ON</span> o.customer_id = c.id</span><span><span class="k">GROUP  BY</span> c.name;</span></pre>
+        </figure>
+      </article>
+
+      <div class="minis">
+        <article class="card reveal"><span class="glyph">:name · ${name} · ? · $1</span><h3>Parameters</h3><p>Asked when the statement runs, remembered per tab, bound by the driver. Run again with the same values with <kbd>Cmd/Ctrl+Alt+Enter</kbd>.</p></article>
+        <article class="card reveal" style="--d:1"><span class="glyph">tabs</span><h3>Tabs that keep their text</h3><p>Each tab has its own connection and session. The text is backed up as you type and is back after a restart or a crash.</p></article>
+        <article class="card reveal" style="--d:2"><span class="glyph">.sql</span><h3>Saved queries</h3><p>Plain files in a folder of your choice, with name, description and tags in a comment header. A sidebar view with search and preview.</p></article>
+        <article class="card reveal"><span class="glyph">sel⇥</span><h3>Snippets</h3><p>A short word and <kbd>Tab</kbd> become a statement with placeholders to tab through. A set per database, and your own.</p></article>
+        <article class="card reveal" style="--d:1"><span class="glyph">history</span><h3>History</h3><p>Every statement with connection, time and outcome, searchable. It can be switched off and deleted for good.</p></article>
+        <article class="card reveal" style="--d:2"><span class="glyph">split</span><h3>Two tab groups</h3><p>Side by side or stacked, the result below or beside the editor, hidden or maximised, and a zen mode.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────── 2 read ───────── -->
+  <section id="read">
+    <div class="wrap">
+      <header class="group-head">
+        <p class="eyebrow reveal"><b class="kw kw-num">FETCH</b> chapter 2 · read</p>
+        <h2 class="h2 split">A result is more than a grid.</h2>
+        <p class="lead reveal">It stays in the backend. The window asks for the slice it shows, and for answers: sorted, filtered, found, added up.</p>
+      </header>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>Cells as they are</h3>
+          <p class="tagline">NULL is not an empty string, and it looks different.</p>
+          <p>NULL, empty text, numbers, booleans and binary data each have their look; the type stands in the column head. Control characters are made visible, long values are cut on screen only.</p>
+          <p>Keep columns at the left, hide them, move them, fit their widths. The column list finds one of 500 columns by name. The layout is remembered per table.</p>
+          <div class="keys"><kbd>Cmd/Ctrl+K</kbd> <kbd>Cmd/Ctrl+C</kbd> column list</div>
+        </div>
+        <figure class="win scene">
+          <div class="win-bar"><i></i><i></i><i></i><span>result 1 · 5 rows</span></div>
+          <table class="grid">
+            <thead><tr><th class="rn">#</th><th class="num">id<small>int4</small></th><th>note<small>text</small></th><th>paid<small>bool</small></th><th>receipt<small>bytea</small></th><th class="num">total<small>numeric</small></th></tr></thead>
+            <tbody>
+              <tr><td class="rn">1</td><td class="num">4001</td><td>gift wrap</td><td>true</td><td class="null">NULL</td><td class="num">129.00</td></tr>
+              <tr><td class="rn">2</td><td class="num">4002</td><td class="null">NULL</td><td>true</td><td>89 50 4E 47 … 14 kB</td><td class="num">18.40</td></tr>
+              <tr><td class="rn">3</td><td class="num">4003</td><td class="null">(empty)</td><td>false</td><td class="null">NULL</td><td class="num">1,204.75</td></tr>
+              <tr><td class="rn">4</td><td class="num">4004</td><td>line 1⏎line 2</td><td>true</td><td class="null">NULL</td><td class="num">39.99</td></tr>
+              <tr><td class="rn">5</td><td class="num">4005</td><td>call back</td><td class="null">NULL</td><td>25 50 44 46 … 2 MB</td><td class="num">0.00</td></tr>
+            </tbody>
+          </table>
+        </figure>
+      </article>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>Sort, filter, search</h3>
+          <p class="tagline">Without running the statement again.</p>
+          <p>A table opens as a table view: conditions on columns and <code>ORDER BY</code> run on the server, with bound values. Any other result is filtered and sorted where it lies, in the backend’s store.</p>
+          <p>Search the result for text, a whole word or a regular expression, in all columns or one. The first hits come at once, <kbd>F3</kbd> walks through them.</p>
+          <div class="keys"><kbd>Cmd/Ctrl+F</kbd> in the grid · <kbd>Cmd/Ctrl+G</kbd> go to row · <kbd>Alt+↓</kbd> next other value</div>
+        </div>
+        <figure class="win scene">
+          <div class="win-bar"><i></i><i></i><i></i><span>orders</span></div>
+          <div class="bar-line"><span class="pill">status = 'open'</span><span class="pill">placed_at ≥ 2026-05-01</span><span>ORDER BY total DESC</span></div>
+          <div class="bar-line"><b>Find</b><span class="pill">.* 4[0-9]{3}</span><span>3 of 12 hits · column id</span></div>
+          <table class="grid">
+            <thead><tr><th class="rn">#</th><th class="num">id<small>int4</small></th><th>status<small>text</small></th><th>placed_at<small>date</small></th><th class="num">total<small>numeric</small></th></tr></thead>
+            <tbody>
+              <tr><td class="rn">1</td><td class="num sel">4044</td><td>open</td><td>2026-06-03</td><td class="num">318.40</td></tr>
+              <tr><td class="rn">2</td><td class="num">4045</td><td>open</td><td>2026-06-11</td><td class="num">201.75</td></tr>
+              <tr><td class="rn">3</td><td class="num">4047</td><td>open</td><td>2026-06-19</td><td class="num">189.50</td></tr>
+            </tbody>
+          </table>
+        </figure>
+      </article>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>Figures of the selection</h3>
+          <p class="tagline">Count, sum, mean, smallest, largest. Exact.</p>
+          <p>Mark cells and the status line shows the figures, added up in the backend as decimals: a <code>NUMERIC(38,10)</code> sum is right to the last digit. For dates it shows the span, for text the lengths. A click copies a figure.</p>
+          <p>“Summarize the column” adds the ten most frequent values.</p>
+          <div class="keys"><kbd>Cmd/Ctrl+K</kbd> <kbd>Cmd/Ctrl+A</kbd> summarize the column</div>
+        </div>
+        <figure class="win scene">
+          <div class="win-bar"><i></i><i></i><i></i><span>revenue.sql</span></div>
+          <table class="grid">
+            <thead><tr><th class="rn">#</th><th>month<small>date</small></th><th class="num">orders<small>int8</small></th><th class="num">revenue<small>numeric</small></th></tr></thead>
+            <tbody>
+              <tr><td class="rn">1</td><td>2026-01-01</td><td class="num">8</td><td class="num sel">1,804.10</td></tr>
+              <tr><td class="rn">2</td><td>2026-02-01</td><td class="num">8</td><td class="num sel">2,117.45</td></tr>
+              <tr><td class="rn">3</td><td>2026-03-01</td><td class="num">8</td><td class="num sel">1,650.00</td></tr>
+              <tr><td class="rn">4</td><td>2026-04-01</td><td class="num">8</td><td class="num">2,402.90</td></tr>
+            </tbody>
+          </table>
+          <div class="bar-line" style="border-bottom:0"><b>4 rows</b><span>Count 3 · Sum 5,571.55 · Avg 1,857.18 · Min 1,650.00 · Max 2,117.45</span></div>
+        </figure>
+      </article>
+
+      <div class="minis">
+        <article class="card reveal"><span class="glyph">{ } &lt;/&gt; 0x</span><h3>Value panel</h3><p>The whole value of the cell under the cursor: long text, JSON and XML laid out without changing a digit, binary as hex or as a picture, instants in UTC.</p></article>
+        <article class="card reveal" style="--d:1"><span class="glyph">row</span><h3>A row as a form</h3><p>Every column a line beside the grid, filtered by column name. Marked rows stand side by side with what differs.</p></article>
+        <article class="card reveal" style="--d:2"><span class="glyph">pin</span><h3>Result tabs, pinned</h3><p>Pin a result so the next run keeps it, move it into a tab of its own, and compare two of them by key or by position.</p></article>
+        <article class="card reveal"><span class="glyph">▁▃▆</span><h3>Chart</h3><p>Lines over time, bars, scatter plots, suggested from the column types. Zoom, tooltip, legend, export as SVG.</p></article>
+        <article class="card reveal" style="--d:1"><span class="glyph">⧉</span><h3>Copy as</h3><p>TSV, CSV, JSON, Markdown, HTML, <code>INSERT</code>, <code>IN (…)</code>, <code>WHERE</code>. Written by the backend, with literals of the database.</p></article>
+        <article class="card reveal" style="--d:2"><span class="glyph">⤓</span><h3>Export</h3><p>CSV, TSV, JSON, NDJSON, <code>INSERT</code>, Markdown, HTML, Excel, optionally gzip. A job with progress that you can stop.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────── 3 change ───────── -->
+  <section id="change">
+    <div class="wrap">
+      <header class="group-head">
+        <p class="eyebrow reveal"><b class="kw kw-warn">UPDATE</b> chapter 3 · change</p>
+        <h2 class="h2 split">See the statement before it runs.</h2>
+        <p class="lead reveal">Whatever writes is collected first, shown as SQL, and written in one transaction. The window never sends SQL of its own: the backend builds it, with every value bound.</p>
+      </header>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>Edit data</h3>
+          <p class="tagline">Cells, rows, blocks from a spreadsheet.</p>
+          <p>Change cells with <kbd>F2</kbd> or a double click, with NULL and the default at hand. Add a row, duplicate rows, mark rows to delete, paste a block of cells, fill down.</p>
+          <p>Everything is written together: deletes, then changes, then inserts. Each statement must touch exactly one row, or all of it is rolled back. A row somebody else changed in the meantime is reported.</p>
+          <div class="keys"><kbd>Cmd/Ctrl+S</kbd> write · <kbd>Cmd/Ctrl+Shift+I</kbd> new row · <kbd>Cmd/Ctrl+D</kbd> fill down</div>
+        </div>
+        <figure class="win scene">
+          <div class="win-bar"><i></i><i></i><i></i><span>products · 3 changes</span></div>
+          <div class="bar-line"><b>3 changes</b><span>1 changed · 1 new · 1 to delete</span><span class="pill">Preview SQL</span><span class="pill ok">Write</span></div>
+          <table class="grid">
+            <thead><tr><th class="rn">#</th><th class="num">id<small>int4</small></th><th>name<small>text</small></th><th class="num">price<small>numeric</small></th><th class="num">stock<small>int4</small></th></tr></thead>
+            <tbody>
+              <tr><td class="rn">1</td><td class="num">101</td><td>Trail shoe</td><td class="num">129.00</td><td class="num">42</td></tr>
+              <tr><td class="rn">2</td><td class="num">102</td><td>Rain jacket</td><td class="num chg">179.50</td><td class="num">17</td></tr>
+              <tr class="del"><td class="rn">3</td><td class="num">104</td><td>Head torch</td><td class="num">39.99</td><td class="num">0</td></tr>
+              <tr class="new"><td class="rn">+</td><td class="null">default</td><td>Gaiters</td><td class="num">34.00</td><td class="num">60</td></tr>
+            </tbody>
+          </table>
+        </figure>
+      </article>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>Edit the structure</h3>
+          <p class="tagline">Columns, indexes, keys and checks as a form.</p>
+          <p>The statements are shown before they run, with the steps that may lose data marked. Where the database allows it, they run in one transaction.</p>
+          <p>New table, duplicate, empty, drop. The definition of a view or a routine opens as a statement that replaces it.</p>
+        </div>
+        <figure class="win scene">
+          <div class="win-bar"><i></i><i></i><i></i><span>products · structure</span></div>
+          <pre class="code"><span><span class="k">ALTER TABLE</span> products <span class="k">ADD COLUMN</span> weight_g <span class="i">int4</span>;</span><span><span class="k">ALTER TABLE</span> products <span class="k">ALTER COLUMN</span> name <span class="k">TYPE</span> <span class="i">varchar</span>(<span class="n">40</span>);</span><span><span class="k">ALTER TABLE</span> products <span class="k">DROP COLUMN</span> legacy_code;</span><span><span class="k">CREATE INDEX</span> products_name_idx <span class="k">ON</span> products (name);</span></pre>
+          <div class="bar-line" style="white-space:normal;line-height:1.5;padding-block:8px"><span class="pill warn">2</span><span>may cut values longer than 40 characters</span><span class="pill bad">3</span><span>drops a column and its data</span></div>
+        </figure>
+      </article>
+
+      <div class="minis">
+        <article class="card reveal"><span class="glyph">↧ csv · json · ndjson · gz</span><h3>Import a file</h3><p>Read as a stream in any common encoding. Preview, mapping by name, a proposed <code>CREATE TABLE</code>; all or nothing, or block by block with an error file.</p></article>
+        <article class="card reveal" style="--d:1"><span class="glyph">⟿</span><h3>Copy tables</h3><p>From one connection to another, also across databases, as a stream. Types are mapped, losses named, tables go in the order of their foreign keys.</p></article>
+        <article class="card reveal" style="--d:2"><span class="glyph">seed = 42</span><h3>Test data</h3><p>A generator per column, proposed from type, key and name. The same seed gives the same rows; unique columns and foreign keys are respected.</p></article>
+        <article class="card reveal"><span class="glyph">BEGIN … COMMIT</span><h3>Transactions</h3><p>A session per tab, auto-commit or manual. The state comes from the server, never from a guess, and closing a tab with an open transaction asks.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────── 4 understand ───────── -->
+  <section id="understand">
+    <div class="wrap">
+      <header class="group-head">
+        <p class="eyebrow reveal"><b class="kw kw-fn">EXPLAIN</b> chapter 4 · understand</p>
+        <h2 class="h2 split">What is in there, and how it hangs together.</h2>
+        <p class="lead reveal">A schema tree, details for every object, relations to walk along, a diagram, a comparison, and the plan of a statement.</p>
+      </header>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>Follow foreign keys</h3>
+          <p class="tagline">From an order to its customer, and back to all their orders.</p>
+          <p><kbd>F4</kbd> opens the referenced row: in the tab, in a new one, or as a quick look. <kbd>Alt+F7</kbd> lists the tables that point to the row, with counts. Several marked rows at once, composite keys, a path with back and forward.</p>
+          <p>Where the database defines no relation, you add your own.</p>
+          <div class="keys"><kbd>F4</kbd> follow · <kbd>Shift+F4</kbd> quick look · <kbd>Alt+←/→</kbd> back, forward</div>
+        </div>
+        <figure class="win scene">
+          <div class="win-bar"><i></i><i></i><i></i><span>customers</span></div>
+          <div class="bar-line crumbs"><span>orders</span><span>customer_id = 3</span><span>customers</span></div>
+          <table class="grid">
+            <thead><tr><th class="rn">#</th><th class="num">id<small>int4</small></th><th>name<small>text</small></th><th>country<small>bpchar</small></th></tr></thead>
+            <tbody><tr><td class="rn">1</td><td class="num sel">3</td><td>Chidi Okafor</td><td>NG</td></tr></tbody>
+          </table>
+          <div class="bar-line"><b>Referenced by</b><span class="pill">orders.customer_id · 7</span><span class="pill">customer_notes.customer_id · 2</span></div>
+        </figure>
+      </article>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>Execution plan</h3>
+          <p class="tagline">One tree table for every database.</p>
+          <p>Whatever the database returns (JSON, XML, a text tree) is read into one model: rows estimated and actual, own and total time, cost. Hints name what stands out.</p>
+          <p>“With execution” really runs the statement: inside a transaction that is rolled back, and after the protection of the connection has agreed.</p>
+          <div class="keys"><kbd>Cmd/Ctrl+K</kbd> <kbd>Cmd/Ctrl+X</kbd> plan</div>
+        </div>
+        <figure class="win scene plan">
+          <div class="hd"><span>operation</span><span>rows</span><span>ms</span><span>own time</span></div>
+          <div><span>Sort</span><span>8</span><span>0.1</span><i style="--w:2"></i></div>
+          <div><span>&nbsp;&nbsp;HashAggregate</span><span>8</span><span>1.4</span><i style="--w:6"></i></div>
+          <div><span>&nbsp;&nbsp;&nbsp;&nbsp;Hash Join</span><span>48,112</span><span>9.8</span><i style="--w:18"></i></div>
+          <div class="hot"><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Seq Scan on orders</span><span>48,112</span><span>61.3</span><i style="--w:100"></i></div>
+          <div><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Seq Scan on customers</span><span>8</span><span>0.0</span><i style="--w:1"></i></div>
+          <span class="hint">Estimated 900 rows, got 48,112: the statistics may be out of date.</span>
+        </figure>
+      </article>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>Compare two schemas</h3>
+          <p class="tagline">What is only here, only there, or different.</p>
+          <p>Two schemas, or a schema and a saved snapshot. Both definitions stand side by side, and a migration script opens in a tab as a proposal.</p>
+          <p>The app never runs that script. Every step that may lose data is commented out and marked.</p>
+        </div>
+        <figure class="win scene">
+          <div class="win-bar"><i></i><i></i><i></i><span>staging → production</span></div>
+          <pre class="code"><span><span class="k">ALTER TABLE</span> orders <span class="k">ADD COLUMN</span> channel <span class="i">text</span>;</span><span><span class="k">CREATE INDEX</span> orders_placed_idx <span class="k">ON</span> orders (placed_at);</span><span><span class="c">-- DANGER: drops the column and its data</span></span><span><span class="c">-- ALTER TABLE customers DROP COLUMN fax;</span></span></pre>
+          <div class="bar-line"><span class="pill ok">+ 2</span><span class="pill warn">≠ 3</span><span class="pill bad">− 1</span><span>6 differences in 4 tables</span></div>
+        </figure>
+      </article>
+
+      <div class="minis">
+        <article class="card reveal"><span class="glyph">tree</span><h3>Schema tree</h3><p>Schemas, tables, views, routines of the active connection, with a filter and actions on every node. Names are quoted the way the database wants them.</p></article>
+        <article class="card reveal" style="--d:1"><span class="glyph">DDL</span><h3>Object details</h3><p>Columns, indexes, constraints, relations, privileges, statistics, and the DDL to read, copy or open in a tab.</p></article>
+        <article class="card reveal" style="--d:2"><span class="glyph">ER</span><h3>ER diagram</h3><p>A schema or a table with its neighbours, arranged by itself. Export as SVG, Mermaid or DBML.</p></article>
+        <article class="card reveal"><span class="glyph">grep</span><h3>Search on the server</h3><p>Where does a text stand? In the rows of all tables, with limits, and in the definitions of views, routines, triggers, checks and defaults.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────── 5 operate ───────── -->
+  <section id="operate">
+    <div class="wrap">
+      <header class="group-head">
+        <p class="eyebrow reveal"><b class="kw kw-ident">GRANT</b> chapter 5 · operate</p>
+        <h2 class="h2 split">The server, not only its tables.</h2>
+        <p class="lead reveal">Who is connected, who may do what, and a copy before you change anything.</p>
+      </header>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>Server monitor</h3>
+          <p class="tagline">Sessions, running statements, who blocks whom.</p>
+          <p>Reads again on a beat. Cancel a statement or end a session after a question. Statements of other people are shown and nothing more: they never reach the history or a log.</p>
+        </div>
+        <figure class="win scene">
+          <div class="win-bar"><i></i><i></i><i></i><span>shop-live · monitor</span></div>
+          <table class="grid">
+            <thead><tr><th class="num">pid<small>int4</small></th><th>user<small>name</small></th><th>state<small>text</small></th><th class="num">seconds</th><th>blocked by</th></tr></thead>
+            <tbody>
+              <tr><td class="num">8812</td><td>report</td><td>active</td><td class="num">184</td><td class="null">–</td></tr>
+              <tr><td class="num">9120</td><td>app</td><td>waiting</td><td class="num">41</td><td class="fk">8812</td></tr>
+              <tr><td class="num">9133</td><td>app</td><td>waiting</td><td class="num">12</td><td class="fk">9120</td></tr>
+              <tr><td class="num">9140</td><td>marc</td><td>idle</td><td class="num">0</td><td class="null">–</td></tr>
+            </tbody>
+          </table>
+          <div class="bar-line" style="border-bottom:0"><b>4 sessions</b><span>1 active · 2 waiting</span><span class="pill warn">Cancel statement …</span></div>
+        </figure>
+      </article>
+
+      <article class="feature reveal">
+        <div class="text">
+          <h3>Users and rights</h3>
+          <p class="tagline">What each may do, and through which role.</p>
+          <p>Users, roles and memberships, a matrix of tables × rights. Changes are collected and shown as statements, with what is dangerous marked, and run after a question.</p>
+          <p>A password is never shown: not in the preview, not in the history, not in a log. PostgreSQL gets a SCRAM verifier instead of the password itself.</p>
+        </div>
+        <figure class="win scene">
+          <div class="win-bar"><i></i><i></i><i></i><span>shop · rights of “report”</span></div>
+          <table class="grid">
+            <thead><tr><th>table</th><th>SELECT</th><th>INSERT</th><th>UPDATE</th><th>DELETE</th></tr></thead>
+            <tbody>
+              <tr><td>customers</td><td class="yes">✓ via readers</td><td class="no">–</td><td class="no">–</td><td class="no">–</td></tr>
+              <tr><td>orders</td><td class="yes">✓ via readers</td><td class="no">–</td><td class="no">–</td><td class="no">–</td></tr>
+              <tr><td>report_runs</td><td class="yes">✓</td><td class="chg">✓ new</td><td class="no">–</td><td class="no">–</td></tr>
+            </tbody>
+          </table>
+          <pre class="code" style="border-top:1px solid var(--border)"><span><span class="k">GRANT INSERT ON</span> report_runs <span class="k">TO</span> report;</span></pre>
+        </figure>
+      </article>
+
+      <div class="minis">
+        <article class="card reveal"><span class="glyph">pg_dump · mysqldump</span><h3>Back up and restore</h3><p>With the tools of the database, found on the machine and started without a shell; the password is never an argument. A SQLite file is copied; a simple SQL export works without tools.</p></article>
+        <article class="card reveal" style="--d:1"><span class="glyph">free · ask · read only</span><h3>Protection</h3><p>A level per connection. Statements are classified as reading, writing, DDL or dangerous in the backend, which also puts the question.</p></article>
+        <article class="card reveal" style="--d:2"><span class="glyph">MCP</span><h3>AI control</h3><p>Off by default. An assistant reads the structure, runs reading queries and proposes the rest. <a href="ai.html">How it works</a></p></article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────── 6 the app ───────── -->
+  <section id="app">
+    <div class="wrap">
+      <header class="group-head">
+        <p class="eyebrow reveal"><b class="kw kw-str">SET</b> chapter 6 · the app</p>
+        <h2 class="h2 split">Yours to arrange.</h2>
+        <p class="lead reveal">Shortcuts, colours, language and layout are settings, and they survive a restart.</p>
+      </header>
+      <div class="minis" style="margin-top:0">
+        <article class="card reveal"><span class="glyph">⇧⌘P</span><h3>Command palette</h3><p>Every function is an action with a name. The palette finds it, the menu shows it with its current shortcut.</p></article>
+        <article class="card reveal" style="--d:1"><span class="glyph">⌘K ⌘S</span><h3>Your shortcuts</h3><p>A keymap per system and an editor for your own keys, with chords. <a href="keyboard.html">The defaults</a></p></article>
+        <article class="card reveal" style="--d:2"><span class="glyph">17 + yours</span><h3>Colour schemes</h3><p>Fixed or following the system. A live editor for every colour with contrast hints, import and export.</p></article>
+        <article class="card reveal"><span class="glyph">EN · DE</span><h3>Two languages</h3><p>English and German, switched while the app runs.</p></article>
+        <article class="card reveal" style="--d:1"><span class="glyph">⌘,</span><h3>Settings</h3><p>One dialog with search, reset per value, export and import.</p></article>
+        <article class="card reveal" style="--d:2"><span class="glyph">menu</span><h3>Menus</h3><p>A native menu bar on macOS, one drawn by the window elsewhere, and context menus. All made of the same actions.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta sec-line" id="get">
+    <div class="wrap">
+      <p class="prompt reveal">SELECT * FROM your_database;</p>
+      <h2 class="h2 split">Run it.</h2>
+      <div class="actions reveal">
+        <a class="btn btn-primary" href="https://github.com/krocon/schema-commander/releases">Download from GitHub</a>
+        <a class="btn btn-ghost" href="databases.html">Databases</a>
+      </div>
+      <p class="note reveal">Free and open source under the MIT license. The packages are not signed yet.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <ul>
+      <li><a href="https://github.com/krocon/schema-commander">Source on GitHub</a></li>
+      <li><a href="https://github.com/krocon/schema-commander/issues">Report a problem</a></li>
+      <li><a href="https://github.com/krocon/schema-commander/blob/main/LICENSE">MIT license</a></li>
+      <li><a href="https://krocon.de">Imprint and privacy (krocon.de)</a></li>
+    </ul>
+    <p>© Marc Kronberg. This page sets no cookies and loads nothing from other servers.</p>
+  </div>
+</footer>
+</body>
+</html>
