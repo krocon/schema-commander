@@ -1,0 +1,102 @@
+{
+  "postgres": {
+    "database": ["CONNECT", "CREATE", "TEMPORARY", "ALL"],
+    "schema": ["USAGE", "CREATE", "ALL"],
+    "table": ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER", "ALL"],
+    "column": ["SELECT", "INSERT", "UPDATE", "REFERENCES"],
+    "sequence": ["USAGE", "SELECT", "UPDATE", "ALL"]
+  },
+  "mysql": {
+    "server": [
+      "SELECT",
+      "INSERT",
+      "UPDATE",
+      "DELETE",
+      "CREATE",
+      "DROP",
+      "ALTER",
+      "INDEX",
+      "REFERENCES",
+      "CREATE VIEW",
+      "SHOW VIEW",
+      "TRIGGER",
+      "EXECUTE",
+      "CREATE USER",
+      "PROCESS",
+      "RELOAD",
+      "SHOW DATABASES",
+      "ALL"
+    ],
+    "schema": [
+      "SELECT",
+      "INSERT",
+      "UPDATE",
+      "DELETE",
+      "CREATE",
+      "DROP",
+      "ALTER",
+      "INDEX",
+      "REFERENCES",
+      "CREATE VIEW",
+      "SHOW VIEW",
+      "TRIGGER",
+      "EXECUTE",
+      "ALL"
+    ],
+    "table": [
+      "SELECT",
+      "INSERT",
+      "UPDATE",
+      "DELETE",
+      "CREATE",
+      "DROP",
+      "ALTER",
+      "INDEX",
+      "REFERENCES",
+      "CREATE VIEW",
+      "SHOW VIEW",
+      "TRIGGER",
+      "ALL"
+    ],
+    "column": ["SELECT", "INSERT", "UPDATE", "REFERENCES"]
+  },
+  "sqlserver": {
+    "database": [
+      "CONNECT",
+      "SELECT",
+      "INSERT",
+      "UPDATE",
+      "DELETE",
+      "EXECUTE",
+      "CREATE TABLE",
+      "CREATE VIEW",
+      "CREATE PROCEDURE",
+      "ALTER",
+      "VIEW DEFINITION",
+      "CONTROL"
+    ],
+    "schema": [
+      "SELECT",
+      "INSERT",
+      "UPDATE",
+      "DELETE",
+      "EXECUTE",
+      "REFERENCES",
+      "ALTER",
+      "VIEW DEFINITION",
+      "CONTROL"
+    ],
+    "table": [
+      "SELECT",
+      "INSERT",
+      "UPDATE",
+      "DELETE",
+      "EXECUTE",
+      "REFERENCES",
+      "ALTER",
+      "VIEW DEFINITION",
+      "CONTROL"
+    ],
+    "column": ["SELECT", "UPDATE", "REFERENCES"]
+  }
+}

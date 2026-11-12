@@ -1,3 +1,11 @@
+import {
+  Access,
+  AccessApi,
+  AccessChange,
+  AccessPlan,
+  GrantList,
+  Who,
+} from '../app/core/access/access-api';
 import { MonitorApi, ServerActivity } from '../app/core/monitor/monitor-api';
 import {
   TransferApi,
@@ -2188,5 +2196,116 @@ export class FakeMonitorApi extends MonitorApi {
   close(connectionId: string): Promise<void> {
     this.closes.push(connectionId);
     return Promise.resolve();
+  }
+}
+
+/** Users, roles and rights (prompt 047): a list and grants a test sets; plans are written like PostgreSQL. */
+export class FakeAccessApi extends AccessApi {
+  access: Access = {
+    principals: [
+      {
+        who: { name: 'admin', host: '' },
+        label: 'admin',
+        login: true,
+        attributes: ['superuser'],
+        memberOf: [],
+        superuser: true,
+        me: true,
+      },
+      {
+        who: { name: 'ann', host: '' },
+        label: 'ann',
+        login: true,
+        attributes: [],
+        memberOf: ['readers'],
+        superuser: false,
+        me: false,
+      },
+      {
+        who: { name: 'readers', host: '' },
+        label: 'readers',
+        login: false,
+        attributes: [],
+        memberOf: [],
+        superuser: false,
+        me: false,
+      },
+    ],
+    me: 'admin',
+    canManage: true,
+    missing: [],
+  };
+  grantsOf: Record<string, GrantList> = {};
+  failPlan: unknown = null;
+  ran: StructRan = { done: 0, failed: null, error: null, transactional: true, rolledBack: false };
+  hidesPassword = true;
+  readonly plans: AccessChange[][] = [];
+  readonly applied: {
+    changes: readonly AccessChange[];
+    passwords: readonly (string | null)[];
+    confirmations: readonly (string | null)[];
+  }[] = [];
+  readonly scripts: Who[] = [];
+
+  list(): Promise<Access> {
+    return Promise.resolve(this.access);
+  }
+
+  grants(_connectionId: string, who: Who): Promise<GrantList> {
+    return Promise.resolve(this.grantsOf[who.name] ?? { grants: [], cut: false, missing: [] });
+  }
+
+  plan(_connectionId: string, changes: readonly AccessChange[]): Promise<AccessPlan> {
+    this.plans.push([...changes]);
+    if (this.failPlan) return Promise.reject(this.failPlan);
+    return Promise.resolve({
+      steps: changes.map((c, change) => ({
+        sql: fakeAccessSql(c),
+        dangers:
+          c.op === 'drop' ? ['drop'] : c.op === 'grant' && c.privilege === 'ALL' ? ['all'] : [],
+        change,
+        secret: c.op === 'password' || (c.op === 'create' && c.password),
+      })),
+      transactional: true,
+      hidesPassword: this.hidesPassword,
+    });
+  }
+
+  script(_connectionId: string, who: Who): Promise<string> {
+    this.scripts.push(who);
+    return Promise.resolve(`GRANT SELECT ON TABLE "public"."orders" TO "${who.name}";\n`);
+  }
+
+  apply(
+    _connectionId: string,
+    changes: readonly AccessChange[],
+    passwords: readonly (string | null)[],
+    confirmations: readonly (string | null)[],
+  ): Promise<StructRan> {
+    this.applied.push({ changes, passwords, confirmations });
+    return Promise.resolve(
+      this.ran.failed === null ? { ...this.ran, done: changes.length } : this.ran,
+    );
+  }
+}
+
+function fakeAccessSql(c: AccessChange): string {
+  switch (c.op) {
+    case 'create':
+      return `CREATE ROLE "${c.who.name}"${c.login ? ' LOGIN' : ''}${c.password ? " PASSWORD '***'" : ''}`;
+    case 'drop':
+      return `DROP ROLE "${c.who.name}"`;
+    case 'password':
+      return `ALTER ROLE "${c.who.name}" PASSWORD '***'`;
+    case 'attribute':
+      return `ALTER ROLE "${c.who.name}" ${c.on ? '' : 'NO'}${c.attribute.toUpperCase()}`;
+    case 'member':
+      return c.add
+        ? `GRANT "${c.role.name}" TO "${c.member.name}"`
+        : `REVOKE "${c.role.name}" FROM "${c.member.name}"`;
+    case 'grant':
+      return c.add
+        ? `GRANT ${c.privilege} ON TABLE "${c.schema}"."${c.object}" TO "${c.who.name}"`
+        : `REVOKE ${c.privilege} ON TABLE "${c.schema}"."${c.object}" FROM "${c.who.name}"`;
   }
 }

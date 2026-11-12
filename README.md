@@ -71,6 +71,9 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   commented out
 - ER diagram of a schema, or of a table with its neighbours: arranged by itself, tables can be moved, zoom,
   search, three levels of detail; the same as lists beside it; export as SVG, Mermaid or DBML
+- Users and rights: users, roles and memberships, what each may do and through which role, a matrix of
+  tables × rights; changes are collected, shown as statements with what is dangerous marked, and run after
+  asking – a password is never shown, never in the history
 - Server monitor: sessions and running statements, who blocks whom, a few figures; reads again on a beat,
   cancels a statement or ends a session after asking
 - Search on the server (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>G</kbd>): where does a text stand – in the rows of all tables (one

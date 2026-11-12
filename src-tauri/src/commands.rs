@@ -1074,6 +1074,140 @@ pub fn monitor_close(manager: State<'_, ConnectionManager>, id: String) {
     manager.close_session(&id, MONITOR_SESSION);
 }
 
+// ── Users, roles and rights (prompt 047) ─────────────────────────────────────────────────
+
+/// The users and roles of a connection.
+#[tauri::command(async)]
+pub fn access_list(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+) -> AppResult<crate::db::access::Access> {
+    manager.ask(&id, crate::db::access::principals)
+}
+
+/// What a user or role may do, with where each right comes from.
+#[tauri::command(async)]
+pub fn access_grants(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    who: crate::db::access::Who,
+) -> AppResult<crate::db::access::GrantList> {
+    manager.ask(&id, |session, kind, stop| {
+        crate::db::access::grants(session, kind, &who, stop)
+    })
+}
+
+/// The statements of changes as they are shown: a password in them is masked.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessPlan {
+    steps: Vec<crate::db::access::Step>,
+    transactional: bool,
+    /// The server never sees a password (PostgreSQL: a verifier is sent); otherwise it may log it.
+    hides_password: bool,
+}
+
+#[tauri::command(async)]
+pub fn access_plan(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    changes: Vec<crate::db::access::Change>,
+) -> AppResult<AccessPlan> {
+    use crate::db::access;
+    manager.ask(&id, |session, kind, stop| {
+        let cx = access::context(session, kind, stop)?;
+        Ok(AccessPlan {
+            steps: access::plan(kind, &changes, &cx)?,
+            transactional: access::transactional(kind, cx.flavor),
+            hides_password: access::hides_password(kind, cx.flavor),
+        })
+    })
+}
+
+/// The rights a principal holds itself, as a script of `GRANT`s.
+#[tauri::command(async)]
+pub fn access_script(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    who: crate::db::access::Who,
+) -> AppResult<String> {
+    use crate::db::access;
+    manager.ask(&id, |session, kind, stop| {
+        let cx = access::context(session, kind, stop)?;
+        let list = access::grants(session, kind, &who, stop)?;
+        access::script(kind, &who, &list.grants, &cx)
+    })
+}
+
+/// Runs changes to users, roles and rights. The statements are written here from the changes – the
+/// window never sends SQL –, each passes the guard in the form that is shown (a password masked), and
+/// they run on a session of their own. `passwords[i]` belongs to `changes[i]`: it stands in the statement
+/// only while it runs, is wiped afterwards, and no error brings it back.
+#[tauri::command(async)]
+pub fn access_apply(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    changes: Vec<crate::db::access::Change>,
+    passwords: Vec<Option<crate::db::secrets::Secret>>,
+    confirmations: Option<Vec<Option<String>>>,
+    allow_dangerous: bool,
+) -> AppResult<crate::db::structure::Ran> {
+    use crate::db::access;
+    const SESSION: &str = "sc-access";
+    let shown = manager.ask(&id, |session, kind, stop| {
+        let cx = access::context(session, kind, stop)?;
+        access::plan(kind, &changes, &cx)
+    })?;
+    let tokens = confirmations.unwrap_or_default();
+    // all of them are admitted before the first one runs: a refusal leaves nothing half done
+    for (i, step) in shown.iter().enumerate() {
+        let token = tokens.get(i).and_then(|t| t.as_deref());
+        manager.admit(&id, &step.sql, token, allow_dangerous)?;
+    }
+    let ran = manager.ask_in(&id, SESSION, |session, kind, stop| {
+        // what the literals depend on (`sql_mode`) is read on the session that runs them; and what
+        // runs must be what was shown and admitted (review 047 L6)
+        let here = access::context(session, kind, stop)?;
+        let again = access::plan(kind, &changes, &here)?;
+        if again != shown {
+            return Err(AppError::new(
+                ErrorCode::Unsupported,
+                "the statements changed since they were shown: look at them again",
+            ));
+        }
+        let real = access::statements(kind, &changes, &passwords, &here, &access::random_salt)?;
+        let ran = crate::db::structure::run(
+            session,
+            kind,
+            &real,
+            access::transactional(kind, here.flavor),
+            Some(std::time::Duration::from_secs(60)),
+            stop,
+        );
+        match ran {
+            Ok(mut ran) => {
+                let carried = ran
+                    .failed
+                    .and_then(|i| shown.get(i))
+                    .is_some_and(|s| s.secret);
+                ran.error = ran
+                    .error
+                    .map(|e| access::scrubbed(e, carried, &real, &passwords));
+                Ok(ran)
+            }
+            // begin or commit failed: which statement it was is not known
+            Err(e) => Err(access::scrubbed(
+                e,
+                passwords.iter().any(Option::is_some),
+                &real,
+                &passwords,
+            )),
+        }
+    });
+    manager.close_session(&id, SESSION);
+    ran
+}
+
 // ── Copying tables between connections (prompt 045) ──────────────────────────────────────────
 
 fn transfer_plan_of(

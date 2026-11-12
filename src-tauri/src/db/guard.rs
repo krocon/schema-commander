@@ -666,6 +666,13 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
         }
     }
 
+    if class == Class::Ddl
+        && matches!(start, "CREATE" | "ALTER")
+        && matches!(words.get(1).copied(), Some("ROLE" | "USER" | "LOGIN"))
+    {
+        // who may log in and what a role is: it gives away like a GRANT does (review 047 M1)
+        class = Class::Dangerous;
+    }
     if class < Class::Dangerous && has(DANGEROUS_WORDS) {
         // ALTER … DROP …, a batch that also drops
         class = Class::Dangerous;
@@ -946,6 +953,11 @@ mod tests {
         ("drop   view v", Dangerous),
         ("ALTER TABLE t DROP COLUMN a", Dangerous),
         ("GRANT ALL ON t TO PUBLIC", Dangerous),
+        ("ALTER ROLE bob SUPERUSER", Dangerous),
+        ("CREATE USER 'a'@'%' IDENTIFIED BY '***'", Dangerous),
+        ("ALTER LOGIN [a] WITH PASSWORD = '***'", Dangerous),
+        ("alter role [db_owner] add member [bob]", Dangerous),
+        ("CREATE ROLE readers", Dangerous),
         ("REVOKE ALL ON t FROM PUBLIC", Dangerous),
         ("SELECT 1; DROP TABLE t", Dangerous),
         ("EXPLAIN ANALYZE DELETE FROM t", Dangerous),

@@ -5138,3 +5138,236 @@ fn sessions_that_block_each_other_are_seen_and_can_be_ended() {
         run(&mut setup, &format!("DROP TABLE {table}"));
     }
 }
+
+/// Prompt 047: what is shown as the rights of a user is what the user can do – granted directly and
+/// through a role –, a password that was set logs in, and what is taken away is gone.
+#[test]
+#[ignore = "needs the test servers: sh scripts/db-test-servers.sh up"]
+fn rights_are_read_as_they_work() {
+    use schema_commander_lib::db::access::{self, Change, Who};
+    use schema_commander_lib::db::structure;
+    for (p, product) in [
+        (pg(), "postgres"),
+        (my(), "mysql"),
+        (maria(), "mariadb"),
+        (ms(), "sqlserver"),
+    ] {
+        let kind = p.kind;
+        let mut admin = open(&p);
+        let maria = product == "mariadb";
+        let (schema, table) = match kind {
+            DbKind::Mysql => ("shop", "shop.sc_acc_t"),
+            DbKind::Sqlserver => ("dbo", "dbo.sc_acc_t"),
+            _ => ("public", "public.sc_acc_t"),
+        };
+        let host = if kind == DbKind::Mysql { "%" } else { "" };
+        let ann = Who::new("sc_acc_ann", host);
+        let readers = Who::new("sc_acc_readers", if maria { "" } else { host });
+        run(&mut admin, &format!("DROP TABLE IF EXISTS {table}"));
+        // what an earlier run may have left
+        for sql in [
+            "DROP USER sc_acc_ann",
+            "DROP USER 'sc_acc_ann'@'%'",
+            "DROP ROLE sc_acc_ann",
+            "DROP LOGIN sc_acc_ann",
+            "DROP ROLE sc_acc_readers",
+        ] {
+            try_run(&mut admin, sql);
+        }
+        run(&mut admin, &format!("CREATE TABLE {table} (id int)"));
+        run(&mut admin, &format!("INSERT INTO {table} VALUES (1)"));
+
+        let cx = access::context(admin.as_mut(), kind, &|| false).unwrap();
+        let apply = |s: &mut Box<dyn Session>, changes: &[Change], password: Option<&str>| {
+            let passwords: Vec<Option<Secret>> =
+                changes.iter().map(|_| password.map(Secret::new)).collect();
+            let real =
+                access::statements(kind, changes, &passwords, &cx, &access::random_salt).unwrap();
+            let ran = structure::run(
+                s.as_mut(),
+                kind,
+                &real,
+                access::transactional(kind, cx.flavor),
+                None,
+                &|| false,
+            )
+            .unwrap();
+            let shown = access::plan(kind, changes, &cx).unwrap();
+            assert_eq!(
+                ran.error,
+                None,
+                "{product}: {:?}",
+                ran.failed.map(|i| &shown[i].sql)
+            );
+        };
+        let grant = |who: &Who, privilege: &str, add: bool| Change::Grant {
+            who: who.clone(),
+            level: "table".into(),
+            schema: schema.into(),
+            object: "sc_acc_t".into(),
+            column: String::new(),
+            privilege: privilege.into(),
+            grantable: false,
+            add,
+        };
+        let first = "Sc-acc-047!x'y";
+        apply(
+            &mut admin,
+            &[
+                Change::Create {
+                    who: readers.clone(),
+                    login: false,
+                    password: false,
+                },
+                Change::Create {
+                    who: ann.clone(),
+                    login: true,
+                    password: true,
+                },
+                Change::Member {
+                    role: readers.clone(),
+                    member: ann.clone(),
+                    add: true,
+                },
+                grant(&readers, "SELECT", true),
+                grant(&ann, "INSERT", true),
+            ],
+            Some(first),
+        );
+
+        // who there is
+        let list = access::principals(admin.as_mut(), kind, &|| false).unwrap();
+        assert!(list.can_manage, "{product}");
+        assert!(list.missing.is_empty(), "{product}: {:?}", list.missing);
+        let user = list
+            .principals
+            .iter()
+            .find(|x| x.who == ann)
+            .unwrap_or_else(|| panic!("{product}: no user in {:?}", list.principals));
+        assert!(user.login, "{product}");
+        assert_eq!(user.member_of, [readers.label()], "{product}");
+        let role = list.principals.iter().find(|x| x.who == readers).unwrap();
+        assert!(!role.login, "{product}: {role:?}");
+        assert!(
+            list.principals.iter().any(|x| x.me),
+            "{product}: {}",
+            list.me
+        );
+
+        // what it may do, and through whom
+        let held = |s: &mut Box<dyn Session>| -> Vec<(String, String)> {
+            access::grants(s.as_mut(), kind, &ann, &|| false)
+                .unwrap_or_else(|e| panic!("{product}: {e}"))
+                .grants
+                .into_iter()
+                .filter(|g| g.object == "sc_acc_t")
+                .map(|g| (g.privilege, g.via))
+                .collect()
+        };
+        let got = held(&mut admin);
+        assert!(
+            got.contains(&("INSERT".into(), String::new())),
+            "{product}: {got:?}"
+        );
+        assert!(
+            got.contains(&("SELECT".into(), readers.label())),
+            "{product}: {got:?}"
+        );
+        assert!(
+            !got.iter().any(|(p, _)| p == "DELETE"),
+            "{product}: {got:?}"
+        );
+        let list = access::grants(admin.as_mut(), kind, &ann, &|| false).unwrap();
+        let script = access::script(kind, &ann, &list.grants, &cx).unwrap();
+        assert!(script.contains("GRANT INSERT ON"), "{product}: {script}");
+        assert!(!script.contains("SELECT"), "{product}: {script}");
+
+        // … and it is so: logged in as the user, with the password that was set
+        let as_ann = |password: &str| -> Result<Box<dyn Session>, _> {
+            let mut me = p.clone();
+            me.user = "sc_acc_ann".into();
+            // MySQL lets nobody into a database it has no right in, and a role counts only once active
+            if kind == DbKind::Mysql {
+                me.database = String::new();
+            }
+            connect(&me, Some(&Secret::new(password)), &|| false)
+        };
+        let mut session = as_ann(first).unwrap_or_else(|e| panic!("{product}: {e}"));
+        if kind == DbKind::Mysql {
+            // a role of MySQL counts only once it is active
+            let role = if maria {
+                "SET ROLE sc_acc_readers"
+            } else {
+                "SET ROLE ALL"
+            };
+            run(&mut session, role);
+        }
+        assert!(
+            try_run(&mut session, &format!("SELECT * FROM {table}")),
+            "{product}"
+        );
+        assert!(
+            try_run(&mut session, &format!("INSERT INTO {table} VALUES (2)")),
+            "{product}"
+        );
+        assert!(
+            !try_run(&mut session, &format!("DELETE FROM {table}")),
+            "{product}"
+        );
+        // without rights to manage, the user still reads what it may see – and may change nothing
+        let seen = access::principals(session.as_mut(), kind, &|| false).unwrap();
+        assert!(!seen.can_manage, "{product}");
+        assert!(seen.principals.iter().any(|x| x.me), "{product}: {seen:?}");
+        drop(session);
+
+        // taken away is gone; a new password replaces the old one
+        apply(&mut admin, &[grant(&ann, "INSERT", false)], None);
+        assert!(
+            !held(&mut admin).iter().any(|(p, _)| p == "INSERT"),
+            "{product}"
+        );
+        let second = "Zweites-047!pw";
+        apply(
+            &mut admin,
+            &[Change::Password { who: ann.clone() }],
+            Some(second),
+        );
+        assert!(
+            as_ann(first).is_err(),
+            "{product}: the old password still logs in"
+        );
+        let mut session = as_ann(second).unwrap_or_else(|e| panic!("{product}: {e}"));
+        assert!(
+            !try_run(&mut session, &format!("INSERT INTO {table} VALUES (3)")),
+            "{product}"
+        );
+        drop(session);
+
+        // PostgreSQL drops no role that still holds a right
+        apply(
+            &mut admin,
+            &[
+                grant(&readers, "SELECT", false),
+                Change::Drop {
+                    who: ann.clone(),
+                    role: false,
+                },
+                Change::Drop {
+                    who: readers.clone(),
+                    role: true,
+                },
+            ],
+            None,
+        );
+        try_run(&mut admin, "DROP LOGIN sc_acc_ann");
+        let list = access::principals(admin.as_mut(), kind, &|| false).unwrap();
+        assert!(
+            !list
+                .principals
+                .iter()
+                .any(|x| x.who == ann || x.who == readers),
+            "{product}"
+        );
+        run(&mut admin, &format!("DROP TABLE {table}"));
+    }
+}
