@@ -191,7 +191,7 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                 // ClickHouse takes it as an escape inside backticks too (review 035d 2)
                 if chars[i] == '\\'
                     && (quote != '`' || kind == DbKind::Clickhouse)
-                    && kind != DbKind::Oracle
+                    && !matches!(kind, DbKind::Oracle | DbKind::Trino)
                     && i + 1 < n
                 {
                     if chars[i + 1] == quote || chars[i + 1] == '\\' {
@@ -732,6 +732,16 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
         // who may log in and what a role is: it gives away like a GRANT does (review 047 M1)
         class = Class::Dangerous;
     }
+    if kind == DbKind::Trino
+        && class == Class::Read
+        && toks
+            .windows(2)
+            .any(|w| matches!(&w[0], Tok::Word(name) if name == "TABLE") && w[1] == Tok::Open)
+    {
+        // `TABLE(catalog.system.query(query => '…'))` hands a text to the database behind a catalog:
+        // what it does there nobody reads here
+        class = Class::Write;
+    }
     if kind == DbKind::Clickhouse && class == Class::Read && reaches_out(toks) {
         // a table function that reads files of the server or calls another one: no plain reading
         class = Class::Write;
@@ -969,6 +979,9 @@ pub fn read_only_statement(kind: DbKind) -> Option<&'static str> {
         // kept by the session of the server; once set it cannot be taken back there
         // (1, not 2: with 2 an INSERT INTO FUNCTION file(…) still writes)
         DbKind::Clickhouse => Some("SET readonly = 1"),
+        // no statement that holds: the driver keeps the session inside a read-only transaction
+        // (`Session::make_read_only`, see trino.rs)
+        DbKind::Trino => None,
     }
 }
 
@@ -977,7 +990,7 @@ mod tests {
     use super::*;
     use Class::{Dangerous, Ddl, Read, Write};
 
-    const ALL: [DbKind; 7] = [
+    const ALL: [DbKind; 8] = [
         DbKind::Postgres,
         DbKind::Mysql,
         DbKind::Sqlserver,
@@ -985,7 +998,43 @@ mod tests {
         DbKind::Oracle,
         DbKind::Duckdb,
         DbKind::Clickhouse,
+        DbKind::Trino,
     ];
+
+    /// Trino (prompt 035f).
+    #[test]
+    fn trino_reads_until_a_statement_reaches_through_a_catalog() {
+        let k = DbKind::Trino;
+        assert_eq!(classify("SELECT count(*) FROM tpch.tiny.orders", k), Read);
+        assert_eq!(classify("SHOW CATALOGS", k), Read);
+        assert_eq!(classify("EXPLAIN SELECT 1", k), Read);
+        assert_eq!(classify("INSERT INTO t VALUES (1)", k), Write);
+        assert_eq!(classify("CREATE TABLE t AS SELECT 1 AS a", k), Ddl);
+        assert_eq!(classify("DROP TABLE t", k), Dangerous);
+        // a text handed to the database behind a catalog: nobody reads here what it does there
+        assert_eq!(
+            classify(
+                "SELECT * FROM TABLE(pg.system.query(query => 'DELETE FROM t RETURNING 1'))",
+                k
+            ),
+            Write
+        );
+        assert_eq!(classify("SELECT * FROM TABLE (sequence(1, 3))", k), Write);
+        assert_eq!(classify("SELECT \"table\" FROM t", k), Read);
+        // a statement in a text, a procedure of the server: never plain reading
+        assert_ne!(classify("EXECUTE IMMEDIATE 'DROP TABLE t'", k), Read);
+        assert_ne!(
+            classify(
+                "CALL system.runtime.kill_query(query_id => 'x', message => 'y')",
+                k
+            ),
+            Read
+        );
+        assert_eq!(read_only_statement(k), None);
+        assert!(is_transaction_control("START TRANSACTION READ ONLY", k));
+        // a backslash is a character there, as in Oracle: nothing ambiguous about it
+        assert_eq!(classify("SELECT 'C:\\', 'a\\' FROM t", k), Read);
+    }
 
     /// ClickHouse (prompt 035d).
     #[test]

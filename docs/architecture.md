@@ -90,12 +90,13 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 | A70 | ClickHouse über seine **HTTP-Schnittstelle** mit `ureq` (MIT/Apache-2.0; stand schon im Baum, jetzt direkt, mit rustls und ring): Der offizielle Rust-Client liest typisierte Zeilen, ein SQL-Client braucht beliebige. Ergebnisse als Textzeilen (`TabSeparatedWithNamesAndTypes`) – verlustfrei und ohne Einstellungen, die eine nur lesende Sitzung nicht ändern dürfte. Was Transaktionen braucht (Zeilen bearbeiten, Import, Kopieren), bietet die App für ClickHouse nicht an (Flag `edit`) | Design 035d E1, E2, E5 |
 | A34 | Texte in typisierten Katalogen (Englisch Quelle, Deutsch typgeprüft), Sprache als Signal, Wechsel zur Laufzeit; `pnpm texts` hält Texte aus Templates und Deutsch aus dem Code. Ersetzt A10 | Design 017 E1–E6 |
 | A35 | Einstellungen bleiben ein flaches, je Wert geprüftes Objekt; der Dialog hat ein eigenes Schema, ein Test hält beide zusammen. Keine Formularschicht: jede Änderung wirkt sofort | Design 017 E8, E9 |
+| A71 | Trino und Presto über ihr **HTTP-Protokoll** (`/v1/statement`) mit `ureq`: Antwort seitenweise, Abbruch durch Löschen der nächsten Seite, Sitzung aus den Kopfzeilen des Servers. Das Protokoll bindet keine Werte: Eine Anweisung mit Werten wird vorbereitet und mit Literalen ausgeführt, die der Treiber selbst schreibt und prüft (wie der JDBC-Treiber). Von `nextUri` gilt nur der Pfad – gefragt wird immer der Server des Profils. Was die HTTP-Treiber teilen, liegt in `db/http.rs`. Neue direkte Abhängigkeit `base64` (MIT/Apache-2.0, stand schon im Baum): `varbinary` und Basic-Auth | Design 035f |
 
 ## Offene Architekturfragen (entscheidet der jeweilige Prompt)
 
 - **Treiber**: entschieden und umgesetzt (Design 003); CockroachDB, TimescaleDB und YugabyteDB über den PostgreSQL-Treiber
   (Design 035a); Oracle mit eigenem Treiber (Design 035b); DuckDB eingebettet (Design 035c); ClickHouse über
-  HTTP (Design 035d); weitere bleiben mit Prompt 035 offen (Reihenfolge dort).
+  HTTP (Design 035d); Trino/Presto über HTTP (Design 035f); weitere bleiben mit Prompt 035 offen (Reihenfolge dort).
 - **Große Ergebnisse**: entschieden und umgesetzt (Design 006).
 - **Vervollständigung**: Schema-Metadaten in Rust zwischenspeichern; der Editor braucht dafür eine Schnittstelle für
   Vorschläge von außen (Erweiterung in editlicious).

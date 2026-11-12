@@ -16,6 +16,8 @@ export const CONNECTION_DIALOG_EN = {
   serverDefault: '(server default)',
   serviceName: 'Service name',
   serviceExample: 'for example FREEPDB1 or ORCLPDB1',
+  catalogName: 'Catalog',
+  catalogExample: 'for example hive, iceberg or postgresql',
   user: 'User',
   password: 'Password',
   unchanged: '(unchanged)',
@@ -82,6 +84,7 @@ export const CONNECTION_DIALOG_EN = {
   portRange: 'The port is between 1 and 65535.',
   fileMissing: 'Please choose a file.',
   serviceMissing: 'Oracle needs the service name of the database.',
+  catalogMissing: 'Trino needs a catalog: its schemas are what the tree shows.',
   oracleTlsChecked:
     'Oracle connections always check the certificate: choose a mode that checks it, or no TLS.',
   hostMissing: 'Please enter a host.',

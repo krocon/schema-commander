@@ -479,6 +479,7 @@ impl ConnectionManager {
     fn connect_guarded(profile: &Profile, secret: Option<&Secret>) -> AppResult<Box<dyn Session>> {
         let mut session = connect(profile, secret, &|| false)?;
         if profile.protection == Protection::Readonly
+            && !session.make_read_only()
             && let Some(sql) = guard::read_only_statement(profile.kind)
         {
             // the server refuses writes too, whatever reaches it; a connection that cannot be made read
@@ -628,7 +629,7 @@ impl ConnectionManager {
             max_rows: MAX_ROWS,
             timeout,
         };
-        if manual && profile.kind == DbKind::Clickhouse {
+        if manual && !profile.kind.edits_rows() {
             // there is nothing to open: said in words instead of a refused BEGIN (review 035d 6)
             return (
                 Err(super::not_yet(

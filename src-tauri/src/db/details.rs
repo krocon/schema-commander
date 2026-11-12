@@ -144,6 +144,7 @@ pub fn details(
         DbKind::Oracle => oracle::read(&mut r, schema, name, object)?,
         DbKind::Duckdb => duckdb::read(&mut r, schema, name, object)?,
         DbKind::Clickhouse => clickhouse::read(&mut r, schema, name)?,
+        DbKind::Trino => trino::read(&mut r, schema, name, object)?,
     };
     if ddl.is_none() {
         r.notes.push("ddl".into());
@@ -1654,6 +1655,44 @@ mod sqlite {
             .map(|row| format!("{};\n", at(row, 0).trim_end().trim_end_matches(';')))
             .collect();
         Ok(Some(statements.join("\n")))
+    }
+}
+
+mod trino {
+    use super::*;
+    use crate::db::meta::quote;
+
+    pub fn read(
+        r: &mut Reader,
+        schema: &str,
+        name: &str,
+        object: ObjectKind,
+    ) -> AppResult<Option<String>> {
+        let p = &[schema, name];
+        r.section(
+            "columns",
+            &["name", "type", "nullable", "default"],
+            "SELECT column_name, data_type, CASE is_nullable WHEN 'YES' THEN 'yes' ELSE 'no' END, \
+               column_default \
+             FROM information_schema.columns WHERE table_schema = ? AND table_name = ? \
+             ORDER BY ordinal_position",
+            p,
+        )?;
+        // the statement as the server writes it; a name cannot be bound there, it is quoted
+        let what = if object == ObjectKind::View {
+            "VIEW"
+        } else {
+            "TABLE"
+        };
+        let k = DbKind::Trino;
+        let ddl = r.text(
+            &format!("SHOW CREATE {what} {}.{}", quote(schema, k), quote(name, k)),
+            &[],
+        )?;
+        Ok(ddl
+            .map(|t| t.trim().to_owned())
+            .filter(|t| !t.is_empty())
+            .map(|t| format!("{};\n", t.trim_end_matches(';'))))
     }
 }
 

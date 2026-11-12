@@ -90,6 +90,7 @@ export function profileProblems(p: Profile): Partial<Record<Field, string>> {
     out.host = t.hostInvalid;
   }
   if (!p.user.trim()) out.user = t.userMissing;
+  if (p.kind === 'trino' && !p.database.trim()) out.database = t.catalogMissing;
   if (p.kind === 'oracle') {
     if (!p.database.trim()) out.database = t.serviceMissing;
     if (p.tls === 'prefer' || p.tls === 'require') out.tls = t.oracleTlsChecked;
@@ -126,6 +127,7 @@ export function withKind(p: Profile, kind: DbKind): Profile {
     oracle: 'system',
     duckdb: '',
     clickhouse: 'default',
+    trino: 'trino',
   };
   const usual = Object.values(users);
   return {

@@ -313,6 +313,7 @@ pub fn type_for(to: DbKind, class: Class) -> (String, Option<&'static str>) {
         },
         // only for the sake of a complete answer: `plan` refuses ClickHouse before it comes to this
         DbKind::Clickhouse => own("String"),
+        DbKind::Trino => own("varchar"),
         DbKind::Duckdb => match class {
             Class::SmallInt => own("SMALLINT"),
             Class::Int => own("INTEGER"),
@@ -574,7 +575,7 @@ pub fn plan(
     request: &Request,
 ) -> AppResult<Plan> {
     for kind in [from, to] {
-        if kind == DbKind::Clickhouse {
+        if !kind.edits_rows() {
             // a table there needs an engine and a sorting key no other database knows of
             return Err(super::not_yet(kind, "copying tables"));
         }

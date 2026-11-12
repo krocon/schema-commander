@@ -572,6 +572,14 @@ pub fn read_objects(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<
             &[],
             stop,
         )?,
+        DbKind::Trino => ask(
+            s,
+            "SELECT CASE table_type WHEN 'VIEW' THEN 'view' ELSE 'table' END, table_schema, \
+               table_name, '' \
+             FROM information_schema.tables WHERE table_schema <> 'information_schema'",
+            &[],
+            stop,
+        )?,
         DbKind::Clickhouse => ask(
             s,
             "SELECT multiIf(engine = 'MaterializedView', 'matview', engine LIKE '%View', 'view', \
@@ -682,6 +690,13 @@ pub fn read_columns(
              JOIN sys.schemas s ON s.schema_id = o.schema_id \
              JOIN sys.types t ON t.user_type_id = c.user_type_id \
              WHERE o.type IN ('U', 'V') AND o.is_ms_shipped = 0",
+            &[],
+            stop,
+        )?,
+        DbKind::Trino => ask(
+            s,
+            "SELECT table_schema, table_name, column_name, data_type FROM information_schema.columns \
+             WHERE table_schema <> 'information_schema'",
             &[],
             stop,
         )?,

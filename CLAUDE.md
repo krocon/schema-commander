@@ -67,6 +67,8 @@
   einer Datenbank (Prompt 035c);
   **ClickHouse** über HTTP zum Lesen und Auswerten: ausführen, Baum, Details, Tabellen-Ansicht, Suche – ohne
   Bearbeiten, Import und Kopieren (Prompt 035d);
+  **Trino und Presto** über HTTP zum Lesen und Auswerten, ein Profil je Katalog: ausführen, Baum, Details,
+  Tabellen-Ansicht, Suche, nur lesende Sitzung – ohne Bearbeiten, Import und Kopieren (Prompt 035f);
   **Suche auf dem Server**: ein Text in den Zeilen aller Tabellen und in Definitionen, als lesender Job (Prompt 036);
   **ER-Diagramm** eines Schemas oder einer Tabelle mit Nachbarn: eigene Anordnung, verschiebbar, Listenansicht,
   Export als SVG, Mermaid, DBML (Prompt 037);
@@ -102,7 +104,7 @@
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a–035e, 036–049),
+  erledigt: 001–034, 035a–035f, 036–049; von 035 offen: libSQL/Turso, D1, Firebird, BigQuery, Snowflake, Db2),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -122,7 +124,7 @@
 | Lizenzhinweise | `pnpm notices` (schreibt `THIRD-PARTY-NOTICES.txt`; nach jeder Änderung an Abhängigkeiten), `pnpm notices:check` |
 | Release-Notizen | `pnpm release:notes` (Conventional Commits seit dem letzten Tag); Ablauf in `docs/release.md` |
 | MCP-Sidecar | `pnpm mcp:dev` (Debug-Sidecar neben die Debug-App), `node scripts/mcp-sidecar.mjs [Ziel]` (für ein Paket, mit `--config src-tauri/tauri.sidecar.conf.json`) |
-| Treiber gegen echte Server | `sh scripts/db-test-servers.sh up` (Docker: PostgreSQL, MySQL, MariaDB, SQL Server, CockroachDB, TimescaleDB, Oracle Free, ClickHouse auf 127.0.0.1; `SC_DBTEST_ORACLE=0` lässt Oracle weg, `SC_DBTEST_YUGABYTE=1` nimmt YugabyteDB dazu), `pnpm rust:test:db`, danach `sh scripts/db-test-servers.sh down` |
+| Treiber gegen echte Server | `sh scripts/db-test-servers.sh up` (Docker: PostgreSQL, MySQL, MariaDB, SQL Server, CockroachDB, TimescaleDB, Oracle Free, ClickHouse, Trino auf 127.0.0.1; `SC_DBTEST_ORACLE=0` lässt Oracle weg, `SC_DBTEST_YUGABYTE=1` nimmt YugabyteDB dazu, `SC_DBTEST_PRESTO=1` Presto), `pnpm rust:test:db`, danach `sh scripts/db-test-servers.sh down` |
 | Texte | `pnpm texts` (kein Text im Template, kein Deutsch außerhalb von `*.de.ts`) |
 | Alles prüfen | `pnpm check` |
 | Produktions-Build unter CSP | `pnpm build && pnpm preview:csp` → http://localhost:1461 (ohne Backend; prüft Editor-Worker, WebAssembly, Styles) |
@@ -294,6 +296,9 @@ src-tauri/                     Rust
   src/db/{pg,mysql,mssql,sqlite}.rs  die Treiber; sqlite.rs auch die Demo-Datenbank
   src/db/clickhouse.rs         ClickHouse über HTTP (`ureq`): eine Anfrage je Anweisung, Zeilen als Text, Abbruch
                                über KILL QUERY, Sitzung = session_id
+  src/db/trino.rs              Trino/Presto über HTTP: Antwort seitenweise (`nextUri`, nur der Pfad), Abbruch durch
+                               Löschen der nächsten Seite, Sitzung aus den Kopfzeilen, Werte als geprüfte Literale
+  src/db/http.rs               was die HTTP-Treiber teilen: Client mit dem TLS des Profils, Adresse, Kodierung
   src/db/duckdb.rs             DuckDB eingebettet: eine geteilte Datenbank je Profil, Typen (Listen, Structs),
                                Abbruch, Transaktionszustand aus den Anweisungen; Tests ohne Server (duckdb_tests.rs)
   src/db/oracle.rs             Oracle über `oracledb`: Verbindung auf eigenem Thread, Auto-Commit, Typen, Fehler
@@ -365,6 +370,7 @@ src-tauri/                     Rust
   tests/db_integration.rs      Treiber gegen echte Server (ignoriert; pnpm rust:test:db)
   tests/oracle_integration.rs  Oracle gegen Oracle Database Free im Container (ignoriert; pnpm rust:test:db)
   tests/clickhouse_integration.rs  ClickHouse gegen einen Container (ignoriert; pnpm rust:test:db)
+  tests/trino_integration.rs   Trino (und mit SC_DBTEST_PRESTO=1 Presto) gegen Container (ignoriert; pnpm rust:test:db)
   src/themes.rs                eigene Farbschemata: themes.json, Grenzen, Import/Export (rein, getestet)
   src/error.rs                 AppError { code, message, details } – details: was die Datenbank zum Fehler sagt
   capabilities/default.json    minimale Rechte (core:default, store:default, dialog:allow-open/-save)
@@ -406,6 +412,10 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
 - **ClickHouse**: Der Treiber schickt **keine Einstellungen** mit einer Anfrage (eine nur lesende Sitzung darf keine
   ändern); Platzhalter sind `{p1:String}` mit `param_p1`. Was Transaktionen oder eindeutige Schlüssel braucht,
   lehnt das Backend ab (`edit::steps`, `transfer::plan`) und blendet das Flag `edit` aus – nicht nachbauen.
+- **Trino/Presto**: Das Protokoll bindet keine Werte – ein Wert wird nur durch `trino::literal` zu SQL (geprüft
+  oder gequotet), nie anders. Gefragt wird nur der Server des Profils (`page_path`), was auch immer `nextUri`
+  nennt. Die Sitzung ist, was die Kopfzeilen des Servers sagen (`follow`); „nur lesen“ hält der Treiber selbst
+  (`Session::make_read_only`, `guarded`). Eine Anweisung wird nie erneut gesendet, außer nach 503. Ob Zeilen bearbeitet werden, sagt `DbKind::edits_rows` – nie ein Vergleich mit ClickHouse.
 - **DuckDB**: nie eine zweite Datenbank auf dieselbe Datei öffnen – Sitzungen sind Klone der einen (`SHARED`
   in `duckdb.rs`). Vor jedem Lesen einer Zelle prüft `readable`, ob der Treiber den Typ kann (sonst endet er in
   `unreachable!`). Erweiterungen werden nie von selbst geladen; ein Assistent bekommt dort keine Abfrage ausgeführt.

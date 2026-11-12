@@ -14,12 +14,13 @@ import { offsetAt, placeIn } from '../../core/text/places';
  * - **sqlite**: `CREATE TRIGGER … BEGIN … END` keeps its inner `;`.
  * - **duckdb**: dollar quoting, as PostgreSQL.
  * - **clickhouse**: backticks and backslash escapes in strings, as MySQL.
+ * - **trino**: the common rules – a quote is escaped only by doubling it.
  * - **oracle**: `q'[ … ]'` strings; PL/SQL (`BEGIN`, `DECLARE`, `CREATE … FUNCTION | PROCEDURE | PACKAGE |
  *   TRIGGER | TYPE`) keeps its `;` and ends at a line with only `/` – as in SQL*Plus. That line also ends
  *   any other statement.
  */
 export type Dialect =
-  'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle' | 'duckdb' | 'clickhouse';
+  'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle' | 'duckdb' | 'clickhouse' | 'trino';
 
 export interface Statement {
   /** The statement without its terminator, trimmed. */

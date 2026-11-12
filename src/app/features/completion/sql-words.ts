@@ -98,6 +98,7 @@ const NOT_IN: Readonly<Record<Dialect, readonly string[]>> = {
   oracle: ['LIMIT', 'ON CONFLICT'],
   duckdb: [],
   clickhouse: ['RETURNING', 'ON CONFLICT', 'FOR UPDATE'],
+  trino: ['RETURNING', 'ON CONFLICT', 'FOR UPDATE'],
 };
 const ALSO: Readonly<Record<Dialect, Readonly<Record<string, readonly string[]>>>> = {
   postgres: { WHERE: ['ILIKE'], FROM: ['LATERAL'] },
@@ -126,6 +127,11 @@ const ALSO: Readonly<Record<Dialect, Readonly<Record<string, readonly string[]>>
     'ORDER BY': ['WITH FILL'],
     'GROUP BY': ['WITH TOTALS', 'WITH ROLLUP'],
     LIMIT: ['BY'],
+  },
+  trino: {
+    FROM: ['LATERAL', 'UNNEST', 'TABLESAMPLE', 'MATCH_RECOGNIZE'],
+    'ORDER BY': ['OFFSET', 'FETCH FIRST'],
+    'GROUP BY': ['ROLLUP', 'CUBE', 'GROUPING SETS'],
   },
 };
 
@@ -254,6 +260,25 @@ const TYPES: Readonly<Record<Dialect, readonly string[]>> = {
     'LowCardinality(String)',
     'Array(String)',
     'JSON',
+  ],
+  trino: [
+    'BOOLEAN',
+    'INTEGER',
+    'BIGINT',
+    'DOUBLE',
+    'DECIMAL(18, 2)',
+    'VARCHAR',
+    'CHAR(10)',
+    'VARBINARY',
+    'DATE',
+    'TIME',
+    'TIMESTAMP',
+    'TIMESTAMP WITH TIME ZONE',
+    'JSON',
+    'UUID',
+    'ARRAY(VARCHAR)',
+    'MAP(VARCHAR, VARCHAR)',
+    'ROW(a INTEGER, b VARCHAR)',
   ],
 };
 
@@ -415,6 +440,32 @@ const BUILTINS: Readonly<Record<Dialect, readonly Builtin[]>> = {
       'match(text, pattern)',
       'lowerUTF8(text)',
       'JSONExtractString(json, key)',
+    ].map(f),
+  ],
+  trino: [
+    ...COMMON,
+    ...[
+      'now()',
+      'current_date',
+      'date_trunc(unit, time)',
+      'date_add(unit, value, time)',
+      'date_diff(unit, from, to)',
+      'format_datetime(time, format)',
+      'from_unixtime(seconds)',
+      'approx_distinct(value)',
+      'approx_percentile(value, fraction)',
+      'array_agg(value)',
+      'count_if(condition)',
+      'max_by(value, by)',
+      'min_by(value, by)',
+      'strpos(text, part)',
+      'regexp_like(text, pattern)',
+      'regexp_extract(text, pattern)',
+      'split(text, delimiter)',
+      'json_extract_scalar(json, path)',
+      'try_cast(value AS type)',
+      'try(expression)',
+      'if(condition, then, else)',
     ].map(f),
   ],
 };

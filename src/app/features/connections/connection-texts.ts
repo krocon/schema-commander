@@ -26,6 +26,7 @@ export const CONNECTION_EN = {
     oracle: 'Oracle',
     duckdb: 'DuckDB',
     clickhouse: 'ClickHouse',
+    trino: 'Trino / Presto',
   },
   password: 'Password',
   sshSecretTitle: 'SSH tunnel: password or passphrase',

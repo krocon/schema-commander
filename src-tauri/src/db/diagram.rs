@@ -254,6 +254,23 @@ pub fn diagram(
                 stop,
             ),
         ),
+        // tables without keys: the catalog names none
+        DbKind::Trino => (
+            s.ask(
+                "SELECT c.table_name, c.column_name, c.data_type, \
+                   CASE c.is_nullable WHEN 'YES' THEN 'true' ELSE 'false' END, 'false' \
+                 FROM information_schema.columns c \
+                 JOIN information_schema.tables t \
+                   ON t.table_schema = c.table_schema AND t.table_name = c.table_name \
+                 WHERE c.table_schema = ? AND t.table_type = 'BASE TABLE' \
+                 ORDER BY c.table_name, c.ordinal_position",
+                one,
+                Some(TIMEOUT),
+                stop,
+            )?,
+            Vec::new(),
+            Ok(Vec::new()),
+        ),
         // tables and what they are sorted by; there are no keys to draw
         DbKind::Clickhouse => (
             s.ask(

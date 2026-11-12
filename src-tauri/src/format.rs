@@ -37,6 +37,8 @@ pub enum Dialect {
     Duckdb,
     /// ClickHouse (prompt 035d): backticks and backslash escapes, as MySQL writes them.
     Clickhouse,
+    /// Trino and Presto (prompt 035f): the common rules.
+    Trino,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

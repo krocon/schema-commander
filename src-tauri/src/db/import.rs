@@ -344,6 +344,10 @@ pub fn parse_url(text: &str) -> AppResult<Candidate> {
     } else if lower.starts_with("oracle:thin:@//") {
         // jdbc:oracle:thin:@//host:1521/service – the user is not part of it
         url_form(DbKind::Oracle, after("oracle:thin:@//"))?
+    } else if lower.starts_with("trino://") {
+        url_form(DbKind::Trino, after("trino://"))?
+    } else if lower.starts_with("presto://") {
+        url_form(DbKind::Trino, after("presto://"))?
     } else if lower.starts_with("clickhouse://") {
         url_form(DbKind::Clickhouse, after("clickhouse://"))?
     } else if lower.starts_with("oracle://") {
@@ -398,6 +402,8 @@ fn dbeaver_kind(provider: &str, driver: &str) -> Option<DbKind> {
         Some(DbKind::Sqlserver)
     } else if both.contains("oracle") {
         Some(DbKind::Oracle)
+    } else if both.contains("trino") || both.contains("presto") {
+        Some(DbKind::Trino)
     } else if both.contains("clickhouse") {
         Some(DbKind::Clickhouse)
     } else if both.contains("duckdb") {

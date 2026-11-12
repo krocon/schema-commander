@@ -349,7 +349,10 @@ fn unwritten(
 
 /// The statements for a request. Nothing is asked or run.
 pub fn plan(kind: DbKind, request: &Request) -> AppResult<Plan> {
-    if matches!(kind, DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse) {
+    if matches!(
+        kind,
+        DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino
+    ) {
         // no generator for its dialect yet: nothing is written with another one's (review 035b 5)
         return Err(super::not_yet(kind, "schema compare and structure editing"));
     }

@@ -438,6 +438,7 @@ fn kind_name(kind: DbKind) -> &'static str {
         DbKind::Oracle => "oracle",
         DbKind::Duckdb => "duckdb",
         DbKind::Clickhouse => "clickhouse",
+        DbKind::Trino => "trino",
     }
 }
 
@@ -896,6 +897,10 @@ fn read_only<T>(
     f: impl FnOnce(&mut dyn crate::db::Session) -> Result<T, AppError>,
 ) -> Result<T, AppError> {
     let quiet = Limits::rows(1);
+    // the session is the assistant's own: what the driver makes of it stays
+    if s.make_read_only() {
+        return f(s);
+    }
     if let Some(sql) = guard::read_only_statement(kind) {
         s.query(sql, quiet, stop)?;
         let result = f(s);

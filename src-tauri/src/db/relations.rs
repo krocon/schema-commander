@@ -226,6 +226,8 @@ pub fn relations(
         DbKind::Duckdb => fold(&s.ask(DUCKDB, &[schema, table], Some(TIMEOUT), stop)?),
         // ClickHouse has no foreign keys
         DbKind::Clickhouse => Vec::new(),
+        // the catalog of Trino names no keys
+        DbKind::Trino => Vec::new(),
         DbKind::Oracle => {
             fold(&s.ask(ORACLE, &[schema, table, schema, table], Some(TIMEOUT), stop)?)
         }

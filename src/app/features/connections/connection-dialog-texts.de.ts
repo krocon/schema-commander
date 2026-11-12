@@ -16,6 +16,8 @@ export const CONNECTION_DIALOG_DE: Translation<typeof CONNECTION_DIALOG_EN> = {
   serverDefault: '(Vorgabe des Servers)',
   serviceName: 'Dienstname',
   serviceExample: 'zum Beispiel FREEPDB1 oder ORCLPDB1',
+  catalogName: 'Katalog',
+  catalogExample: 'zum Beispiel hive, iceberg oder postgresql',
   user: 'Benutzer',
   password: 'Passwort',
   unchanged: '(unverändert)',
@@ -81,6 +83,7 @@ export const CONNECTION_DIALOG_DE: Translation<typeof CONNECTION_DIALOG_EN> = {
   portRange: 'Der Port liegt zwischen 1 und 65535.',
   fileMissing: 'Bitte eine Datei wählen.',
   serviceMissing: 'Oracle braucht den Dienstnamen der Datenbank.',
+  catalogMissing: 'Trino braucht einen Katalog: Seine Schemata zeigt der Baum.',
   oracleTlsChecked:
     'Verbindungen zu Oracle prüfen das Zertifikat immer: einen Modus wählen, der es prüft, oder kein TLS.',
   hostMissing: 'Bitte einen Host eingeben.',

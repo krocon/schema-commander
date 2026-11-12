@@ -377,13 +377,16 @@ pub fn create_table(
     if columns.is_empty() || columns.len() > MAX_TARGET_COLUMNS {
         return Err(invalid("a table needs one to 400 columns"));
     }
-    if kind == DbKind::Clickhouse {
+    if !kind.edits_rows() {
         return Err(super::not_yet(kind, "editing and importing rows"));
     }
     let type_of = |g: &Guess| -> String {
         // room for values longer than the ones seen
         let len = (g.max_len.max(1) * 2).clamp(20, 4000);
         match (g.kind, kind) {
+            (GuessKind::DateTime, DbKind::Trino) => "timestamp(6)".into(),
+            (GuessKind::Bool, DbKind::Trino) => "boolean".into(),
+            (GuessKind::Text, DbKind::Trino) => "varchar".into(),
             (GuessKind::DateTime, DbKind::Clickhouse) => "DateTime64(6)".into(),
             (GuessKind::Bool, DbKind::Clickhouse) => "Bool".into(),
             (GuessKind::Text, DbKind::Clickhouse) => "String".into(),

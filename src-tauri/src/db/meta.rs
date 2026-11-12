@@ -120,18 +120,25 @@ const RESERVED: &[&str] = &[
     "convert",
     "create",
     "cross",
+    "cube",
     "current",
+    "current_catalog",
     "current_date",
+    "current_path",
+    "current_role",
+    "current_schema",
     "current_time",
     "current_timestamp",
     "current_user",
     "cursor",
     "database",
     "databases",
+    "deallocate",
     "declare",
     "default",
     "delete",
     "desc",
+    "describe",
     "distinct",
     "do",
     "double",
@@ -145,6 +152,7 @@ const RESERVED: &[&str] = &[
     "execute",
     "exists",
     "explain",
+    "extract",
     "false",
     "fetch",
     "for",
@@ -154,6 +162,7 @@ const RESERVED: &[&str] = &[
     "function",
     "grant",
     "group",
+    "grouping",
     "having",
     "identity",
     "if",
@@ -167,6 +176,12 @@ const RESERVED: &[&str] = &[
     "into",
     "is",
     "join",
+    "json_array",
+    "json_exists",
+    "json_object",
+    "json_query",
+    "json_table",
+    "json_value",
     "key",
     "keys",
     "kill",
@@ -174,11 +189,15 @@ const RESERVED: &[&str] = &[
     "left",
     "like",
     "limit",
+    "listagg",
+    "localtime",
+    "localtimestamp",
     "lock",
     "match",
     "merge",
     "natural",
     "no",
+    "normalize",
     "not",
     "null",
     "of",
@@ -194,12 +213,14 @@ const RESERVED: &[&str] = &[
     "partition",
     "percent",
     "plan",
+    "prepare",
     "primary",
     "procedure",
     "public",
     "range",
     "rank",
     "read",
+    "recursive",
     "references",
     "rename",
     "replace",
@@ -208,6 +229,7 @@ const RESERVED: &[&str] = &[
     "revoke",
     "right",
     "rollback",
+    "rollup",
     "row",
     "rows",
     "schema",
@@ -215,6 +237,7 @@ const RESERVED: &[&str] = &[
     "session_user",
     "set",
     "show",
+    "skip",
     "some",
     "table",
     "then",
@@ -223,9 +246,12 @@ const RESERVED: &[&str] = &[
     "trailing",
     "transaction",
     "trigger",
+    "trim",
     "true",
+    "uescape",
     "union",
     "unique",
+    "unnest",
     "update",
     "usage",
     "use",
@@ -351,7 +377,7 @@ pub fn quote_always(name: &str, kind: DbKind) -> String {
         // a backslash escapes inside backticks there (not in MySQL): written out as one
         DbKind::Clickhouse => format!("`{}`", name.replace('\\', "\\\\").replace('`', "``")),
         DbKind::Sqlserver => format!("[{}]", name.replace(']', "]]")),
-        DbKind::Postgres | DbKind::Sqlite | DbKind::Duckdb => {
+        DbKind::Postgres | DbKind::Sqlite | DbKind::Duckdb | DbKind::Trino => {
             format!("\"{}\"", name.replace('"', "\"\""))
         }
         // Oracle has no way to write a quote inside a quoted name (and allows none in a name): one that
@@ -440,6 +466,12 @@ pub fn schemas(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<S
         DbKind::Sqlite => {
             "SELECT name, 'false', CASE WHEN name = 'main' THEN 'true' ELSE 'false' END \
              FROM pragma_database_list ORDER BY seq"
+        }
+        // the schemas of the catalog the connection names; `USE` in a tab is that tab's own matter
+        DbKind::Trino => {
+            "SELECT schema_name, \
+             CASE WHEN schema_name = 'information_schema' THEN 'true' ELSE 'false' END, 'false' \
+             FROM information_schema.schemata ORDER BY 1"
         }
         // a schema is a database of the server
         DbKind::Clickhouse => {
@@ -548,6 +580,11 @@ pub fn objects(
         ],
         DbKind::Sqlite => &["SELECT type, name, '', NULL FROM pragma_table_list \
              WHERE schema = ?1 AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'"],
+        DbKind::Trino => &[
+            "SELECT CASE table_type WHEN 'VIEW' THEN 'view' ELSE 'table' END, \
+               table_name, '', NULL \
+             FROM information_schema.tables WHERE table_schema = ?",
+        ],
         // the engine says what it is; the hidden tables of materialized views are left out
         DbKind::Clickhouse => &["SELECT multiIf(engine = 'MaterializedView', 'matview', \
                engine LIKE '%View', 'view', 'table'), name, engine, toString(total_rows) \
@@ -855,6 +892,26 @@ fn mssql_table(s: &mut dyn Session, schema: &str, table: &str, stop: Stop) -> Ap
         indexes: parts(&indexes),
         keys: parts(&keys),
         triggers: parts(&triggers),
+    })
+}
+
+/// Trino: `information_schema.columns` of the catalog. It names no keys, indexes or triggers – what a
+/// table has of those is the matter of the database behind the catalog.
+fn trino_table(s: &mut dyn Session, schema: &str, table: &str, stop: Stop) -> AppResult<TableInfo> {
+    let columns = ask(
+        s,
+        "SELECT column_name, data_type, CASE is_nullable WHEN 'YES' THEN 'true' ELSE 'false' END, \
+           column_default, '' \
+         FROM information_schema.columns WHERE table_schema = ? AND table_name = ? \
+         ORDER BY ordinal_position",
+        &[schema, table],
+        stop,
+    )?;
+    Ok(TableInfo {
+        columns: column_rows(&columns, DbKind::Trino),
+        indexes: Vec::new(),
+        keys: Vec::new(),
+        triggers: Vec::new(),
     })
 }
 
@@ -1187,6 +1244,7 @@ pub fn table(
         DbKind::Oracle => oracle_table(s, schema, table, stop),
         DbKind::Duckdb => duckdb_table(s, schema, table, stop),
         DbKind::Clickhouse => clickhouse_table(s, schema, table, stop),
+        DbKind::Trino => trino_table(s, schema, table, stop),
     }
 }
 
@@ -1227,6 +1285,14 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
              WHERE name LIKE ?1 ESCAPE '\\' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' \
              ORDER BY 3, 1 LIMIT 200"
         }
+        // no LIKE: an escape there may only stand before `%`, `_` and itself
+        DbKind::Trino => {
+            "SELECT table_schema, CASE table_type WHEN 'VIEW' THEN 'view' ELSE 'table' END, \
+               table_name \
+             FROM information_schema.tables \
+             WHERE strpos(lower(table_name), lower(?)) > 0 AND table_schema <> 'information_schema' \
+             ORDER BY 3, 1 LIMIT 200"
+        }
         DbKind::Clickhouse => {
             "SELECT database, multiIf(engine = 'MaterializedView', 'matview', \
                engine LIKE '%View', 'view', 'table'), name \
@@ -1258,7 +1324,12 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
              ORDER BY 3, 1 FETCH FIRST 200 ROWS ONLY"
         }
     };
-    Ok(ask(s, sql, &[&pattern], stop)?
+    let wanted = if kind == DbKind::Trino {
+        text
+    } else {
+        &pattern
+    };
+    Ok(ask(s, sql, &[wanted], stop)?
         .iter()
         .take(MAX_FOUND)
         .filter_map(|row| {

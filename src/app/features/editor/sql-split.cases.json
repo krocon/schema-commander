@@ -364,6 +364,15 @@
       ]
     },
     {
+      "name": "a backslash is a character, a quote is doubled",
+      "dialect": "trino",
+      "script": "select 'C:\\'; select 'it''s; fine', \"a;b\" from t",
+      "statements": [
+        "select 'C:\\'",
+        "select 'it''s; fine', \"a;b\" from t"
+      ]
+    },
+    {
       "name": "a backslash escapes the quote",
       "dialect": "clickhouse",
       "script": "select 'it\\'s; fine'; select `a;b` from t",
