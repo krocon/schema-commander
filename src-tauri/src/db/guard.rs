@@ -158,7 +158,7 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                 }
             }
             // PostgreSQL and SQL Server nest block comments
-            let nests = matches!(kind, DbKind::Postgres | DbKind::Sqlserver);
+            let nests = matches!(kind, DbKind::Postgres | DbKind::Sqlserver | DbKind::Duckdb);
             let mut depth = 1;
             i += 2;
             while i < n && depth > 0 {
@@ -235,7 +235,10 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                 .to_uppercase();
             i = (i + 1).min(n);
             toks.push(Tok::Quoted(body));
-        } else if c == '$' && kind == DbKind::Postgres && dollar_tag(&chars, i).is_some() {
+        } else if c == '$'
+            && matches!(kind, DbKind::Postgres | DbKind::Duckdb)
+            && dollar_tag(&chars, i).is_some()
+        {
             // $tag$ … $tag$
             let tag = dollar_tag(&chars, i).unwrap_or_default();
             let body = (i + tag.len()).min(n);
@@ -447,6 +450,10 @@ const TSQL_WRITE_WORDS: &[&str] = &[
 
 /// Functions that change something although they are called from a `SELECT`.
 const WRITING_FUNCTIONS: &[&str] = &[
+    // DuckDB: table functions that write files or settings
+    "ENABLE_LOGGING",
+    "DISABLE_LOGGING",
+    "TRUNCATE_DUCKDB_LOGS",
     "NEXTVAL",
     "SETVAL",
     "SET_CONFIG",
@@ -658,6 +665,16 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
             || (start == "UPDATE" && words.get(1) == Some(&"EXTENSIONS")))
     {
         // code from the net, run inside the app: asked about like what destroys
+        return Some(Class::Dangerous);
+    }
+    if kind == DbKind::Duckdb
+        && matches!(start, "SET" | "RESET" | "PRAGMA")
+        && words
+            .iter()
+            .any(|w| w.contains("EXTENSION") || *w == "ENABLE_EXTERNAL_ACCESS")
+    {
+        // the switches that keep extensions from loading on their own (and files in reach): turning
+        // them is the first half of running foreign code
         return Some(Class::Dangerous);
     }
     let mut class = if READ_STARTS.contains(&start) {
@@ -931,6 +948,31 @@ mod tests {
         assert_eq!(classify("SELECT * FROM read_parquet('a.parquet')", k), Read);
         assert_eq!(classify("FROM t SELECT a", k), Write);
         assert_eq!(read_only_statement(k), None);
+        // review 035c 1: dollar quotes and nested comments are DuckDB's too – what hides in them is seen
+        assert_eq!(
+            classify("SELECT $$'$$; DROP TABLE t; SELECT $$'$$", k),
+            Dangerous
+        );
+        assert_eq!(
+            classify("SELECT 1 /* /* */ ' */ ; DROP TABLE t; --'", k),
+            Dangerous
+        );
+        assert_eq!(classify("SELECT $tag$ ; DELETE FROM t $tag$", k), Read);
+        // review 035c 4: the switches for extensions, and functions that write
+        assert_eq!(
+            classify("SET autoinstall_known_extensions = true", k),
+            Dangerous
+        );
+        assert_eq!(
+            classify("SET GLOBAL autoload_known_extensions=true", k),
+            Dangerous
+        );
+        assert_eq!(classify("RESET custom_extension_repository", k), Dangerous);
+        assert_eq!(classify("SET threads = 4", k), Write);
+        assert_eq!(
+            classify("SELECT * FROM enable_logging(storage='file')", k),
+            Write
+        );
     }
 
     /// Oracle (prompt 035b): a q-quote holds quotes as they are, a backslash escapes nothing, and a

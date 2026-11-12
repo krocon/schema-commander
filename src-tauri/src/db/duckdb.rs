@@ -10,7 +10,7 @@ use super::value::{Cell, ColKind, Column, Outcome, RowSink, text, text_bytes};
 use super::{Bind, Limits, Profile, Session, Stop, TxState};
 use crate::error::{AppError, AppResult, ErrorCode, ErrorDetails};
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveTime, TimeZone};
-use duckdb::arrow::datatypes::DataType;
+use duckdb::arrow::datatypes::{DataType, IntervalUnit, TimeUnit as arrow_unit};
 use duckdb::types::{TimeUnit, Value};
 use duckdb::{Config, Connection};
 use std::collections::HashMap;
@@ -26,12 +26,19 @@ pub const MEMORY: &str = ":memory:";
 /// The database of a profile, opened once: its sessions are clones of this connection.
 struct Shared {
     key: String,
-    conn: Mutex<Connection>,
+    /// `None` only while it is being closed.
+    conn: Mutex<Option<Connection>>,
 }
 
 impl Drop for Shared {
     fn drop(&mut self) {
-        if let Ok(mut all) = registry().lock() {
+        // closed while the list is held: nobody opens the same file a second time in between
+        // (review 035c 5)
+        let all = registry().lock();
+        if let Ok(mut conn) = self.conn.lock() {
+            conn.take();
+        }
+        if let Ok(mut all) = all {
             // only when no other database took the place in the meantime
             if all.get(&self.key).is_some_and(|w| w.strong_count() == 0) {
                 all.remove(&self.key);
@@ -149,7 +156,7 @@ pub fn open(profile: &Profile) -> AppResult<Duck> {
             })?;
             let shared = Arc::new(Shared {
                 key: key.clone(),
-                conn: Mutex::new(conn),
+                conn: Mutex::new(Some(conn)),
             });
             all.insert(key, Arc::downgrade(&shared));
             shared
@@ -160,6 +167,8 @@ pub fn open(profile: &Profile) -> AppResult<Duck> {
         .conn
         .lock()
         .map_err(|_| AppError::new(ErrorCode::Io, "the database is broken"))?
+        .as_ref()
+        .ok_or_else(super::closed)?
         .try_clone()
         .map_err(|e| failed(&e))?;
     Ok(Duck {
@@ -216,8 +225,8 @@ fn readable(t: &DataType) -> bool {
             | DataType::Binary
             | DataType::LargeBinary
             | DataType::Date32
-            | DataType::Time64(_)
-            | DataType::Interval(_)
+            | DataType::Time64(arrow_unit::Microsecond)
+            | DataType::Interval(IntervalUnit::MonthDayNano)
             | DataType::List(_)
             | DataType::LargeList(_)
             | DataType::Dictionary(..)
@@ -418,6 +427,7 @@ impl Duck {
         params: &[Bind],
         sink: &mut dyn RowSink,
         elapsed: &dyn Fn() -> u64,
+        stop: Stop,
     ) -> AppResult<Outcome> {
         let values = binds(params)?;
         // without values the text runs as typed: several statements, the last one answers
@@ -471,7 +481,18 @@ impl Duck {
                 .collect()
         };
         // a statement that changes rows answers with one row: how many
-        let counts = !reads && columns.len() == 1 && columns[0].name == "Count";
+        // … only a statement that starts as one: a query with a column of that name is a query
+        let first: String = last
+            .trim_start()
+            .chars()
+            .take_while(char::is_ascii_alphabetic)
+            .collect::<String>()
+            .to_ascii_uppercase();
+        let changes = matches!(
+            first.as_str(),
+            "INSERT" | "UPDATE" | "DELETE" | "MERGE" | "COPY"
+        );
+        let counts = changes && columns.len() == 1 && columns[0].name == "Count";
         if counts || (!reads && columns.is_empty()) {
             let mut changed = None;
             while let Some(row) = cursor.next().map_err(|e| failed(&e))? {
@@ -491,6 +512,10 @@ impl Duck {
         let mut rows: u64 = 0;
         let mut truncated = false;
         while let Some(row) = cursor.next().map_err(|e| failed(&e))? {
+            // the result is there already: handing it over still ends when the work is stopped
+            if rows.is_multiple_of(1024) && stop() {
+                return Err(super::cancelled());
+            }
             let mut cells = Vec::with_capacity(kinds.len());
             for (i, kind) in kinds.iter().enumerate() {
                 if !readable(&types[i]) {
@@ -691,9 +716,24 @@ impl Session for Duck {
                     }
                 }
             });
-            let result = Self::run(conn, sql, params, sink, &elapsed);
-            done.store(true, Ordering::Relaxed);
-            result
+            // the watcher ends with the statement, whatever its end – also a panic of the driver,
+            // which is caught here and told as an error (review 035c 2)
+            struct Done<'a>(&'a AtomicBool);
+            impl Drop for Done<'_> {
+                fn drop(&mut self) {
+                    self.0.store(true, Ordering::Relaxed);
+                }
+            }
+            let _done = Done(&done);
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                Self::run(conn, sql, params, sink, &elapsed, stop)
+            }))
+            .unwrap_or_else(|_| {
+                Err(AppError::new(
+                    ErrorCode::InvalidQuery,
+                    "the result holds a value the driver of DuckDB cannot read",
+                ))
+            })
         });
         if result.is_ok() {
             self.in_tx = tx_after(sql, self.in_tx);

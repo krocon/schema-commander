@@ -139,7 +139,11 @@ function skipBlockComment(s: Scan): void {
     if (script[i] === '*' && script[i + 1] === '/') {
       depth--;
       i += 2;
-    } else if (dialect === 'postgres' && script[i] === '/' && script[i + 1] === '*') {
+    } else if (
+      (dialect === 'postgres' || dialect === 'duckdb') &&
+      script[i] === '/' &&
+      script[i + 1] === '*'
+    ) {
       depth++;
       i += 2;
     } else {

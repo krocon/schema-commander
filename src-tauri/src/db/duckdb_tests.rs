@@ -130,6 +130,25 @@ fn types_unicode_and_null() {
         ])
     );
     assert_eq!(r.columns[4].type_name, "DECIMAL(10,2)");
+    // a time in nanoseconds is a type the driver cannot hand over: said in the cell or as an error,
+    // and the session goes on (review 035c 2)
+    let odd = db.query(
+        "SELECT TIME_NS '12:00:00' AS t, 1 AS one",
+        Limits::rows(5),
+        &|| false,
+    );
+    if let Ok(r) = &odd {
+        assert_eq!(rows(r)[0][1], json!(1));
+    }
+    assert_eq!(rows(&run(&mut db, "SELECT 7")), json!([[7]]));
+    // a query with a column called Count is a query (review 035c 6)
+    assert_eq!(
+        rows(&run(
+            &mut db,
+            "FROM (SELECT 5 AS \"Count\") SELECT \"Count\""
+        )),
+        json!([[5]])
+    );
     // a column that is nothing but NULL has a type of its own, which the driver cannot hand over
     assert_eq!(
         rows(&run(&mut db, "SELECT NULL AS n, 1 AS one")),

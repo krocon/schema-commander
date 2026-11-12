@@ -32,6 +32,7 @@ JSON-Dateien liest eine Abfrage direkt. Ausführungsplan, Schema-Vergleich und S
 - **Makros und Funktionen** im Baum; **Trigger** hat DuckDB nicht.
 - Weitere angehängte Datenbanken (`ATTACH`) zeigt der Baum nicht – nur die geöffnete.
 - Server-Monitor und Rechte gibt es bei einer eingebetteten Datenbank nicht.
+- **Strömendes Lesen**: siehe Review, „offen geblieben“.
 
 ## Nicht getestet
 
@@ -49,4 +50,22 @@ sagt es. Dazu `guard.rs` (Erweiterungen) und im Fenster Zerlegen, Parameter, Dia
 
 ## Review
 
-Siehe unten, sobald der zweite Blick durch ist.
+Ein zweiter, nur lesender Blick über den Branch. Behoben, je mit Test:
+
+| # | Befund | Behebung |
+|---|---|---|
+| 1 (hoch) | Der Schutz kannte DuckDBs Dollar-Quotes und verschachtelte Kommentare nicht: `SELECT $$'$$; DROP TABLE t; SELECT $$'$$` galt als lesend – auf einer „nur lesen“-Verbindung wäre das gelaufen | `guard::scan` behandelt DuckDB dort wie PostgreSQL; die freie Bedingung nimmt für DuckDB kein `$`; der Formatierer kennt die Dollar-Quotes |
+| 2 (hoch) | Für `TIME_NS` und andere Einheiten endet der Treiber in `unreachable!`; die Sitzung hing danach für immer | `readable` nennt nur noch, was der Treiber wirklich kann; ein Absturz des Treibers wird gefangen und als Fehler gemeldet, der Wächter endet in jedem Fall |
+| 4 | `SET autoinstall_known_extensions = true` war nur „schreibend“ – danach hätte ein schlichtes `SELECT` Code nachgeladen; `enable_logging(…)` schreibt Dateien aus einem `SELECT` | Schalter rund um Erweiterungen und Dateizugriff gelten als gefährlich; die Funktionen als schreibend |
+| 5 | Beim Schließen wurde der Eintrag der Liste entfernt, bevor die Datenbank zu war | geschlossen wird, während die Liste gehalten wird |
+| 6 | Eine Abfrage mit einer Spalte `Count` konnte als „Zeilen geändert“ gelesen werden | nur noch bei `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `COPY` |
+| 7 | `RETURNING` fehlte für DuckDB beim Einfügen | ergänzt |
+| 8 | Das Fenster verschachtelte Kommentare nur für PostgreSQL | auch für DuckDB |
+
+Offen geblieben (bekannt):
+
+- **Ergebnisse liegen zuerst ganz im Speicher von DuckDB** (Befund 3): Der Treiber führt nicht strömend aus. Die
+  Grenzen der App greifen erst beim Übernehmen der Zeilen; `SELECT *` auf eine riesige Parquet-Datei braucht also
+  den Platz dafür. Abbrechen wirkt während der Ausführung und beim Übernehmen.
+- Der Sichern-Dialog behandelt DuckDB wie einen Server ohne Werkzeug; eine Kopie der Datei wie bei SQLite fehlt.
+- Backticks als Namensquotes und `E'…'` zerlegt das Fenster für DuckDB nicht eigens.

@@ -686,6 +686,10 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
             b'$' if kind == DbKind::Postgres && next.is_ascii_digit() => {
                 return refuse("no placeholders");
             }
+            // a placeholder, or a dollar quote that would hide the rest (review 035c 1)
+            b'$' if kind == DbKind::Duckdb => {
+                return refuse("no `$`");
+            }
             b'?' if matches!(kind, DbKind::Mysql | DbKind::Sqlite) => {
                 return refuse("no placeholders");
             }
