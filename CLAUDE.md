@@ -81,10 +81,12 @@
   `mysqldump`, `mysql`) als Job ohne Shell, SQLite-Kopie, einfacher SQL-Export ohne Werkzeuge (Prompt 044);
   **Tabellen zwischen Verbindungen kopieren**, auch über Datenbanktypen hinweg: als Strom, mit Typabbildung
   und genannten Verlusten, in der Reihenfolge der Fremdschlüssel (Prompt 045);
+  **Server-Monitor**: Sitzungen und laufende Anweisungen, wer wen blockiert, Kennzahlen; auffrischen im Takt,
+  Anweisung abbrechen oder Sitzung beenden nach Rückfrage (Prompt 046);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a, 036–045),
+  erledigt: 001–034, 035a, 036–046),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -144,6 +146,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/import/             DataImportApi (load_*) + DTOs – spiegelt data_import.rs und db/load.rs
   app/core/menu/               MenuApi (set_app_menu, set_menu_state, subscribe_menu) + DTOs – spiegelt app_menu.rs
   app/core/saved/              SavedApi (saved_*) + DTOs – spiegelt saved.rs
+  app/core/monitor/            MonitorApi (monitor_activity, monitor_kill, monitor_close) – spiegelt db/monitor.rs
   app/core/plan/               PlanApi (explain_plan) + DTOs – spiegelt db/plan.rs
   app/core/schema/             SchemaApi (meta_*) + DTOs (SchemaInfo, ObjectInfo, TableInfo) – spiegelt db/meta.rs
   app/core/session/            SessionApi: session.json, Texte der Tabs, .sql lesen/schreiben
@@ -184,6 +187,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                Tabelle als Tabellen-Ansicht öffnen), filter-logic.ts (rein)
   app/features/find/           ResultFind (je Tab: Suche stückweise, Treffer, Sprung; kein Injectable), FindBar
                                (Suchzeile über dem Ergebnis), ColumnsPopover (Spaltenliste)
+  app/features/monitor/        MonitorDialog (Kennzahlen, Sitzungen, Blockaden, Anweisung), MonitorService (Root:
+                               eine Verbindung, Takt, Rückfrage vor dem Beenden), monitor-logic.ts (rein)
   app/features/plan/           PlanDialog (Baumtabelle, Einzelheiten, Hinweise, Rohplan), PlanService (Root: fragen,
                                Rückfrage vor der Ausführung), plan-logic.ts (rein)
   app/features/relations/      RelationsService (Root: Schlüssel lesen, folgen, zählen, Vorschau, eigene
@@ -298,6 +303,8 @@ src-tauri/                     Rust
   src/db/structure.rs          Struktur bearbeiten: Anfrage (Tabelle vorher/nachher) → Anweisungen über den
                                Erzeuger aus compare.rs, je Schritt eine; löschen, leeren, duplizieren; Lauf in
                                einer Transaktion (rein bis auf Lesen und Lauf; Rundreise in SQLite)
+  src/db/monitor.rs            Server-Monitor: Sitzungen, Blockaden, Kennzahlen je Datenbank, jeder Teil für sich;
+                               Beenden nur mit einer Id, die eine Zahl ist
   src/db/details.rs            Objekt-Details als Listen + DDL je Datenbank (Katalog, gebundene Parameter)
   src/db/relations.rs          Fremdschlüssel einer Tabelle als Daten, je Datenbank (Katalog, gebundene Parameter)
   src/db/plan.rs               Ausführungspläne: fragen je Datenbank, Parser (JSON, XML, Textbäume) in ein Modell,
@@ -395,6 +402,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   `--`; das Passwort ist nie ein Argument und steht in keiner Zeile, die das Fenster bekommt; was ein Lauf
   schreibt, entfernt er, wenn er scheitert oder angehalten wird. Wiederherstellen entscheidet im Backend nach der
   Schutzstufe.
+- **Server-Monitor**: Anweisungen anderer sind fremde Daten – nur als Text auf dem Schirm, nie im Verlauf, in
+  einem Log oder der Sitzung. Beendet wird nur nach der Rückfrage; `monitor_kill` lehnt „nur lesen“ ab.
 - **Schutz**: Was SQL ausführt, ruft im Backend `ConnectionManager::admit`; das Fenster fragt nur, entscheidet nie.
 - **Zustand in Signals**, Stores je Instanz ohne `providedIn`, Globales in Root-Services; veraltete Antworten verwerfen.
 - **Texte nur in Katalogen**: `*-texts.ts` (Englisch, Quelle) + `*-texts.de.ts` über `translatable()`; nie beim

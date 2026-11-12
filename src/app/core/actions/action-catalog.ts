@@ -617,6 +617,8 @@ export const ACTIONS = [
   },
   // Search on the server (prompt 036)
   { id: 'SEARCH_SERVER', label: 'Search on the server …', group: 'Schema', scope: 'global' },
+  // What happens on the server (prompt 046)
+  { id: 'SERVER_MONITOR', label: 'Server monitor …', group: 'Schema', scope: 'global' },
   {
     id: 'SCHEMA_SEARCH',
     label: 'Search in this schema or table …',

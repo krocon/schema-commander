@@ -15,6 +15,7 @@ pub mod import;
 pub mod load;
 pub mod manager;
 pub mod meta;
+pub mod monitor;
 pub mod mssql;
 pub mod mysql;
 pub mod names;

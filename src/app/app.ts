@@ -34,6 +34,8 @@ import { ErDiagramDialog } from './features/diagram/er-diagram-dialog';
 import { ExportDialog } from './features/export/export-dialog';
 import { PlanDialog } from './features/plan/plan-dialog';
 import { PlanService } from './features/plan/plan.service';
+import { MonitorDialog } from './features/monitor/monitor-dialog';
+import { MonitorService } from './features/monitor/monitor.service';
 import { TransferDialog } from './features/transfer/transfer-dialog';
 import { defaultSchema } from './features/transfer/transfer-logic';
 import { TransferService } from './features/transfer/transfer.service';
@@ -144,6 +146,7 @@ const SIDEBAR_MIN = 140;
     ExportDialog,
     PlanDialog,
     TransferDialog,
+    MonitorDialog,
     BackupDialog,
     StructureDialog,
     ResultCompareDialog,
@@ -591,6 +594,11 @@ const SIDEBAR_MIN = 140;
         <app-transfer-dialog [source]="source" (closed)="transfer.close()" />
       }
     }
+    @if (monitor.connectionId(); as watched) {
+      @defer (on immediate) {
+        <app-monitor-dialog [connectionId]="watched" (closed)="monitor.close()" />
+      }
+    }
     @if (plans.view(); as view) {
       @defer (on immediate) {
         <app-plan-dialog [view]="view" (closed)="plans.close()" />
@@ -744,6 +752,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly diagrams = inject(DiagramService);
   protected readonly plans = inject(PlanService);
   protected readonly transfer = inject(TransferService);
+  protected readonly monitor = inject(MonitorService);
   protected readonly backup = inject(BackupService);
   protected readonly structure = inject(StructureService);
   protected readonly resultCompare = inject(ResultCompareService);
@@ -1190,6 +1199,16 @@ export class App implements OnInit, OnDestroy {
         'SEARCH_SERVER',
         () => this.serverSearch.open(),
         () => this.connections.activeState().kind === 'open',
+      ),
+      this.actions.register(
+        'SERVER_MONITOR',
+        () => {
+          const profile = this.connections.active();
+          if (profile) this.monitor.open(profile.id);
+        },
+        () =>
+          this.connections.activeState().kind === 'open' &&
+          this.connections.active()?.kind !== 'sqlite',
       ),
       this.actions.register(
         'TRANSFER_TABLES',

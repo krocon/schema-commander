@@ -4943,3 +4943,198 @@ fn tables_copied_between_databases_arrive_as_they_were() {
     run(&mut a, "DROP SCHEMA sc_xfer CASCADE");
     run(&mut a, "DROP SCHEMA sc_xfer_back CASCADE");
 }
+
+// ── Server monitor (prompt 046) ─────────────────────────────────────────────────────
+
+/// On every server: a session that holds a row and one that waits for it appear as a blockade; ending
+/// the one that blocks frees the other. A statement that runs is seen with its text and can be
+/// cancelled (where the server can do that without ending the session).
+#[test]
+#[ignore]
+fn sessions_that_block_each_other_are_seen_and_can_be_ended() {
+    use schema_commander_lib::db::monitor::{activity, kill};
+    for (p, product) in [
+        (pg(), "postgres"),
+        (my(), "mysql"),
+        (maria(), "mariadb"),
+        (ms(), "sqlserver"),
+    ] {
+        let kind = p.kind;
+        let mut setup = open(&p);
+        let table = match kind {
+            DbKind::Mysql => {
+                run(&mut setup, "CREATE DATABASE IF NOT EXISTS sc_mon");
+                "sc_mon.t"
+            }
+            DbKind::Sqlserver => "dbo.sc_mon_t",
+            _ => "public.sc_mon_t",
+        };
+        run(&mut setup, &format!("DROP TABLE IF EXISTS {table}"));
+        run(
+            &mut setup,
+            &format!("CREATE TABLE {table} (id int NOT NULL PRIMARY KEY, n int)"),
+        );
+        run(&mut setup, &format!("INSERT INTO {table} VALUES (1, 0)"));
+        let own_id = |s: &mut Box<dyn Session>| -> String {
+            let sql = match kind {
+                DbKind::Postgres => "SELECT pg_backend_pid()",
+                DbKind::Mysql => "SELECT CONNECTION_ID()",
+                _ => "SELECT @@SPID",
+            };
+            rows(&run(s, sql))[0][0]
+                .to_string()
+                .trim_matches('"')
+                .to_owned()
+        };
+        let mut monitor = open(&p);
+        let mut holder = open(&p);
+        let holder_id = own_id(&mut holder);
+        let begin = match kind {
+            DbKind::Postgres => "BEGIN",
+            DbKind::Mysql => "START TRANSACTION",
+            _ => "BEGIN TRANSACTION",
+        };
+        run(&mut holder, begin);
+        run(
+            &mut holder,
+            &format!("UPDATE {table} SET n = n + 1 WHERE id = 1"),
+        );
+        let mut waiter = open(&p);
+        let waiter_id = own_id(&mut waiter);
+        let update = format!("UPDATE {table} SET n = n + 10 WHERE id = 1");
+        let waiting = std::thread::spawn(move || {
+            let done = waiter.query(&update, Limits::rows(1), &|| false);
+            (done.map(|_| ()), waiter)
+        });
+        // the blockade appears
+        let begun = std::time::Instant::now();
+        let seen = loop {
+            let now = activity(monitor.as_mut(), kind, &|| false).unwrap();
+            assert!(now.missing.is_empty(), "{product}: {:?}", now.missing);
+            if let Some(blocked) = now.sessions.iter().find(|s| s.id == waiter_id)
+                && !blocked.blocked_by.is_empty()
+            {
+                break now;
+            }
+            assert!(
+                begun.elapsed() < Duration::from_secs(10),
+                "{product}: no blockade seen: {:#?}",
+                now.sessions
+            );
+            std::thread::sleep(Duration::from_millis(200));
+        };
+        let blocked = seen.sessions.iter().find(|s| s.id == waiter_id).unwrap();
+        assert_eq!(blocked.blocked_by, vec![holder_id.clone()], "{product}");
+        // (SQL Server shows the statement as it parameterised it: `[n]+@1`)
+        assert!(
+            blocked.statement.contains("n + 10") || blocked.statement.contains("sc_mon_t"),
+            "{product}: the statement that waits: {:?}",
+            blocked.statement
+        );
+        assert!(blocked.query_ms.is_some(), "{product}");
+        let holding = seen.sessions.iter().find(|s| s.id == holder_id).unwrap();
+        assert!(holding.blocked_by.is_empty(), "{product}");
+        assert!(
+            holding.tx_ms.is_some(),
+            "{product}: the open transaction is seen"
+        );
+        // exactly one session is the monitor's own
+        assert_eq!(
+            seen.sessions.iter().filter(|s| s.this).count(),
+            1,
+            "{product}"
+        );
+        assert!(!seen.figures.version.is_empty(), "{product}");
+        assert!(
+            seen.figures.connections.unwrap_or(0) >= 3,
+            "{product}: {:?}",
+            seen.figures
+        );
+        assert!(seen.figures.max_connections.is_some(), "{product}");
+        assert!(
+            seen.figures.uptime_s.is_some(),
+            "{product}: {:?}",
+            seen.figures
+        );
+        assert!(
+            seen.figures.database_bytes.is_some() || kind == DbKind::Mysql,
+            "{product}"
+        );
+
+        // ending the session that holds the row frees the one that waits
+        assert!(
+            kill(monitor.as_mut(), kind, &holder_id, true, &|| false).unwrap(),
+            "{product}"
+        );
+        let (done, mut waiter) = waiting.join().unwrap();
+        done.unwrap_or_else(|e| panic!("{product}: the waiting statement: {e}"));
+        // the holder's change was rolled back with its session: only the waiter's counts
+        let n = rows(&run(
+            &mut waiter,
+            &format!("SELECT n FROM {table} WHERE id = 1"),
+        ));
+        assert_eq!(n, json!([[10]]), "{product}");
+        assert!(
+            holder
+                .query("SELECT 1", Limits::rows(1), &|| false)
+                .is_err(),
+            "{product}"
+        );
+        // the blockade is gone (a server may take a moment to forget the wait)
+        let begun = std::time::Instant::now();
+        loop {
+            let after = activity(monitor.as_mut(), kind, &|| false).unwrap();
+            let free = after.sessions.iter().all(|s| s.blocked_by.is_empty())
+                && !after.sessions.iter().any(|s| s.id == holder_id);
+            if free {
+                break;
+            }
+            assert!(
+                begun.elapsed() < Duration::from_secs(5),
+                "{product}: still blocked: {:#?}",
+                after.sessions
+            );
+            std::thread::sleep(Duration::from_millis(200));
+        }
+
+        // a statement that runs is seen and cancelled; its session lives on
+        if seen.can_cancel {
+            let mut sleeper = open(&p);
+            let sleeper_id = own_id(&mut sleeper);
+            let sleep = match kind {
+                DbKind::Postgres => "SELECT pg_sleep(30)",
+                _ => "SELECT SLEEP(30)",
+            };
+            let sleeping = std::thread::spawn(move || {
+                let began = std::time::Instant::now();
+                let done = sleeper.query(sleep, Limits::rows(1), &|| false);
+                (done.is_ok(), began.elapsed(), sleeper)
+            });
+            let begun = std::time::Instant::now();
+            loop {
+                let now = activity(monitor.as_mut(), kind, &|| false).unwrap();
+                if now
+                    .sessions
+                    .iter()
+                    .any(|s| s.id == sleeper_id && s.statement.to_lowercase().contains("sleep"))
+                {
+                    break;
+                }
+                assert!(
+                    begun.elapsed() < Duration::from_secs(10),
+                    "{product}: the sleeper is not seen"
+                );
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            kill(monitor.as_mut(), kind, &sleeper_id, false, &|| false).unwrap();
+            let (_, took, mut sleeper) = sleeping.join().unwrap();
+            assert!(
+                took < Duration::from_secs(15),
+                "{product}: cancelled after {took:?}"
+            );
+            // the session is still there
+            assert_eq!(own_id(&mut sleeper), sleeper_id, "{product}");
+        }
+        run(&mut setup, &format!("DROP TABLE {table}"));
+    }
+}

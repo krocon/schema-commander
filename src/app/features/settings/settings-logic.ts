@@ -46,6 +46,7 @@ export type SettingKey =
   | 'stopOnError'
   | 'keepResults'
   | 'statementTimeoutSec'
+  | 'monitorIntervalSec'
   | 'paramsEnabled'
   | 'autoCommit'
   | 'txWarnMinutes'
@@ -101,6 +102,7 @@ export const SETTING_DEFS: readonly SettingDef[] = [
   { key: 'stopOnError', group: 'run', kind: 'bool' },
   { key: 'keepResults', group: 'run', kind: 'bool' },
   { key: 'statementTimeoutSec', group: 'run', kind: 'number', min: 0, max: 86_400, step: 1 },
+  { key: 'monitorIntervalSec', group: 'run', kind: 'number', min: 0, max: 3600, step: 1 },
   { key: 'paramsEnabled', group: 'run', kind: 'bool' },
   { key: 'autoCommit', group: 'run', kind: 'bool' },
   { key: 'txWarnMinutes', group: 'run', kind: 'number', min: 0, max: 1440, step: 1 },

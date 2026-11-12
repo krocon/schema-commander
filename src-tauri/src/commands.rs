@@ -1030,6 +1030,50 @@ pub fn struct_apply(
     ran
 }
 
+// ── Server monitor (prompt 046) ──────────────────────────────────────────────────────────
+
+/// The session the monitor asks with: its own, so it waits for no tab and no tab for it.
+const MONITOR_SESSION: &str = "sc-monitor";
+
+/// What happens on the server of a connection (prompt 046): sessions, who waits for whom, a few
+/// figures. Read only, on a session of its own. Nothing of it is logged or noted.
+#[tauri::command(async)]
+pub fn monitor_activity(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+) -> AppResult<crate::db::monitor::Activity> {
+    manager.ask_in(&id, MONITOR_SESSION, |session, kind, stop| {
+        crate::db::monitor::activity(session, kind, stop)
+    })
+}
+
+/// Cancels the statement of a session of the server, or ends the session (prompt 046). A connection
+/// that only reads ends nothing; the window asks the user before it calls this.
+#[tauri::command(async)]
+pub fn monitor_kill(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    session_id: String,
+    terminate: bool,
+) -> AppResult<bool> {
+    let (_, _, profile) = manager.external(&id)?;
+    if profile.protection == crate::db::guard::Protection::Readonly {
+        return Err(AppError::new(
+            ErrorCode::PermissionDenied,
+            "this connection is read only: it ends no session",
+        ));
+    }
+    manager.ask_in(&id, MONITOR_SESSION, |session, kind, stop| {
+        crate::db::monitor::kill(session, kind, &session_id, terminate, stop)
+    })
+}
+
+/// The monitor was closed: its session goes.
+#[tauri::command(async)]
+pub fn monitor_close(manager: State<'_, ConnectionManager>, id: String) {
+    manager.close_session(&id, MONITOR_SESSION);
+}
+
 // ── Copying tables between connections (prompt 045) ──────────────────────────────────────────
 
 fn transfer_plan_of(
