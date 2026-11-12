@@ -5371,3 +5371,217 @@ fn rights_are_read_as_they_work() {
         run(&mut admin, &format!("DROP TABLE {table}"));
     }
 }
+
+/// Prompt 049: generated rows go into tables with a primary key, a unique column and a foreign key –
+/// none is refused, the same seed gives the same rows, and a million rows are no more trouble than a few.
+#[test]
+#[ignore = "needs the test servers: sh scripts/db-test-servers.sh up"]
+fn generated_rows_respect_keys_and_constraints() {
+    use schema_commander_lib::commands::{testdata_keys, testdata_load_plan};
+    use schema_commander_lib::db::load;
+    use schema_commander_lib::testdata::{self, Gen, Generator, Spec};
+    for (p, product, orders) in [
+        (pg(), "postgres", 1_000_000u64),
+        (my(), "mysql", 20_000),
+        (maria(), "mariadb", 20_000),
+        (ms(), "sqlserver", 20_000),
+    ] {
+        let kind = p.kind;
+        let mut s = open(&p);
+        let schema = match kind {
+            DbKind::Mysql => "shop",
+            DbKind::Sqlserver => "dbo",
+            _ => "public",
+        };
+        let (stamp, flag) = match kind {
+            DbKind::Sqlserver => ("datetime2", "bit"),
+            DbKind::Mysql => ("datetime", "boolean"),
+            _ => ("timestamp", "boolean"),
+        };
+        run(
+            &mut s,
+            &format!("DROP TABLE IF EXISTS {schema}.sc_td_order"),
+        );
+        run(
+            &mut s,
+            &format!("DROP TABLE IF EXISTS {schema}.sc_td_customer"),
+        );
+        run(
+            &mut s,
+            &format!(
+                "CREATE TABLE {schema}.sc_td_customer (id int NOT NULL PRIMARY KEY, \
+                 email varchar(120) NOT NULL UNIQUE, first_name varchar(60) NOT NULL, \
+                 last_name varchar(60) NOT NULL, city varchar(60), created_at {stamp} NOT NULL, \
+                 updated_at {stamp})"
+            ),
+        );
+        run(
+            &mut s,
+            &format!(
+                "CREATE TABLE {schema}.sc_td_order (id int NOT NULL PRIMARY KEY, \
+                 customer_id int NOT NULL, \
+                 code varchar(20) NOT NULL UNIQUE, total decimal(10,2) NOT NULL, paid {flag} NOT NULL, \
+                 ordered_on date NOT NULL, \
+                 CONSTRAINT sc_td_order_customer FOREIGN KEY (customer_id) \
+                 REFERENCES {schema}.sc_td_customer (id))"
+            ),
+        );
+        // the proposal from the catalog of each database, used as it comes – but for the code
+        let spec_of = |s: &mut Box<dyn Session>, table: &str, rows: u64| -> Spec {
+            let info = meta::table(s.as_mut(), kind, schema, table, &|| false).unwrap();
+            let foreign = relations(s.as_mut(), kind, schema, table, &|| false)
+                .unwrap()
+                .outgoing;
+            let mut columns = testdata::suggest(&info, &foreign);
+            for c in &mut columns {
+                if c.name == "code" {
+                    c.how = Gen::Pattern {
+                        pattern: r"[A-Z]{3}-\d{4}".into(),
+                    };
+                    c.unique = true;
+                }
+            }
+            Spec {
+                schema: schema.into(),
+                table: table.into(),
+                columns,
+                rows,
+                seed: 49,
+                locale: "de".into(),
+            }
+        };
+        let fill = |s: &mut Box<dyn Session>, spec: Spec| -> (load::Loaded, Vec<Option<String>>) {
+            let keys = testdata_keys(s.as_mut(), kind, &spec, testdata::MAX_KEYS, &|| false)
+                .unwrap_or_else(|e| panic!("{product}: {e}"));
+            let first = Generator::new(spec.clone(), &keys)
+                .unwrap()
+                .next_row()
+                .unwrap();
+            let mut generator = Generator::new(spec, &keys).unwrap();
+            let plan = testdata_load_plan(generator.spec(), &generator.written(), false, false);
+            let done = load::load(
+                s.as_mut(),
+                kind,
+                &mut generator,
+                &plan,
+                None,
+                None,
+                &|_| {},
+                &|| false,
+            )
+            .unwrap_or_else(|e| panic!("{product}: {e}"));
+            (done, first)
+        };
+        let customers = spec_of(&mut s, "sc_td_customer", 2_000);
+        // what the catalog told: the key counts up and is unique, the mail address is unique, the
+        // later date waits for the earlier one
+        let of = |spec: &Spec, name: &str| {
+            spec.columns
+                .iter()
+                .find(|c| c.name == name)
+                .unwrap()
+                .clone()
+        };
+        assert_eq!(
+            of(&customers, "id").how,
+            Gen::Sequence { start: 1, step: 1 },
+            "{product}"
+        );
+        assert_eq!(of(&customers, "email").how, Gen::Email, "{product}");
+        assert!(
+            of(&customers, "email").unique,
+            "{product}: the unique index was not seen"
+        );
+        assert!(
+            matches!(&of(&customers, "updated_at").how, Gen::DateTime { not_before: Some(c), .. } if c == "created_at"),
+            "{product}"
+        );
+        let (done, first) = fill(&mut s, customers.clone());
+        assert_eq!(
+            (done.written, done.skipped, done.failed),
+            (2_000, 0, false),
+            "{product}: {:?}",
+            done.errors
+        );
+
+        let order_spec = spec_of(&mut s, "sc_td_order", orders);
+        assert_eq!(
+            of(&order_spec, "customer_id").how,
+            Gen::ForeignKey { per_parent: None },
+            "{product}"
+        );
+        let started = Instant::now();
+        let (done, _) = fill(&mut s, order_spec);
+        assert_eq!(
+            (done.written, done.skipped, done.failed),
+            (orders, 0, false),
+            "{product}: {:?}",
+            done.errors
+        );
+        println!("{product}: {orders} rows in {:?}", started.elapsed());
+
+        let count = |s: &mut Box<dyn Session>, sql: &str| -> String {
+            rows(&run(s, sql))[0][0]
+                .to_string()
+                .trim_matches('"')
+                .to_owned()
+        };
+        assert_eq!(
+            count(
+                &mut s,
+                &format!("SELECT COUNT(DISTINCT code) FROM {schema}.sc_td_order")
+            ),
+            orders.to_string(),
+            "{product}"
+        );
+        assert_eq!(
+            count(
+                &mut s,
+                &format!("SELECT COUNT(DISTINCT email) FROM {schema}.sc_td_customer")
+            ),
+            "2000",
+            "{product}"
+        );
+        assert_eq!(
+            count(
+                &mut s,
+                &format!(
+                    "SELECT COUNT(*) FROM {schema}.sc_td_customer WHERE updated_at < created_at"
+                )
+            ),
+            "0",
+            "{product}"
+        );
+        // most customers have orders, and no order is without one (the key saw to that)
+        let with = count(
+            &mut s,
+            &format!("SELECT COUNT(DISTINCT customer_id) FROM {schema}.sc_td_order"),
+        );
+        assert!(with.parse::<u64>().unwrap() > 1_900, "{product}: {with}");
+        // the same seed, the same rows: what is in the table is what the generator says first
+        let stored = run(
+            &mut s,
+            &format!(
+                "SELECT email, first_name, last_name FROM {schema}.sc_td_customer WHERE id = 1"
+            ),
+        );
+        let stored = rows(&stored);
+        let position = |name: &str| {
+            customers
+                .columns
+                .iter()
+                .filter(|c| c.how != Gen::Skip)
+                .position(|c| c.name == name)
+                .unwrap()
+        };
+        for (i, name) in ["email", "first_name", "last_name"].iter().enumerate() {
+            assert_eq!(
+                stored[0][i].as_str(),
+                first[position(name)].as_deref(),
+                "{product}: {name}"
+            );
+        }
+        run(&mut s, &format!("DROP TABLE {schema}.sc_td_order"));
+        run(&mut s, &format!("DROP TABLE {schema}.sc_td_customer"));
+    }
+}

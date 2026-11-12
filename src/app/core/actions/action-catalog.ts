@@ -608,6 +608,8 @@ export const ACTIONS = [
     scope: 'global',
   },
   { id: 'SCHEMA_TRUNCATE_TABLE', label: 'Empty the table …', group: 'Schema', scope: 'global' },
+  // Test data (prompt 049)
+  { id: 'SCHEMA_TESTDATA', label: 'Generate test data …', group: 'Schema', scope: 'global' },
   { id: 'SCHEMA_DROP_TABLE', label: 'Drop the table …', group: 'Schema', scope: 'global' },
   {
     id: 'SCHEMA_EDIT_SOURCE',

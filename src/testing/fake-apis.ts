@@ -7,6 +7,12 @@ import {
   Who,
 } from '../app/core/access/access-api';
 import { McpApi, McpConfig, McpEvent, McpProbe, McpStatus } from '../app/core/mcp/mcp-api';
+import {
+  TestdataApi,
+  TestdataPreview,
+  TestdataSpec,
+  TestdataSuggestion,
+} from '../app/core/testdata/testdata-api';
 import { MonitorApi, ServerActivity } from '../app/core/monitor/monitor-api';
 import {
   TransferApi,
@@ -2381,5 +2387,131 @@ export class FakeMcpApi extends McpApi {
 
   test(): Promise<McpProbe> {
     return Promise.resolve(this.probe);
+  }
+}
+
+/** Test data (prompt 049): a proposal a test sets; previews echo the spec; runs are noted. */
+export class FakeTestdataApi extends TestdataApi {
+  suggestion: TestdataSuggestion = {
+    columns: [
+      {
+        name: 'id',
+        typeName: 'integer',
+        valueKind: 'number',
+        gen: { kind: 'sequence', start: 1, step: 1 },
+        nullShare: 0,
+        unique: true,
+        maxLen: null,
+      },
+      {
+        name: 'customer_id',
+        typeName: 'integer',
+        valueKind: 'number',
+        gen: { kind: 'foreignKey', perParent: null },
+        nullShare: 0,
+        unique: false,
+        maxLen: null,
+      },
+      {
+        name: 'email',
+        typeName: 'varchar(120)',
+        valueKind: 'text',
+        gen: { kind: 'email' },
+        nullShare: 0,
+        unique: true,
+        maxLen: 120,
+      },
+      {
+        name: 'note',
+        typeName: 'text',
+        valueKind: 'text',
+        gen: { kind: 'lorem', words: 12 },
+        nullShare: 0,
+        unique: false,
+        maxLen: null,
+      },
+    ],
+    references: [
+      { column: 'customer_id', refSchema: 'public', refTable: 'customer', refColumn: 'id' },
+    ],
+  };
+  failPreview: unknown = null;
+  report: Loaded = {
+    read: 0,
+    written: 0,
+    skipped: 0,
+    errors: [],
+    cancelled: false,
+    failed: false,
+    rolledBack: false,
+    errorFile: false,
+    cleared: false,
+  };
+  readonly previews: TestdataSpec[] = [];
+  readonly runs: {
+    spec: TestdataSpec;
+    options: { clearFirst: boolean; wholeTransaction: boolean };
+    confirmations: readonly (string | null)[];
+  }[] = [];
+  readonly exports: { spec: TestdataSpec; path: string; format: string }[] = [];
+  readonly cancelled: number[] = [];
+
+  suggest(): Promise<TestdataSuggestion> {
+    return Promise.resolve(this.suggestion);
+  }
+
+  preview(_connectionId: string, spec: TestdataSpec, rows: number): Promise<TestdataPreview> {
+    this.previews.push(spec);
+    if (this.failPreview) return Promise.reject(this.failPreview);
+    const columns = spec.columns.filter((c) => c.gen.kind !== 'skip');
+    const total = spec.columns.some((c) => c.gen.kind === 'foreignKey' && c.gen.perParent)
+      ? 777
+      : spec.rows;
+    return Promise.resolve({
+      columns: columns.map((c) => c.name),
+      rows: Array.from({ length: Math.min(rows, total, 3) }, (_, i) =>
+        columns.map((c) => (c.nullShare === 1 ? null : `${c.gen.kind}-${spec.seed}-${i}`)),
+      ),
+      total,
+    });
+  }
+
+  statements(_connectionId: string, spec: TestdataSpec, clearFirst: boolean): Promise<string[]> {
+    const insert = `INSERT INTO "${spec.table}" (…) VALUES (…)`;
+    return Promise.resolve(clearFirst ? [`DELETE FROM "${spec.table}"`, insert] : [insert]);
+  }
+
+  run(
+    _jobId: number,
+    _connectionId: string,
+    spec: TestdataSpec,
+    options: { clearFirst: boolean; wholeTransaction: boolean },
+    confirmations: readonly (string | null)[],
+    _allowDangerous: boolean,
+    onProgress: (rows: number) => void,
+  ): Promise<Loaded> {
+    this.runs.push({ spec, options, confirmations });
+    onProgress(spec.rows);
+    return Promise.resolve(
+      this.report.failed || this.report.cancelled
+        ? this.report
+        : { ...this.report, read: spec.rows, written: spec.rows },
+    );
+  }
+
+  export(
+    _jobId: number,
+    _connectionId: string,
+    spec: TestdataSpec,
+    path: string,
+    format: 'csv' | 'insert',
+  ): Promise<number> {
+    this.exports.push({ spec, path, format });
+    return Promise.resolve(spec.rows);
+  }
+
+  cancel(jobId: number): Promise<void> {
+    this.cancelled.push(jobId);
+    return Promise.resolve();
   }
 }

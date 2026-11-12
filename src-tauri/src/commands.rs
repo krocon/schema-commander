@@ -2759,3 +2759,473 @@ pub fn mcp_test() -> sc_mcp::probe::Probe {
     let program = mcp_sidecar().unwrap_or_default();
     sc_mcp::probe::probe(&program, std::time::Duration::from_secs(5))
 }
+
+// ── Test data (prompt 049) ───────────────────────────────────────────────────────────────
+
+/// What a foreign key column of the table points to.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestdataReference {
+    column: String,
+    ref_schema: String,
+    ref_table: String,
+    ref_column: String,
+}
+
+/// A generator for every column of a table, proposed from its types, keys and names.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestdataSuggestion {
+    columns: Vec<crate::testdata::ColumnSpec>,
+    references: Vec<TestdataReference>,
+}
+
+#[tauri::command(async)]
+pub fn testdata_suggest(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    schema: String,
+    table: String,
+) -> AppResult<TestdataSuggestion> {
+    manager.ask(&id, |s, kind, stop| {
+        let info = meta::table(s, kind, &schema, &table, stop)?;
+        // a database without foreign keys, or one that does not show them, still gets a proposal
+        let foreign = crate::db::relations::relations(s, kind, &schema, &table, stop)
+            .map(|r| r.outgoing)
+            .unwrap_or_default();
+        Ok(TestdataSuggestion {
+            columns: crate::testdata::suggest(&info, &foreign),
+            references: foreign
+                .iter()
+                .filter(|f| f.columns.len() == 1 && f.ref_columns.len() == 1)
+                .map(|f| TestdataReference {
+                    column: f.columns[0].clone(),
+                    ref_schema: f.ref_schema.clone(),
+                    ref_table: f.ref_table.clone(),
+                    ref_column: f.ref_columns[0].clone(),
+                })
+                .collect(),
+        })
+    })
+}
+
+/// The values the foreign key columns of a spec draw from: read from the tables they point to, in a
+/// fixed order (the same seed gives the same rows), at most `limit` each. The names come from the
+/// catalog, not from the window.
+pub fn testdata_keys(
+    s: &mut dyn crate::db::Session,
+    kind: crate::db::DbKind,
+    spec: &crate::testdata::Spec,
+    limit: usize,
+    stop: crate::db::Stop,
+) -> AppResult<std::collections::HashMap<String, Vec<String>>> {
+    use crate::testdata::Gen;
+    let mut keys = std::collections::HashMap::new();
+    let wanted: Vec<&str> = spec
+        .columns
+        .iter()
+        .filter(|c| matches!(c.how, Gen::ForeignKey { .. }))
+        .map(|c| c.name.as_str())
+        .collect();
+    if wanted.is_empty() {
+        return Ok(keys);
+    }
+    let foreign =
+        crate::db::relations::relations(s, kind, &spec.schema, &spec.table, stop)?.outgoing;
+    let q = |n: &str| meta::quote_always(n, kind);
+    for name in wanted {
+        let Some(key) = foreign
+            .iter()
+            .find(|f| f.columns.len() == 1 && f.ref_columns.len() == 1 && f.columns[0] == name)
+        else {
+            return Err(AppError::new(
+                ErrorCode::InvalidQuery,
+                "this column has no foreign key of one column to take values from",
+            ));
+        };
+        let column = q(&key.ref_columns[0]);
+        let table = if kind == crate::db::DbKind::Sqlite || key.ref_schema.is_empty() {
+            q(&key.ref_table)
+        } else {
+            format!("{}.{}", q(&key.ref_schema), q(&key.ref_table))
+        };
+        // every value as text: that is what the loader binds
+        let text = match kind {
+            crate::db::DbKind::Postgres => format!("{column}::text"),
+            crate::db::DbKind::Mysql => format!("CAST({column} AS CHAR)"),
+            crate::db::DbKind::Sqlserver => format!("CAST({column} AS nvarchar(4000))"),
+            crate::db::DbKind::Sqlite => format!("CAST({column} AS TEXT)"),
+        };
+        let sql = if kind == crate::db::DbKind::Sqlserver {
+            format!(
+                "SELECT TOP {limit} {text} FROM {table} WHERE {column} IS NOT NULL ORDER BY {column}"
+            )
+        } else {
+            format!(
+                "SELECT {text} FROM {table} WHERE {column} IS NOT NULL ORDER BY {column} LIMIT {limit}"
+            )
+        };
+        let rows = s.ask(&sql, &[], Some(std::time::Duration::from_secs(60)), stop)?;
+        keys.insert(
+            name.to_owned(),
+            rows.into_iter()
+                .filter_map(|r| r.into_iter().next().flatten())
+                .collect(),
+        );
+    }
+    Ok(keys)
+}
+
+/// The plan of the loader for a spec: one column of the generator per written column, every value as
+/// it is.
+pub fn testdata_load_plan(
+    spec: &crate::testdata::Spec,
+    written: &[usize],
+    clear_first: bool,
+    whole_transaction: bool,
+) -> crate::db::load::LoadPlan {
+    crate::db::load::LoadPlan {
+        schema: (!spec.schema.is_empty()).then(|| spec.schema.clone()),
+        table: spec.table.clone(),
+        mappings: written
+            .iter()
+            .enumerate()
+            .map(|(source, i)| {
+                let c = &spec.columns[*i];
+                crate::db::load::Mapping {
+                    source: Some(source),
+                    fixed: None,
+                    target: crate::db::load::TargetColumn {
+                        name: c.name.clone(),
+                        kind: c.value_kind,
+                        type_name: c.type_name.clone(),
+                    },
+                    trim: false,
+                    decimal_comma: false,
+                    date_order: None,
+                }
+            })
+            .collect(),
+        null_texts: Vec::new(),
+        empty_is_null: false,
+        clear_first,
+        on_error: crate::db::load::OnError::default(),
+        whole_transaction,
+        exact: true,
+    }
+}
+
+/// The first rows of a spec, as they would be written.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestdataPreview {
+    columns: Vec<String>,
+    rows: Vec<Vec<Option<String>>>,
+    /// The rows there would be.
+    total: u64,
+}
+
+#[tauri::command(async)]
+pub fn testdata_preview(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    spec: crate::testdata::Spec,
+    rows: u64,
+) -> AppResult<TestdataPreview> {
+    manager.ask(&id, |s, kind, stop| {
+        let keys = testdata_keys(s, kind, &spec, crate::testdata::MAX_KEYS, stop)?;
+        let mut generator = crate::testdata::Generator::new(spec, &keys)?;
+        let columns = generator
+            .written()
+            .iter()
+            .map(|i| generator.spec().columns[*i].name.clone())
+            .collect();
+        let mut out = Vec::new();
+        while out.len() < rows.min(crate::testdata::MAX_PREVIEW) as usize {
+            match generator.next_row() {
+                Some(row) => out.push(row),
+                None => break,
+            }
+        }
+        Ok(TestdataPreview {
+            columns,
+            rows: out,
+            total: generator.total(),
+        })
+    })
+}
+
+/// Only a connection without protection is filled with made-up rows.
+fn testdata_allowed(manager: &ConnectionManager, id: &str) -> AppResult<()> {
+    let protected = manager
+        .list()
+        .profiles
+        .iter()
+        .find(|p| p.id == id)
+        .is_some_and(|p| p.protection != crate::db::guard::Protection::Free);
+    if protected {
+        return Err(AppError::new(
+            ErrorCode::PermissionDenied,
+            "test data is written only to a connection without protection",
+        ));
+    }
+    Ok(())
+}
+
+/// The statements a run would send, for the guard: the form of the `INSERT` (and the emptying).
+#[tauri::command(async)]
+pub fn testdata_statements(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    spec: crate::testdata::Spec,
+    clear_first: bool,
+) -> AppResult<Vec<String>> {
+    let written: Vec<usize> = spec
+        .columns
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.how != crate::testdata::Gen::Skip)
+        .map(|(i, _)| i)
+        .collect();
+    import_sqls(
+        manager.kind_of(&id)?,
+        &testdata_load_plan(&spec, &written, clear_first, false),
+    )
+}
+
+/// Fills a table with generated rows (prompt 049) as a job with progress that `cancel_job` stops:
+/// the rows go through the loader of the import, in blocks, every value bound. Refused on a protected
+/// connection; the statements pass the guard like those of an import.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn testdata_run(
+    manager: State<'_, ConnectionManager>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    id: String,
+    spec: crate::testdata::Spec,
+    clear_first: bool,
+    whole_transaction: bool,
+    confirmations: Option<Vec<Option<String>>>,
+    allow_dangerous: bool,
+    on_progress: Channel<u64>,
+) -> AppResult<crate::db::load::Loaded> {
+    use std::sync::atomic::Ordering;
+    const SESSION: &str = "sc-testdata";
+    testdata_allowed(&manager, &id)?;
+    let kind = manager.kind_of(&id)?;
+    let keys = manager.ask(&id, |s, kind, stop| {
+        testdata_keys(s, kind, &spec, crate::testdata::MAX_KEYS, stop)
+    })?;
+    let mut generator = crate::testdata::Generator::new(spec, &keys)?;
+    let plan = testdata_load_plan(
+        generator.spec(),
+        &generator.written(),
+        clear_first,
+        whole_transaction,
+    );
+    let tokens = confirmations.unwrap_or_default();
+    for (i, sql) in import_sqls(kind, &plan)?.iter().enumerate() {
+        let token = tokens.get(i).and_then(|t| t.as_deref());
+        manager.admit(&id, sql, token, allow_dangerous)?;
+    }
+    let stop = jobs.start(job_id, None);
+    let result = manager.ask_in(&id, SESSION, |session, kind, stopped| {
+        crate::db::load::load(
+            session,
+            kind,
+            &mut generator,
+            &plan,
+            None,
+            None,
+            &|n| {
+                let _ = on_progress.send(n);
+            },
+            &|| stop.load(Ordering::Relaxed) || stopped(),
+        )
+    });
+    jobs.end(job_id);
+    manager.close_session(&id, SESSION);
+    result
+}
+
+/// A value of a generated row as a literal of a script.
+fn testdata_literal(
+    value: Option<&str>,
+    kind: crate::db::filter::ValueKind,
+    dialect: crate::db::DbKind,
+) -> String {
+    use crate::db::filter::ValueKind;
+    let Some(text) = value else {
+        return "NULL".to_owned();
+    };
+    // digits, with one point between digits at most and a minus in front at most
+    let digits = text.strip_prefix('-').unwrap_or(text);
+    let mut parts = digits.splitn(2, '.');
+    let all_digits = |p: &str| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit());
+    let number = text.len() <= 40
+        && parts.next().is_some_and(all_digits)
+        && parts.next().is_none_or(all_digits);
+    match kind {
+        ValueKind::Number if number => text.to_owned(),
+        ValueKind::Bool => match (dialect, text == "true") {
+            (crate::db::DbKind::Sqlserver | crate::db::DbKind::Sqlite, yes) => {
+                if yes { "1" } else { "0" }.to_owned()
+            }
+            (_, true) => "TRUE".to_owned(),
+            (_, false) => "FALSE".to_owned(),
+        },
+        _ => crate::extract::sql_text(text, dialect),
+    }
+}
+
+fn csv_field(text: &str) -> String {
+    if text.contains(['"', ',', '\n', '\r']) || text.starts_with(' ') || text.ends_with(' ') {
+        format!("\"{}\"", text.replace('"', "\"\""))
+    } else {
+        text.to_owned()
+    }
+}
+
+/// Writes the rows of a spec into a file instead of the table: `csv` (with a first line of names; NULL
+/// is an empty field) or `insert` (a script). A job like the others; a file of a run that was stopped
+/// or failed is removed. Returns the rows written.
+#[tauri::command(async)]
+pub fn testdata_export(
+    manager: State<'_, ConnectionManager>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    id: String,
+    spec: crate::testdata::Spec,
+    path: String,
+    format: String,
+) -> AppResult<u64> {
+    use std::io::Write;
+    use std::sync::atomic::Ordering;
+    let target = export_target(&path)?;
+    let insert = match format.as_str() {
+        "csv" => false,
+        "insert" => true,
+        _ => {
+            return Err(AppError::new(
+                ErrorCode::Unsupported,
+                "the format is csv or insert",
+            ));
+        }
+    };
+    let kind = manager.kind_of(&id)?;
+    let keys = manager.ask(&id, |s, kind, stop| {
+        testdata_keys(s, kind, &spec, crate::testdata::MAX_KEYS, stop)
+    })?;
+    let mut generator = crate::testdata::Generator::new(spec, &keys)?;
+    let written = generator.written();
+    let columns: Vec<crate::testdata::ColumnSpec> = written
+        .iter()
+        .map(|i| generator.spec().columns[*i].clone())
+        .collect();
+    let q = |n: &str| meta::quote_always(n, kind);
+    let table = {
+        let spec = generator.spec();
+        if kind == crate::db::DbKind::Sqlite || spec.schema.is_empty() {
+            q(&spec.table)
+        } else {
+            format!("{}.{}", q(&spec.schema), q(&spec.table))
+        }
+    };
+    let names: Vec<String> = columns.iter().map(|c| q(&c.name)).collect();
+    let stop = jobs.start(job_id, None);
+    let io = |e: std::io::Error| AppError::new(ErrorCode::Io, e.to_string());
+    let created = std::cell::Cell::new(false);
+    let mut run = || -> AppResult<u64> {
+        let mut out = std::io::BufWriter::new(std::fs::File::create(&target).map_err(io)?);
+        created.set(true);
+        if !insert {
+            let head: Vec<String> = columns.iter().map(|c| csv_field(&c.name)).collect();
+            writeln!(out, "{}", head.join(",")).map_err(io)?;
+        }
+        let mut rows = 0u64;
+        while let Some(row) = generator.next_row() {
+            if rows.is_multiple_of(1_000) && stop.load(Ordering::Relaxed) {
+                return Err(crate::db::cancelled());
+            }
+            if insert {
+                let values: Vec<String> = row
+                    .iter()
+                    .zip(&columns)
+                    .map(|(v, c)| testdata_literal(v.as_deref(), c.value_kind, kind))
+                    .collect();
+                writeln!(
+                    out,
+                    "INSERT INTO {table} ({}) VALUES ({});",
+                    names.join(", "),
+                    values.join(", ")
+                )
+                .map_err(io)?;
+            } else {
+                let fields: Vec<String> = row
+                    .iter()
+                    .map(|v| v.as_deref().map(csv_field).unwrap_or_default())
+                    .collect();
+                writeln!(out, "{}", fields.join(",")).map_err(io)?;
+            }
+            rows += 1;
+        }
+        out.flush().map_err(io)?;
+        Ok(rows)
+    };
+    let result = run();
+    jobs.end(job_id);
+    match &result {
+        Ok(_) => {
+            jobs.written.lock().insert(target);
+        }
+        // half a file is no file – but a file that could not even be opened is not ours to remove
+        Err(_) if created.get() => {
+            let _ = std::fs::remove_file(&target);
+        }
+        Err(_) => {}
+    }
+    result
+}
+
+#[cfg(test)]
+mod testdata_script_tests {
+    use super::*;
+    use crate::db::DbKind;
+    use crate::db::filter::ValueKind;
+
+    /// Review 049: only what is a number stands in a script as one.
+    #[test]
+    fn a_value_is_a_number_in_a_script_only_if_it_is_one() {
+        let lit = |v: &str| testdata_literal(Some(v), ValueKind::Number, DbKind::Postgres);
+        assert_eq!(lit("42"), "42");
+        assert_eq!(lit("-1.50"), "-1.50");
+        for text in [
+            "-",
+            ".",
+            "1.2.3",
+            "1.",
+            ".5",
+            "--1",
+            "1); DROP TABLE x; --",
+            "",
+        ] {
+            assert!(lit(text).starts_with('\''), "{text}: {}", lit(text));
+        }
+        assert_eq!(
+            testdata_literal(None, ValueKind::Text, DbKind::Mysql),
+            "NULL"
+        );
+        assert_eq!(
+            testdata_literal(Some("true"), ValueKind::Bool, DbKind::Sqlserver),
+            "1"
+        );
+        assert_eq!(
+            testdata_literal(Some("o'k"), ValueKind::Text, DbKind::Postgres),
+            "'o''k'"
+        );
+        assert_eq!(csv_field("a,b"), "\"a,b\"");
+        assert_eq!(csv_field("say \"hi\""), "\"say \"\"hi\"\"\"");
+        assert_eq!(csv_field("plain"), "plain");
+    }
+}

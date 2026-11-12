@@ -49,6 +49,7 @@ const MENU: readonly { id: NodeAction; label: () => string; separator?: boolean 
   { id: 'SCHEMA_NEW_TABLE', label: () => SCHEMA_TEXTS.newTable },
   { id: 'SCHEMA_DUPLICATE_TABLE', label: () => SCHEMA_TEXTS.duplicateTable },
   { id: 'SCHEMA_TRUNCATE_TABLE', label: () => SCHEMA_TEXTS.truncateTable },
+  { id: 'SCHEMA_TESTDATA', label: () => SCHEMA_TEXTS.testdata },
   { id: 'SCHEMA_DROP_TABLE', label: () => SCHEMA_TEXTS.dropTable },
   { id: 'SCHEMA_INSERT_NAME', label: () => SCHEMA_TEXTS.insertName, separator: true },
   { id: 'SCHEMA_COPY_NAME', label: () => SCHEMA_TEXTS.copyName },

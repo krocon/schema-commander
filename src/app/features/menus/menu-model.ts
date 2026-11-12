@@ -372,6 +372,7 @@ export const MENU_BAR: readonly TopMenu[] = [
           'SCHEMA_NEW_TABLE',
           'SCHEMA_DUPLICATE_TABLE',
           'SCHEMA_TRUNCATE_TABLE',
+          'SCHEMA_TESTDATA',
           'SCHEMA_DROP_TABLE',
           '-',
           'SCHEMA_INSERT_NAME',

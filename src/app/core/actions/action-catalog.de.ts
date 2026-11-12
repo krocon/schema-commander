@@ -153,6 +153,7 @@ export const ACTION_LABELS_DE: Readonly<Record<ActionId, string>> = {
   SCHEMA_NEW_TABLE: 'Neue Tabelle …',
   SCHEMA_DUPLICATE_TABLE: 'Tabelle duplizieren …',
   SCHEMA_TRUNCATE_TABLE: 'Tabelle leeren …',
+  SCHEMA_TESTDATA: 'Testdaten erzeugen …',
   SCHEMA_DROP_TABLE: 'Tabelle löschen …',
   SCHEMA_EDIT_SOURCE: 'Definition der View oder Routine bearbeiten',
   SCHEMA_DIAGRAM: 'Diagramm des Schemas oder um die Tabelle …',

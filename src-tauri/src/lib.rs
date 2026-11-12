@@ -24,6 +24,7 @@ pub mod search;
 pub mod session;
 pub mod ssh;
 pub mod stats;
+pub mod testdata;
 pub mod textfile;
 pub mod themes;
 
@@ -181,6 +182,11 @@ pub fn run() {
             commands::mcp_disconnect,
             commands::mcp_reply,
             commands::mcp_test,
+            commands::testdata_suggest,
+            commands::testdata_preview,
+            commands::testdata_statements,
+            commands::testdata_run,
+            commands::testdata_export,
             commands::transfer_plan,
             commands::transfer_run,
             commands::backup_tools,

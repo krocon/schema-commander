@@ -23,6 +23,7 @@ import { editableSource } from '../structure/structure-logic';
 import { STRUCTURE_TEXTS } from '../structure/structure-texts';
 import { StructureService } from '../structure/structure.service';
 import { BackupService } from '../backup/backup.service';
+import { TestdataService } from '../testdata/testdata.service';
 import { TransferService } from '../transfer/transfer.service';
 
 /** What can be done with a node of the schema tree (prompt 008); each is an action of the app. */
@@ -39,6 +40,7 @@ export type NodeAction =
   | 'SCHEMA_NEW_TABLE'
   | 'SCHEMA_DUPLICATE_TABLE'
   | 'SCHEMA_TRUNCATE_TABLE'
+  | 'SCHEMA_TESTDATA'
   | 'SCHEMA_DROP_TABLE'
   | 'SCHEMA_EDIT_SOURCE'
   | 'SCHEMA_INSERT_NAME'
@@ -61,6 +63,7 @@ export const NODE_ACTIONS: readonly NodeAction[] = [
   'SCHEMA_NEW_TABLE',
   'SCHEMA_DUPLICATE_TABLE',
   'SCHEMA_TRUNCATE_TABLE',
+  'SCHEMA_TESTDATA',
   'SCHEMA_DROP_TABLE',
   'SCHEMA_EDIT_SOURCE',
   'SCHEMA_INSERT_NAME',
@@ -120,6 +123,7 @@ export function allows(action: NodeAction, row: TreeRow | null): boolean {
     case 'SCHEMA_EDIT_TABLE':
     case 'SCHEMA_DUPLICATE_TABLE':
     case 'SCHEMA_TRUNCATE_TABLE':
+    case 'SCHEMA_TESTDATA':
     case 'SCHEMA_DROP_TABLE':
       return isRelation(row) && row?.object?.kind === 'table';
     case 'SCHEMA_NEW_TABLE':
@@ -150,6 +154,7 @@ export class SchemaActions {
   private readonly structure = inject(StructureService);
   private readonly backup = inject(BackupService);
   private readonly transfer = inject(TransferService);
+  private readonly testdata = inject(TestdataService);
   private readonly schemaApi = inject(SchemaApi);
 
   /** Whether `action` can run on the active row of the tree. */
@@ -173,6 +178,14 @@ export class SchemaActions {
           kind: row.object.kind,
           // the arguments tell overloaded routines apart
           detail: row.object.kind === 'routine' ? row.object.detail : '',
+        });
+        return;
+      case 'SCHEMA_TESTDATA':
+        if (!row.schema || !row.object) return;
+        this.testdata.open({
+          connectionId: this.connections.activeId(),
+          schema: row.schema.name,
+          table: row.object.name,
         });
         return;
       case 'SCHEMA_EDIT_TABLE':
