@@ -407,6 +407,23 @@ impl Builder {
                         (DbKind::Sqlserver, Some(iso)) => Bind::Text(iso),
                         // a text is compared with a date by the session's format there: the value
                         // travels as a date instead
+                        // with a zone: read by a format of ours, as the instant it names – a value
+                        // without one is UTC, as the grid shows it (review 035b 3)
+                        (DbKind::Oracle, _) if oracle_zoned(type_name) => {
+                            if let Some(spoken) = super::oracle::instant_text(raw) {
+                                let around = |inner: &str| {
+                                    format!(
+                                        "TO_TIMESTAMP_TZ({inner}, 'YYYY-MM-DD HH24:MI:SS.FF9 TZH:TZM')"
+                                    )
+                                };
+                                self.sql.push_str(&around(&format!(":{n}")));
+                                self.display
+                                    .push_str(&around(&sql_text(&spoken, self.kind)));
+                                self.params.push(Bind::Text(spoken));
+                                return;
+                            }
+                            Bind::Text(raw.to_owned())
+                        }
                         (DbKind::Oracle, _) if oracle_instant(type_name) => {
                             match super::oracle::datetime_text(raw) {
                                 Some(iso) => Bind::Datetime(iso),
@@ -614,6 +631,17 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
     while i < b.len() {
         let c = b[i];
         let next = b.get(i + 1).copied().unwrap_or(0);
+        // Oracle's q'[ … ]' ends where the scan below would not look: not taken here (review 035b 7)
+        if kind == DbKind::Oracle
+            && c == b'\''
+            && i > 0
+            && matches!(b[i - 1], b'q' | b'Q')
+            && !b.get(i.wrapping_sub(2)).is_some_and(|p| {
+                i >= 2 && (p.is_ascii_alphanumeric() || *p == b'_') && !matches!(p, b'n' | b'N')
+            })
+        {
+            return refuse("no q'…' strings");
+        }
         // strings and quoted names: text, whatever it holds (a doubled quote is the quote itself)
         let close = match c {
             b'\'' => Some(b'\''),
@@ -658,6 +686,10 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
                 return refuse("no placeholders");
             }
             b'?' if matches!(kind, DbKind::Mysql | DbKind::Sqlite) => {
+                return refuse("no placeholders");
+            }
+            // `:1`, `:name` would be read as one of the values of the conditions
+            b':' if kind == DbKind::Oracle && (next.is_ascii_alphanumeric() || next == b'_') => {
                 return refuse("no placeholders");
             }
             b'@' if kind == DbKind::Sqlserver
@@ -812,6 +844,11 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
 }
 
 /// Whether a column of Oracle holds a point in time (`DATE`, `TIMESTAMP …`).
+/// Whether a column of Oracle holds an instant (`TIMESTAMP WITH [LOCAL] TIME ZONE`).
+fn oracle_zoned(type_name: &str) -> bool {
+    type_name.to_ascii_uppercase().contains("TIME ZONE")
+}
+
 fn oracle_instant(type_name: &str) -> bool {
     let t = type_name.trim().to_ascii_uppercase();
     t.starts_with("DATE") || t.starts_with("TIMESTAMP")
@@ -819,6 +856,52 @@ fn oracle_instant(type_name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// Oracle (035b): the free condition takes no placeholder and no q-quote; a date with a zone is
+    /// read by a format of ours.
+    #[test]
+    fn oracle_conditions_stay_one_expression_and_instants_keep_their_zone() {
+        let with = |free: &str| {
+            build(
+                DbKind::Oracle,
+                &TableQuery {
+                    table: "T".into(),
+                    where_sql: Some(free.into()),
+                    ..TableQuery::default()
+                },
+            )
+        };
+        assert!(with("A = 'q' AND B = 'it''s'").is_ok());
+        assert!(with("FAQ = 'x'").is_ok());
+        assert!(with("A = :1").is_err());
+        assert!(with("A = :name").is_err());
+        assert!(with("A = q'[']' ) FOR UPDATE -- (q'[']'").is_err());
+        assert!(with("A = nq'{x}'").is_err());
+        assert!(with("A := 1").is_ok());
+        let zoned = build(
+            DbKind::Oracle,
+            &TableQuery {
+                table: "T".into(),
+                conditions: vec![Condition {
+                    column: "AT".into(),
+                    op: Op::Eq,
+                    values: vec!["2026-11-12 10:11:12+00:00".into()],
+                    kind: ValueKind::Text,
+                    type_name: "TIMESTAMP(6) WITH TIME ZONE".into(),
+                }],
+                ..TableQuery::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            zoned.sql,
+            "SELECT *\nFROM T\nWHERE AT = TO_TIMESTAMP_TZ(:1, 'YYYY-MM-DD HH24:MI:SS.FF9 TZH:TZM')"
+        );
+        assert_eq!(
+            zoned.params,
+            vec![Bind::Text("2026-11-12 10:11:12.000000000 +00:00".into())]
+        );
+    }
+
     use super::*;
 
     const ALL: [DbKind; 4] = [

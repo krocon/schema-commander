@@ -471,7 +471,9 @@ export class SchemaTree implements OnDestroy {
   }
 
   private openMenu(row: TreeRow, x: number, y: number): void {
-    const items: MenuItem[] = MENU.filter((m) => allows(m.id, row)).map((m) => ({
+    const items: MenuItem[] = MENU.filter(
+      (m) => this.actions.offered(m.id) && allows(m.id, row),
+    ).map((m) => ({
       id: m.id,
       label: m.label(),
       separator: m.separator,

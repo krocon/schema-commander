@@ -62,4 +62,22 @@ Schema-Vergleich und Struktur bearbeiten gibt es für Oracle noch nicht – die 
 
 ## Review
 
-Siehe Abschnitt am Ende, sobald der zweite Blick durch ist.
+Ein zweiter, nur lesender Blick über den Branch. Behoben, je mit Test:
+
+| # | Befund | Behebung |
+|---|---|---|
+| 1 (hoch) | Eine gestoppte Anweisung, die der Server nicht beenden durfte, lief zu Ende – und wurde dann **bestätigt**, obwohl das Fenster „abgebrochen“ gemeldet hatte | Der Thread rollt zurück, wenn die Sitzung aufgegeben hat (Container-Test `review_findings_hold`) |
+| 2 (hoch) | `SET TRANSACTION READ ONLY` gilt nur für eine Transaktion (und liest darin einen alten Stand); als „Sitzung nur lesend“ taugt es nicht, der zweite Aufruf der KI-Steuerung wäre gescheitert | `read_only_statement` ist für Oracle `None`: Es zählt die Einstufung, und ein lesender Aufruf läuft – wie bei SQL Server – in einer Transaktion, die zurückgerollt wird |
+| 3 | Werte von `TIMESTAMP WITH TIME ZONE` wurden als Text gebunden (NLS) – Filtern, Ändern und Löschen solcher Zeilen scheiterte | `TO_TIMESTAMP_TZ(:n, <unser Format>)`, der Wert in einer festen Schreibweise; ohne Zone gilt UTC, wie das Gitter anzeigt |
+| 4 | Reservierte Wörter von Oracle (`COMMENT`, `LEVEL`, `DATE` …) galten als schlichte Namen | eigene Liste in `meta.rs` |
+| 5 | Das Flag `structure` las niemand; „Neue Tabelle“ und „Duplizieren“ hätten den Erzeuger anderer Dialekte erreicht | `structure::plan` lehnt Oracle ab; der Baum bietet die fünf Struktur-Aktionen nicht an |
+| 6 | Der Merker „Transaktion geöffnet“ blieb nach DDL stehen (das bei Oracle bestätigt); `COMMIT COMMENT '… TO …'` galt nicht als Ende | DDL setzt ihn zurück; `ROLLBACK TO` wird am zweiten Wort erkannt |
+| 7 | Die freie Bedingung kannte keine q-Quotes und ließ `:1` durch | beides wird abgelehnt |
+| 8 | Der Lexer für Parameter kannte keine q-Quotes | ergänzt |
+| 9 | `seq.NEXTVAL` galt als lesend | schreibend |
+| 10 | Die zweite Verbindung fand das Wallet nicht mehr | der Ordner lebt so lange wie die Sitzung |
+| 11 | `select 1 from dual; -- Notiz` behielt sein `;` | der Trenner fällt auch vor Kommentaren weg |
+
+Offen geblieben: `WITH FUNCTION …`, ein Block mit Marke (`<<l>> BEGIN …`) und `CREATE … JAVA` zerlegt die App
+nicht als PL/SQL – solche Texte als Auswahl ausführen. Das Passwort bleibt für die zweite Verbindung im Speicher
+der Sitzung (wie beim MySQL-Treiber).

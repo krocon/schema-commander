@@ -159,12 +159,23 @@ export class SchemaActions {
 
   /** Whether `action` can run on the active row of the tree. */
   can(action: NodeAction): boolean {
-    return allows(action, this.store.activeRow());
+    return this.offered(action) && allows(action, this.store.activeRow());
+  }
+
+  /** Whether the database of the active connection has the action at all (prompt 035). */
+  offered(action: NodeAction): boolean {
+    const structure =
+      action === 'SCHEMA_EDIT_TABLE' ||
+      action === 'SCHEMA_NEW_TABLE' ||
+      action === 'SCHEMA_DUPLICATE_TABLE' ||
+      action === 'SCHEMA_TRUNCATE_TABLE' ||
+      action === 'SCHEMA_DROP_TABLE';
+    return !structure || this.connections.capabilities(this.connections.activeId() ?? '').structure;
   }
 
   /** Runs `action` on a row (default: the active one). */
   async run(action: NodeAction, row: TreeRow | null = this.store.activeRow()): Promise<void> {
-    if (!row || !allows(action, row)) return;
+    if (!row || !this.offered(action) || !allows(action, row)) return;
     const name = rowName(row) ?? '';
     const qualified = rowQualified(row) ?? '';
     const kind = this.connections.active()?.kind ?? 'sqlite';

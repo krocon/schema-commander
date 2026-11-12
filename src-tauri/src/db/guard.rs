@@ -671,6 +671,7 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
         } else if has(WRITE_WORDS)
             || (kind == DbKind::Sqlserver && has(TSQL_WRITE_WORDS))
             || calls_writing_function(toks)
+            || (kind == DbKind::Oracle && has(&["NEXTVAL"]))
             || pairs("NEXT", "VALUE")
             || pairs("PREVIOUS", "VALUE")
         {
@@ -888,8 +889,9 @@ pub fn read_only_statement(kind: DbKind) -> Option<&'static str> {
         DbKind::Sqlite => Some("PRAGMA query_only = ON"),
         // SQL Server has no read-only session; the classification is all there is
         DbKind::Sqlserver => None,
-        // only until the transaction ends: who wants a reading session sends it before each statement
-        DbKind::Oracle => Some("SET TRANSACTION READ ONLY"),
+        // Oracle has it only for one transaction (and reads a stale snapshot inside it): the
+        // classification is all there is, and a reading call runs in a transaction that is rolled back
+        DbKind::Oracle => None,
     }
 }
 
@@ -938,7 +940,8 @@ mod tests {
             Dangerous
         );
         assert_eq!(classify("CALL p(1)", k), Write);
-        assert_eq!(classify("SELECT seq.NEXTVAL FROM dual", k), Read);
+        // a sequence moves on: no reading
+        assert_eq!(classify("SELECT seq.NEXTVAL FROM dual", k), Write);
         assert_eq!(classify("SELECT * FROM t FOR UPDATE", k), Write);
         assert_eq!(
             classify(
@@ -950,7 +953,7 @@ mod tests {
         assert_eq!(classify("TRUNCATE TABLE t", k), Dangerous);
         // a session setting is no reading: the app sends this one itself
         assert_eq!(classify("SET TRANSACTION READ ONLY", k), Write);
-        assert_eq!(read_only_statement(k), Some("SET TRANSACTION READ ONLY"));
+        assert_eq!(read_only_statement(k), None);
     }
 
     /// Statements every dialect is asked about.

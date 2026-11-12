@@ -248,7 +248,8 @@ fn oracle_refuses_a_wrong_password_and_an_unknown_service() {
     let e = connect(&tls, Some(&Secret::new(PW)), &|| false)
         .err()
         .unwrap();
-    assert_eq!(e.code, ErrorCode::Unsupported);
+    // refused as a profile, before anything is sent
+    assert_eq!(e.code, ErrorCode::InvalidProfile);
 }
 
 #[test]
@@ -993,4 +994,107 @@ fn what_is_not_there_for_oracle_yet_says_so() {
     assert!(schema_commander_lib::db::compare::snapshot(s.as_mut(), K, "SHOP", stop).is_err());
     // and the session is fine
     assert_eq!(rows(&run(&mut s, "SELECT 1 FROM dual")), json!([["1"]]));
+}
+
+/// Review 035b: a statement the user stopped is not kept behind their back when the server could not
+/// be asked to end it, a column with a reserved name is quoted, and an instant is found by its value.
+#[test]
+#[ignore]
+fn review_findings_hold() {
+    let mut s = open();
+    drop_all(&mut s, &["DROP TABLE sc_o_rev PURGE"]);
+    run(
+        &mut s,
+        "CREATE TABLE sc_o_rev (id NUMBER(9) PRIMARY KEY, \"COMMENT\" VARCHAR2(20), \"LEVEL\" NUMBER(3), \
+         at TIMESTAMP WITH TIME ZONE)",
+    );
+    run(
+        &mut s,
+        "INSERT INTO sc_o_rev VALUES (1, 'a', 5, TIMESTAMP '2026-11-12 12:11:12 +02:00')",
+    );
+    run(
+        &mut s,
+        "INSERT INTO sc_o_rev VALUES (2, 'b', 7, TIMESTAMP '2026-11-12 10:11:13 +00:00')",
+    );
+    // the value as the grid shows it (UTC) finds the row that was stored with another zone
+    let shown = rows(&run(&mut s, "SELECT at FROM sc_o_rev WHERE id = 1"))[0][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(shown, "2026-11-12 10:11:12+00:00");
+    let q = filter::build(
+        K,
+        &TableQuery {
+            schema: Some("SHOP".into()),
+            table: "SC_O_REV".into(),
+            conditions: vec![
+                condition(
+                    "AT",
+                    Op::Eq,
+                    &[&shown],
+                    ValueKind::Text,
+                    "TIMESTAMP(6) WITH TIME ZONE",
+                ),
+                condition("LEVEL", Op::Ge, &["5"], ValueKind::Number, "NUMBER(3)"),
+            ],
+            order: vec![Order {
+                column: "COMMENT".into(),
+                desc: false,
+                nulls: None,
+            }],
+            ..TableQuery::default()
+        },
+    )
+    .unwrap();
+    assert!(
+        q.sql.contains("\"LEVEL\" >= :2") && q.sql.contains("ORDER BY \"COMMENT\""),
+        "{}",
+        q.sql
+    );
+    assert_eq!(rows(&bound(&mut s, &q.sql, &q.params))[0][0], json!(1));
+
+    // stopped while it ran: SHOP may not end sessions, so the block finishes on the server – and
+    // is rolled back there, not committed
+    let stop = AtomicBool::new(false);
+    let r = std::thread::scope(|scope| {
+        scope.spawn(|| {
+            std::thread::sleep(Duration::from_millis(400));
+            stop.store(true, Ordering::Relaxed);
+        });
+        s.query(
+            "BEGIN UPDATE sc_o_rev SET \"LEVEL\" = 99; DBMS_SESSION.SLEEP(5); END;",
+            Limits::rows(1),
+            &|| stop.load(Ordering::Relaxed),
+        )
+    });
+    assert_eq!(r.unwrap_err().code, ErrorCode::Cancelled);
+    std::thread::sleep(Duration::from_secs(7));
+    let mut other = open();
+    assert_eq!(
+        rows(&run(
+            &mut other,
+            "SELECT \"LEVEL\" FROM sc_o_rev ORDER BY id"
+        )),
+        json!([[5], [7]])
+    );
+
+    // a reading call as the AI control makes it: in a transaction that is rolled back, call after call
+    assert_eq!(
+        schema_commander_lib::db::guard::read_only_statement(K),
+        None
+    );
+    for _ in 0..2 {
+        run(&mut other, schema_commander_lib::db::begin_statement(K));
+        assert_eq!(
+            rows(&run(&mut other, "SELECT COUNT(*) FROM sc_o_rev")),
+            json!([["2"]])
+        );
+        run(&mut other, "ROLLBACK");
+    }
+    // DDL ends a transaction that was opened: what follows is kept again
+    run(&mut other, schema_commander_lib::db::begin_statement(K));
+    run(&mut other, "CREATE INDEX sc_o_rev_at ON sc_o_rev (at)");
+    run(&mut other, "DELETE FROM sc_o_rev WHERE id = 2");
+    assert_eq!(other.transaction_state(&|| false), TxState::Idle);
+    run(&mut other, "DROP TABLE sc_o_rev PURGE");
 }

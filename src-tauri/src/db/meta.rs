@@ -240,6 +240,76 @@ const RESERVED: &[&str] = &[
     "write",
 ];
 
+/// Words Oracle reserves beyond the common ones (its documentation, „Oracle SQL Reserved Words“):
+/// a column called `COMMENT` or `LEVEL` needs its quotes.
+const ORACLE_RESERVED: &[&str] = &[
+    "ACCESS",
+    "ADD",
+    "AUDIT",
+    "CHAR",
+    "CLUSTER",
+    "COLUMN_VALUE",
+    "COMMENT",
+    "COMPRESS",
+    "CONNECT",
+    "CURRENT",
+    "DATE",
+    "DECIMAL",
+    "EXCLUSIVE",
+    "FILE",
+    "FLOAT",
+    "IDENTIFIED",
+    "IMMEDIATE",
+    "INCREMENT",
+    "INITIAL",
+    "INTEGER",
+    "INTERSECT",
+    "LEVEL",
+    "LOCK",
+    "LONG",
+    "MAXEXTENTS",
+    "MINUS",
+    "MLSLABEL",
+    "MODE",
+    "MODIFY",
+    "NESTED_TABLE_ID",
+    "NOAUDIT",
+    "NOCOMPRESS",
+    "NOWAIT",
+    "NUMBER",
+    "OFFLINE",
+    "ONLINE",
+    "OPTION",
+    "PCTFREE",
+    "PRIOR",
+    "PUBLIC",
+    "RAW",
+    "RENAME",
+    "RESOURCE",
+    "ROW",
+    "ROWID",
+    "ROWNUM",
+    "ROWS",
+    "SESSION",
+    "SHARE",
+    "SIZE",
+    "SMALLINT",
+    "START",
+    "SUCCESSFUL",
+    "SYNONYM",
+    "SYSDATE",
+    "TRIGGER",
+    "UID",
+    "VALIDATE",
+    "VARCHAR",
+    "VARCHAR2",
+    "WHENEVER",
+];
+
+fn oracle_reserved(name: &str) -> bool {
+    ORACLE_RESERVED.contains(&name.to_ascii_uppercase().as_str())
+}
+
 fn reserved(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     RESERVED.binary_search(&lower.as_str()).is_ok()
@@ -262,7 +332,7 @@ fn plain(name: &str, kind: DbKind) -> bool {
         DbKind::Oracle => c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_',
         _ => c.is_ascii_alphanumeric() || c == '_',
     });
-    first_ok && rest_ok && !reserved(name)
+    first_ok && rest_ok && !reserved(name) && !(kind == DbKind::Oracle && oracle_reserved(name))
 }
 
 /// A name as it is written in SQL: as it is where that is safe, quoted otherwise (spaces, upper case in
@@ -1052,6 +1122,26 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
 mod tests {
     use super::*;
     use crate::db::sqlite;
+
+    /// Oracle (035b): unquoted names are upper case there, and it reserves words of its own.
+    #[test]
+    fn oracle_names_are_plain_only_in_upper_case_and_when_not_reserved() {
+        let q = |name: &str| quote(name, DbKind::Oracle);
+        assert_eq!(q("ORDERS"), "ORDERS");
+        assert_eq!(q("ORDER_ITEMS2"), "ORDER_ITEMS2");
+        assert_eq!(q("orders"), "\"orders\"");
+        assert_eq!(q("Order Items"), "\"Order Items\"");
+        for word in [
+            "COMMENT", "LEVEL", "DATE", "NUMBER", "SIZE", "ROWID", "SELECT", "TABLE",
+        ] {
+            assert_eq!(q(word), format!("\"{word}\""));
+        }
+        // a quote cannot be written inside a quoted name there: it is dropped, the name stays closed
+        assert_eq!(q("a\"; DROP TABLE t; --"), "\"a; DROP TABLE t; --\"");
+        // the others keep their rule
+        assert_eq!(quote("COMMENT", DbKind::Postgres), "\"COMMENT\"");
+        assert_eq!(quote("level", DbKind::Postgres), "level");
+    }
 
     #[test]
     fn the_reserved_words_are_sorted_for_the_search() {

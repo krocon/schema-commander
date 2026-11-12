@@ -62,6 +62,8 @@ pub struct Ora {
     jobs: Option<Sender<Job>>,
     /// To ask the server to end this session: a second connection, and who we are there.
     config: Config,
+    /// The folder with the certificates of the profile, if it has some: the second connection reads it too.
+    _wallet: Option<Wallet>,
     sid: usize,
     serial: usize,
     version: String,
@@ -181,8 +183,7 @@ pub fn ora_error(on: &str, sql: Option<&str>, e: &oracledb::Error) -> AppError {
 }
 
 /// The wallet folder the driver wants, made of the PEM files of the profile: `ewallet.pem` with the CA
-/// and, if given, the client certificate and its key. The folder is ours and goes when the connection
-/// is made.
+/// and, if given, the client certificate and its key. The folder is ours and goes with the session.
 fn wallet(profile: &Profile) -> AppResult<Option<Wallet>> {
     let ca = profile.ca_file.trim();
     let cert = profile.client_cert.trim();
@@ -335,7 +336,6 @@ pub fn connect(
             Err(RecvTimeoutError::Disconnected) => return Err(closed()),
         }
     };
-    drop(wallet);
     let (jobs, inbox) = channel::<Job>();
     std::thread::Builder::new()
         .name("sc-oracle".into())
@@ -345,6 +345,7 @@ pub fn connect(
         tunnel: None,
         jobs: Some(jobs),
         config,
+        _wallet: wallet,
         sid,
         serial,
         version: format!("{version:?}")
@@ -412,7 +413,48 @@ fn for_server(sql: &str) -> &str {
     if is_plsql(&head(sql)) {
         return sql;
     }
-    sql.trim_end_matches(|c: char| c == ';' || c.is_whitespace())
+    let sql = sql.trim_end_matches(|c: char| c == ';' || c.is_whitespace());
+    // a `;` with only comments behind it (a selection that took the note along) ends the statement too
+    match last_separator(sql) {
+        Some(at) => sql[..at].trim_end_matches(|c: char| c == ';' || c.is_whitespace()),
+        None => sql,
+    }
+}
+
+/// Where the last `;` outside of strings and comments stands, if nothing but comments follows it.
+fn last_separator(sql: &str) -> Option<usize> {
+    let b = sql.as_bytes();
+    let mut found = None;
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'\'' | b'"' => {
+                let quote = b[i];
+                i += 1;
+                while i < b.len() && b[i] != quote {
+                    i += 1;
+                }
+            }
+            b'-' if b.get(i + 1) == Some(&b'-') => {
+                while i < b.len() && b[i] != b'\n' {
+                    i += 1;
+                }
+                continue;
+            }
+            b'/' if b.get(i + 1) == Some(&b'*') => {
+                i += 2;
+                while i < b.len() && !(b[i] == b'*' && b.get(i + 1) == Some(&b'/')) {
+                    i += 1;
+                }
+                i += 1;
+            }
+            b';' => found = Some(i),
+            c if !c.is_ascii_whitespace() => found = None,
+            _ => {}
+        }
+        i += 1;
+    }
+    found
 }
 
 fn kind_of(m: &Metadata) -> (ColKind, String) {
@@ -639,6 +681,32 @@ pub fn datetime_text(value: &str) -> Option<String> {
         })
 }
 
+/// An instant as `TO_TIMESTAMP_TZ` reads it with the format `YYYY-MM-DD HH24:MI:SS.FF9 TZH:TZM`:
+/// `2026-11-12 10:11:12.500000000 +02:00`. A text without a zone is taken as UTC; `None` when it is
+/// no point in time.
+pub fn instant_text(value: &str) -> Option<String> {
+    let v = value.trim().replace('T', " ");
+    let v = match v.strip_suffix('Z') {
+        Some(utc) => format!("{utc}+00:00"),
+        None => v,
+    };
+    let zoned = [
+        "%Y-%m-%d %H:%M:%S%.f%:z",
+        "%Y-%m-%d %H:%M:%S%.f %:z",
+        "%Y-%m-%d %H:%M%:z",
+    ]
+    .iter()
+    .find_map(|f| chrono::DateTime::parse_from_str(&v, f).ok());
+    let at = match zoned {
+        Some(at) => at,
+        None => {
+            let naive = timestamp(&v).ok().and_then(|t| instant(&t))?;
+            FixedOffset::east_opt(0)?.from_utc_datetime(&naive)
+        }
+    };
+    Some(at.format("%Y-%m-%d %H:%M:%S%.9f %:z").to_string())
+}
+
 /// The values of a statement as the driver binds them.
 fn binds(params: &[Bind]) -> AppResult<Vec<Box<dyn ToDbValue>>> {
     params
@@ -696,9 +764,19 @@ impl Worker<'_> {
             .map_err(fail)?;
         if !statement.is_query() {
             let done = statement.execute(&refs).map_err(fail)?;
+            if enough.load(Ordering::Relaxed) {
+                // the session gave up on this statement (stopped, out of time) and told its user so:
+                // what it changed must not be kept behind their back (review 035b 1)
+                let _ = self.conn.rollback();
+                return Err(super::cancelled());
+            }
+            let second = head.split(' ').nth(1).unwrap_or_default();
             if head.starts_with("SET TRANSACTION") {
                 self.manual = true;
-            } else if matches!(first, "COMMIT" | "ROLLBACK") && !head.contains(" TO ") {
+            } else if first == "COMMIT" || (first == "ROLLBACK" && second != "TO") {
+                self.manual = false;
+            } else if statement.is_ddl() {
+                // the server commits with every DDL statement: the transaction that was opened is over
                 self.manual = false;
             } else if !self.manual {
                 // no auto-commit on the server: what ran is kept, as in the other databases
@@ -996,6 +1074,14 @@ mod tests {
             for_server("create or replace editionable package body p as end;"),
             "create or replace editionable package body p as end;"
         );
+        assert_eq!(
+            for_server("select 1 from dual; -- a note\n/* and more */"),
+            "select 1 from dual"
+        );
+        assert_eq!(
+            for_server("select ';' from dual -- no; end"),
+            "select ';' from dual -- no; end"
+        );
         // a division is no end of a block
         assert_eq!(
             for_server("select 4 / 2 from dual"),
@@ -1061,6 +1147,28 @@ mod tests {
         );
         assert!(timestamp("tomorrow").is_err());
         assert!(timestamp("2026-13-40").is_err());
+    }
+
+    #[test]
+    fn an_instant_is_spelled_for_the_format_of_ours() {
+        assert_eq!(
+            instant_text("2026-11-12 10:11:12+00:00").as_deref(),
+            Some("2026-11-12 10:11:12.000000000 +00:00")
+        );
+        assert_eq!(
+            instant_text("2026-11-12T10:11:12.5+02:00").as_deref(),
+            Some("2026-11-12 10:11:12.500000000 +02:00")
+        );
+        assert_eq!(
+            instant_text("2026-11-12 10:11:12Z").as_deref(),
+            Some("2026-11-12 10:11:12.000000000 +00:00")
+        );
+        // without a zone: UTC, as the grid shows it
+        assert_eq!(
+            instant_text("2026-11-12").as_deref(),
+            Some("2026-11-12 00:00:00.000000000 +00:00")
+        );
+        assert_eq!(instant_text("soon"), None);
     }
 
     #[test]

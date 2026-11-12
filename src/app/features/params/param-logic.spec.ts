@@ -89,6 +89,12 @@ describe('finding parameters (catalog)', () => {
     expect(
       findParams(sql, 'oracle', DEFAULT_FORMS.oracle).map((u) => sql.slice(u.start, u.end)),
     ).toEqual([':limit', ':new']);
+    // a q-quote is one string: nothing in it is a value (review 035b 8)
+    expect(
+      findParams("select q'[it's :x]', :y from dual", 'oracle', DEFAULT_FORMS.oracle).map(
+        (u) => u.key,
+      ),
+    ).toEqual(['y']);
     // a question mark means nothing there unless the user says so
     expect(findParams('select ? from dual', 'oracle', DEFAULT_FORMS.oracle)).toEqual([]);
   });
