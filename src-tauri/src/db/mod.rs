@@ -25,6 +25,7 @@ pub mod relations;
 pub mod secrets;
 pub mod sqlite;
 pub mod structure;
+pub mod transfer;
 pub mod value;
 
 use crate::error::{AppError, AppResult, ErrorCode};

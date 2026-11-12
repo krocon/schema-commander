@@ -60,6 +60,9 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
 - Back up and restore with the tools of the database (`pg_dump`, `pg_restore`, `psql`, `mysqldump`, `mysql`) – found on
   the machine, started without a shell, the password never an argument; a copy of a SQLite file; and a simple SQL
   export where there is no tool
+- Copy tables from one connection to another, also across databases (PostgreSQL → MySQL, SQL Server, SQLite …): as a
+  stream without a file in between, types mapped with every loss named before it runs, tables in the order of their
+  foreign keys
 - Execution plans (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>X</kbd>) as a tree table for every database: rows estimated and
   actual, own and total time, cost – the expensive operations and wrong estimates stand out. „With execution“
   runs the statement inside a transaction that is rolled back

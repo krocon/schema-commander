@@ -93,6 +93,28 @@ pub struct LoadPlan {
     /// Everything in one transaction – all rows or none (only when errors end the import).
     #[serde(default)]
     pub whole_transaction: bool,
+    /// The values come from a database, not from a file (prompt 045): a text is taken as it is – also
+    /// one that holds U+FFFD, which in a file means bytes that could not be read.
+    #[serde(default)]
+    pub exact: bool,
+}
+
+/// Where the records of a load come from: a file, or another database.
+pub trait Records {
+    /// Columns a record has.
+    fn width(&self) -> usize;
+    /// The next record, or why what stood there is none (line, reason, the raw text); `None`: the end.
+    fn next_record(&mut self) -> AppResult<Option<crate::data_import::NextRecord>>;
+}
+
+impl Records for Source {
+    fn width(&self) -> usize {
+        self.columns.len()
+    }
+
+    fn next_record(&mut self) -> AppResult<Option<crate::data_import::NextRecord>> {
+        Source::next_record(self)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -249,7 +271,8 @@ pub fn convert(record: &Record, plan: &LoadPlan) -> Result<RowInsert, String> {
     let mut set = Vec::with_capacity(plan.mappings.len());
     for m in &plan.mappings {
         let column = &m.target.name;
-        let text = m.target.kind == ValueKind::Text;
+        // binary data travels as hex: like a text, empty is empty and not „no value“
+        let text = matches!(m.target.kind, ValueKind::Text | ValueKind::Bytes);
         let raw: Option<&str> = match m.source {
             // a record with fewer fields than the others: what is missing is empty
             Some(i) => record.cells.get(i).map_or(Some(""), |c| c.as_deref()),
@@ -275,7 +298,7 @@ pub fn convert(record: &Record, plan: &LoadPlan) -> Result<RowInsert, String> {
                 return Err(format!("{column}: the value is too long"));
             }
             // bytes that were no text in the encoding the file was read with
-            if v.contains('\u{FFFD}') {
+            if !plan.exact && v.contains('\u{FFFD}') {
                 return Err(format!(
                     "{column}: the value holds bytes that are no text in this encoding"
                 ));
@@ -687,7 +710,12 @@ impl Loader<'_> {
     }
 
     /// Reads the file and writes its rows, block by block.
-    fn go(&mut self, source: &mut Source, block: usize, progress: &dyn Fn(u64)) -> AppResult<()> {
+    fn go(
+        &mut self,
+        source: &mut dyn Records,
+        block: usize,
+        progress: &dyn Fn(u64),
+    ) -> AppResult<()> {
         if self.whole {
             self.begin()?;
         }
@@ -765,7 +793,7 @@ impl Loader<'_> {
 pub fn load(
     session: &mut dyn Session,
     kind: DbKind,
-    source: &mut Source,
+    source: &mut dyn Records,
     plan: &LoadPlan,
     error_file: Option<&std::path::Path>,
     timeout: Option<std::time::Duration>,
@@ -774,7 +802,7 @@ pub fn load(
 ) -> AppResult<Loaded> {
     checked_plan(plan)?;
     // the mapping was made for the columns the user saw: a file read otherwise now is another file
-    let columns = source.columns.len();
+    let columns = source.width();
     if plan
         .mappings
         .iter()
@@ -893,6 +921,7 @@ mod tests {
             clear_first: false,
             on_error: OnError::Abort,
             whole_transaction: true,
+            exact: false,
         }
     }
 

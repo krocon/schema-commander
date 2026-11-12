@@ -114,7 +114,7 @@ Prompts) · **Stufe** = meine Empfehlung: **1** Grundlage (ohne das ist es kein 
 | F1 | **Export** eines Ergebnisses oder einer Tabelle: CSV, TSV, JSON, NDJSON, Excel, `INSERT`-Skript, Markdown – als Job mit Fortschritt und Abbruch, direkt vom Server in die Datei (nicht über das Gitter) | DataGrip, DBeaver | M | 1 | ☑ [011](../prompts/done/011-export.md) |
 | F2 | **Import** von CSV/JSON in eine Tabelle: Vorschau, Spalten zuordnen, Typen erkennen, Tabelle anlegen, Fehlerzeilen protokollieren | DataGrip, Navicat | M–L | 2 | ☑ [033](../prompts/done/033-import.md) |
 | F3 | **Sichern und Wiederherstellen** über die Werkzeuge der Datenbank (`pg_dump`, `mysqldump`) mit Dialog | TablePlus, DBeaver | M | 3 | ☑ [044](../prompts/done/044-sichern-wiederherstellen.md) |
-| F4 | **Daten zwischen Datenbanken kopieren** (Tabelle → andere Verbindung) | DBeaver, Navicat | L | 3 | ☑ [045](../prompts/045-daten-kopieren.md) |
+| F4 | **Daten zwischen Datenbanken kopieren** (Tabelle → andere Verbindung) | DBeaver, Navicat | L | 3 | ☑ [045](../prompts/done/045-daten-kopieren.md) |
 
 ### G – Bedienung und Rahmen
 

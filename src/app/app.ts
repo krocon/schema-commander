@@ -34,6 +34,9 @@ import { ErDiagramDialog } from './features/diagram/er-diagram-dialog';
 import { ExportDialog } from './features/export/export-dialog';
 import { PlanDialog } from './features/plan/plan-dialog';
 import { PlanService } from './features/plan/plan.service';
+import { TransferDialog } from './features/transfer/transfer-dialog';
+import { defaultSchema } from './features/transfer/transfer-logic';
+import { TransferService } from './features/transfer/transfer.service';
 import { BackupDialog } from './features/backup/backup-dialog';
 import { BackupService } from './features/backup/backup.service';
 import { StructureDialog } from './features/structure/structure-dialog';
@@ -140,6 +143,7 @@ const SIDEBAR_MIN = 140;
     ContextMenu,
     ExportDialog,
     PlanDialog,
+    TransferDialog,
     BackupDialog,
     StructureDialog,
     ResultCompareDialog,
@@ -582,6 +586,11 @@ const SIDEBAR_MIN = 140;
         <app-backup-dialog [target]="target" (closed)="backup.close()" />
       }
     }
+    @if (transfer.source(); as source) {
+      @defer (on immediate) {
+        <app-transfer-dialog [source]="source" (closed)="transfer.close()" />
+      }
+    }
     @if (plans.view(); as view) {
       @defer (on immediate) {
         <app-plan-dialog [view]="view" (closed)="plans.close()" />
@@ -734,6 +743,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly serverSearch = inject(ServerSearchService);
   protected readonly diagrams = inject(DiagramService);
   protected readonly plans = inject(PlanService);
+  protected readonly transfer = inject(TransferService);
   protected readonly backup = inject(BackupService);
   protected readonly structure = inject(StructureService);
   protected readonly resultCompare = inject(ResultCompareService);
@@ -1180,6 +1190,19 @@ export class App implements OnInit, OnDestroy {
         'SEARCH_SERVER',
         () => this.serverSearch.open(),
         () => this.connections.activeState().kind === 'open',
+      ),
+      this.actions.register(
+        'TRANSFER_TABLES',
+        () => {
+          const profile = this.connections.active();
+          if (!profile) return;
+          this.transfer.open({
+            connectionId: profile.id,
+            schema: defaultSchema(profile.kind, profile.database),
+            table: null,
+          });
+        },
+        () => this.connections.activeState().kind === 'open' && !this.transfer.running(),
       ),
       this.actions.register(
         'BACKUP_DATABASE',

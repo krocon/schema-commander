@@ -79,10 +79,12 @@
   Definition von Views und Routinen im Editor (Prompt 043);
   **Sichern und Wiederherstellen** mit den Werkzeugen der Datenbank (`pg_dump`, `pg_restore`, `psql`,
   `mysqldump`, `mysql`) als Job ohne Shell, SQLite-Kopie, einfacher SQL-Export ohne Werkzeuge (Prompt 044);
+  **Tabellen zwischen Verbindungen kopieren**, auch über Datenbanktypen hinweg: als Strom, mit Typabbildung
+  und genannten Verlusten, in der Reihenfolge der Fremdschlüssel (Prompt 045);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a, 036–044),
+  erledigt: 001–034, 035a, 036–045),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -149,6 +151,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/sql/                QueryApi (run mit Ereignissen, window, free, cancel) + DTOs (ResultRef, RunEvent, Cell, ColKind) – spiegelt db/value.rs
   app/core/structure/          StructureApi (struct_load, struct_plan, struct_apply) + DTOs – spiegelt
                                db/structure.rs und die Tabelle aus db/compare.rs
+  app/core/transfer/           TransferApi (transfer_plan, transfer_run) + DTOs – spiegelt db/transfer.rs
   app/core/text/               places.ts (rein: Stelle des Editors ↔ Offset im Text; Spalten in Codepunkten)
   app/core/theme/              Farbschemata: tokens.ts (Katalog), themes/*.json, theme-logic.ts (rein),
                                ThemeService (Root: Auswahl, Vorschau, eigene Schemata), ThemeApi (themes.json),
@@ -229,6 +232,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/features/structure/      StructureDialog (Formular, Vorschau, Ausführen), StructureService (Root: Dialog,
                                Lauf durch den Schutz, danach auffrischen), structure-logic.ts (rein: Formular ⇄
                                Tabelle, Operationen, Prüfung, Skript)
+  app/features/transfer/       TransferDialog (Quelle, Ziel, Vorschau, Lauf, Bericht), TransferService (Root: ein
+                               Job, Schutz des Ziels), transfer-logic.ts (rein)
   app/features/themes/         Farbschema-Galerie (ThemePicker, ThemeThumb, theme-picker-logic.ts),
                                Schema-Editor (ThemeEditor, theme-editor-logic.ts rein: Ids, Import, Kontrast)
   app/features/value/          ValuePanel (neben dem Gitter, <editlicious-editor readonly>), ValueService (Root:
@@ -287,6 +292,9 @@ src-tauri/                     Rust
   src/db/diagram.rs            Tabellen, Schlüssel und eindeutige Spaltensätze eines Schemas für das ER-Diagramm
   src/db/compare.rs            Schema-Vergleich: Schnappschuss, Unterschiede, Migrationsskript (rein bis auf das
                                Lesen; Katalog böser Namen, Rundreise)
+  src/db/transfer.rs           Tabellen zwischen Verbindungen kopieren: Typabbildung je Dialektpaar mit
+                               Verlusten, Plan in Schlüssel-Reihenfolge, Strom über eine Warteschlange in den
+                               Lader (rein bis auf Kopie und Lauf; Kopie zwischen SQLite-Datenbanken als Test)
   src/db/structure.rs          Struktur bearbeiten: Anfrage (Tabelle vorher/nachher) → Anweisungen über den
                                Erzeuger aus compare.rs, je Schritt eine; löschen, leeren, duplizieren; Lauf in
                                einer Transaktion (rein bis auf Lesen und Lauf; Rundreise in SQLite)
@@ -376,6 +384,9 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   mit `-- DANGER: ` als Kommentar (`compare::danger`); neue Schritte in `script()` brauchen diese Prüfung.
 - **Suche auf dem Server**: nur `db/find.rs` baut ihre Anweisungen; der Suchtext ist immer gebunden. Ein Treffer
   führt über `TableViews.openWith` als Bedingung in eine Tabellen-Ansicht.
+- **Übertragen** (`db/transfer.rs`): Die Quelle wird nur gelesen; geschrieben wird nur über den Lader des
+  Imports (`load::load` mit `Records`), jeder Wert gebunden – auch Binärdaten (als Hex, `ValueKind::Bytes`).
+  Jede Anweisung des Plans geht durch `admit` des Ziels. Ein neuer Typ in `type_for` braucht seinen Verlust.
 - **Import**: Die Datei ist feindlich. Ihre Spaltennamen werden nie SQL (Zielspalten nennt die Zuordnung, gequotet
   im Backend), ihre Werte nur gebunden (`db/load.rs` über `edit::steps`); das Fenster zeigt Werte nur als Text.
 - **Parameter**: Werte des Nutzers gehen nur als `Bind` über `run_query` und werden vom Treiber gebunden

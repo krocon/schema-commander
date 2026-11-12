@@ -144,6 +144,8 @@ export const ACTION_LABELS_DE: Readonly<Record<ActionId, string>> = {
   TOGGLE_SYSTEM_SCHEMAS: 'Systemschemata ein-/ausblenden',
   SCHEMA_EXPORT_TABLE: 'Tabelle exportieren …',
   COMPARE_SCHEMAS: 'Schemata vergleichen …',
+  TRANSFER_TABLES: 'Tabellen in eine andere Verbindung kopieren …',
+  SCHEMA_TRANSFER: 'Schema oder Tabelle in eine andere Verbindung kopieren …',
   BACKUP_DATABASE: 'Datenbank sichern …',
   RESTORE_DATABASE: 'Sicherung wiederherstellen …',
   SCHEMA_BACKUP: 'Schema oder Tabelle sichern …',

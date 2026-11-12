@@ -163,6 +163,8 @@ pub fn run() {
             commands::result_window,
             commands::result_view,
             commands::result_stats,
+            commands::transfer_plan,
+            commands::transfer_run,
             commands::backup_tools,
             commands::backup_dump,
             commands::backup_file_kind,

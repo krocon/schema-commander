@@ -16,6 +16,7 @@ export const SCHEMA_DE: Translation<typeof SCHEMA_EN> = {
   searchHere: 'Hier suchen …',
   diagram: 'Diagramm …',
   backup: 'Sichern …',
+  transfer: 'In eine andere Verbindung kopieren …',
   editTable: 'Struktur bearbeiten …',
   editSource: 'Definition bearbeiten',
   newTable: 'Neue Tabelle …',

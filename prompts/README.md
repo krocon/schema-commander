@@ -67,7 +67,7 @@ verfügbar. Die Schnittstellen stehen in `node_modules/editlicious-editor/README
 | 042 | [Diagramm aus dem Ergebnis](done/042-diagramme.md) ([Design](done/042-diagramme.design.md)) | D11 | 006 | M | ✅ 12.11.2026 |
 | 043 | [Struktur bearbeiten](done/043-struktur-bearbeiten.md) ([Design](done/043-struktur-bearbeiten.design.md)) | E3 | 012, 019 | L | ✅ 12.11.2026 |
 | 044 | [Sichern und Wiederherstellen](done/044-sichern-wiederherstellen.md) ([Design](done/044-sichern-wiederherstellen.design.md)) | F3 | 003, 011 (Job-Engine), 012 | M | ✅ 12.11.2026 |
-| 045 | [Daten zwischen Datenbanken kopieren](045-daten-kopieren.md) | F4 | 011, 033, 043 | L | offen |
+| 045 | [Daten zwischen Datenbanken kopieren](done/045-daten-kopieren.md) ([Design](done/045-daten-kopieren.design.md)) | F4 | 011, 033, 043 | L | ✅ 12.11.2026 |
 | 046 | [Server-Monitor](046-server-monitor.md) | H1 | 003, 012 | M | offen |
 | 047 | [Benutzer und Rechte](047-benutzer-rechte.md) | H2 | 012, 019 | L | offen |
 | 048 | [KI-Anbindung über MCP](048-mcp-ki.md) | H3 | 005, 008, 012 | M–L | offen |

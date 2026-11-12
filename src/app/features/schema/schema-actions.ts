@@ -23,6 +23,7 @@ import { editableSource } from '../structure/structure-logic';
 import { STRUCTURE_TEXTS } from '../structure/structure-texts';
 import { StructureService } from '../structure/structure.service';
 import { BackupService } from '../backup/backup.service';
+import { TransferService } from '../transfer/transfer.service';
 
 /** What can be done with a node of the schema tree (prompt 008); each is an action of the app. */
 export type NodeAction =
@@ -33,6 +34,7 @@ export type NodeAction =
   | 'SCHEMA_SEARCH'
   | 'SCHEMA_DIAGRAM'
   | 'SCHEMA_BACKUP'
+  | 'SCHEMA_TRANSFER'
   | 'SCHEMA_EDIT_TABLE'
   | 'SCHEMA_NEW_TABLE'
   | 'SCHEMA_DUPLICATE_TABLE'
@@ -54,6 +56,7 @@ export const NODE_ACTIONS: readonly NodeAction[] = [
   'SCHEMA_SEARCH',
   'SCHEMA_DIAGRAM',
   'SCHEMA_BACKUP',
+  'SCHEMA_TRANSFER',
   'SCHEMA_EDIT_TABLE',
   'SCHEMA_NEW_TABLE',
   'SCHEMA_DUPLICATE_TABLE',
@@ -104,6 +107,7 @@ export function allows(action: NodeAction, row: TreeRow | null): boolean {
     case 'SCHEMA_SELECT_TEMPLATE':
       return isRelation(row);
     case 'SCHEMA_BACKUP':
+    case 'SCHEMA_TRANSFER':
     case 'SCHEMA_DIAGRAM':
       // a schema, or a table (a view has no keys)
       return row?.kind === 'schema' || (row?.kind === 'object' && row.object?.kind === 'table');
@@ -145,6 +149,7 @@ export class SchemaActions {
   private readonly details = inject(ObjectDetailsService);
   private readonly structure = inject(StructureService);
   private readonly backup = inject(BackupService);
+  private readonly transfer = inject(TransferService);
   private readonly schemaApi = inject(SchemaApi);
 
   /** Whether `action` can run on the active row of the tree. */
@@ -189,6 +194,14 @@ export class SchemaActions {
         });
         return;
       }
+      case 'SCHEMA_TRANSFER':
+        if (!row.schema) return;
+        this.transfer.open({
+          connectionId: this.connections.activeId(),
+          schema: row.schema.name,
+          table: row.kind === 'object' ? (row.object?.name ?? null) : null,
+        });
+        return;
       case 'SCHEMA_BACKUP':
         if (!row.schema) return;
         this.backup.open({
