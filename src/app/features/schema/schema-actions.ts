@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
 import { ObjectDetailsService } from '../details/details.service';
 import { DataImportService } from '../data-import/data-import.service';
+import { DiagramService } from '../diagram/diagram.service';
 import { ExportService } from '../export/export.service';
 import { ServerSearchService } from '../server-search/server-search.service';
 import { CopyService } from '../results/copy.service';
@@ -24,6 +25,7 @@ export type NodeAction =
   | 'SCHEMA_EXPORT_TABLE'
   | 'SCHEMA_IMPORT_TABLE'
   | 'SCHEMA_SEARCH'
+  | 'SCHEMA_DIAGRAM'
   | 'SCHEMA_INSERT_NAME'
   | 'SCHEMA_COPY_NAME'
   | 'SCHEMA_COPY_QUALIFIED'
@@ -37,6 +39,7 @@ export const NODE_ACTIONS: readonly NodeAction[] = [
   'SCHEMA_EXPORT_TABLE',
   'SCHEMA_IMPORT_TABLE',
   'SCHEMA_SEARCH',
+  'SCHEMA_DIAGRAM',
   'SCHEMA_INSERT_NAME',
   'SCHEMA_COPY_NAME',
   'SCHEMA_COPY_QUALIFIED',
@@ -80,6 +83,9 @@ export function allows(action: NodeAction, row: TreeRow | null): boolean {
     case 'SCHEMA_EXPORT_TABLE':
     case 'SCHEMA_SELECT_TEMPLATE':
       return isRelation(row);
+    case 'SCHEMA_DIAGRAM':
+      // a schema, or a table (a view has no keys)
+      return row?.kind === 'schema' || (row?.kind === 'object' && row.object?.kind === 'table');
     case 'SCHEMA_SEARCH':
       // a schema, or something with rows
       return row?.kind === 'schema' || (isRelation(row) && row?.object?.kind !== 'view');
@@ -100,6 +106,7 @@ export class SchemaActions {
   private readonly exporter = inject(ExportService);
   private readonly importer = inject(DataImportService);
   private readonly search = inject(ServerSearchService);
+  private readonly diagram = inject(DiagramService);
   private readonly details = inject(ObjectDetailsService);
 
   /** Whether `action` can run on the active row of the tree. */
@@ -142,6 +149,13 @@ export class SchemaActions {
           name: row.label,
           table: qualified,
         });
+        return;
+      case 'SCHEMA_DIAGRAM':
+        if (!row.schema) return;
+        this.diagram.open(
+          row.schema.name,
+          row.kind === 'object' ? (row.object?.name ?? null) : null,
+        );
         return;
       case 'SCHEMA_SEARCH':
         this.search.open(row.schema?.name ?? null, row.kind === 'object' ? row.label : null);

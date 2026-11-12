@@ -61,10 +61,12 @@
   (Prompt 033); **Release** vorbereitet: Workflow für Pakete je System, Lizenzhinweise, About-Dialog (Prompt 034);
   **CockroachDB und TimescaleDB** über den PostgreSQL-Treiber, Fähigkeits-Flags je Verbindung (Prompt 035a);
   **Suche auf dem Server**: ein Text in den Zeilen aller Tabellen und in Definitionen, als lesender Job (Prompt 036);
+  **ER-Diagramm** eines Schemas oder einer Tabelle mit Nachbarn: eigene Anordnung, verschiebbar, Listenansicht,
+  Export als SVG, Mermaid, DBML (Prompt 037);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a, 036),
+  erledigt: 001–034, 035a, 036, 037),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -136,6 +138,9 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                connection-logic.ts (rein: Gruppen, Prüfung, Vorschläge)
   app/features/details/        DetailsDialog (Listen als Gitter, Filter, Beziehungen, DDL), ObjectDetailsService
                                (Root: Objekt auf dem Schirm, Weg zurück), details-logic.ts (rein)
+  app/features/diagram/        ErDiagramDialog (SVG, Listen daneben), DiagramService, er-model.ts (rein: Knoten,
+                               Kanten, Kardinalität), er-layout.ts (rein: Schichten, Linien), er-export.ts (rein:
+                               Mermaid, DBML, SVG)
   app/features/editor/         SqlEditor (<editlicious-editor scheme="none">), editlicious.ts (Laden),
                                editor-colors.ts (Farben des Editors aus unseren Tokens),
                                sql-split.ts (rein: Skripte je Dialekt zerlegen, Katalog sql-split.cases.json)
@@ -231,6 +236,7 @@ src-tauri/                     Rust
   src/db/filter.rs             das SELECT einer Tabellen-Ansicht: Namen gequotet, Werte gebunden (rein, Katalog
                                auch böser Werte)
   src/db/guard.rs              Anweisungen einstufen (lesend/schreibend/DDL/gefährlich), Schutzstufen (rein, Katalog)
+  src/db/diagram.rs            Tabellen, Schlüssel und eindeutige Spaltensätze eines Schemas für das ER-Diagramm
   src/db/details.rs            Objekt-Details als Listen + DDL je Datenbank (Katalog, gebundene Parameter)
   src/db/relations.rs          Fremdschlüssel einer Tabelle als Daten, je Datenbank (Katalog, gebundene Parameter)
   src/db/names.rs              Namensindex je Verbindung: Katalog lesen, Suche und Rangfolge (rein, Katalog als Test)

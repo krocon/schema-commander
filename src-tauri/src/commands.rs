@@ -813,6 +813,19 @@ pub fn export_query(
     Ok(done)
 }
 
+/// What an ER diagram of a schema is drawn from (prompt 037): tables with columns, foreign keys, unique
+/// sets of columns. Read from the catalog with bound parameters.
+#[tauri::command(async)]
+pub fn meta_diagram(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    schema: String,
+) -> AppResult<crate::db::diagram::DiagramData> {
+    manager.ask(&id, |session, kind, stop| {
+        crate::db::diagram::diagram(session, kind, &schema, stop)
+    })
+}
+
 /// Searches a text on the server (prompt 036): in the rows of tables and in definitions. A job that
 /// `cancel_job` stops; `on_event` hears every hit as it is found. Only statements that read run, built
 /// here; the text is bound.

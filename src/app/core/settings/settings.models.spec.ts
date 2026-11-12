@@ -75,4 +75,16 @@ describe('mergeKeymap', () => {
     const s = mergeSettings({ recentActions: ['COLOR_SCHEME', 'nope', 3, 'X'.repeat(80)] });
     expect(s.recentActions).toEqual(['COLOR_SCHEME']);
   });
+
+  it('keeps the places of the tables of a diagram, and only what has their shape (prompt 037)', () => {
+    const merged = mergeSettings({
+      diagramPlaces: {
+        'demo|public|': { a: [10.4, -20], b: [1, 'x'], c: [1, 2, 3], d: [Infinity, 0], e: 'no' },
+        nonsense: 'x',
+        list: [1, 2],
+      },
+    });
+    expect(merged.diagramPlaces).toEqual({ 'demo|public|': { a: [10, -20] } });
+    expect(mergeSettings({ diagramPlaces: 'x' }).diagramPlaces).toEqual({});
+  });
 });

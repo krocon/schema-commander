@@ -104,6 +104,13 @@ export interface Settings {
   readonly tableFilters: Readonly<Record<string, TableSpecStored>>;
   /** The row for filtering a result locally is shown. */
   readonly filterBarVisible: boolean;
+  /**
+   * Where the user moved the tables of an ER diagram (prompt 037), per diagram (connection, schema,
+   * table): the id of a table → `[x, y]`.
+   */
+  readonly diagramPlaces: Readonly<
+    Record<string, Readonly<Record<string, readonly [number, number]>>>
+  >;
   /** Relations the user defined where the database has no foreign key (prompt 030), per connection. */
   readonly virtualRelations: Readonly<Record<string, readonly unknown[]>>;
   /** The column layout per table of a table view (prompt 029), by `tableKey`; read with `mergeLayout`. */
@@ -191,6 +198,7 @@ export const DEFAULT_SETTINGS: Settings = {
   filterBarVisible: false,
   columnLayouts: {},
   virtualRelations: {},
+  diagramPlaces: {},
   statsMeasures: ['cells', 'sum', 'mean', 'min', 'max'],
   paramsEnabled: true,
   paramForms: {},
@@ -224,6 +232,29 @@ function numberOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? Math.round(value)
     : fallback;
+}
+
+/** The places of the tables of diagrams as stored: only what has the shape, and not without end. */
+export function readDiagramPlaces(raw: unknown): Settings['diagramPlaces'] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, Record<string, readonly [number, number]>> = {};
+  for (const [key, places] of Object.entries(raw as Record<string, unknown>).slice(-50)) {
+    if (key.length > 600 || !places || typeof places !== 'object' || Array.isArray(places))
+      continue;
+    const kept: Record<string, readonly [number, number]> = {};
+    for (const [id, at] of Object.entries(places as Record<string, unknown>).slice(0, 2000)) {
+      if (
+        id.length <= 600 &&
+        Array.isArray(at) &&
+        at.length === 2 &&
+        at.every((v) => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) < 1e7)
+      ) {
+        kept[id] = [Math.round(at[0] as number), Math.round(at[1] as number)];
+      }
+    }
+    out[key] = kept;
+  }
+  return out;
 }
 
 /** Stored settings, forgiving: every broken or missing value falls back to its default. */
@@ -314,6 +345,7 @@ export function mergeSettings(saved: unknown): Settings {
           ) as Record<string, TableSpecStored>)
         : {},
     filterBarVisible: bool('filterBarVisible'),
+    diagramPlaces: readDiagramPlaces(s['diagramPlaces']),
     virtualRelations:
       s['virtualRelations'] &&
       typeof s['virtualRelations'] === 'object' &&

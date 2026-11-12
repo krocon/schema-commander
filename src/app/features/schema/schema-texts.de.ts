@@ -14,6 +14,7 @@ export const SCHEMA_DE: Translation<typeof SCHEMA_EN> = {
   exportTable: 'Exportieren …',
   importTable: 'Datei importieren …',
   searchHere: 'Hier suchen …',
+  diagram: 'Diagramm …',
   insertName: 'Name in den Editor einfügen',
   copyName: 'Name kopieren',
   copyQualified: 'Qualifizierten Namen kopieren',

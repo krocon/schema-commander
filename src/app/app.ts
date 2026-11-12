@@ -29,6 +29,8 @@ import {
 import { DataImportDialog } from './features/data-import/data-import-dialog';
 import { DataImportService } from './features/data-import/data-import.service';
 import { AboutDialog } from './features/about/about-dialog';
+import { DiagramService } from './features/diagram/diagram.service';
+import { ErDiagramDialog } from './features/diagram/er-diagram-dialog';
 import { ExportDialog } from './features/export/export-dialog';
 import { ServerSearchDialog } from './features/server-search/server-search-dialog';
 import { ServerSearchService } from './features/server-search/server-search.service';
@@ -126,6 +128,7 @@ const SIDEBAR_MIN = 140;
     ConnectionList,
     ContextMenu,
     ExportDialog,
+    ErDiagramDialog,
     ServerSearchDialog,
     AboutDialog,
     DataImportDialog,
@@ -538,6 +541,11 @@ const SIDEBAR_MIN = 140;
         <app-server-search-dialog [target]="target" (closed)="serverSearch.close()" />
       }
     }
+    @if (diagrams.request(); as target) {
+      @defer (on immediate) {
+        <app-er-diagram-dialog [target]="target" (closed)="diagrams.close()" />
+      }
+    }
     @if (aboutOpen()) {
       @defer (on immediate) {
         <app-about-dialog (closed)="aboutOpen.set(false)" />
@@ -680,6 +688,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly exporter = inject(ExportService);
   protected readonly dataImporter = inject(DataImportService);
   protected readonly serverSearch = inject(ServerSearchService);
+  protected readonly diagrams = inject(DiagramService);
   protected readonly formatter = inject(FormatService);
   protected readonly saved = inject(SavedStore);
   protected readonly paramService = inject(ParamService);

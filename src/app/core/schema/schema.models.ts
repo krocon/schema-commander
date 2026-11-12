@@ -126,3 +126,30 @@ export interface TableRelations {
   readonly outgoing: readonly ForeignKey[];
   readonly incoming: readonly ForeignKey[];
 }
+
+/** Mirrors `DiagramColumn` in src-tauri/src/db/diagram.rs (prompt 037). */
+export interface DiagramColumn {
+  readonly name: string;
+  readonly typeName: string;
+  readonly nullable: boolean;
+  /** Part of the primary key. */
+  readonly pk: boolean;
+}
+
+/** Mirrors `DiagramTable`. */
+export interface DiagramTable {
+  readonly schema: string;
+  readonly name: string;
+  readonly columns: readonly DiagramColumn[];
+}
+
+/** Mirrors `DiagramData`: what an ER diagram of a schema is drawn from. */
+export interface DiagramData {
+  readonly tables: readonly DiagramTable[];
+  /** The keys of the tables of the schema, and those of other schemas that point into it. */
+  readonly keys: readonly ForeignKey[];
+  /** Columns of a table that are unique together. */
+  readonly unique: readonly { readonly table: string; readonly columns: readonly string[] }[];
+  /** The schema has more tables than a diagram takes. */
+  readonly cut: boolean;
+}
