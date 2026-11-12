@@ -9,13 +9,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Schema Commander – a keyboard-driven SQL client for macOS, Windows and Linux</title>
-<meta name="description" content="Schema Commander is a fast, keyboard-driven SQL client for PostgreSQL, MySQL, MariaDB, SQL Server and SQLite: editor with completion, results that stay in Rust, editing with a preview, plans, ER diagrams, AI control. Free and open source (MIT).">
+<meta name="description" content="Schema Commander is a fast, keyboard-driven SQL client for PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, ClickHouse, DuckDB and SQLite: editor with completion, results that stay in Rust, editing with a preview, plans, ER diagrams, AI control. Free and open source (MIT).">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0f1216" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Schema Commander – query, read, change, commit">
-<meta property="og:description" content="A keyboard-driven SQL client for macOS, Windows and Linux. PostgreSQL, MySQL, MariaDB, SQL Server, SQLite. Free and open source.">
+<meta property="og:description" content="A keyboard-driven SQL client for macOS, Windows and Linux. PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, ClickHouse, DuckDB, SQLite. Free and open source.">
 <meta property="og:image" content="img/icon.png">
 <meta name="twitter:card" content="summary">
 <link rel="icon" type="image/png" href="favicon.png">
@@ -44,7 +44,7 @@
     <div class="wrap">
       <p class="eyebrow reveal"><b class="kw">SELECT</b> SQL client · macOS · Windows · Linux</p>
       <h1 class="h1 split">Query. Read. Change. <span class="accent">Commit.</span></h1>
-      <p class="lead reveal" style="--d:3">A SQL client for people who keep their hands on the keys. <b>PostgreSQL, MySQL, MariaDB, SQL Server and SQLite</b> in one window; results stay in the Rust backend and the grid fetches only the rows you look at.</p>
+      <p class="lead reveal" style="--d:3">A SQL client for people who keep their hands on the keys. <b>PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, ClickHouse, DuckDB and SQLite</b> in one window; results stay in the Rust backend and the grid fetches only the rows you look at.</p>
       <div class="actions reveal" style="--d:4">
         <a class="btn btn-primary" href="https://github.com/krocon/schema-commander/releases">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
@@ -98,8 +98,8 @@
 
   <div class="marquee sec-tight" aria-label="What it speaks" style="padding-block:18px;margin-top:clamp(56px,8vw,110px)">
     <ul>
-      <li>PostgreSQL</li><li>MySQL</li><li>MariaDB</li><li>SQL Server</li><li>SQLite</li><li>CockroachDB</li><li>TimescaleDB</li><li>SSH tunnel</li><li>TLS with your own CA</li><li>CSV · TSV</li><li>JSON · NDJSON</li><li>Excel</li><li>Markdown</li><li>Mermaid · DBML</li><li>pg_dump · mysqldump</li><li>MCP</li>
-      <li aria-hidden="true">PostgreSQL</li><li aria-hidden="true">MySQL</li><li aria-hidden="true">MariaDB</li><li aria-hidden="true">SQL Server</li><li aria-hidden="true">SQLite</li><li aria-hidden="true">CockroachDB</li><li aria-hidden="true">TimescaleDB</li><li aria-hidden="true">SSH tunnel</li><li aria-hidden="true">TLS with your own CA</li><li aria-hidden="true">CSV · TSV</li><li aria-hidden="true">JSON · NDJSON</li><li aria-hidden="true">Excel</li><li aria-hidden="true">Markdown</li><li aria-hidden="true">Mermaid · DBML</li><li aria-hidden="true">pg_dump · mysqldump</li><li aria-hidden="true">MCP</li>
+      <li>PostgreSQL</li><li>MySQL</li><li>MariaDB</li><li>SQL Server</li><li>Oracle</li><li>ClickHouse</li><li>DuckDB</li><li>SQLite</li><li>CockroachDB</li><li>TimescaleDB</li><li>YugabyteDB</li><li>Parquet</li><li>SSH tunnel</li><li>TLS with your own CA</li><li>CSV · TSV</li><li>JSON · NDJSON</li><li>Excel</li><li>Markdown</li><li>Mermaid · DBML</li><li>pg_dump · mysqldump</li><li>MCP</li>
+      <li aria-hidden="true">PostgreSQL</li><li aria-hidden="true">MySQL</li><li aria-hidden="true">MariaDB</li><li aria-hidden="true">SQL Server</li><li aria-hidden="true">Oracle</li><li aria-hidden="true">ClickHouse</li><li aria-hidden="true">DuckDB</li><li aria-hidden="true">SQLite</li><li aria-hidden="true">CockroachDB</li><li aria-hidden="true">TimescaleDB</li><li aria-hidden="true">YugabyteDB</li><li aria-hidden="true">Parquet</li><li aria-hidden="true">SSH tunnel</li><li aria-hidden="true">TLS with your own CA</li><li aria-hidden="true">CSV · TSV</li><li aria-hidden="true">JSON · NDJSON</li><li aria-hidden="true">Excel</li><li aria-hidden="true">Markdown</li><li aria-hidden="true">Mermaid · DBML</li><li aria-hidden="true">pg_dump · mysqldump</li><li aria-hidden="true">MCP</li>
     </ul>
   </div>
 
@@ -109,12 +109,12 @@
       <h2 class="h2 split">The rows stay in Rust. The window shows a slice.</h2>
       <p class="lead reveal">A result is stored by the backend, in memory and above a limit on disk. Sorting, filtering, searching, adding up and comparing happen there, so the window never holds more than it paints.</p>
       <div class="stats reveal">
-        <div class="stat"><b data-count="7">7</b><span>kinds of server the drivers are tested against</span></div>
+        <div class="stat"><b data-count="11">11</b><span>kinds of database the drivers are tested against</span></div>
         <div class="stat"><b data-count="183">183</b><span>actions, each with a shortcut you can change</span></div>
         <div class="stat"><b data-count="17">17</b><span>colour schemes, all WCAG AA, and your own</span></div>
         <div class="stat"><b data-count="0">0</b><span>times the app asks “save?”: every text is backed up</span></div>
       </div>
-      <p class="note reveal">Tested against PostgreSQL, MySQL, MariaDB, SQL Server, SQLite, CockroachDB and TimescaleDB. <a href="databases.html">What differs between them</a></p>
+      <p class="note reveal">Tested against PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, ClickHouse, DuckDB, SQLite, CockroachDB, TimescaleDB and YugabyteDB. <a href="databases.html">What differs between them</a></p>
     </div>
   </section>
 
@@ -285,26 +285,29 @@
 
   <section class="sec sec-line" id="databases">
     <div class="wrap">
-      <p class="eyebrow reveal"><b class="kw kw-ok">CONNECT</b> five drivers, seven servers</p>
+      <p class="eyebrow reveal"><b class="kw kw-ok">CONNECT</b> seven drivers, eleven databases</p>
       <h2 class="h2 split">Your databases. Behind a tunnel, if they are.</h2>
       <p class="lead reveal">Profiles in folders with colour tags, passwords only in the keychain of your system. A connection comes from a URL, or from what DBeaver, DataGrip, <code>.pgpass</code> or <code>.my.cnf</code> already know.</p>
 
       <div class="flow reveal">
-        <svg viewBox="0 0 1200 380" role="img" aria-label="PostgreSQL, MySQL and MariaDB and SQL Server reach Schema Commander directly or through an SSH tunnel; a SQLite file is opened directly">
-          <path class="wire" d="M240 52 C 420 52, 380 190, 520 190"/>
-          <path class="wire" d="M240 144 C 400 144, 400 190, 520 190"/>
-          <path class="wire" d="M240 236 C 400 236, 400 190, 520 190"/>
-          <path class="wire" d="M240 328 C 620 328, 720 260, 920 230"/>
+        <svg viewBox="0 0 1200 380" role="img" aria-label="PostgreSQL, MySQL and MariaDB, SQL Server and Oracle, and ClickHouse reach Schema Commander directly or through an SSH tunnel; SQLite and DuckDB files are opened directly">
+          <path class="wire" d="M240 38 C 420 38, 380 190, 520 190"/>
+          <path class="wire" d="M240 110 C 400 110, 400 190, 520 190"/>
+          <path class="wire" d="M240 182 C 400 182, 400 190, 520 190"/>
+          <path class="wire" d="M240 254 C 400 254, 400 190, 520 190"/>
+          <path class="wire" d="M240 326 C 620 326, 720 260, 920 230"/>
           <path class="wire" d="M700 190 L 920 190"/>
-          <path class="pulse" style="--c:var(--fn)" d="M240 52 C 420 52, 380 190, 520 190"/>
-          <path class="pulse" style="--c:var(--warn);--dl:-.6s" d="M240 144 C 400 144, 400 190, 520 190"/>
-          <path class="pulse" style="--c:var(--error);--dl:-1.4s" d="M240 236 C 400 236, 400 190, 520 190"/>
-          <path class="pulse" style="--c:var(--ok);--dl:-2.1s" d="M240 328 C 620 328, 720 260, 920 230"/>
+          <path class="pulse" style="--c:var(--fn)" d="M240 38 C 420 38, 380 190, 520 190"/>
+          <path class="pulse" style="--c:var(--warn);--dl:-.6s" d="M240 110 C 400 110, 400 190, 520 190"/>
+          <path class="pulse" style="--c:var(--error);--dl:-1.4s" d="M240 182 C 400 182, 400 190, 520 190"/>
+          <path class="pulse" style="--c:var(--num);--dl:-1.8s" d="M240 254 C 400 254, 400 190, 520 190"/>
+          <path class="pulse" style="--c:var(--ok);--dl:-2.1s" d="M240 326 C 620 326, 720 260, 920 230"/>
           <path class="pulse" style="--c:var(--accent);--dl:-1s" d="M700 190 L 920 190"/>
-          <g class="node"><rect x="0" y="20" width="240" height="64" rx="10"/><text x="18" y="48">PostgreSQL</text><text class="sub" x="18" y="68">+ CockroachDB · TimescaleDB</text></g>
-          <g class="node"><rect x="0" y="112" width="240" height="64" rx="10"/><text x="18" y="140">MySQL · MariaDB</text><text class="sub" x="18" y="160">DELIMITER · session read only</text></g>
-          <g class="node"><rect x="0" y="204" width="240" height="64" rx="10"/><text x="18" y="232">SQL Server</text><text class="sub" x="18" y="252">GO batches · XML plans</text></g>
-          <g class="node"><rect x="0" y="296" width="240" height="64" rx="10"/><text x="18" y="324">SQLite</text><text class="sub" x="18" y="344">a file · and a demo in memory</text></g>
+          <g class="node"><rect x="0" y="10" width="240" height="56" rx="10"/><text x="18" y="34">PostgreSQL</text><text class="sub" x="18" y="53">and three relatives</text></g>
+          <g class="node"><rect x="0" y="82" width="240" height="56" rx="10"/><text x="18" y="106">MySQL · MariaDB</text><text class="sub" x="18" y="125">one driver, both flavours</text></g>
+          <g class="node"><rect x="0" y="154" width="240" height="56" rx="10"/><text x="18" y="178">SQL Server · Oracle</text><text class="sub" x="18" y="197">GO batches · PL/SQL blocks</text></g>
+          <g class="node"><rect x="0" y="226" width="240" height="56" rx="10"/><text x="18" y="250">ClickHouse</text><text class="sub" x="18" y="269">over HTTP · to read</text></g>
+          <g class="node"><rect x="0" y="298" width="240" height="56" rx="10"/><text x="18" y="322">SQLite · DuckDB</text><text class="sub" x="18" y="341">files · Parquet, CSV, JSON</text></g>
           <g class="node"><rect x="520" y="154" width="180" height="72" rx="10"/><text x="540" y="186">TLS · SSH tunnel</text><text class="sub" x="540" y="206">host key checked</text></g>
           <g class="node app">
             <rect x="920" y="80" width="280" height="220" rx="12"/>
@@ -321,10 +324,11 @@
           </g>
         </svg>
         <ul class="flow-list">
-          <li style="--c:var(--fn)"><b>PostgreSQL</b><span>and what speaks its protocol: CockroachDB, TimescaleDB</span></li>
+          <li style="--c:var(--fn)"><b>PostgreSQL</b><span>and what speaks its protocol: CockroachDB, TimescaleDB, YugabyteDB</span></li>
           <li style="--c:var(--warn)"><b>MySQL · MariaDB</b><span>one driver, both flavours</span></li>
-          <li style="--c:var(--error)"><b>SQL Server</b><span>GO batches, XML plans</span></li>
-          <li style="--c:var(--ok)"><b>SQLite</b><span>a file, and a demo database in memory</span></li>
+          <li style="--c:var(--error)"><b>SQL Server · Oracle</b><span>GO batches, PL/SQL blocks; Oracle without an Instant Client</span></li>
+          <li style="--c:var(--num)"><b>ClickHouse</b><span>over HTTP, to read and analyse</span></li>
+          <li style="--c:var(--ok)"><b>SQLite · DuckDB</b><span>files on your disk; DuckDB also reads Parquet, CSV and JSON</span></li>
           <li style="--c:var(--accent)"><b>TLS · SSH tunnel</b><span>your own CA, client certificate, host key checked</span></li>
         </ul>
       </div>

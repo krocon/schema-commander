@@ -66,8 +66,9 @@ In der Entwicklung liegt das Sidecar nach `pnpm mcp:dev` in `src-tauri/target/de
 
 `run_query` nimmt nur, was der Schutz (`guard::classify`, Prompt 012) als lesend einstuft, und führt es auf einer
 eigenen Sitzung aus, die **auf dem Server** nur lesen darf (PostgreSQL `default_transaction_read_only`, MySQL
-`SET SESSION TRANSACTION READ ONLY`, SQLite `query_only`; SQL Server kennt das nicht: dort läuft die Anweisung in
-einer Transaktion, die zurückgerollt wird). Höchstens 30 Sekunden. Eine Anweisung je Aufruf; `BEGIN`, `COMMIT`, `USE`, `SET`
+`SET SESSION TRANSACTION READ ONLY`, SQLite `query_only`; ClickHouse `readonly = 1`; SQL Server und Oracle kennen
+das nicht: dort läuft die Anweisung in einer Transaktion, die zurückgerollt wird; in DuckDB wird für einen Assistenten
+keine Abfrage ausgeführt, weil sie jede Datei des Rechners lesen könnte). Höchstens 30 Sekunden. Eine Anweisung je Aufruf; `BEGIN`, `COMMIT`, `USE`, `SET`
 und dergleichen gelten nicht als lesend.
 
 ## Was hinaus darf

@@ -95,7 +95,9 @@
         <article class="card reveal"><span class="glyph">PostgreSQL</span><h3>Read-only transactions</h3><p><code>default_transaction_read_only</code> on the session of the assistant.</p></article>
         <article class="card reveal" style="--d:1"><span class="glyph">MySQL · MariaDB</span><h3>Read-only session</h3><p><code>SET SESSION TRANSACTION READ ONLY</code>.</p></article>
         <article class="card reveal" style="--d:2"><span class="glyph">SQLite</span><h3>query_only</h3><p>The pragma is set for the call and taken back afterwards.</p></article>
-        <article class="card reveal"><span class="glyph">SQL Server</span><h3>Rolled back</h3><p>It has no such switch: the statement runs in a transaction that is rolled back.</p></article>
+        <article class="card reveal"><span class="glyph">SQL Server · Oracle</span><h3>Rolled back</h3><p>They have no such switch for a session: the statement runs in a transaction that is rolled back.</p></article>
+        <article class="card reveal" style="--d:1"><span class="glyph">ClickHouse</span><h3>readonly = 1</h3><p>Set on the session of the server, where it cannot be taken back. Table functions that reach out (<code>url</code>, <code>file</code>, <code>remote</code>) do not count as reading.</p></article>
+        <article class="card reveal" style="--d:2"><span class="glyph">DuckDB</span><h3>Structure only</h3><p>A query there can read any file of the computer, so none is run for an assistant.</p></article>
         <article class="card reveal" style="--d:1"><span class="glyph">one statement</span><h3>No session control</h3><p><code>BEGIN</code>, <code>COMMIT</code>, <code>USE</code>, <code>SET</code> and the like do not count as reading.</p></article>
         <article class="card reveal" style="--d:2"><span class="glyph">30 s</span><h3>A time limit</h3><p>A call ends after thirty seconds at the latest.</p></article>
       </div>

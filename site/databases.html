@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Databases and connections – Schema Commander</title>
-<meta name="description" content="Schema Commander connects to PostgreSQL, MySQL, MariaDB, SQL Server and SQLite, also CockroachDB and TimescaleDB: profiles, keychain, SSH tunnels, TLS, import from other tools, and protection for production.">
+<meta name="description" content="Schema Commander connects to PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, ClickHouse, DuckDB and SQLite, also CockroachDB, TimescaleDB and YugabyteDB: profiles, keychain, SSH tunnels, TLS, import from other tools, and protection for production.">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0f1216" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
@@ -37,13 +37,13 @@
     <div class="wrap">
       <p class="eyebrow reveal"><b class="kw kw-ok">CONNECT</b> to …</p>
       <h1 class="h1 split">Your databases, as they are.</h1>
-      <p class="lead reveal">Four server protocols, a file format, and two relatives of PostgreSQL the app recognises on its own. Each dialect keeps its rules: quoting, script separators, plans, transactions.</p>
+      <p class="lead reveal">Five server protocols, two databases that live in a file, and three relatives of PostgreSQL the app recognises on its own. Each dialect keeps its rules: quoting, script separators, plans, transactions.</p>
     </div>
   </section>
 
   <section class="sec-tight" id="kinds">
     <div class="wrap">
-      <p class="eyebrow reveal"><b class="kw">FROM</b> seven kinds of server</p>
+      <p class="eyebrow reveal"><b class="kw">FROM</b> eleven kinds of database</p>
       <h2 class="h2 split">What it speaks.</h2>
       <div class="dbs">
         <article class="card reveal" style="--c:var(--fn)"><h3>PostgreSQL</h3><p>Dollar quoting in scripts, <code>EXPLAIN</code> as JSON, sessions that are read only on the server, roles with SCRAM.</p><b>pg_dump · pg_restore · psql</b></article>
@@ -51,9 +51,12 @@
         <article class="card reveal" style="--d:2;--c:var(--warn)"><h3>MariaDB</h3><p>Recognised by what the server says about itself. Its own tools (<code>mariadb-dump</code>, <code>mariadb</code>) are found as well.</p><b>mariadb-dump · mariadb</b></article>
         <article class="card reveal" style="--c:var(--error)"><h3>SQL Server</h3><p><code>GO</code> splits batches, names in brackets, plans as XML, logins and users.</p><b>simple SQL export</b></article>
         <article class="card reveal" style="--d:1;--c:var(--ok)"><h3>SQLite</h3><p>A file on your disk. And a demo database in memory, there from the first start, to try everything without a server.</p><b>a copy of the file</b></article>
-        <article class="card reveal" style="--d:2;--c:var(--ident)"><h3>CockroachDB · TimescaleDB</h3><p>They speak PostgreSQL’s protocol. The app finds out who answers and adapts: cancel, transaction state, catalog.</p><b>connect as PostgreSQL</b></article>
+        <article class="card reveal" style="--d:2;--c:var(--ident)"><h3>CockroachDB · TimescaleDB · YugabyteDB</h3><p>They speak PostgreSQL’s protocol. The app finds out who answers and adapts: cancel, transaction state, catalog.</p><b>connect as PostgreSQL</b></article>
+        <article class="card reveal" style="--c:var(--error)"><h3>Oracle</h3><p>A driver in pure Rust: no Instant Client to install. PL/SQL blocks end at a line with <code>/</code>, dates are bound as dates. Run, browse, details with DDL, edit rows, search.</p><b>plans, monitor, rights: not yet</b></article>
+        <article class="card reveal" style="--d:1;--c:var(--num)"><h3>ClickHouse</h3><p>Over its HTTP interface, to read and analyse: run, cancel, browse, filter, search. It has no transactions and no unique keys, so rows are not edited in the grid.</p><b>read and analyse</b></article>
+        <article class="card reveal" style="--d:2;--c:var(--ok)"><h3>DuckDB</h3><p>Built in. A file or <code>:memory:</code>, and <code>SELECT * FROM 'sales.parquet'</code> just works. Nothing is downloaded: extensions are never loaded on their own.</p><b>Parquet · CSV · JSON</b></article>
       </div>
-      <p class="note reveal">The drivers are tested against real servers of all seven kinds, started in containers.</p>
+      <p class="note reveal">The drivers are tested against real servers of every kind, started in containers; SQLite and DuckDB run inside the tests.</p>
     </div>
   </section>
 
@@ -139,7 +142,20 @@
           </tbody>
         </table>
       </div>
-      <p class="note reveal">Plans, object details, DDL, the ER diagram, schema compare, the monitor and rights read the catalog of each database with bound parameters.</p>
+      <div class="table-scroll reveal" style="margin-top:28px">
+        <table>
+          <thead><tr><th scope="col"></th><th scope="col">Oracle</th><th scope="col">ClickHouse</th><th scope="col">DuckDB</th></tr></thead>
+          <tbody>
+            <tr><td>Scripts are split at</td><td><code>;</code>, PL/SQL blocks at a line with <code>/</code></td><td><code>;</code>, with backslash escapes</td><td><code>;</code>, with dollar quoting</td></tr>
+            <tr><td>Names are quoted as</td><td><code>"name"</code></td><td><code>`name`</code></td><td><code>"name"</code></td></tr>
+            <tr><td>Values are bound as</td><td><code>:1</code>, a date as a date</td><td><code>{p1:String}</code></td><td><code>?</code></td></tr>
+            <tr><td>Reading only, for an assistant</td><td>a transaction that is rolled back</td><td><code>readonly = 1</code> on the session of the server</td><td>structure only: a query there could read any file</td></tr>
+            <tr><td>Transactions</td><td>auto-commit by the app, or manual</td><td>none</td><td>yes, one database shared by all tabs of a profile</td></tr>
+            <tr><td>Not there yet</td><td>plan, monitor, rights, edit structure, backup</td><td>edit rows, import, copy tables, plan, monitor, rights</td><td>plan, edit structure</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note reveal">Plans, object details, DDL, the ER diagram, schema compare, the monitor and rights read the catalog of each database with bound parameters. What a database does not offer yet is hidden for its connections, not left to fail.</p>
     </div>
   </section>
 
