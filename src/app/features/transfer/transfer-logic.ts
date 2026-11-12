@@ -28,6 +28,9 @@ export function defaultSchema(kind: DbKind, database: string): string {
     case 'oracle':
       // a schema is a user: the caller fills in the one of the connection
       return '';
+    case 'trino':
+      // the database of the profile is the catalog; its schemas have names of their own
+      return '';
     default:
       // MySQL: a schema is a database
       return database;

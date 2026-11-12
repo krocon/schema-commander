@@ -6,9 +6,10 @@
 //! ClickHouse has no transactions: [`Session::transaction_state`] is always idle, and what needs one
 //! (editing rows, importing with a rollback) is not offered for it.
 
+use super::http::transport;
 use super::secrets::Secret;
 use super::value::{Cell, ColKind, Column, Outcome, RowSink, text};
-use super::{Bind, Limits, Profile, Session, Stop, TlsMode, TxState, clean};
+use super::{Bind, Limits, Profile, Session, Stop, TxState, clean};
 use crate::error::{AppError, AppResult, ErrorCode, ErrorDetails};
 use chrono::{NaiveDate, NaiveDateTime};
 use serde_json::Value;
@@ -17,7 +18,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use ureq::Agent;
-use ureq::tls::{Certificate, ClientCert, PrivateKey, RootCerts, TlsConfig};
 
 /// Longest statement accepted (bytes).
 pub const MAX_SQL_LEN: usize = 16 * 1024 * 1024;
@@ -109,90 +109,12 @@ fn failed(on: &str, status: u16, body: &str) -> AppError {
     })
 }
 
-fn transport(on: &str, e: &ureq::Error) -> AppError {
-    let said = clean(&e.to_string());
-    let lower = said.to_lowercase();
-    let code = if lower.contains("certificate") || lower.contains("tls") {
-        ErrorCode::TlsFailed
-    } else if matches!(e, ureq::Error::Timeout(_)) {
-        ErrorCode::Timeout
-    } else {
-        ErrorCode::ConnectionFailed
-    };
-    AppError::new(code, format!("{on}: {said}"))
-}
-
-fn tls(profile: &Profile) -> AppResult<TlsConfig> {
-    let read = |path: &str| {
-        std::fs::read(path).map_err(|e| AppError::new(ErrorCode::TlsFailed, format!("{path}: {e}")))
-    };
-    let bad = |what: &str, e: ureq::Error| {
-        AppError::new(
-            ErrorCode::TlsFailed,
-            format!("{what}: {}", clean(&e.to_string())),
-        )
-    };
-    let mut config = TlsConfig::builder();
-    // HTTPS has no „check the certificate but not the name“: both are checked or nothing is
-    if profile.tls.unchecked() {
-        config = config.disable_verification(true);
-    }
-    let ca = profile.ca_file.trim();
-    if !ca.is_empty() {
-        let pem = read(ca)?;
-        let certs = ureq::tls::parse_pem(&pem)
-            .filter_map(|item| match item {
-                Ok(ureq::tls::PemItem::Certificate(c)) => Some(Ok(c)),
-                Ok(_) => None,
-                Err(e) => Some(Err(bad(ca, e))),
-            })
-            .collect::<AppResult<Vec<Certificate<'static>>>>()?;
-        if certs.is_empty() {
-            return Err(AppError::new(
-                ErrorCode::TlsFailed,
-                format!("{ca}: no certificate in this file"),
-            ));
-        }
-        config = config.root_certs(RootCerts::new_with_certs(&certs));
-    }
-    let cert = profile.client_cert.trim();
-    if !cert.is_empty() {
-        let chain = Certificate::from_pem(&read(cert)?).map_err(|e| bad(cert, e))?;
-        let key_file = profile.client_key.trim();
-        let key = PrivateKey::from_pem(&read(key_file)?).map_err(|e| bad(key_file, e))?;
-        config = config.client_cert(Some(ClientCert::new_with_certs(&[chain], key)));
-    }
-    Ok(config.build())
-}
-
 pub fn connect(profile: &Profile, secret: Option<&Secret>, stop: Stop) -> AppResult<Click> {
-    super::install_crypto();
     let on = profile.where_label();
-    let secure = profile.tls != TlsMode::Off;
-    let mut config = Agent::config_builder()
-        .http_status_as_error(false)
-        .timeout_connect(Some(super::CONNECT_TIMEOUT))
-        .user_agent("schema-commander")
-        .max_redirects(0);
-    if secure {
-        config = config.https_only(true).tls_config(tls(profile)?);
-    }
     let mut click = Click {
         tunnel: None,
-        agent: config.build().new_agent(),
-        base: format!(
-            "{}://{}:{}/",
-            if secure { "https" } else { "http" },
-            {
-                let host = profile.host.trim();
-                if host.contains(':') && !host.starts_with('[') {
-                    format!("[{host}]")
-                } else {
-                    host.to_owned()
-                }
-            },
-            profile.port_or_default()
-        ),
+        agent: super::http::agent(profile)?,
+        base: format!("{}/", super::http::base(profile)),
         user: profile.user.trim().to_owned(),
         password: Secret::new(secret.map(Secret::expose).unwrap_or_default()),
         database: profile.database.trim().to_owned(),

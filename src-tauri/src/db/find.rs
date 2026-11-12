@@ -307,7 +307,7 @@ fn as_text(column: &str, kind: DbKind) -> String {
         DbKind::Sqlserver => format!("CAST({column} AS nvarchar(max))"),
         DbKind::Sqlite => format!("CAST({column} AS TEXT)"),
         DbKind::Oracle => format!("TO_CHAR({column})"),
-        DbKind::Duckdb => format!("CAST({column} AS VARCHAR)"),
+        DbKind::Duckdb | DbKind::Trino => format!("CAST({column} AS VARCHAR)"),
         DbKind::Clickhouse => format!("toString({column})"),
     }
 }
@@ -342,7 +342,7 @@ pub fn data_question(
         let n = params.len();
         match kind {
             DbKind::Postgres | DbKind::Duckdb => format!("${n}"),
-            DbKind::Mysql => "?".to_owned(),
+            DbKind::Mysql | DbKind::Trino => "?".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
             DbKind::Sqlite => format!("?{n}"),
             DbKind::Oracle => format!(":{n}"),
@@ -357,7 +357,7 @@ pub fn data_question(
         let quoted = name(column, kind)?;
         let text = as_text(&quoted, kind);
         selected.push(match kind {
-            DbKind::Sqlite => format!("substr({text}, 1, {VALUE_CHARS})"),
+            DbKind::Sqlite | DbKind::Trino => format!("substr({text}, 1, {VALUE_CHARS})"),
             DbKind::Oracle => format!("SUBSTR({text}, 1, {VALUE_CHARS})"),
             DbKind::Clickhouse => format!("substringUTF8({text}, 1, {VALUE_CHARS})"),
             DbKind::Postgres | DbKind::Mysql | DbKind::Sqlserver | DbKind::Duckdb => {
@@ -419,6 +419,28 @@ pub fn data_question(
             (DbKind::Sqlite, _) => {
                 format!("{text} = {} COLLATE NOCASE", place(spec.text.clone()))
             }
+            // no LIKE either: a position says the same without a pattern
+            (DbKind::Trino, Mode::Contains) if sensitive => {
+                format!("strpos({text}, {}) > 0", place(spec.text.clone()))
+            }
+            (DbKind::Trino, Mode::Contains) => format!(
+                "strpos(lower({text}), lower({})) > 0",
+                place(spec.text.clone())
+            ),
+            (DbKind::Trino, Mode::Exact) if sensitive => {
+                format!("{text} = {}", place(spec.text.clone()))
+            }
+            (DbKind::Trino, Mode::Exact) => {
+                format!("lower({text}) = lower({})", place(spec.text.clone()))
+            }
+            (DbKind::Trino, Mode::Regex) => format!(
+                "regexp_like({text}, {})",
+                place(if sensitive {
+                    spec.text.clone()
+                } else {
+                    format!("(?i){}", spec.text)
+                })
+            ),
             // no LIKE: its escapes are another story there, and a position says the same
             (DbKind::Clickhouse, Mode::Contains) if sensitive => {
                 format!("position({text}, {}) > 0", place(spec.text.clone()))
@@ -663,6 +685,16 @@ fn columns_of(
             limit,
             stop,
         )?,
+        DbKind::Trino => s.ask(
+            "SELECT c.table_name, c.column_name, c.data_type FROM information_schema.columns c \
+             JOIN information_schema.tables t \
+               ON t.table_schema = c.table_schema AND t.table_name = c.table_name \
+             WHERE c.table_schema = ? AND t.table_type = 'BASE TABLE' \
+             ORDER BY c.table_name, c.ordinal_position",
+            &[schema],
+            limit,
+            stop,
+        )?,
         DbKind::Clickhouse => s.ask(
             "SELECT c.table, c.name, c.type FROM system.columns c \
              WHERE c.database = {p1:String} AND c.table NOT LIKE '.inner%' \
@@ -785,6 +817,10 @@ pub(super) fn source_questions(kind: DbKind, flavor: Flavor) -> Vec<&'static str
         DbKind::Sqlite => vec![
             "SELECT type, name, sql FROM sqlite_master \
              WHERE sql IS NOT NULL AND type IN ('view', 'trigger', 'table') AND ?1 = ?1",
+        ],
+        DbKind::Trino => vec![
+            "SELECT 'view', table_name, view_definition FROM information_schema.views \
+             WHERE table_schema = ?",
         ],
         DbKind::Clickhouse => vec![
             "SELECT if(engine LIKE '%View', 'view', 'table'), name, create_table_query \

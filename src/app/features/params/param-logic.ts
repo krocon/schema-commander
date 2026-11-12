@@ -56,6 +56,8 @@ export const DEFAULT_FORMS: Readonly<Record<Dialect, readonly ParamForm[]>> = {
   duckdb: ['colon', 'brace', 'dollarNumber'],
   // `{name:Type}` is ClickHouse's own: only `:name` is ours there
   clickhouse: ['colon'],
+  // `?` belongs to its own PREPARE … EXECUTE … USING
+  trino: ['colon', 'brace'],
 };
 
 /** The forms of a connection: what the user set for it, else the defaults of its database. */
@@ -391,6 +393,9 @@ export function placeholder(dialect: Dialect, n: number, kind: BoundValue['kind'
     case 'oracle':
       // the driver binds numbers and dates as what they are
       return `:${n}`;
+    case 'trino':
+      // the driver writes every value as the literal of what it is (a date as DATE '…')
+      return '?';
     case 'clickhouse':
       // the placeholder names a type: whole numbers and booleans as such, the rest as text the
       // server reads as what it is compared with

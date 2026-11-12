@@ -16,6 +16,7 @@ const DIALECTS: Dialect[] = [
   'oracle',
   'duckdb',
   'clickhouse',
+  'trino',
 ];
 
 describe('splitStatements (catalog)', () => {

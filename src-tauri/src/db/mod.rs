@@ -14,6 +14,7 @@ pub mod edit;
 pub mod filter;
 pub mod find;
 pub mod guard;
+pub mod http;
 pub mod import;
 pub mod load;
 pub mod manager;
@@ -31,6 +32,7 @@ pub mod secrets;
 pub mod sqlite;
 pub mod structure;
 pub mod transfer;
+pub mod trino;
 pub mod value;
 
 use crate::error::{AppError, AppResult, ErrorCode};
@@ -58,12 +60,21 @@ pub enum DbKind {
     Duckdb,
     /// ClickHouse (prompt 035d), over its HTTP interface.
     Clickhouse,
+    /// Trino and Presto (prompt 035f), over their HTTP protocol: `database` of the profile is the catalog.
+    Trino,
 }
 
 impl DbKind {
     /// An embedded database: a file of this computer (or memory), no server, no login.
     pub fn is_file(self) -> bool {
         matches!(self, DbKind::Sqlite | DbKind::Duckdb)
+    }
+
+    /// Rows can be changed in the grid, files imported, tables copied: the database has transactions
+    /// and keys that tell rows apart. ClickHouse has neither; Trino's catalog names no keys, and what a
+    /// transaction holds there depends on the connector behind a table.
+    pub fn edits_rows(self) -> bool {
+        !matches!(self, DbKind::Clickhouse | DbKind::Trino)
     }
 
     pub fn default_port(self) -> u16 {
@@ -75,6 +86,7 @@ impl DbKind {
             DbKind::Oracle => 1521,
             DbKind::Duckdb => 0,
             DbKind::Clickhouse => 8123,
+            DbKind::Trino => 8080,
         }
     }
 }
@@ -249,6 +261,8 @@ pub enum Flavor {
     Yugabyte,
     /// MariaDB behind the MySQL protocol.
     Maria,
+    /// Presto behind the protocol it shares with Trino.
+    Presto,
 }
 
 /// What a connection can do (prompt 035), so the window hides what would only fail. Mirrored by
@@ -294,30 +308,41 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
         (DbKind::Oracle, _) => "Oracle",
         (DbKind::Duckdb, _) => "DuckDB",
         (DbKind::Clickhouse, _) => "ClickHouse",
+        (DbKind::Trino, Flavor::Presto) => "Presto",
+        (DbKind::Trino, _) => "Trino",
     };
     Capabilities {
         product: product.to_owned(),
         // the SQL Server and the Oracle driver have no way to stop a statement but to drop the connection
         cancel: !matches!(kind, DbKind::Sqlserver | DbKind::Oracle),
-        // ClickHouse has no foreign keys
-        foreign_keys: kind != DbKind::Clickhouse,
+        // ClickHouse has no foreign keys, and Trino's catalog names none
+        foreign_keys: !matches!(kind, DbKind::Clickhouse | DbKind::Trino),
         schemas: kind != DbKind::Sqlite,
         triggers: flavor != Flavor::Cockroach
-            && !matches!(kind, DbKind::Duckdb | DbKind::Clickhouse),
-        routines: !matches!(kind, DbKind::Sqlite | DbKind::Duckdb | DbKind::Clickhouse),
-        plan: !matches!(kind, DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse),
+            && !matches!(kind, DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino),
+        routines: !matches!(
+            kind,
+            DbKind::Sqlite | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino
+        ),
+        plan: !matches!(
+            kind,
+            DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino
+        ),
         // an embedded database has no server to watch and no users
         monitor: !matches!(
             kind,
-            DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse
+            DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino
         ),
         access: !matches!(
             kind,
-            DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse
+            DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino
         ),
-        structure: !matches!(kind, DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse),
+        structure: !matches!(
+            kind,
+            DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino
+        ),
         // without transactions and unique keys a changed cell cannot be written safely
-        edit: kind != DbKind::Clickhouse,
+        edit: kind.edits_rows(),
     }
 }
 
@@ -357,6 +382,7 @@ pub fn begin_statement(kind: DbKind) -> &'static str {
         DbKind::Oracle => "SET TRANSACTION READ WRITE",
         // there are no transactions: who needs one refuses ClickHouse before it comes to this
         DbKind::Clickhouse => "BEGIN TRANSACTION",
+        DbKind::Trino => "START TRANSACTION",
     }
 }
 
@@ -495,6 +521,7 @@ pub fn connect(
         DbKind::Oracle => Box::new(oracle::connect(profile, secret, stop)?),
         DbKind::Duckdb => Box::new(duckdb::open(profile)?),
         DbKind::Clickhouse => Box::new(clickhouse::connect(profile, secret, stop)?),
+        DbKind::Trino => Box::new(trino::connect(profile, secret, stop)?),
     })
 }
 
@@ -918,6 +945,13 @@ mod tests {
         assert_eq!(ch.product, "ClickHouse");
         assert!(ch.cancel && ch.schemas && !ch.foreign_keys && !ch.edit && !ch.plan);
         assert!(pg.edit && oracle.edit);
+        // Trino and Presto (035f): what the catalog of every connector has in common
+        let trino = of(DbKind::Trino, Flavor::Plain);
+        assert_eq!(trino.product, "Trino");
+        assert_eq!(of(DbKind::Trino, Flavor::Presto).product, "Presto");
+        assert!(trino.cancel && trino.schemas && !trino.foreign_keys && !trino.edit);
+        assert!(!trino.plan && !trino.monitor && !trino.access && !trino.structure);
+        assert!(!DbKind::Trino.edits_rows() && DbKind::Postgres.edits_rows());
         let lite = of(DbKind::Sqlite, Flavor::Plain);
         assert!(!lite.schemas && !lite.routines && lite.triggers && lite.cancel);
         let json = serde_json::to_value(&crdb).unwrap();

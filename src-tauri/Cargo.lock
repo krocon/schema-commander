@@ -4677,6 +4677,7 @@ version = "0.1.0"
 dependencies = [
  "apple-native-keyring-store",
  "arboard",
+ "base64 0.22.1",
  "chrono",
  "data-encoding",
  "dbus-secret-service-keyring-store",

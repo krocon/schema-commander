@@ -207,7 +207,7 @@ pub fn activity(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Acti
     let first_line = |text: String| text.lines().next().unwrap_or_default().trim().to_owned();
     match kind {
         DbKind::Sqlite | DbKind::Duckdb => return Err(unsupported()),
-        DbKind::Oracle | DbKind::Clickhouse => {
+        DbKind::Oracle | DbKind::Clickhouse | DbKind::Trino => {
             return Err(super::not_yet(kind, "the server monitor"));
         }
         DbKind::Postgres => {
@@ -390,7 +390,7 @@ pub fn kill_statement(kind: DbKind, id: &str, terminate: bool) -> AppResult<Stri
             ));
         }
         (DbKind::Sqlite | DbKind::Duckdb, _) => return Err(unsupported()),
-        (DbKind::Oracle | DbKind::Clickhouse, _) => {
+        (DbKind::Oracle | DbKind::Clickhouse | DbKind::Trino, _) => {
             return Err(super::not_yet(kind, "the server monitor"));
         }
     })

@@ -2,7 +2,7 @@ import { CONNECTION_MODEL_TEXTS } from './connection-model-texts';
 
 /** Mirrors `DbKind` in src-tauri/src/db/mod.rs. */
 export type DbKind =
-  'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle' | 'duckdb' | 'clickhouse';
+  'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle' | 'duckdb' | 'clickhouse' | 'trino';
 
 /** An embedded database: a file of this computer (or memory) – no host, no login. */
 export function isFileKind(kind: DbKind): boolean {
@@ -156,6 +156,8 @@ export const DB_KINDS: readonly {
   { kind: 'duckdb', label: 'DuckDB', port: 0 },
   // over HTTP (8123, with TLS usually 8443) (prompt 035d)
   { kind: 'clickhouse', label: 'ClickHouse', port: 8123 },
+  // Trino and Presto over HTTP; the database of the profile is the catalog (prompt 035f)
+  { kind: 'trino', label: 'Trino / Presto', port: 8080 },
   {
     kind: 'sqlite',
     // a getter: the language may change while the app runs

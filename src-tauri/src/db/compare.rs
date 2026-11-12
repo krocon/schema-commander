@@ -238,7 +238,7 @@ fn index_rows(s: &mut dyn Session, kind: DbKind, schema: &str, stop: Stop) -> Ap
             Some(TIMEOUT),
             stop,
         ),
-        DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse => Err(super::not_yet(kind, "schema compare and structure editing")),
+        DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino => Err(super::not_yet(kind, "schema compare and structure editing")),
     }
 }
 
@@ -292,7 +292,10 @@ pub fn snapshot(
     schema: &str,
     stop: Stop,
 ) -> AppResult<Snapshot> {
-    if matches!(kind, DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse) {
+    if matches!(
+        kind,
+        DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino
+    ) {
         return Err(super::not_yet(kind, "schema compare and structure editing"));
     }
     let data = diagram::diagram(s, kind, schema, stop)?;
@@ -1612,7 +1615,7 @@ fn grouped(
                                     }
                                 }
                             }
-                            DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse => {
+                            DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino => {
                                 return Err(super::not_yet(kind, "schema compare and structure editing"));
                             }
                             DbKind::Sqlite => sqls.push(note(&format!(
@@ -1850,6 +1853,7 @@ fn written(
                 DbKind::Oracle => "Oracle",
                 DbKind::Duckdb => "DuckDB",
                 DbKind::Clickhouse => "ClickHouse",
+                DbKind::Trino => "Trino",
             }
         )),
         note(

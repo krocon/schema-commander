@@ -173,6 +173,51 @@ pub(super) fn name(raw: &str, kind: DbKind) -> AppResult<String> {
     Ok(quote(raw, kind))
 }
 
+/// Trino: the types a text is cast to before it is compared – one of a list, with a size of digits and
+/// `with time zone` at most. Anything else (also `varchar`) is compared as the text it is.
+fn trino_castable(type_name: &str) -> Option<String> {
+    const TYPES: &[&str] = &[
+        "tinyint",
+        "smallint",
+        "integer",
+        "bigint",
+        "real",
+        "double",
+        "decimal",
+        "boolean",
+        "date",
+        "time",
+        "timestamp",
+        "uuid",
+        "ipaddress",
+    ];
+    let t = type_name.trim().to_ascii_lowercase();
+    let (head, zone) = match t.strip_suffix(" with time zone") {
+        Some(head) => (head.trim_end(), " with time zone"),
+        None => (t.as_str(), ""),
+    };
+    let (base, size) = match head.split_once('(') {
+        Some((base, rest)) => (base.trim_end(), Some(rest.strip_suffix(')')?)),
+        None => (head, None),
+    };
+    if !TYPES.contains(&base) || (!zone.is_empty() && !matches!(base, "time" | "timestamp")) {
+        return None;
+    }
+    let size = match size {
+        None => String::new(),
+        Some(inner) => {
+            let parts: Vec<&str> = inner.split(',').map(str::trim).collect();
+            let digits =
+                |p: &&str| (1..=2).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_digit());
+            if parts.len() > 2 || !parts.iter().all(digits) {
+                return None;
+            }
+            format!("({})", parts.join(", "))
+        }
+    };
+    Some(format!("{base}{size}{zone}"))
+}
+
 /// A type name that can stand in a `CAST` as it is – by its **shape**, not by its characters: a name, up
 /// to three more words (`timestamp with time zone`), a size (`(12,2)`), array brackets. The name comes
 /// from the server or from a stored filter: anyone may create a type called `int4) or exists(select f()`.
@@ -370,7 +415,7 @@ impl Builder {
             // hex as a bound text, made bytes by the database: no driver needs to know binary values
             let placeholder = match self.kind {
                 DbKind::Postgres | DbKind::Duckdb => format!("${n}"),
-                DbKind::Mysql => "?".to_owned(),
+                DbKind::Mysql | DbKind::Trino => "?".to_owned(),
                 DbKind::Sqlserver => format!("@P{n}"),
                 DbKind::Sqlite => format!("?{n}"),
                 DbKind::Oracle => format!(":{n}"),
@@ -382,6 +427,7 @@ impl Builder {
                 DbKind::Sqlserver => format!("CONVERT(varbinary(max), {inner}, 2)"),
                 DbKind::Sqlite | DbKind::Duckdb | DbKind::Clickhouse => format!("unhex({inner})"),
                 DbKind::Oracle => format!("HEXTORAW({inner})"),
+                DbKind::Trino => format!("from_hex({inner})"),
             };
             self.sql.push_str(&around(&placeholder));
             self.display.push_str(&around(&format!("'{raw}'")));
@@ -391,6 +437,8 @@ impl Builder {
         let (bind, cast) = match self.kind {
             // the server reads the text as what the column is
             DbKind::Postgres => (Bind::Text(raw.to_owned()), castable(type_name)),
+            // Trino compares nothing with a text but a text: the value is cast to what the column is
+            DbKind::Trino => (Bind::Text(raw.to_owned()), trino_castable(type_name)),
             _ => {
                 let bind = match kind {
                     ValueKind::Number if is_int(raw) => {
@@ -439,7 +487,7 @@ impl Builder {
         };
         let placeholder = match self.kind {
             DbKind::Postgres | DbKind::Duckdb => format!("${n}"),
-            DbKind::Mysql => "?".to_owned(),
+            DbKind::Mysql | DbKind::Trino => "?".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
             DbKind::Sqlite => format!("?{n}"),
             DbKind::Oracle => format!(":{n}"),
@@ -495,7 +543,7 @@ impl Builder {
         }
         match self.kind {
             DbKind::Postgres | DbKind::Sqlite => format!("CAST({column} AS text)"),
-            DbKind::Duckdb => format!("CAST({column} AS VARCHAR)"),
+            DbKind::Duckdb | DbKind::Trino => format!("CAST({column} AS VARCHAR)"),
             DbKind::Mysql => format!("CAST({column} AS char)"),
             DbKind::Sqlserver => format!("CAST({column} AS nvarchar(max))"),
             DbKind::Oracle => format!("TO_CHAR({column})"),
@@ -606,6 +654,20 @@ impl Builder {
                 self.text(&format!("{function}({text}, "));
                 self.pattern(&c.values[0]);
                 self.text(") > 0");
+            }
+            // Trino takes an escape only before `%`, `_` and itself: a position says the same
+            Op::Contains | Op::ContainsNoCase if self.kind == DbKind::Trino => {
+                need(1)?;
+                let text = self.as_text(&column, c.kind);
+                if c.op == Op::ContainsNoCase {
+                    self.text(&format!("strpos(lower({text}), lower("));
+                    self.pattern(&c.values[0]);
+                    self.text(")) > 0");
+                } else {
+                    self.text(&format!("strpos({text}, "));
+                    self.pattern(&c.values[0]);
+                    self.text(") > 0");
+                }
             }
             Op::Contains | Op::ContainsNoCase => {
                 need(1)?;
@@ -722,7 +784,7 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
                 return refuse("no placeholders");
             }
             b'#' if kind == DbKind::Clickhouse => return refuse("no comments"),
-            b'?' if matches!(kind, DbKind::Mysql | DbKind::Sqlite) => {
+            b'?' if matches!(kind, DbKind::Mysql | DbKind::Sqlite | DbKind::Trino) => {
                 return refuse("no placeholders");
             }
             // `:1`, `:name` would be read as one of the values of the conditions
@@ -844,6 +906,7 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
                     | DbKind::Oracle
                     | DbKind::Duckdb
                     | DbKind::Clickhouse
+                    | DbKind::Trino
             );
             if let (Some(nulls), false) = (o.nulls, native) {
                 // no NULLS FIRST/LAST there: a key before the column says where the NULLs go
@@ -900,6 +963,68 @@ fn oracle_instant(type_name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// Trino (prompt 035f): a value is cast to the type of its column – only to one of a list.
+    #[test]
+    fn trino_casts_a_value_to_a_type_of_a_list_or_not_at_all() {
+        let t = |name: &str| trino_castable(name);
+        assert_eq!(t("date").as_deref(), Some("date"));
+        assert_eq!(t("decimal(10,2)").as_deref(), Some("decimal(10, 2)"));
+        assert_eq!(
+            t("timestamp(3) with time zone").as_deref(),
+            Some("timestamp(3) with time zone")
+        );
+        assert_eq!(t("INTEGER").as_deref(), Some("integer"));
+        for no in [
+            "varchar",
+            "varchar(20)",
+            "array(integer)",
+            "date) or exists(select f()",
+            "date with time zone",
+            "decimal(10,2) or 1=1",
+            "decimal(1,2,3)",
+            "decimal(100)",
+            "integer; drop",
+            "",
+        ] {
+            assert_eq!(t(no), None, "{no}");
+        }
+        let condition =
+            |column: &str, op: Op, value: &str, kind: ValueKind, type_name: &str| Condition {
+                column: column.into(),
+                op,
+                values: vec![value.into()],
+                kind,
+                type_name: type_name.into(),
+            };
+        let q = build(
+            DbKind::Trino,
+            &TableQuery {
+                schema: Some("shop".into()),
+                table: "my orders".into(),
+                conditions: vec![
+                    condition("placed at", Op::Ge, "2026-02-01", ValueKind::Text, "date"),
+                    condition(
+                        "name",
+                        Op::ContainsNoCase,
+                        "100%_[",
+                        ValueKind::Text,
+                        "varchar",
+                    ),
+                    condition("raw", Op::Eq, "00ff", ValueKind::Bytes, "varbinary"),
+                ],
+                limit: Some(10),
+                ..TableQuery::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            q.sql,
+            "SELECT *\nFROM shop.\"my orders\"\nWHERE \"placed at\" >= CAST(? AS date)\n  AND strpos(lower(name), lower(?)) > 0\n  AND raw = from_hex(?)\nLIMIT 10"
+        );
+        assert_eq!(q.params.len(), 3);
+        assert_eq!(q.params[1], Bind::Text("100%_[".into()));
+    }
+
     /// Oracle (035b): the free condition takes no placeholder and no q-quote; a date with a zone is
     /// read by a format of ours.
     #[test]

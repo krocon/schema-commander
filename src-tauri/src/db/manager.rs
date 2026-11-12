@@ -628,7 +628,7 @@ impl ConnectionManager {
             max_rows: MAX_ROWS,
             timeout,
         };
-        if manual && profile.kind == DbKind::Clickhouse {
+        if manual && !profile.kind.edits_rows() {
             // there is nothing to open: said in words instead of a refused BEGIN (review 035d 6)
             return (
                 Err(super::not_yet(

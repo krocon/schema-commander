@@ -10,6 +10,8 @@
 #
 # SQL Server runs as linux/amd64 (emulated on Apple Silicon, about 30 s to start).
 # ClickHouse (prompt 035d): HTTP on 127.0.0.1:28123, user and database `shop`.
+# Trino (prompt 035f): HTTP on 127.0.0.1:28080, no login; the catalogs `memory` and `tpch` of the image.
+# Presto (prompt 035f): only with SC_DBTEST_PRESTO=1 (an image of about 3 GB), HTTP on 127.0.0.1:28082.
 # YugabyteDB (prompt 035e): only with SC_DBTEST_YUGABYTE=1 (an image of about 3 GB), YSQL on 127.0.0.1:25435.
 # Oracle (prompt 035b): Oracle Database Free, service FREEPDB1, user SHOP – a large image (about 6 GB),
 # native on Apple Silicon. `up` starts it with the others; SC_DBTEST_ORACLE=0 leaves it out.
@@ -33,13 +35,14 @@ up)
   docker run -d --rm --name sc-dbtest-ch -p 127.0.0.1:28123:8123 -e CLICKHOUSE_USER=shop \
     -e CLICKHOUSE_PASSWORD="$pw" -e CLICKHOUSE_DB=shop -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 \
     clickhouse/clickhouse-server:25.8 >/dev/null
-  want=7
+  docker run -d --rm --name sc-dbtest-trino -p 127.0.0.1:28080:8080 trinodb/trino:476 >/dev/null
+  want=8
   ora=0
   yb=0
   if [ "${SC_DBTEST_ORACLE:-1}" != "0" ]; then
     docker run -d --rm --name sc-dbtest-ora -p 127.0.0.1:21521:1521 -e ORACLE_PASSWORD="$pw" \
       -e APP_USER=shop -e APP_USER_PASSWORD="$pw" gvenzl/oracle-free:23-slim-faststart >/dev/null
-    want=8
+    want=$((want + 1))
     ora=1
   fi
   if [ "${SC_DBTEST_YUGABYTE:-0}" = "1" ]; then
@@ -47,6 +50,12 @@ up)
       bin/yugabyted start --background=false >/dev/null
     want=$((want + 1))
     yb=1
+  fi
+  presto=0
+  if [ "${SC_DBTEST_PRESTO:-0}" = "1" ]; then
+    docker run -d --rm --name sc-dbtest-presto -p 127.0.0.1:28082:8080 prestodb/presto:latest >/dev/null
+    want=$((want + 1))
+    presto=1
   fi
   printf "waiting for the servers"
   for _ in $(seq 1 120); do
@@ -58,12 +67,16 @@ up)
     docker exec sc-dbtest-crdb cockroach sql --insecure -e "select 1" >/dev/null 2>&1 && ok=$((ok + 1))
     docker exec sc-dbtest-tsdb pg_isready -q -U postgres 2>/dev/null && ok=$((ok + 1))
     curl -s http://127.0.0.1:28123/ping 2>/dev/null | grep -q Ok && ok=$((ok + 1))
+    curl -s http://127.0.0.1:28080/v1/info 2>/dev/null | grep -q '"starting":false' && ok=$((ok + 1))
     if [ "$ora" -eq 1 ]; then
       docker logs sc-dbtest-ora 2>&1 | grep -q "DATABASE IS READY TO USE" && ok=$((ok + 1))
     fi
     if [ "$yb" -eq 1 ]; then
       docker exec sc-dbtest-yb sh -c 'bin/ysqlsh -h "$(hostname)" -U yugabyte -Atc "select 1"' >/dev/null 2>&1 &&
         ok=$((ok + 1))
+    fi
+    if [ "$presto" -eq 1 ]; then
+      curl -s http://127.0.0.1:28082/v1/info 2>/dev/null | grep -q '"starting":false' && ok=$((ok + 1))
     fi
     [ "$ok" -eq "$want" ] && { echo " ready"; exit 0; }
     printf "."
@@ -74,7 +87,7 @@ up)
   ;;
 down)
   docker rm -f sc-dbtest-pg sc-dbtest-my sc-dbtest-maria sc-dbtest-ms sc-dbtest-crdb sc-dbtest-tsdb \
-    sc-dbtest-ora sc-dbtest-ch sc-dbtest-yb \
+    sc-dbtest-ora sc-dbtest-ch sc-dbtest-yb sc-dbtest-trino sc-dbtest-presto \
     >/dev/null 2>&1 || true
   ;;
 *)
