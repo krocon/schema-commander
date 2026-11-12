@@ -212,6 +212,8 @@ fn wallet(profile: &Profile) -> AppResult<Option<Wallet>> {
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     // a new folder of ours, for us alone: one that is there already is not taken
+    // only Unix sets a mode on it
+    #[cfg_attr(not(unix), allow(unused_mut))]
     let mut builder = std::fs::DirBuilder::new();
     #[cfg(unix)]
     {
