@@ -245,6 +245,8 @@ pub enum Flavor {
     Cockroach,
     /// PostgreSQL with the TimescaleDB extension: the same server, more schemas of its own.
     Timescale,
+    /// YugabyteDB (YSQL): PostgreSQL's own query layer over a distributed store.
+    Yugabyte,
     /// MariaDB behind the MySQL protocol.
     Maria,
 }
@@ -283,6 +285,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
     let product = match (kind, flavor) {
         (DbKind::Postgres, Flavor::Cockroach) => "CockroachDB",
         (DbKind::Postgres, Flavor::Timescale) => "TimescaleDB",
+        (DbKind::Postgres, Flavor::Yugabyte) => "YugabyteDB",
         (DbKind::Postgres, _) => "PostgreSQL",
         (DbKind::Mysql, Flavor::Maria) => "MariaDB",
         (DbKind::Mysql, _) => "MySQL",
@@ -896,6 +899,9 @@ mod tests {
             of(DbKind::Postgres, Flavor::Timescale).product,
             "TimescaleDB"
         );
+        let yb = of(DbKind::Postgres, Flavor::Yugabyte);
+        assert_eq!(yb.product, "YugabyteDB");
+        assert!(yb.triggers && yb.plan && yb.edit);
         assert_eq!(of(DbKind::Mysql, Flavor::Maria).product, "MariaDB");
         assert_eq!(of(DbKind::Mysql, Flavor::Plain).product, "MySQL");
         assert!(!of(DbKind::Sqlserver, Flavor::Plain).cancel);

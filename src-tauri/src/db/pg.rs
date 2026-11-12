@@ -114,8 +114,17 @@ fn cockroach_cancel(session_id: &str) -> Option<String> {
 
 /// Which server this is, from how it names itself.
 fn flavor_of(version: &str) -> super::Flavor {
-    if version.trim_start().starts_with("CockroachDB") {
+    let version = version.trim_start();
+    if version.starts_with("CockroachDB") {
         super::Flavor::Cockroach
+    } else if version.starts_with("PostgreSQL")
+        && version
+            .split_whitespace()
+            .nth(1)
+            .is_some_and(|number| number.contains("-YB-"))
+    {
+        // "PostgreSQL 15.12-YB-2025.1.1.2-b0 on …": the mark is in the version number itself
+        super::Flavor::Yugabyte
     } else {
         super::Flavor::Plain
     }
@@ -581,6 +590,16 @@ mod tests {
         // a PostgreSQL whose version text merely mentions the other one is not it
         assert_eq!(
             flavor_of("PostgreSQL 16 (fork of CockroachDB)"),
+            Flavor::Plain
+        );
+        assert_eq!(
+            flavor_of(
+                "PostgreSQL 15.12-YB-2025.1.1.2-b0 on aarch64-unknown-linux-gnu, compiled by clang"
+            ),
+            Flavor::Yugabyte
+        );
+        assert_eq!(
+            flavor_of("PostgreSQL 17.2 on x86_64-YB-linux, compiled by gcc"),
             Flavor::Plain
         );
         let sql = cockroach_cancel("18e722aa995c8a9d0000000000000001").unwrap();

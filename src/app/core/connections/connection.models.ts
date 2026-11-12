@@ -147,7 +147,7 @@ export const DB_KINDS: readonly {
   readonly port: number;
 }[] = [
   // servers that speak its protocol are found out when the connection opens (prompt 035)
-  { kind: 'postgres', label: 'PostgreSQL · CockroachDB · TimescaleDB', port: 5432 },
+  { kind: 'postgres', label: 'PostgreSQL · CockroachDB · TimescaleDB · YugabyteDB', port: 5432 },
   { kind: 'mysql', label: 'MySQL / MariaDB', port: 3306 },
   { kind: 'sqlserver', label: 'SQL Server', port: 1433 },
   // the database of an Oracle profile is its service name (prompt 035b)
