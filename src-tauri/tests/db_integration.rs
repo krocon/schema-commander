@@ -3001,3 +3001,247 @@ fn sqlserver_reads_a_day_the_same_in_every_language() {
     );
     run(&mut s, "DROP TABLE sc_load");
 }
+
+// ── Servers that speak PostgreSQL's protocol (prompt 035a) ───────────────────
+
+fn crdb() -> Profile {
+    profile(DbKind::Postgres, 25434, "root", "defaultdb")
+}
+fn tsdb() -> Profile {
+    profile(DbKind::Postgres, 25433, "postgres", "postgres")
+}
+
+/// What the app does with PostgreSQL works on CockroachDB and on TimescaleDB too: values, the state of
+/// the transaction, a statement that is stopped, the catalog, details, keys – and writing a file into a
+/// table, which needs transactions and savepoints.
+#[test]
+#[ignore]
+fn servers_with_the_protocol_of_postgres_work_like_it() {
+    use schema_commander_lib::db::{Flavor, capabilities};
+    for (p, product, flavor) in [
+        (crdb(), "CockroachDB", Flavor::Cockroach),
+        (tsdb(), "TimescaleDB", Flavor::Timescale),
+        (pg(), "PostgreSQL", Flavor::Plain),
+    ] {
+        let kind = p.kind;
+        let mut s = open(&p);
+        let stop = &|| false;
+        assert_eq!(s.flavor(), flavor, "{product}");
+        assert_eq!(capabilities(kind, s.flavor()).product, product);
+        for sql in [
+            "DROP VIEW IF EXISTS sc_book_titles",
+            "DROP TABLE IF EXISTS sc_book",
+            "DROP TABLE IF EXISTS sc_author",
+            "CREATE TABLE sc_author (id int PRIMARY KEY, name varchar(40) NOT NULL)",
+            "CREATE TABLE sc_book (id int PRIMARY KEY, author_id int NOT NULL REFERENCES sc_author (id), \
+             title text, price numeric(8,2) DEFAULT 0)",
+            "CREATE INDEX sc_book_title ON sc_book (title)",
+            "CREATE VIEW sc_book_titles AS SELECT id, title FROM sc_book",
+            "INSERT INTO sc_author VALUES (1, 'Zoë ä€ 😀')",
+        ] {
+            run(&mut s, sql);
+        }
+        // values
+        let r = run(
+            &mut s,
+            "SELECT name, 1.50::numeric, true, '{\"a\": 1}'::jsonb, NULL::int FROM sc_author",
+        );
+        assert_eq!(
+            rows(&r),
+            json!([["Zoë ä€ 😀", "1.50", true, "{\"a\": 1}", null]]),
+            "{product}"
+        );
+        // the state of the transaction, as the server says it
+        assert_eq!(s.transaction_state(stop), TxState::Idle, "{product}");
+        run(&mut s, "BEGIN");
+        assert_eq!(s.transaction_state(stop), TxState::Active, "{product}");
+        assert!(!try_run(&mut s, "SELECT 1/0"));
+        assert_eq!(s.transaction_state(stop), TxState::Failed, "{product}");
+        run(&mut s, "ROLLBACK");
+        assert_eq!(s.transaction_state(stop), TxState::Idle, "{product}");
+        // a statement that takes too long ends on the server; the session goes on
+        let started = Instant::now();
+        let slow = s.query(
+            "SELECT pg_sleep(20)",
+            Limits {
+                max_rows: 1,
+                timeout: Some(Duration::from_millis(500)),
+            },
+            stop,
+        );
+        assert_eq!(slow.unwrap_err().code, ErrorCode::Timeout, "{product}");
+        assert!(started.elapsed() < Duration::from_secs(3), "{product}");
+        assert!(s.is_open(), "{product}: the session is gone");
+        assert_eq!(rows(&run(&mut s, "SELECT 1")), json!([[1]]), "{product}");
+        // the catalog
+        let schemas = meta::schemas(s.as_mut(), kind, stop).unwrap();
+        let own: Vec<&str> = schemas
+            .iter()
+            .filter(|x| !x.system)
+            .map(|x| x.name.as_str())
+            .collect();
+        // (other tests leave schemas of their own on the plain server)
+        assert!(own.contains(&"public"), "{product}: {schemas:?}");
+        assert!(
+            own.iter().all(|n| *n == "public" || n.starts_with("sc_")),
+            "{product}: a schema of the server itself is not marked: {own:?}"
+        );
+        let objects = meta::objects(s.as_mut(), kind, "public", stop).unwrap();
+        let mine = |k: ObjectKind| -> Vec<&str> {
+            names(&objects, k)
+                .into_iter()
+                .filter(|n| n.starts_with("sc_"))
+                .collect()
+        };
+        assert_eq!(
+            mine(ObjectKind::Table),
+            ["sc_author", "sc_book"],
+            "{product}"
+        );
+        assert_eq!(mine(ObjectKind::View), ["sc_book_titles"], "{product}");
+        let book = meta::table(s.as_mut(), kind, "public", "sc_book", stop).unwrap();
+        let lines = column_line(&book);
+        assert_eq!(lines.len(), 4, "{product}: {lines:?}");
+        assert!(lines[0].ends_with("not null pk"), "{product}: {lines:?}");
+        assert!(lines[1].ends_with("not null fk"), "{product}: {lines:?}");
+        assert!(
+            book.indexes.iter().any(|i| i.name == "sc_book_title"),
+            "{product}: {:?}",
+            book.indexes
+        );
+        // details and DDL
+        let d = details(
+            s.as_mut(),
+            kind,
+            "public",
+            "sc_book",
+            ObjectKind::Table,
+            "",
+            stop,
+        )
+        .unwrap();
+        let ids: Vec<&str> = d.sections.iter().map(|x| x.id.as_str()).collect();
+        for id in ["columns", "indexes", "constraints", "references"] {
+            assert!(ids.contains(&id), "{product}: {ids:?} – {:?}", d.notes);
+        }
+        assert!(
+            d.ddl.as_deref().is_some_and(|t| t.contains("sc_book")),
+            "{product}: {:?}",
+            d.notes
+        );
+        // nothing was asked that this server does not know
+        assert_eq!(d.notes, Vec::<String>::new(), "{product}");
+        // keys
+        let keys = relations(s.as_mut(), kind, "public", "sc_book", stop).unwrap();
+        assert_eq!(keys.outgoing.len(), 1, "{product}");
+        assert_eq!(keys.outgoing[0].ref_table, "sc_author", "{product}");
+        // a file into the table: all or nothing, and row by row with savepoints
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("in.csv");
+        std::fs::write(
+            &file,
+            "id,author_id,title,price\n1,1,one,1.50\n2,9,no such author,2\n3,1,three,3\n",
+        )
+        .unwrap();
+        let info = meta::table(s.as_mut(), kind, "public", "sc_book", stop).unwrap();
+        let plan = LoadPlan {
+            schema: Some("public".into()),
+            table: "sc_book".into(),
+            mappings: info
+                .columns
+                .iter()
+                .enumerate()
+                .map(|(i, c)| Mapping {
+                    source: Some(i),
+                    fixed: None,
+                    target: TargetColumn {
+                        name: c.name.clone(),
+                        kind: if c.name == "title" {
+                            ValueKind::Text
+                        } else {
+                            ValueKind::Number
+                        },
+                        type_name: c.type_name.clone(),
+                    },
+                    trim: false,
+                    decimal_comma: false,
+                    date_order: None,
+                })
+                .collect(),
+            null_texts: Vec::new(),
+            empty_is_null: true,
+            clear_first: false,
+            on_error: OnError::Abort,
+            whole_transaction: true,
+        };
+        let whole = load_file(&mut s, kind, &file, &plan, None, stop);
+        assert!(whole.failed && whole.rolled_back, "{product}: {whole:?}");
+        assert_eq!(
+            rows(&run(&mut s, "SELECT COUNT(*) FROM sc_book")),
+            json!([[0]]),
+            "{product}"
+        );
+        let skipping = LoadPlan {
+            on_error: OnError::Skip,
+            ..plan
+        };
+        let done = load_file(&mut s, kind, &file, &skipping, None, stop);
+        assert_eq!(
+            (done.written, done.skipped),
+            (2, 1),
+            "{product}: {:?}",
+            done.errors
+        );
+        assert_eq!(
+            rows(&run(
+                &mut s,
+                "SELECT id, CAST(price AS text) FROM sc_book ORDER BY id"
+            )),
+            json!([[1, "1.50"], [3, "3.00"]]),
+            "{product}"
+        );
+        assert_eq!(s.transaction_state(stop), TxState::Idle, "{product}");
+        run(&mut s, "DROP VIEW sc_book_titles");
+        run(&mut s, "DROP TABLE sc_book");
+        run(&mut s, "DROP TABLE sc_author");
+    }
+}
+
+/// A hypertable of TimescaleDB is one table in the tree: its chunks live in schemas that are marked as
+/// the system's.
+#[test]
+#[ignore]
+fn timescale_shows_a_hypertable_as_one_table() {
+    let p = tsdb();
+    let mut s = open(&p);
+    let stop = &|| false;
+    run(&mut s, "DROP TABLE IF EXISTS sc_metric");
+    run(
+        &mut s,
+        "CREATE TABLE sc_metric (at timestamptz NOT NULL, device int, value double precision)",
+    );
+    run(&mut s, "SELECT create_hypertable('sc_metric', 'at')");
+    run(
+        &mut s,
+        "INSERT INTO sc_metric SELECT now() - (n || ' days')::interval, n % 3, n FROM generate_series(1, 60) n",
+    );
+    let objects = meta::objects(s.as_mut(), p.kind, "public", stop).unwrap();
+    let tables: Vec<&str> = names(&objects, ObjectKind::Table)
+        .into_iter()
+        .filter(|n| n.contains("metric") || n.contains("hyper") || n.contains("chunk"))
+        .collect();
+    assert_eq!(tables, ["sc_metric"]);
+    let schemas = meta::schemas(s.as_mut(), p.kind, stop).unwrap();
+    assert!(
+        schemas
+            .iter()
+            .filter(|x| x.name.contains("timescaledb"))
+            .all(|x| x.system),
+        "{schemas:?}"
+    );
+    assert_eq!(
+        rows(&run(&mut s, "SELECT COUNT(*) FROM sc_metric")),
+        json!([[60]])
+    );
+    run(&mut s, "DROP TABLE sc_metric");
+}

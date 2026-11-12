@@ -23,6 +23,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub struct ConnectionInfo {
     pub id: String,
     pub server_version: String,
+    /// What this server can do (prompt 035).
+    pub capabilities: super::Capabilities,
 }
 
 struct Open {
@@ -445,6 +447,12 @@ impl ConnectionManager {
         let secret = self.secret_for(&profile, password)?;
         let mut session = Self::connect_through(&profile, tunnel.as_ref(), secret.as_ref())?;
         let server_version = session.server_version(&|| false)?;
+        let flavor = match session.flavor() {
+            // the MySQL driver names MariaDB in its version
+            super::Flavor::Plain if server_version.starts_with("MariaDB") => super::Flavor::Maria,
+            other => other,
+        };
+        let capabilities = super::capabilities(profile.kind, flavor);
         if given
             && profile.save_password
             && let Some(secret) = secret.as_ref().filter(|s| !s.is_empty())
@@ -462,6 +470,7 @@ impl ConnectionManager {
         self.open.lock().insert(id.to_string(), Open::new(session));
         Ok(ConnectionInfo {
             id: id.to_string(),
+            capabilities,
             server_version,
         })
     }

@@ -1385,6 +1385,9 @@ export class App implements OnInit, OnDestroy {
     const register = this.actions.register.bind(this.actions);
     // following foreign keys (prompt 030): in a table view, where the table of every column is known
     const table = () => has() && !!tab()?.tableView();
+    // following keys needs keys in the catalog (prompt 035: not every database has them)
+    const keyed = () =>
+      table() && this.connections.capabilities(tab()?.connectionId() ?? '').foreignKeys;
     const edited = () => this.edit.count(tab()).total > 0;
     const related = (run: (t: QueryTab) => unknown) => () => {
       const t = tab();
@@ -1470,22 +1473,22 @@ export class App implements OnInit, OnDestroy {
       register(
         'FK_FOLLOW',
         related((t) => this.relations.follow(t, 'here')),
-        table,
+        keyed,
       ),
       register(
         'FK_FOLLOW_TAB',
         related((t) => this.relations.follow(t, 'tab')),
-        table,
+        keyed,
       ),
       register(
         'FK_PEEK',
         related((t) => this.relations.follow(t, 'peek')),
-        table,
+        keyed,
       ),
       register(
         'FK_REFERENCED_BY',
         related((t) => this.relations.referencedBy(t)),
-        table,
+        keyed,
       ),
       register(
         'NAV_BACK',

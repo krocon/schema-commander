@@ -209,7 +209,14 @@ mod pg {
             ),
             p,
         )?;
+        // CockroachDB (prompt 035) has no sizes of relations, no `pg_get_triggerdef`, no vacuum
+        let cockroach = r.s.flavor() == crate::db::Flavor::Cockroach;
         if object != ObjectKind::View {
+            let size = if cockroach {
+                "NULL::text"
+            } else {
+                "pg_catalog.pg_size_pretty(pg_catalog.pg_relation_size(i.indexrelid))"
+            };
             r.section(
                 "indexes",
                 &["name", "definition", "unique", "primary", "method", "size"],
@@ -217,7 +224,7 @@ mod pg {
                     "SELECT ic.relname::text, pg_catalog.pg_get_indexdef(i.indexrelid), \
                      CASE WHEN i.indisunique THEN 'yes' ELSE 'no' END, \
                      CASE WHEN i.indisprimary THEN 'yes' ELSE 'no' END, am.amname::text, \
-                     pg_catalog.pg_size_pretty(pg_catalog.pg_relation_size(i.indexrelid)) \
+                     {size} \
                      FROM pg_catalog.pg_index i \
                      JOIN pg_catalog.pg_class ic ON ic.oid = i.indexrelid \
                      JOIN pg_catalog.pg_am am ON am.oid = ic.relam \
@@ -295,7 +302,7 @@ mod pg {
                 p,
             )?;
         }
-        if object != ObjectKind::Matview {
+        if object != ObjectKind::Matview && !cockroach {
             r.section(
                 "triggers",
                 &["name", "definition", "enabled"],
@@ -349,6 +356,21 @@ mod pg {
              WHERE table_schema = $1 AND table_name = $2 ORDER BY 1, 2",
             p,
         )?;
+        if cockroach {
+            return r.section(
+                "stats",
+                &["property", "value"],
+                &format!(
+                    "SELECT x.k, x.v FROM pg_catalog.pg_class c, \
+                     LATERAL (VALUES \
+                       ('owner', pg_catalog.pg_get_userbyid(c.relowner)::text), \
+                       ('rows', CASE WHEN c.reltuples >= 0 THEN c.reltuples::bigint::text END), \
+                       ('comment', pg_catalog.obj_description(c.oid, 'pg_class')) \
+                     ) AS x(k, v) WHERE c.oid = {REL} AND x.v IS NOT NULL"
+                ),
+                p,
+            );
+        }
         r.section(
             "stats",
             &["property", "value"],

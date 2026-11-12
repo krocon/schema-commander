@@ -17,16 +17,17 @@ import {
   SourceOptions,
 } from '../app/core/import/data-import-api';
 import {
+  Capabilities,
   ConnectionInfo,
-  LoadedProfiles as LoadedConnections,
-  Profile,
   ImportItem,
   ImportPick,
   ImportPreview,
   ImportSource,
+  LoadedProfiles as LoadedConnections,
+  Profile,
   SshCredentials,
-  UrlDraft,
   SshHost,
+  UrlDraft,
 } from '../app/core/connections/connection.models';
 import {
   ClipboardApi,
@@ -575,6 +576,8 @@ export const DEMO_PROFILE: Profile = {
  * `keychain` holds what was stored.
  */
 export class FakeConnectionsApi extends ConnectionsApi {
+  /** What an opened connection says it can do; `undefined`: nothing said (an older backend). */
+  capabilities: Capabilities | undefined = undefined;
   profiles: Profile[] = [DEMO_PROFILE];
   notice: string | null = null;
   readonly passwords = new Map<string, string>();
@@ -705,7 +708,11 @@ export class FakeConnectionsApi extends ConnectionsApi {
       this.failOpen = null;
       return Promise.reject(e);
     }
-    return this.check(id, password).then(() => ({ id, serverVersion: 'Fake 1.0' }));
+    return this.check(id, password).then(() => ({
+      id,
+      serverVersion: 'Fake 1.0',
+      capabilities: this.capabilities,
+    }));
   }
 
   close(id: string): Promise<void> {
