@@ -3,6 +3,7 @@
 
 pub mod about;
 pub mod app_menu;
+pub mod chart;
 pub mod commands;
 pub mod copy;
 pub mod data_import;
@@ -82,6 +83,7 @@ pub fn run() {
             app.manage(commands::MenuState::default());
             app.manage(commands::NameIndexes::default());
             app.manage(commands::Jobs::default());
+            app.manage(chart::ChartCache::default());
             app.manage(saved::SavedDir::new(&app.path().app_data_dir()?));
             app.manage(history::History::new(app.path().app_data_dir()?));
             // A frontend that never applies a scheme must not leave the window hidden.
@@ -160,6 +162,10 @@ pub fn run() {
             commands::result_window,
             commands::result_view,
             commands::result_stats,
+            commands::chart_suggest,
+            commands::chart_prepare,
+            commands::chart_zoom,
+            commands::chart_free,
             commands::compare_columns,
             commands::result_compare,
             commands::result_neighbour,

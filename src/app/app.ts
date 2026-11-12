@@ -1048,6 +1048,18 @@ export class App implements OnInit, OnDestroy {
         () => !!tab(),
       ),
       this.actions.register(
+        'TOGGLE_CHART',
+        () => {
+          const t = tab();
+          if (!t) return;
+          t.chartOpen.set(!t.chartOpen());
+          if (!this.settings.settings().resultVisible)
+            this.settings.update({ resultVisible: true });
+        },
+        () => !!tab(),
+      ),
+      this.actions.registerCheck('TOGGLE_CHART', () => tab()?.chartOpen() ?? false),
+      this.actions.register(
         'RESULT_NEXT_TAB',
         () => this.stepResult(1),
         () => (tab()?.subTabs().length ?? 0) > 0,

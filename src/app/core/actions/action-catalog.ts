@@ -91,6 +91,8 @@ export const ACTIONS = [
   { id: 'TOGGLE_COMMENT', label: 'Toggle line comment', group: 'Query', scope: 'global' },
   { id: 'CANCEL_FORMAT', label: 'Cancel formatting', group: 'Query', scope: 'global' },
   { id: 'SHOW_MESSAGES', label: 'Show messages', group: 'Query', scope: 'global' },
+  // The result as a chart (prompt 042)
+  { id: 'TOGGLE_CHART', label: 'Result: show as a chart', group: 'View', scope: 'global' },
   // Results as sub-tabs, pinning, comparing (prompt 041)
   { id: 'RESULT_NEXT_TAB', label: 'Result: next result tab', group: 'Navigation', scope: 'global' },
   {

@@ -658,6 +658,73 @@ pub fn result_usage(
         .collect()
 }
 
+/// The chart the columns of a result suggest (prompt 042); `None`: nothing in it can be drawn.
+#[tauri::command(async)]
+pub fn chart_suggest(
+    store: State<'_, ResultStore>,
+    result_id: u64,
+) -> AppResult<Option<crate::chart::ChartSpec>> {
+    Ok(crate::chart::suggest(&store.columns(result_id)?))
+}
+
+/// A chart and the points to draw of it.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Chart {
+    /// Names the prepared chart for `chart_zoom` and `chart_free`.
+    pub chart_id: u64,
+    #[serde(flatten)]
+    pub data: crate::chart::ChartData,
+}
+
+/// Reads a result into a chart (prompt 042) and answers with the points for `width` pixels. The prepared
+/// chart is kept for zooming (the last few are). A job: `cancel_job` stops it.
+#[tauri::command(async)]
+pub fn chart_prepare(
+    store: State<'_, ResultStore>,
+    charts: State<'_, crate::chart::ChartCache>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    result_id: u64,
+    spec: crate::chart::ChartSpec,
+    width: u32,
+) -> AppResult<Chart> {
+    use std::sync::atomic::Ordering;
+    let stop = jobs.start(job_id, None);
+    let prepared =
+        crate::chart::prepare(&store, result_id, &spec, &|| stop.load(Ordering::Relaxed));
+    jobs.end(job_id);
+    let (chart_id, prepared) = charts.keep(prepared?);
+    Ok(Chart {
+        chart_id,
+        data: crate::chart::sample(&prepared, None, width),
+    })
+}
+
+/// The points of a prepared chart for a range of X (`None` = all of it). `unknown_result`: the chart is
+/// no longer kept – prepare it again.
+#[tauri::command(async)]
+pub fn chart_zoom(
+    charts: State<'_, crate::chart::ChartCache>,
+    chart_id: u64,
+    range: Option<(f64, f64)>,
+    width: u32,
+) -> AppResult<Chart> {
+    let prepared = charts.get(chart_id).ok_or_else(|| {
+        AppError::new(ErrorCode::UnknownResult, "the chart is no longer prepared")
+    })?;
+    Ok(Chart {
+        chart_id,
+        data: crate::chart::sample(&prepared, range, width),
+    })
+}
+
+/// Forgets a prepared chart.
+#[tauri::command(async)]
+pub fn chart_free(charts: State<'_, crate::chart::ChartCache>, chart_id: u64) {
+    charts.free(chart_id);
+}
+
 /// Forgets results the window no longer shows (their files go too).
 #[tauri::command(async)]
 pub fn free_results(store: State<'_, ResultStore>, result_ids: Vec<u64>) {
