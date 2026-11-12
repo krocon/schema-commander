@@ -831,7 +831,11 @@ pub fn ask(kind: DbKind, flavor: Flavor, sql: &str, analyze: bool) -> AppResult<
                 after: vec![format!("SET {option} OFF")],
             }
         }
-        (DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino, _, _) => {
+        (
+            DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird,
+            _,
+            _,
+        ) => {
             return Err(super::not_yet(kind, "the execution plan"));
         }
         (DbKind::Sqlite | DbKind::Libsql | DbKind::D1, _, false) => {

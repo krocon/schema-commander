@@ -46,6 +46,9 @@ duckdb = { version = "=1.20000.1", features = ["bundled", "parquet", "json"] }
 ureq = { version = "3.5", default-features = false, features = ["rustls"] }
 # Trino (prompt 035f): binary values come as base64, and a login is sent as one; in the tree already.
 base64 = "0.22"
+# Firebird (prompt 035i): the wire protocol in pure Rust. Young and by one author, so pinned; chosen over
+# rsfbclient because it hands out NUMERIC values exactly (mantissa and scale), not as floats.
+firebird-wire = { version = "=0.1.16", features = ["chrono"] }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "net", "sync", "io-util", "macros"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }

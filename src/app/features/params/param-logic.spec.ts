@@ -10,6 +10,7 @@ import {
   guess,
   listItems,
   paramKeys,
+  placeholder,
   resolve,
   writtenPosition,
 } from './param-logic';
@@ -272,6 +273,9 @@ describe('writing a statement for the driver', () => {
     expect(bound('duckdb').sql).toBe(
       'select * from t where k = $1 and d >= CAST($2 AS DATE) and n = $3 and id in ($4, $5, $6) and p < CAST($7 AS DECIMAL(38,10)) and x is NULL and y in (NULL)',
     );
+    // Firebird: `:name` belongs to its PSQL – it is no parameter of ours there
+    expect(DEFAULT_FORMS.firebird).toEqual(['brace', 'question']);
+    expect(placeholder('firebird', 3, 'date')).toBe('?');
     // Trino: plain marks – the driver writes each value as a literal of its type
     expect(bound('trino').sql).toBe(
       'select * from t where k = ? and d >= ? and n = ? and id in (?, ?, ?) and p < ? and x is NULL and y in (NULL)',

@@ -73,6 +73,8 @@
   Kopie als Sicherung; offene Transaktionen hält ein Herzschlag (Prompt 035g);
   **Cloudflare D1** über die REST-API von Cloudflare zum Lesen und Ausführen, Dialekt von SQLite, ohne
   Transaktionen – nach der Dokumentation, nicht gegen Cloudflare gelaufen (Prompt 035h);
+  **Firebird** über den reinen Rust-Treiber `firebird-wire`: verbinden, ausführen, abbrechen, Baum, Details,
+  Tabellen-Ansicht, Bearbeiten, Suche; Plan, Monitor, Rechte und Struktur noch nicht (Prompt 035i);
   **Suche auf dem Server**: ein Text in den Zeilen aller Tabellen und in Definitionen, als lesender Job (Prompt 036);
   **ER-Diagramm** eines Schemas oder einer Tabelle mit Nachbarn: eigene Anordnung, verschiebbar, Listenansicht,
   Export als SVG, Mermaid, DBML (Prompt 037);
@@ -108,7 +110,7 @@
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a–035h, 036–049; von 035 offen: Firebird, BigQuery, Snowflake, Db2),
+  erledigt: 001–034, 035a–035i, 036–049; von 035 offen: Firebird, BigQuery, Snowflake, Db2),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -128,7 +130,7 @@
 | Lizenzhinweise | `pnpm notices` (schreibt `THIRD-PARTY-NOTICES.txt`; nach jeder Änderung an Abhängigkeiten), `pnpm notices:check` |
 | Release-Notizen | `pnpm release:notes` (Conventional Commits seit dem letzten Tag); Ablauf in `docs/release.md` |
 | MCP-Sidecar | `pnpm mcp:dev` (Debug-Sidecar neben die Debug-App), `node scripts/mcp-sidecar.mjs [Ziel]` (für ein Paket, mit `--config src-tauri/tauri.sidecar.conf.json`) |
-| Treiber gegen echte Server | `sh scripts/db-test-servers.sh up` (Docker: PostgreSQL, MySQL, MariaDB, SQL Server, CockroachDB, TimescaleDB, Oracle Free, ClickHouse, Trino, libSQL auf 127.0.0.1; `SC_DBTEST_ORACLE=0` lässt Oracle weg, `SC_DBTEST_YUGABYTE=1` nimmt YugabyteDB dazu, `SC_DBTEST_PRESTO=1` Presto), `pnpm rust:test:db`, danach `sh scripts/db-test-servers.sh down` |
+| Treiber gegen echte Server | `sh scripts/db-test-servers.sh up` (Docker: PostgreSQL, MySQL, MariaDB, SQL Server, CockroachDB, TimescaleDB, Oracle Free, ClickHouse, Trino, libSQL, Firebird auf 127.0.0.1; `SC_DBTEST_ORACLE=0` lässt Oracle weg, `SC_DBTEST_YUGABYTE=1` nimmt YugabyteDB dazu, `SC_DBTEST_PRESTO=1` Presto), `pnpm rust:test:db`, danach `sh scripts/db-test-servers.sh down` |
 | Texte | `pnpm texts` (kein Text im Template, kein Deutsch außerhalb von `*.de.ts`) |
 | Alles prüfen | `pnpm check` |
 | Produktions-Build unter CSP | `pnpm build && pnpm preview:csp` → http://localhost:1461 (ohne Backend; prüft Editor-Worker, WebAssembly, Styles) |
@@ -304,6 +306,9 @@ src-tauri/                     Rust
                                Löschen der nächsten Seite, Sitzung aus den Kopfzeilen, Werte als geprüfte Literale
   src/db/libsql.rs             libSQL/Turso über Hrana (HTTP): Cursor je Anweisung, Stream mit `baton`, Herzschlag
                                für offene Transaktionen, zurückgelassene Anfrage statt Abbruch
+  src/db/firebird.rs           Firebird über `firebird-wire`: Transaktion je Anweisung oder die des Nutzers, Werte
+                               als das, was ihr Platz ist (NUMERIC exakt), Abbruch von einer zweiten Verbindung;
+                               die Stücke des Katalogs (`TYPE`, `FOREIGN_KEYS`) für meta, details, diagram
   src/db/d1.rs                 Cloudflare D1 über die REST-API: eine Anfrage je Anweisung, keine Sitzung; Tests
                                gegen einen nachgestellten Server (d1_tests.rs)
   src/db/http.rs               was die HTTP-Treiber teilen: Client mit dem TLS des Profils, Adresse, Kodierung
@@ -378,6 +383,7 @@ src-tauri/                     Rust
   tests/db_integration.rs      Treiber gegen echte Server (ignoriert; pnpm rust:test:db)
   tests/oracle_integration.rs  Oracle gegen Oracle Database Free im Container (ignoriert; pnpm rust:test:db)
   tests/clickhouse_integration.rs  ClickHouse gegen einen Container (ignoriert; pnpm rust:test:db)
+  tests/firebird_integration.rs  Firebird gegen einen Container (ignoriert; pnpm rust:test:db)
   tests/libsql_integration.rs  libSQL gegen einen Container (ignoriert; pnpm rust:test:db)
   tests/trino_integration.rs   Trino (und mit SC_DBTEST_PRESTO=1 Presto) gegen Container (ignoriert; pnpm rust:test:db)
   src/themes.rs                eigene Farbschemata: themes.json, Grenzen, Import/Export (rein, getestet)
@@ -430,6 +436,10 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   `take`/`give` in `libsql.rs` (ein `baton` gilt genau einmal); eine Transaktion lebt nur mit dem Herzschlag.
 - **D1**: keine Sitzung, keine Transaktion – was eine braucht, lehnt `edits_rows` ab. Account- und Datenbank-ID
   werden Teil einer Adresse und gehen nur durch `d1::id`. Das Token steht nur in der Kopfzeile, nie in einer Meldung.
+- **Firebird**: Die Transaktion hält der Treiber – `SET TRANSACTION`, `COMMIT`, `ROLLBACK` führt nur
+  `firebird::control` aus, nichts sonst öffnet oder schließt eine. Ein Wert wird nur durch `firebird::bound` zu
+  dem, was sein Platz ist (nie gerundet). Das eine Schema hat den leeren Namen: Nichts wird damit qualifiziert,
+  Katalogabfragen binden es (`NO_SCHEMA`).
 - **DuckDB**: nie eine zweite Datenbank auf dieselbe Datei öffnen – Sitzungen sind Klone der einen (`SHARED`
   in `duckdb.rs`). Vor jedem Lesen einer Zelle prüft `readable`, ob der Treiber den Typ kann (sonst endet er in
   `unreachable!`). Erweiterungen werden nie von selbst geladen; ein Assistent bekommt dort keine Abfrage ausgeführt.

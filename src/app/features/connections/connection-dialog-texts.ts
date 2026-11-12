@@ -25,6 +25,7 @@ export const CONNECTION_DIALOG_EN = {
   d1Database: 'Database ID',
   d1DatabaseExample: 'the UUID of the database, from the dashboard or wrangler',
   d1Token: 'API token',
+  firebirdDatabaseExample: 'path on the server or alias, for example /data/shop.fdb',
   unchanged: '(unchanged)',
   rememberInKeychain: 'remember in the keychain',
   encryption: 'Encryption',
@@ -91,6 +92,9 @@ export const CONNECTION_DIALOG_EN = {
   serviceMissing: 'Oracle needs the service name of the database.',
   catalogMissing: 'Trino needs a catalog: its schemas are what the tree shows.',
   d1DatabaseMissing: 'D1 needs the id of the database (letters, digits, dashes).',
+  firebirdDatabaseMissing: 'Firebird needs the database: its path on the server, or an alias.',
+  firebirdNoCertificates:
+    'Firebird has no certificates to check: choose “required” (its own encryption) or none.',
   d1AccountMissing: 'D1 needs the id of the Cloudflare account (letters, digits, dashes).',
   oracleTlsChecked:
     'Oracle connections always check the certificate: choose a mode that checks it, or no TLS.',

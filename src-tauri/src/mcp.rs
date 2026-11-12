@@ -448,6 +448,7 @@ fn kind_name(kind: DbKind) -> &'static str {
         DbKind::Duckdb => "duckdb",
         DbKind::Clickhouse => "clickhouse",
         DbKind::Trino => "trino",
+        DbKind::Firebird => "firebird",
     }
 }
 

@@ -332,6 +332,228 @@ const ORACLE_RESERVED: &[&str] = &[
     "WHENEVER",
 ];
 
+/// The reserved words of Firebird 5, as its `RDB$KEYWORDS` lists them (review 035i 4): a column called
+/// `DATE` or `VALUE` – common in old databases – is one only in quotes.
+const FIREBIRD_RESERVED: &[&str] = &[
+    "ADD",
+    "ADMIN",
+    "ALL",
+    "ALTER",
+    "AND",
+    "ANY",
+    "AS",
+    "AT",
+    "AVG",
+    "BEGIN",
+    "BETWEEN",
+    "BIGINT",
+    "BINARY",
+    "BIT_LENGTH",
+    "BLOB",
+    "BOOLEAN",
+    "BOTH",
+    "BY",
+    "CASE",
+    "CAST",
+    "CHAR",
+    "CHARACTER",
+    "CHARACTER_LENGTH",
+    "CHAR_LENGTH",
+    "CHECK",
+    "CLOSE",
+    "COLLATE",
+    "COLUMN",
+    "COMMENT",
+    "COMMIT",
+    "CONNECT",
+    "CONSTRAINT",
+    "CORR",
+    "COUNT",
+    "COVAR_POP",
+    "COVAR_SAMP",
+    "CREATE",
+    "CROSS",
+    "CURRENT",
+    "CURRENT_CONNECTION",
+    "CURRENT_DATE",
+    "CURRENT_ROLE",
+    "CURRENT_TIME",
+    "CURRENT_TIMESTAMP",
+    "CURRENT_TRANSACTION",
+    "CURRENT_USER",
+    "CURSOR",
+    "DATE",
+    "DAY",
+    "DEC",
+    "DECFLOAT",
+    "DECIMAL",
+    "DECLARE",
+    "DEFAULT",
+    "DELETE",
+    "DELETING",
+    "DETERMINISTIC",
+    "DISCONNECT",
+    "DISTINCT",
+    "DOUBLE",
+    "DROP",
+    "ELSE",
+    "END",
+    "ESCAPE",
+    "EXECUTE",
+    "EXISTS",
+    "EXTERNAL",
+    "EXTRACT",
+    "FALSE",
+    "FETCH",
+    "FILTER",
+    "FLOAT",
+    "FOR",
+    "FOREIGN",
+    "FROM",
+    "FULL",
+    "FUNCTION",
+    "GDSCODE",
+    "GLOBAL",
+    "GRANT",
+    "GROUP",
+    "HAVING",
+    "HOUR",
+    "IN",
+    "INDEX",
+    "INNER",
+    "INSENSITIVE",
+    "INSERT",
+    "INSERTING",
+    "INT",
+    "INT128",
+    "INTEGER",
+    "INTO",
+    "IS",
+    "JOIN",
+    "LATERAL",
+    "LEADING",
+    "LEFT",
+    "LIKE",
+    "LOCAL",
+    "LOCALTIME",
+    "LOCALTIMESTAMP",
+    "LONG",
+    "LOWER",
+    "MAX",
+    "MERGE",
+    "MIN",
+    "MINUTE",
+    "MONTH",
+    "NATIONAL",
+    "NATURAL",
+    "NCHAR",
+    "NO",
+    "NOT",
+    "NULL",
+    "NUMERIC",
+    "OCTET_LENGTH",
+    "OF",
+    "OFFSET",
+    "ON",
+    "ONLY",
+    "OPEN",
+    "OR",
+    "ORDER",
+    "OUTER",
+    "OVER",
+    "PARAMETER",
+    "PLAN",
+    "POSITION",
+    "POST_EVENT",
+    "PRECISION",
+    "PRIMARY",
+    "PROCEDURE",
+    "PUBLICATION",
+    "REAL",
+    "RECORD_VERSION",
+    "RECREATE",
+    "RECURSIVE",
+    "REFERENCES",
+    "REGR_AVGX",
+    "REGR_AVGY",
+    "REGR_COUNT",
+    "REGR_INTERCEPT",
+    "REGR_R2",
+    "REGR_SLOPE",
+    "REGR_SXX",
+    "REGR_SXY",
+    "REGR_SYY",
+    "RELEASE",
+    "RESETTING",
+    "RETURN",
+    "RETURNING_VALUES",
+    "RETURNS",
+    "REVOKE",
+    "RIGHT",
+    "ROLLBACK",
+    "ROW",
+    "ROWS",
+    "ROW_COUNT",
+    "SAVEPOINT",
+    "SCHEMA",
+    "SCROLL",
+    "SECOND",
+    "SELECT",
+    "SENSITIVE",
+    "SET",
+    "SIMILAR",
+    "SMALLINT",
+    "SOME",
+    "SQLCODE",
+    "SQLSTATE",
+    "START",
+    "STDDEV_POP",
+    "STDDEV_SAMP",
+    "SUM",
+    "TABLE",
+    "THEN",
+    "TIME",
+    "TIMESTAMP",
+    "TIMEZONE_HOUR",
+    "TIMEZONE_MINUTE",
+    "TO",
+    "TRAILING",
+    "TRIGGER",
+    "TRIM",
+    "TRUE",
+    "UNBOUNDED",
+    "UNION",
+    "UNIQUE",
+    "UNKNOWN",
+    "UPDATE",
+    "UPDATING",
+    "UPPER",
+    "USER",
+    "USING",
+    "VALUE",
+    "VALUES",
+    "VARBINARY",
+    "VARCHAR",
+    "VARIABLE",
+    "VARYING",
+    "VAR_POP",
+    "VAR_SAMP",
+    "VIEW",
+    "WHEN",
+    "WHERE",
+    "WHILE",
+    "WINDOW",
+    "WITH",
+    "WITHOUT",
+    "YEAR",
+];
+
+fn firebird_reserved(name: &str) -> bool {
+    FIREBIRD_RESERVED
+        .binary_search(&name.to_ascii_uppercase().as_str())
+        .is_ok()
+}
+
 fn oracle_reserved(name: &str) -> bool {
     ORACLE_RESERVED.contains(&name.to_ascii_uppercase().as_str())
 }
@@ -350,15 +572,23 @@ fn plain(name: &str, kind: DbKind) -> bool {
         // PostgreSQL folds unquoted names to lower case: an upper case letter needs quotes
         DbKind::Postgres => first.is_ascii_lowercase() || first == '_',
         // Oracle folds unquoted names to upper case: a lower case letter needs quotes
-        DbKind::Oracle => first.is_ascii_uppercase(),
+        // (so does Firebird, and a name there begins with a letter)
+        DbKind::Oracle | DbKind::Firebird => first.is_ascii_uppercase(),
         _ => first.is_ascii_alphabetic() || first == '_',
     };
     let rest_ok = name.chars().all(|c| match kind {
         DbKind::Postgres => c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_',
-        DbKind::Oracle => c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_',
+        // unquoted names are stored in upper case there
+        DbKind::Oracle | DbKind::Firebird => {
+            c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'
+        }
         _ => c.is_ascii_alphanumeric() || c == '_',
     });
-    first_ok && rest_ok && !reserved(name) && !(kind == DbKind::Oracle && oracle_reserved(name))
+    first_ok
+        && rest_ok
+        && !reserved(name)
+        && !(kind == DbKind::Oracle && oracle_reserved(name))
+        && !(kind == DbKind::Firebird && firebird_reserved(name))
 }
 
 /// A name as it is written in SQL: as it is where that is safe, quoted otherwise (spaces, upper case in
@@ -382,7 +612,8 @@ pub fn quote_always(name: &str, kind: DbKind) -> String {
         | DbKind::Libsql
         | DbKind::D1
         | DbKind::Duckdb
-        | DbKind::Trino => {
+        | DbKind::Trino
+        | DbKind::Firebird => {
             format!("\"{}\"", name.replace('"', "\"\""))
         }
         // Oracle has no way to write a quote inside a quoted name (and allows none in a name): one that
@@ -452,6 +683,15 @@ pub fn schemas(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<S
             current: true,
         }]);
     }
+    if kind == DbKind::Firebird {
+        // one namespace without a name: nothing is ever qualified with it
+        return Ok(vec![SchemaInfo {
+            name: String::new(),
+            quoted: String::new(),
+            system: false,
+            current: true,
+        }]);
+    }
     let sql = match kind {
         DbKind::Postgres => {
             "SELECT n.nspname::text, \
@@ -482,6 +722,8 @@ pub fn schemas(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<S
              FROM pragma_database_list ORDER BY seq"
         }
         // the schemas of the catalog the connection names; `USE` in a tab is that tab's own matter
+        // answered above, without a question
+        DbKind::Firebird => "SELECT '', 'false', 'true' FROM rdb$database",
         DbKind::Trino => {
             "SELECT schema_name, \
              CASE WHEN schema_name = 'information_schema' THEN 'true' ELSE 'false' END, 'false' \
@@ -596,6 +838,19 @@ pub fn objects(
             &["SELECT type, name, '', NULL FROM pragma_table_list \
              WHERE schema = ?1 AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\'"]
         }
+        DbKind::Firebird => &[
+            "SELECT CASE WHEN r.rdb$view_blr IS NULL THEN 'table' ELSE 'view' END, r.rdb$relation_name, \
+               '', NULL \
+             FROM rdb$relations r WHERE COALESCE(r.rdb$system_flag, 0) = 0 AND CAST(? AS VARCHAR(63)) = ''",
+            "SELECT 'routine', p.rdb$procedure_name, 'procedure', NULL FROM rdb$procedures p \
+             WHERE COALESCE(p.rdb$system_flag, 0) = 0 AND p.rdb$package_name IS NULL \
+               AND CAST(? AS VARCHAR(63)) = ''",
+            "SELECT 'routine', f.rdb$function_name, 'function', NULL FROM rdb$functions f \
+             WHERE COALESCE(f.rdb$system_flag, 0) = 0 AND f.rdb$package_name IS NULL \
+               AND CAST(? AS VARCHAR(63)) = ''",
+            "SELECT 'sequence', g.rdb$generator_name, '', NULL FROM rdb$generators g \
+             WHERE COALESCE(g.rdb$system_flag, 0) = 0 AND CAST(? AS VARCHAR(63)) = ''",
+        ],
         DbKind::Trino => &[
             "SELECT CASE table_type WHEN 'VIEW' THEN 'view' ELSE 'table' END, \
                table_name, '', NULL \
@@ -906,6 +1161,85 @@ fn mssql_table(s: &mut dyn Session, schema: &str, table: &str, stop: Stop) -> Ap
     Ok(TableInfo {
         columns: column_rows(&columns, DbKind::Sqlserver),
         indexes: parts(&indexes),
+        keys: parts(&keys),
+        triggers: parts(&triggers),
+    })
+}
+
+/// Firebird: the `rdb$…` tables of the database.
+fn firebird_table(s: &mut dyn Session, table: &str, stop: Stop) -> AppResult<TableInfo> {
+    use super::firebird::{TYPE, in_key};
+    let p = &[table];
+    let columns = ask(
+        s,
+        &format!(
+            "SELECT rf.rdb$field_name, {TYPE}, \
+               IIF(COALESCE(rf.rdb$null_flag, f.rdb$null_flag, 0) = 1, 'false', 'true'), \
+               COALESCE(rf.rdb$default_source, f.rdb$default_source), \
+               CASE WHEN {} THEN 'pk' WHEN {} THEN 'fk' ELSE '' END \
+             FROM rdb$relation_fields rf JOIN rdb$fields f ON f.rdb$field_name = rf.rdb$field_source \
+             WHERE rf.rdb$relation_name = ? ORDER BY rf.rdb$field_position",
+            in_key("PRIMARY KEY"),
+            in_key("FOREIGN KEY")
+        ),
+        p,
+        stop,
+    )?;
+    // the default as the catalog keeps it: `DEFAULT 'DE'`
+    let columns: TextRows = columns
+        .into_iter()
+        .map(|mut row| {
+            if let Some(Some(default)) = row.get_mut(3) {
+                let t = default.trim();
+                let cut = t
+                    .get(..7)
+                    .filter(|w| w.eq_ignore_ascii_case("default"))
+                    .map_or(t, |_| t[7..].trim_start());
+                *default = cut.to_owned();
+            }
+            row
+        })
+        .collect();
+    let indexes = ask(
+        s,
+        "SELECT i.rdb$index_name, TRIM(IIF(i.rdb$unique_flag = 1, 'unique ', '')) || ' (' || \
+           COALESCE((SELECT LIST(TRIM(sg.rdb$field_name), ', ') FROM rdb$index_segments sg \
+             WHERE sg.rdb$index_name = i.rdb$index_name), i.rdb$expression_source, '') || ')' \
+         FROM rdb$indices i \
+         WHERE i.rdb$relation_name = ? AND COALESCE(i.rdb$system_flag, 0) = 0 ORDER BY 1",
+        p,
+        stop,
+    )?;
+    let keys = ask(
+        s,
+        "SELECT rc.rdb$constraint_name, TRIM(rc.rdb$constraint_type) || COALESCE(' (' || \
+           (SELECT LIST(TRIM(sg.rdb$field_name), ', ') FROM rdb$index_segments sg \
+             WHERE sg.rdb$index_name = rc.rdb$index_name) || ')', '') \
+         FROM rdb$relation_constraints rc \
+         WHERE rc.rdb$relation_name = ? AND rc.rdb$constraint_type <> 'NOT NULL' ORDER BY 1",
+        p,
+        stop,
+    )?;
+    let triggers = ask(
+        s,
+        "SELECT tr.rdb$trigger_name, TRIM(IIF(tr.rdb$trigger_inactive = 1, 'inactive', '')) \
+         FROM rdb$triggers tr \
+         WHERE tr.rdb$relation_name = ? AND COALESCE(tr.rdb$system_flag, 0) = 0 ORDER BY 1",
+        p,
+        stop,
+    )?;
+    let tidy = |rows: TextRows| -> TextRows {
+        rows.into_iter()
+            .map(|row| {
+                row.into_iter()
+                    .map(|c| c.map(|t| t.trim().replace("( (", "(")))
+                    .collect()
+            })
+            .collect()
+    };
+    Ok(TableInfo {
+        columns: column_rows(&columns, DbKind::Firebird),
+        indexes: parts(&tidy(indexes)),
         keys: parts(&keys),
         triggers: parts(&triggers),
     })
@@ -1261,6 +1595,7 @@ pub fn table(
         DbKind::Duckdb => duckdb_table(s, schema, table, stop),
         DbKind::Clickhouse => clickhouse_table(s, schema, table, stop),
         DbKind::Trino => trino_table(s, schema, table, stop),
+        DbKind::Firebird => firebird_table(s, table, stop),
     }
 }
 
@@ -1301,6 +1636,15 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
              WHERE name LIKE ?1 ESCAPE '\\' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' \
              ORDER BY 3, 1 LIMIT 200"
         }
+        // CONTAINING takes a text as it is, whatever its case
+        DbKind::Firebird => {
+            "SELECT '', CASE WHEN r.rdb$view_blr IS NULL THEN 'table' ELSE 'view' END, \
+               r.rdb$relation_name \
+             FROM rdb$relations r \
+             WHERE COALESCE(r.rdb$system_flag, 0) = 0 \
+               AND r.rdb$relation_name CONTAINING CAST(? AS VARCHAR(255)) \
+             ORDER BY 3 ROWS 200"
+        }
         // no LIKE: an escape there may only stand before `%`, `_` and itself
         DbKind::Trino => {
             "SELECT table_schema, CASE table_type WHEN 'VIEW' THEN 'view' ELSE 'table' END, \
@@ -1340,7 +1684,7 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
              ORDER BY 3, 1 FETCH FIRST 200 ROWS ONLY"
         }
     };
-    let wanted = if kind == DbKind::Trino {
+    let wanted = if matches!(kind, DbKind::Trino | DbKind::Firebird) {
         text
     } else {
         &pattern
@@ -1395,6 +1739,31 @@ mod tests {
         assert_eq!(q("x\\`; DROP TABLE t; --"), "`x\\\\``; DROP TABLE t; --`");
         // MySQL takes a backslash as it is there
         assert_eq!(quote("a\\b", DbKind::Mysql), "`a\\b`");
+    }
+
+    /// Firebird (review 035i 4): its own words, and no name that begins with `_`.
+    #[test]
+    fn firebird_names_that_are_words_of_the_language_are_quoted() {
+        let q = |name: &str| quote(name, DbKind::Firebird);
+        assert_eq!(q("ORDERS"), "ORDERS");
+        for word in [
+            "DATE",
+            "VALUE",
+            "COUNT",
+            "TIMESTAMP",
+            "YEAR",
+            "POSITION",
+            "COMMENT",
+            "START",
+        ] {
+            assert_eq!(q(word), format!("\"{word}\""));
+        }
+        assert_eq!(q("_X"), "\"_X\"");
+        assert_eq!(q("orders"), "\"orders\"");
+        assert_eq!(q("My\"Q"), "\"My\"\"Q\"");
+        let mut sorted = FIREBIRD_RESERVED.to_vec();
+        sorted.sort_unstable();
+        assert_eq!(sorted, FIREBIRD_RESERVED);
     }
 
     #[test]

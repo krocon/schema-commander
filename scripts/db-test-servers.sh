@@ -11,6 +11,7 @@
 # SQL Server runs as linux/amd64 (emulated on Apple Silicon, about 30 s to start).
 # ClickHouse (prompt 035d): HTTP on 127.0.0.1:28123, user and database `shop`.
 # Trino (prompt 035f): HTTP on 127.0.0.1:28080, no login; the catalogs `memory` and `tpch` of the image.
+# Firebird (prompt 035i): Firebird 5 on 127.0.0.1:23050, user `shop`, database /var/lib/firebird/data/shop.fdb.
 # libSQL (prompt 035g): `sqld` over HTTP on 127.0.0.1:28090, no login.
 # Presto (prompt 035f): only with SC_DBTEST_PRESTO=1 (an image of about 3 GB), HTTP on 127.0.0.1:28082.
 # YugabyteDB (prompt 035e): only with SC_DBTEST_YUGABYTE=1 (an image of about 3 GB), YSQL on 127.0.0.1:25435.
@@ -39,7 +40,10 @@ up)
   docker run -d --rm --name sc-dbtest-trino -p 127.0.0.1:28080:8080 trinodb/trino:476 >/dev/null
   docker run -d --rm --name sc-dbtest-libsql -p 127.0.0.1:28090:8080 \
     ghcr.io/tursodatabase/libsql-server:latest >/dev/null
-  want=9
+  docker run -d --rm --name sc-dbtest-fb -p 127.0.0.1:23050:3050 -e FIREBIRD_ROOT_PASSWORD="$pw" \
+    -e FIREBIRD_USER=shop -e FIREBIRD_PASSWORD="$pw" -e FIREBIRD_DATABASE=shop.fdb \
+    -e FIREBIRD_DATABASE_DEFAULT_CHARSET=UTF8 firebirdsql/firebird:5 >/dev/null
+  want=10
   ora=0
   yb=0
   if [ "${SC_DBTEST_ORACLE:-1}" != "0" ]; then
@@ -72,6 +76,7 @@ up)
     curl -s http://127.0.0.1:28123/ping 2>/dev/null | grep -q Ok && ok=$((ok + 1))
     curl -s http://127.0.0.1:28080/v1/info 2>/dev/null | grep -q '"starting":false' && ok=$((ok + 1))
     curl -s http://127.0.0.1:28090/version 2>/dev/null | grep -q sqld && ok=$((ok + 1))
+    docker logs sc-dbtest-fb 2>&1 | grep -q "Starting Firebird" && ok=$((ok + 1))
     if [ "$ora" -eq 1 ]; then
       docker logs sc-dbtest-ora 2>&1 | grep -q "DATABASE IS READY TO USE" && ok=$((ok + 1))
     fi
@@ -91,7 +96,7 @@ up)
   ;;
 down)
   docker rm -f sc-dbtest-pg sc-dbtest-my sc-dbtest-maria sc-dbtest-ms sc-dbtest-crdb sc-dbtest-tsdb \
-    sc-dbtest-ora sc-dbtest-ch sc-dbtest-yb sc-dbtest-trino sc-dbtest-presto sc-dbtest-libsql \
+    sc-dbtest-ora sc-dbtest-ch sc-dbtest-yb sc-dbtest-trino sc-dbtest-presto sc-dbtest-libsql sc-dbtest-fb \
     >/dev/null 2>&1 || true
   ;;
 *)

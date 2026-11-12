@@ -45,6 +45,7 @@ export const SCHEMA_EN = {
   triggers: 'Triggers',
   loading: 'Loading …',
   current: 'current',
+  wholeDatabase: '(database)',
   empty: 'empty',
   nothingFound: 'Nothing found.',
   /** Estimated rows; `n` is the formatted number. */

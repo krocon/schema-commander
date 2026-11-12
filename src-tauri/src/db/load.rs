@@ -384,6 +384,12 @@ pub fn create_table(
         // room for values longer than the ones seen
         let len = (g.max_len.max(1) * 2).clamp(20, 4000);
         match (g.kind, kind) {
+            (GuessKind::Int, DbKind::Firebird) => "BIGINT".into(),
+            (GuessKind::Decimal, DbKind::Firebird) => "NUMERIC(38, 10)".into(),
+            (GuessKind::DateTime, DbKind::Firebird) => "TIMESTAMP".into(),
+            (GuessKind::Bool, DbKind::Firebird) => "BOOLEAN".into(),
+            (GuessKind::Text, DbKind::Firebird) if g.max_len <= 2000 => format!("VARCHAR({len})"),
+            (GuessKind::Text, DbKind::Firebird) => "BLOB SUB_TYPE TEXT".into(),
             (GuessKind::DateTime, DbKind::Trino) => "timestamp(6)".into(),
             (GuessKind::Bool, DbKind::Trino) => "boolean".into(),
             (GuessKind::Text, DbKind::Trino) => "varchar".into(),

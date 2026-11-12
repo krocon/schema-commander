@@ -43,6 +43,7 @@ export const SCHEMA_DE: Translation<typeof SCHEMA_EN> = {
   triggers: 'Trigger',
   loading: 'Lädt …',
   current: 'aktuell',
+  wholeDatabase: '(Datenbank)',
   empty: 'leer',
   nothingFound: 'Nichts gefunden.',
   thousands: (n) => `~${n}k`,

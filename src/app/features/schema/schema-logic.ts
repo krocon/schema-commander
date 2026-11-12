@@ -218,7 +218,8 @@ export function flatten(state: SchemaState, showSystem: boolean, filter = ''): T
         id: sid,
         level: 1,
         kind: 'schema',
-        label: schema.name,
+        // a database of one namespace has no name for it (Firebird)
+        label: schema.name || SCHEMA_TEXTS.wholeDatabase,
         detail: schema.current ? SCHEMA_TEXTS.current : '',
         icon: '▣',
         tone: schema.system ? 'st-system' : 'st-schema',
