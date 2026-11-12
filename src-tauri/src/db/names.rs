@@ -551,7 +551,8 @@ pub fn read_objects(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<
     let rows = match kind {
         DbKind::Db2 => ask(
             s,
-            "SELECT CASE type WHEN 'V' THEN 'view' ELSE 'table' END, tabschema, tabname, '' \
+            "SELECT CASE type WHEN 'V' THEN 'view' ELSE 'table' END, RTRIM(tabschema), \
+               RTRIM(tabname), '' \
              FROM syscat.tables WHERE type IN ('T', 'V', 'S') AND tabschema NOT LIKE 'SYS%'",
             &[],
             stop,
@@ -737,7 +738,7 @@ pub fn read_columns(
         DbKind::Db2 => ask(
             s,
             &format!(
-                "SELECT tabschema, tabname, colname, {} FROM syscat.columns \
+                "SELECT RTRIM(tabschema), RTRIM(tabname), RTRIM(colname), {} FROM syscat.columns \
                  WHERE tabschema NOT LIKE 'SYS%'",
                 super::meta::DB2_TYPE
             ),

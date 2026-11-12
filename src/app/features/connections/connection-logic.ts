@@ -99,6 +99,10 @@ export function profileProblems(p: Profile): Partial<Record<Field, string>> {
   if (p.kind === 'db2') {
     if (!p.database.trim()) out.database = t.db2DatabaseMissing;
     if (p.tls !== 'off' && p.tls !== 'verify') out.tls = t.db2TlsChecked;
+    // certificates are used with TLS only; with TLS the driver takes 50001 for 50000
+    else if (p.tls === 'off' && (p.caFile.trim() || p.clientCert.trim() || p.clientKey.trim()))
+      out.tls = t.db2CertificatesNeedTls;
+    if (p.tls === 'verify' && p.port === 50000) out.port = t.db2TlsPort;
   }
   if (p.kind === 'snowflake') {
     if (!isLocalHost(p.host) && !/\.snowflakecomputing\.(com|cn)$/i.test(p.host.trim()))

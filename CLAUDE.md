@@ -453,8 +453,8 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   `firebird::control` aus, nichts sonst öffnet oder schließt eine. Ein Wert wird nur durch `firebird::bound` zu
   dem, was sein Platz ist (nie gerundet). Das eine Schema hat den leeren Namen: Nichts wird damit qualifiziert,
   Katalogabfragen binden es (`NO_SCHEMA`).
-- **Db2**: Der Treiber schließt jede Anweisung ab (Auto-Commit) – nichts darf sich auf eine offene Transaktion
-  verlassen, `edits_rows` bleibt falsch, bis der Treiber gegen einen Server geprüft ist. Ein Wert geht nur durch
+- **Db2**: Jede Anweisung wird abgeschlossen – nur `db2::one` sendet Commit und Rollback (der Treiber selbst
+  schließt einen Cursor ohne gebundene Werte nicht ab); nichts darf sich auf eine offene Transaktion verlassen, `edits_rows` bleibt falsch, bis der Treiber gegen einen Server geprüft ist. Ein Wert geht nur durch
   `db2::fits` (der Treiber würde ihn sonst kürzen). `justybase-db2` bleibt fest auf seiner Version.
 - **Snowflake**: Token und Zusicherung gehen nur an `*.snowflakecomputing.com` über geprüftes TLS. Es gibt keine
   Sitzung: nichts darf sich auf ein `USE …` oder eine offene Transaktion verlassen.

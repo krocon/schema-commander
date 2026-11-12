@@ -28,6 +28,10 @@ pub const MAX_SQL_LEN: usize = 2 * 1024 * 1024;
 const MAX_LOB: u64 = 64 * 1024 * 1024;
 /// How long the rest of a result nobody wants is read before the connection is given up instead.
 const DRAIN: Duration = Duration::from_secs(3);
+/// Where Db2 usually listens with TLS (without: 50000, the default of the kind).
+const TLS_PORT: u16 = 50001;
+/// How long the driver may read on behind a large object nobody opened, before it gives the connection up.
+const CLEANUP_MS: u64 = 10 * 60 * 1000;
 
 // the types of DRDA, without the bit that says „may be NULL“
 const DATE: u16 = 384;
@@ -78,8 +82,17 @@ fn failed(e: &Db2Error, on: &str) -> AppError {
         Db2ErrorKind::DatabaseNotFound => ErrorCode::NotFound,
         Db2ErrorKind::InvalidConfiguration => ErrorCode::InvalidProfile,
         Db2ErrorKind::Unsupported => ErrorCode::Unsupported,
-        Db2ErrorKind::Transport | Db2ErrorKind::ConnectionClosed => ErrorCode::ConnectionFailed,
-        _ if lower.contains("tls handshake") || lower.contains("certificate") => {
+        Db2ErrorKind::Transport
+        | Db2ErrorKind::ConnectionClosed
+        | Db2ErrorKind::Protocol
+        | Db2ErrorKind::ServerResponse => ErrorCode::ConnectionFailed,
+        // a value the driver cannot write for its place: the statement's matter, not the connection's
+        Db2ErrorKind::ParameterConversion => ErrorCode::InvalidQuery,
+        // only what the driver says itself about the handshake – a table may be named CERTIFICATES
+        Db2ErrorKind::Other
+            if e.sql_code.is_none()
+                && (lower.contains("tls handshake") || lower.contains("client certificate")) =>
+        {
             ErrorCode::TlsFailed
         }
         _ => match e.sql_code {
@@ -91,8 +104,8 @@ fn failed(e: &Db2Error, on: &str) -> AppError {
             Some(-551 | -552 | -1060) => ErrorCode::PermissionDenied,
             // SQL1013N, SQL30061N: no such database
             Some(-1013 | -30061) => ErrorCode::NotFound,
-            Some(_) => ErrorCode::InvalidQuery,
-            None => ErrorCode::ConnectionFailed,
+            // without a number it is the driver's own word about what it was asked to do
+            Some(_) | None => ErrorCode::InvalidQuery,
         },
     };
     match code {
@@ -156,9 +169,33 @@ fn config(profile: &Profile, secret: Option<&Secret>) -> AppResult<Config> {
             "certificates are used with TLS only: switch it on („verify“)",
         ));
     }
+    for (file, what) in [
+        (profile.ca_file.trim(), "the CA file"),
+        (cert, "the client certificate"),
+        (key, "the client key"),
+    ] {
+        if !file.is_empty() && !std::path::Path::new(file).is_file() {
+            return Err(AppError::new(
+                ErrorCode::InvalidProfile,
+                format!("{what} is not a file that can be read"),
+            ));
+        }
+    }
+    // the driver takes 50001 whenever TLS is asked for on 50000: said here, not done behind the back
+    let port = match (tls, profile.port) {
+        (true, 0) => TLS_PORT,
+        (true, 50000) => {
+            return Err(AppError::new(
+                ErrorCode::InvalidProfile,
+                "Db2 with TLS on port 50000: this driver connects to 50001 then – name the port TLS \
+                 really listens on (50001 is the usual one)",
+            ));
+        }
+        _ => profile.port_or_default(),
+    };
     Ok(Config {
         host: profile.host.trim().to_owned(),
-        port: profile.port_or_default(),
+        port,
         database: database.to_owned(),
         user: profile.user.trim().to_owned(),
         password: secret.map(Secret::expose).unwrap_or_default().to_owned(),
@@ -175,7 +212,8 @@ fn config(profile: &Profile, secret: Option<&Secret>) -> AppResult<Config> {
 pub fn connect(profile: &Profile, secret: Option<&Secret>, stop: Stop) -> AppResult<Db2> {
     super::install_crypto();
     let config = config(profile, secret)?;
-    let on = profile.where_label();
+    // the port that is really taken (see `config`)
+    let on = format!("{}:{}/{}", config.host, config.port, config.database);
     let session = super::block(Some(super::CONNECT_TIMEOUT), stop, async {
         Db2Session::connect(config)
             .await
@@ -271,6 +309,17 @@ fn column(c: &ColumnDescription) -> Column {
 /// Date and time as Db2 writes them: ISO, or its own form with dots and a dash before the hour.
 fn date_time(kind: ColKind, s: &str) -> Option<Cell> {
     let s = s.trim();
+    // chrono keeps nine digits of a second and would drop the rest of a TIMESTAMP(12) silently
+    let fraction = s.rsplit_once('.').map_or(0, |(_, f)| {
+        if f.bytes().all(|b| b.is_ascii_digit()) {
+            f.len()
+        } else {
+            0
+        }
+    });
+    if fraction > 9 {
+        return None;
+    }
     match kind {
         ColKind::Date => NaiveDate::parse_from_str(s, "%Y-%m-%d")
             .ok()
@@ -293,11 +342,18 @@ fn date_time(kind: ColKind, s: &str) -> Option<Cell> {
 
 /// A value of a row as a cell. What the driver read decides, the type of the column only how a text is
 /// meant: nothing is rounded, a number beyond an `i64` stays its text.
-fn cell(v: Db2Value, kind: ColKind) -> Cell {
+fn cell(v: Db2Value, column: &Column) -> Cell {
+    let kind = column.kind;
     match v {
         Db2Value::Null => Cell::Null,
         Db2Value::Boolean(b) => Cell::Bool(b),
         Db2Value::Integer(i) => Cell::I64(i),
+        // the driver widens a REAL to a double, which shows digits the server never held
+        // (0.1 → 0.10000000149011612): read back as the number of four bytes it is
+        #[allow(clippy::cast_possible_truncation)]
+        Db2Value::Float(f) if column.type_name == "REAL" => {
+            Cell::F64((f as f32).to_string().parse().unwrap_or(f))
+        }
         Db2Value::Float(f) => Cell::F64(f),
         Db2Value::Decimal(s) => Cell::Decimal(s),
         Db2Value::Bytes(b) => Cell::bytes(&b),
@@ -309,7 +365,7 @@ fn cell(v: Db2Value, kind: ColKind) -> Cell {
             ColKind::Int => s.trim().parse().map_or(Cell::Decimal(s), Cell::I64),
             _ => Cell::Text(text(&s)),
         },
-        // a locator is read while its row is the current one: see `Db2::lob`
+        // a locator is read while its row is the current one: see `lob`
         _ => Cell::Unreadable("LOB".into()),
     }
 }
@@ -337,14 +393,38 @@ fn fraction_digits(s: &str) -> Option<usize> {
     ok.then(|| frac.trim_end_matches('0').len())
 }
 
-/// Whether a value is what its place in the statement takes **as it is**. The driver converts a text to
-/// the type of the place and drops what does not fit (`1.5` → `1`); here that is an error instead.
+/// The digits of a number that count (without sign, point, exponent and leading zeros).
+fn significant_digits(s: &str) -> Option<usize> {
+    let mantissa = s.split(['e', 'E']).next().unwrap_or(s);
+    let digits = mantissa.strip_prefix(['-', '+']).unwrap_or(mantissa);
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
+        return None;
+    }
+    if digits.matches('.').count() > 1 || !digits.bytes().any(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let only: String = digits.chars().filter(char::is_ascii_digit).collect();
+    Some(only.trim_start_matches('0').len().max(1))
+}
+
+/// Whether a value is what its place in the statement takes **as it is**. The driver converts a value
+/// to the type of the place and drops what does not fit (`1.5` → `1`, a timestamp → its date, a text
+/// too long for a GRAPHIC, any number → true, a text → the bytes its hex digits spell); here that is an
+/// error instead (review 035l 5).
 fn fits(value: &Db2Value, place: &ColumnDescription) -> AppResult<()> {
+    let place_type = base(place.sql_type);
+    if let Db2Value::Integer(i) = value {
+        return if place_type == BOOLEAN && !matches!(i, 0 | 1) {
+            Err(not_a("true or false", &i.to_string()))
+        } else {
+            Ok(())
+        };
+    }
     let s = match value {
         Db2Value::Text(s) | Db2Value::Decimal(s) => s.trim(),
         _ => return Ok(()),
     };
-    match base(place.sql_type) {
+    match place_type {
         SMALLINT | INTEGER | BIGINT if !whole_number(s) => Err(not_a("a whole number", s)),
         DECIMAL | NUMERIC | ZONED => match fraction_digits(s) {
             None => Err(not_a("a number", s)),
@@ -358,6 +438,25 @@ fn fits(value: &Db2Value, place: &ColumnDescription) -> AppResult<()> {
             )),
             Some(_) => Ok(()),
         },
+        DECFLOAT => {
+            let keeps = if place.length == 8 { 16 } else { 34 };
+            match significant_digits(s) {
+                None => Err(not_a("a number", s)),
+                Some(n) if n > keeps => Err(AppError::new(
+                    ErrorCode::InvalidQuery,
+                    format!(
+                        "„{}“ has more digits than a DECFLOAT({keeps}) keeps",
+                        clean(s)
+                    ),
+                )),
+                Some(_) => Ok(()),
+            }
+        }
+        FLOAT => match s.parse::<f64>() {
+            #[allow(clippy::cast_possible_truncation)]
+            Ok(v) if v.is_finite() && (place.length != 4 || (v as f32).is_finite()) => Ok(()),
+            _ => Err(not_a("a number its place can hold", s)),
+        },
         BOOLEAN
             if !matches!(
                 s.to_ascii_lowercase().as_str(),
@@ -366,6 +465,36 @@ fn fits(value: &Db2Value, place: &ColumnDescription) -> AppResult<()> {
         {
             Err(not_a("true or false", s))
         }
+        // exactly a date, a time, an instant: the driver would cut the rest away or reorder it
+        DATE if NaiveDate::parse_from_str(s, "%Y-%m-%d").is_err() => {
+            Err(not_a("a date (YYYY-MM-DD)", s))
+        }
+        TIME if NaiveTime::parse_from_str(s, "%H:%M:%S").is_err()
+            && NaiveTime::parse_from_str(s, "%H.%M.%S").is_err() =>
+        {
+            Err(not_a("a time (HH:MM:SS)", s))
+        }
+        TIMESTAMP
+            if date_time(ColKind::Timestamp, s).is_none()
+                && NaiveDate::parse_from_str(s, "%Y-%m-%d").is_err() =>
+        {
+            Err(not_a(
+                "a date with a time (YYYY-MM-DD HH:MM:SS, up to 9 digits of a second)",
+                s,
+            ))
+        }
+        GRAPHIC if s.chars().count() as u64 > place.length => Err(AppError::new(
+            ErrorCode::InvalidQuery,
+            format!(
+                "the text is longer than its place (GRAPHIC({}))",
+                place.length
+            ),
+        )),
+        // the driver would read the text as hex digits: bytes are bound through HEXTORAW(?)
+        BINARY | VARBINARY | BLOB | BLOB_LOCATOR => Err(AppError::new(
+            ErrorCode::InvalidQuery,
+            "a text cannot be bound where bytes stand: write HEXTORAW(?) and give the bytes as hex",
+        )),
         _ => Ok(()),
     }
 }
@@ -436,8 +565,9 @@ async fn lob(
     value: &justybase_db2::Db2LobValue,
 ) -> Result<Cell, Db2Error> {
     if value.byte_length > MAX_LOB {
+        // (the driver still reads it past, to get to the next row: that takes its time)
         return Ok(Cell::Unreadable(format!(
-            "large object of {} bytes",
+            "large object of {} bytes – more than is read here; ask for a part of it (SUBSTR)",
             value.byte_length
         )));
     }
@@ -470,7 +600,8 @@ fn as_asked(c: Cell, plain: bool) -> Cell {
 }
 
 impl Db2 {
-    /// One statement, to its end. `plain`: every value as text (the app's own questions).
+    /// One statement, to its end, as a unit of work of its own: kept when it ran, undone when it did
+    /// not. `plain`: every value as text (the app's own questions).
     async fn one(
         session: &mut Db2Session,
         sql: &str,
@@ -478,8 +609,29 @@ impl Db2 {
         sink: &mut dyn RowSink,
         plain: bool,
     ) -> Result<AppResult<Answer>, Db2Error> {
+        let result = Self::inner(session, sql, values, sink, plain).await;
+        let lost = match &result {
+            Ok(Ok(_)) => return result,
+            Ok(Err(_)) => false,
+            Err(e) => breaks(e),
+        };
+        if !lost && !session.is_closed() {
+            // nothing of a statement that failed or was refused stays open (a prepared statement,
+            // the locks of a cursor that stopped in the middle)
+            let _ = session.rollback().await;
+        }
+        result
+    }
+
+    async fn inner(
+        session: &mut Db2Session,
+        sql: &str,
+        values: &[Db2Value],
+        sink: &mut dyn RowSink,
+        plain: bool,
+    ) -> Result<AppResult<Answer>, Db2Error> {
         // our own clock and the stop of the user end a statement, not a deadline of the driver
-        let options = Db2CommandOptions::unlimited();
+        let options = Db2CommandOptions::new(0, CLEANUP_MS);
         if !values.is_empty() {
             let statement = session.prepare_with_options(sql, options).await?;
             if statement.parameter_columns.len() != values.len() {
@@ -536,7 +688,7 @@ impl Db2 {
                         let cells = row
                             .into_iter()
                             .zip(&answer.columns)
-                            .map(|(v, c)| as_asked(cell(v, c.kind), plain))
+                            .map(|(v, c)| as_asked(cell(v, c), plain))
                             .collect();
                         answer.rows += 1;
                         if !sink.row(cells) {
@@ -556,13 +708,17 @@ impl Db2 {
                 };
                 answer.columns = rows.columns().iter().map(column).collect();
                 sink.start(&answer.columns);
+                let unknown = Column {
+                    name: String::new(),
+                    kind: ColKind::Other,
+                    type_name: String::new(),
+                };
                 while let Some(row) = rows.next().await? {
                     let mut cells = Vec::with_capacity(row.len());
                     for (i, v) in row.into_iter().enumerate() {
-                        let kind = answer.columns.get(i).map_or(ColKind::Other, |c| c.kind);
                         let c = match v {
                             Db2Value::Lob(l) => lob(&mut rows, &l).await?,
-                            v => cell(v, kind),
+                            v => cell(v, answer.columns.get(i).unwrap_or(&unknown)),
                         };
                         cells.push(as_asked(c, plain));
                     }
@@ -575,9 +731,17 @@ impl Db2 {
                 if answer.truncated {
                     // DRDA lets the driver only read on: a short rest is read, a long one costs the
                     // connection (the driver closes it when the reader is dropped unfinished)
-                    answer.left = tokio::time::timeout(DRAIN, rows.close()).await.is_err();
+                    // (an error while reading on is a connection that is gone as well)
+                    answer.left =
+                        !matches!(tokio::time::timeout(DRAIN, rows.close()).await, Ok(Ok(())));
                 } else {
                     rows.close().await?;
+                }
+                if !answer.left {
+                    // the driver commits behind a cursor only when values were bound: without them
+                    // the unit of work would stay open, with its locks and with what a
+                    // `SELECT … FROM FINAL TABLE (INSERT …)` wrote (review 035l 1)
+                    session.commit().await?;
                 }
             }
         }
@@ -632,6 +796,15 @@ impl Db2 {
             Ok(answer) => {
                 if answer.left {
                     self.broken = true;
+                    if super::guard::classify(sql, super::DbKind::Db2) != super::guard::Class::Read
+                    {
+                        // the rows were shown, but the connection went before the commit
+                        return Err(AppError::new(
+                            ErrorCode::ConnectionFailed,
+                            "the result was left before its end and the connection had to be given \
+                             up: what the statement changed was rolled back",
+                        ));
+                    }
                 }
                 Ok(answer)
             }
@@ -720,7 +893,13 @@ impl Session for Db2 {
         Ok(if self.version.is_empty() {
             "Db2".to_owned()
         } else {
-            format!("Db2 {}", self.version)
+            // the server names itself already (`DB2 v11.5.9.0`)
+            let number = self.version.trim();
+            let number = number
+                .strip_prefix("DB2 ")
+                .or_else(|| number.strip_prefix("Db2 "))
+                .unwrap_or(number);
+            format!("Db2 {number}")
         })
     }
 
@@ -767,9 +946,38 @@ mod tests {
         // the driver reads any number but 0 as true
         assert!(fits(&Db2Value::Text("2".into()), &flag).is_err());
 
-        // a text is the server's to read where the place is a text or a date
+        // a text is the server's to read where the place is a text
         assert!(fits(&Db2Value::Text("1.5".into()), &place(VARCHAR, 20, 0, 0)).is_ok());
-        assert!(fits(&Db2Value::Text("2026-02-30".into()), &place(DATE, 10, 0, 0)).is_ok());
+
+        // review 035l 5: what the driver would change on the way
+        assert!(fits(&Db2Value::Integer(2), &flag).is_err());
+        assert!(fits(&Db2Value::Integer(1), &flag).is_ok());
+        let date = place(DATE, 10, 0, 0);
+        let t = |s: &str| Db2Value::Text(s.into());
+        let d = |s: &str| Db2Value::Decimal(s.into());
+        assert!(fits(&t("2026-11-12"), &date).is_ok());
+        // the driver would drop the time, reorder the parts
+        assert!(fits(&t("2026-11-12 13:14:15"), &date).is_err());
+        assert!(fits(&t("11/12/2026"), &date).is_err());
+        assert!(fits(&t("2026-02-30"), &date).is_err());
+        let instant = place(TIMESTAMP, 26, 0, 6);
+        assert!(fits(&t("2026-11-12 13:14:15.5"), &instant).is_ok());
+        assert!(fits(&t("2026-11-12"), &instant).is_ok());
+        assert!(fits(&t("yesterday"), &instant).is_err());
+        assert!(fits(&t("13:14:15"), &place(TIME, 8, 0, 0)).is_ok());
+        assert!(fits(&t("2026-11-12 13:14:15"), &place(TIME, 8, 0, 0)).is_err());
+        let small = place(DECFLOAT, 8, 0, 0);
+        assert!(fits(&d("1234567890.123456"), &small).is_ok());
+        assert!(fits(&d("0.00012345678901234567"), &small).is_err());
+        assert!(fits(&t(""), &small).is_err());
+        assert!(fits(&d("1.5e300"), &place(FLOAT, 8, 0, 0)).is_ok());
+        assert!(fits(&d("1e400"), &place(FLOAT, 8, 0, 0)).is_err());
+        assert!(fits(&d("1e300"), &place(FLOAT, 4, 0, 0)).is_err());
+        assert!(fits(&t("NaN"), &place(FLOAT, 8, 0, 0)).is_err());
+        assert!(fits(&t("äöü"), &place(GRAPHIC, 3, 0, 0)).is_ok());
+        assert!(fits(&t("äöüß"), &place(GRAPHIC, 3, 0, 0)).is_err());
+        // a text is not read as hex digits
+        assert!(fits(&t("beef"), &place(VARBINARY, 8, 0, 0)).is_err());
     }
 
     #[test]
@@ -791,6 +999,32 @@ mod tests {
 
     #[test]
     fn values_of_a_row_become_cells() {
+        let of = |kind: ColKind, type_name: &str| Column {
+            name: "C".into(),
+            kind,
+            type_name: type_name.into(),
+        };
+        let cell = |v: Db2Value, kind: ColKind| super::cell(v, &of(kind, ""));
+        // review 035l 9: a REAL is the number of four bytes it was, not its widening
+        assert_eq!(
+            super::cell(
+                Db2Value::Float(f64::from(0.1_f32)),
+                &of(ColKind::Float, "REAL")
+            ),
+            Cell::F64(0.1)
+        );
+        assert_eq!(
+            super::cell(Db2Value::Float(0.1), &of(ColKind::Float, "DOUBLE")),
+            Cell::F64(0.1)
+        );
+        // review 035l 15: more digits of a second than chrono keeps stay the text they are
+        assert_eq!(
+            cell(
+                Db2Value::Text("2026-11-12-13.14.15.123456789012".into()),
+                ColKind::Timestamp
+            ),
+            Cell::Text("2026-11-12-13.14.15.123456789012".into())
+        );
         assert_eq!(cell(Db2Value::Null, ColKind::Int), Cell::Null);
         assert_eq!(cell(Db2Value::Integer(-3), ColKind::Int), Cell::I64(-3));
         assert_eq!(
@@ -865,6 +1099,12 @@ mod tests {
         p.tls = TlsMode::Off;
         let c = config(&p, Some(&secret)).unwrap();
         assert_eq!((c.port, c.use_ssl), (50000, false));
+        // review 035l 6: the port the driver would take silently is taken knowingly – or refused
+        p.tls = TlsMode::Verify;
+        assert_eq!(config(&p, None).unwrap().port, 50001);
+        p.port = 50000;
+        assert!(config(&p, None).unwrap_err().message.contains("50001"));
+        p.port = 0;
         // the password is in no text of the configuration
         assert!(!format!("{c:?}").contains("pw\""));
 
@@ -878,6 +1118,9 @@ mod tests {
             ErrorCode::InvalidProfile
         );
         p.client_cert.clear();
+        p.ca_file = "/no/such/ca.pem".into();
+        assert!(config(&p, None).unwrap_err().message.contains("CA file"));
+        p.ca_file.clear();
         p.database.clear();
         assert_eq!(
             config(&p, None).unwrap_err().code,
@@ -902,6 +1145,14 @@ mod tests {
         assert_eq!(failed(&e, "h").code, ErrorCode::PermissionDenied);
         let login = Db2Error::new(Db2ErrorKind::AuthenticationFailed, "user X password Y");
         assert_eq!(failed(&login, "h").message, "login failed");
+        // review 035l 7: what the driver says about a value or a statement is no lost connection
+        let value = Db2Error::new(Db2ErrorKind::ParameterConversion, "cannot encode");
+        assert_eq!(failed(&value, "h").code, ErrorCode::InvalidQuery);
+        let mut named = Db2Error::new(Db2ErrorKind::SqlServer, "SQLCODE=-204 CERTIFICATES");
+        named.sql_code = Some(-204);
+        assert_eq!(failed(&named, "h").code, ErrorCode::InvalidQuery);
+        let tls = Db2Error::new(Db2ErrorKind::Other, "DB2 TLS handshake failed: bad cert");
+        assert_eq!(failed(&tls, "h").code, ErrorCode::TlsFailed);
         assert!(breaks(&Db2Error::new(Db2ErrorKind::Transport, "reset")));
         assert!(!breaks(&e));
     }

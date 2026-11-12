@@ -258,9 +258,9 @@ pub fn diagram(
         DbKind::Db2 => (
             s.ask(
                 &format!(
-                    "SELECT c.tabname, c.colname, {}, \
+                    "SELECT RTRIM(c.tabname), RTRIM(c.colname), {}, \
                        CASE c.nulls WHEN 'Y' THEN 'true' ELSE 'false' END, \
-                       CASE WHEN c.keyseq IS NULL THEN 'false' ELSE 'true' END \
+                       CASE WHEN COALESCE(c.keyseq, 0) > 0 THEN 'true' ELSE 'false' END \
                      FROM syscat.columns c \
                      JOIN syscat.tables t ON t.tabschema = c.tabschema AND t.tabname = c.tabname \
                      WHERE c.tabschema = ? AND t.type = 'T' ORDER BY c.tabname, c.colno",

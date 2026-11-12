@@ -604,6 +604,25 @@ const SNOWFLAKE_RESERVED: &[&str] = &[
     "WHENEVER",
 ];
 
+/// Names Db2 reads as a special register or a pseudo column when they stand bare (review 035l 27).
+const DB2_RESERVED: &[&str] = &[
+    "CURRENT_DATE",
+    "CURRENT_PATH",
+    "CURRENT_SCHEMA",
+    "CURRENT_SERVER",
+    "CURRENT_TIME",
+    "CURRENT_TIMESTAMP",
+    "CURRENT_TIMEZONE",
+    "CURRENT_USER",
+    "DOCUMENT",
+    "ROWNUM",
+    "SESSION_USER",
+    "SYSDATE",
+    "SYSTEM_USER",
+    "SYSTIMESTAMP",
+    "USER",
+];
+
 fn bigquery_reserved(name: &str) -> bool {
     BIGQUERY_RESERVED.contains(&name.to_ascii_lowercase().as_str())
 }
@@ -646,6 +665,7 @@ fn plain(name: &str, kind: DbKind) -> bool {
         && !(kind == DbKind::Firebird && firebird_reserved(name))
         && !(kind == DbKind::Bigquery && bigquery_reserved(name))
         && !(kind == DbKind::Snowflake && SNOWFLAKE_RESERVED.contains(&name))
+        && !(kind == DbKind::Db2 && DB2_RESERVED.contains(&name))
 }
 
 /// A name as it is written in SQL: as it is where that is safe, quoted otherwise (spaces, upper case in
@@ -808,7 +828,7 @@ pub fn schemas(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<S
         DbKind::Bigquery => "SELECT schema_name FROM INFORMATION_SCHEMA.SCHEMATA",
         // IBM's own schemas begin with SYS; NULLID and SQLJ hold what its tools need
         DbKind::Db2 => {
-            "SELECT schemaname, \
+            "SELECT RTRIM(schemaname), \
              CASE WHEN schemaname LIKE 'SYS%' OR schemaname IN ('NULLID', 'SQLJ') \
                THEN 'true' ELSE 'false' END, \
              CASE WHEN schemaname = CURRENT SCHEMA THEN 'true' ELSE 'false' END \
@@ -899,7 +919,7 @@ pub fn objects(
         DbKind::Bigquery => &[],
         // T a table, S a materialized query table, V a view; the rows are what the statistics say
         DbKind::Db2 => &[
-            "SELECT CASE type WHEN 'V' THEN 'view' ELSE 'table' END, tabname, '', \
+            "SELECT CASE type WHEN 'V' THEN 'view' ELSE 'table' END, RTRIM(tabname), '', \
                CASE WHEN card >= 0 THEN RTRIM(CHAR(card)) END \
              FROM syscat.tables WHERE tabschema = ? AND type IN ('T', 'S', 'V')",
         ],
@@ -1293,7 +1313,7 @@ fn db2_table(s: &mut dyn Session, schema: &str, table: &str, stop: Stop) -> AppR
     let columns = ask(
         s,
         &format!(
-            "SELECT colname, {DB2_TYPE}, CASE nulls WHEN 'Y' THEN 'true' ELSE 'false' END, \
+            "SELECT RTRIM(colname), {DB2_TYPE}, CASE nulls WHEN 'Y' THEN 'true' ELSE 'false' END, \
                \"DEFAULT\", '' \
              FROM syscat.columns WHERE tabschema = ? AND tabname = ? ORDER BY colno"
         ),
@@ -1871,7 +1891,8 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
         }
         // where the text stands in the name: no pattern
         DbKind::Db2 => {
-            "SELECT tabschema, CASE type WHEN 'V' THEN 'view' ELSE 'table' END, tabname \
+            "SELECT RTRIM(tabschema), CASE type WHEN 'V' THEN 'view' ELSE 'table' END, \
+               RTRIM(tabname) \
              FROM syscat.tables \
              WHERE LOCATE(UPPER(CAST(? AS VARCHAR(128))), UPPER(tabname)) > 0 \
                AND type IN ('T', 'S', 'V') AND tabschema NOT LIKE 'SYS%' \

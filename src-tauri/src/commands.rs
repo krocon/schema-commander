@@ -2868,7 +2868,7 @@ pub fn testdata_keys(
             format!(
                 "SELECT TOP {limit} {text} FROM {table} WHERE {column} IS NOT NULL ORDER BY {column}"
             )
-        } else if kind == crate::db::DbKind::Oracle {
+        } else if matches!(kind, crate::db::DbKind::Oracle | crate::db::DbKind::Db2) {
             format!(
                 "SELECT {text} FROM {table} WHERE {column} IS NOT NULL ORDER BY {column} \
                  FETCH FIRST {limit} ROWS ONLY"

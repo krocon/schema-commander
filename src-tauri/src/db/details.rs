@@ -1678,7 +1678,7 @@ mod db2 {
             "columns",
             &["name", "type", "nullable", "default", "comment"],
             &format!(
-                "SELECT colname, {DB2_TYPE}, CASE nulls WHEN 'Y' THEN 'yes' ELSE 'no' END, \
+                "SELECT RTRIM(colname), {DB2_TYPE}, CASE nulls WHEN 'Y' THEN 'yes' ELSE 'no' END, \
                    \"DEFAULT\", remarks \
                  FROM syscat.columns WHERE tabschema = ? AND tabname = ? ORDER BY colno"
             ),
@@ -1698,16 +1698,30 @@ mod db2 {
         r.section(
             "indexes",
             &["name", "columns", "unique"],
-            "SELECT indname, colnames, CASE uniquerule WHEN 'D' THEN 'no' ELSE 'yes' END \
-             FROM syscat.indexes WHERE tabschema = ? AND tabname = ? ORDER BY indname",
+            // (the columns COLNAMES, FK_COLNAMES, PK_COLNAMES are on their way out: review 035l 10)
+            "SELECT RTRIM(i.indname), \
+               (SELECT LISTAGG(RTRIM(c.colname), ', ') WITHIN GROUP (ORDER BY c.colseq) \
+                FROM syscat.indexcoluse c \
+                WHERE c.indschema = i.indschema AND c.indname = i.indname), \
+               CASE i.uniquerule WHEN 'D' THEN 'no' ELSE 'yes' END \
+             FROM syscat.indexes i WHERE i.tabschema = ? AND i.tabname = ? ORDER BY i.indname",
             &[schema, name],
         )?;
         r.section(
             "foreign keys",
             &["name", "columns", "references", "referenced columns"],
-            "SELECT constname, TRIM(fk_colnames), TRIM(reftabschema) || '.' || TRIM(reftabname), \
-               TRIM(pk_colnames) \
-             FROM syscat.references WHERE tabschema = ? AND tabname = ? ORDER BY constname",
+            "SELECT RTRIM(r.constname), \
+               (SELECT LISTAGG(RTRIM(k.colname), ', ') WITHIN GROUP (ORDER BY k.colseq) \
+                FROM syscat.keycoluse k \
+                WHERE k.constname = r.constname AND k.tabschema = r.tabschema \
+                  AND k.tabname = r.tabname), \
+               RTRIM(r.reftabschema) || '.' || RTRIM(r.reftabname), \
+               (SELECT LISTAGG(RTRIM(k.colname), ', ') WITHIN GROUP (ORDER BY k.colseq) \
+                FROM syscat.keycoluse k \
+                WHERE k.constname = r.refkeyname AND k.tabschema = r.reftabschema \
+                  AND k.tabname = r.reftabname) \
+             FROM syscat.references r WHERE r.tabschema = ? AND r.tabname = ? \
+             ORDER BY r.constname",
             &[schema, name],
         )?;
         // Db2 writes the statement of a table only through its tool db2look
