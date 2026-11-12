@@ -3023,14 +3023,36 @@ fn tsdb() -> Profile {
 #[test]
 #[ignore]
 fn servers_with_the_protocol_of_postgres_work_like_it() {
-    use schema_commander_lib::db::{Flavor, capabilities};
+    use schema_commander_lib::db::Flavor;
     for (p, product, flavor) in [
         (crdb(), "CockroachDB", Flavor::Cockroach),
         (tsdb(), "TimescaleDB", Flavor::Timescale),
         (pg(), "PostgreSQL", Flavor::Plain),
     ] {
+        like_postgres(&p, product, flavor);
+    }
+}
+
+/// YugabyteDB (prompt 035e): the same, against its own container (`SC_DBTEST_YUGABYTE=1` starts it).
+#[test]
+#[ignore]
+fn yugabytedb_works_like_postgres() {
+    if std::env::var("SC_DBTEST_YUGABYTE").as_deref() != Ok("1") {
+        eprintln!("skipped: SC_DBTEST_YUGABYTE is not 1");
+        return;
+    }
+    like_postgres(
+        &profile(DbKind::Postgres, 25435, "yugabyte", "yugabyte"),
+        "YugabyteDB",
+        schema_commander_lib::db::Flavor::Yugabyte,
+    );
+}
+
+fn like_postgres(p: &Profile, product: &str, flavor: schema_commander_lib::db::Flavor) {
+    use schema_commander_lib::db::capabilities;
+    {
         let kind = p.kind;
-        let mut s = open(&p);
+        let mut s = open(p);
         let stop = &|| false;
         assert_eq!(s.flavor(), flavor, "{product}");
         assert_eq!(capabilities(kind, s.flavor()).product, product);

@@ -17,8 +17,8 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
 
 - Connections to PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, ClickHouse, DuckDB and SQLite files: profiles in folders with colour tags,
   passwords only in the keychain of your OS; a demo database in memory to try things out.
-  Servers that speak PostgreSQL's protocol work as PostgreSQL connections – tested with CockroachDB and
-  TimescaleDB: the app finds out who answers and adapts (cancel, transaction state, catalog).
+  Servers that speak PostgreSQL's protocol work as PostgreSQL connections – tested with CockroachDB,
+  TimescaleDB and YugabyteDB: the app finds out who answers and adapts (cancel, transaction state, catalog).
   Oracle works without the Oracle client (a pure Rust driver): connect with host, port and service name; run,
   browse, filter, edit and search. Plans, the server monitor, rights and structure editing are not there for
   Oracle yet, and stopping a statement closes its session.

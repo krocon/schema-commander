@@ -93,7 +93,7 @@ einen Ausschnitt davon. Aufbau, Werkzeuge und Regeln folgen `files-and-folders-t
 
 ## Offene Architekturfragen (entscheidet der jeweilige Prompt)
 
-- **Treiber**: entschieden und umgesetzt (Design 003); CockroachDB und TimescaleDB über den PostgreSQL-Treiber
+- **Treiber**: entschieden und umgesetzt (Design 003); CockroachDB, TimescaleDB und YugabyteDB über den PostgreSQL-Treiber
   (Design 035a); Oracle mit eigenem Treiber (Design 035b); DuckDB eingebettet (Design 035c); ClickHouse über
   HTTP (Design 035d); weitere bleiben mit Prompt 035 offen (Reihenfolge dort).
 - **Große Ergebnisse**: entschieden und umgesetzt (Design 006).

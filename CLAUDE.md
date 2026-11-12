@@ -59,7 +59,8 @@
   geschrieben als Löschen → Ändern → Einfügen (Prompt 032); **Import** einer Datei (CSV/TSV, JSON, NDJSON, gzip)
   in eine vorhandene oder neue Tabelle: Vorschau, Zuordnung, gebundene Stapel-`INSERT`s, Fehlerdatei, als Job
   (Prompt 033); **Release** vorbereitet: Workflow für Pakete je System, Lizenzhinweise, About-Dialog (Prompt 034);
-  **CockroachDB und TimescaleDB** über den PostgreSQL-Treiber, Fähigkeits-Flags je Verbindung (Prompt 035a);
+  **CockroachDB und TimescaleDB** über den PostgreSQL-Treiber, Fähigkeits-Flags je Verbindung (Prompt 035a),
+  ebenso **YugabyteDB** (Prompt 035e);
   **Oracle** über den reinen Rust-Treiber `oracledb` (ohne Instant Client): verbinden, ausführen, Baum, Details,
   Tabellen-Ansicht, Bearbeiten, Suche; Plan, Monitor, Rechte und Struktur noch nicht (Prompt 035b);
   **DuckDB** eingebettet (Datei oder `:memory:`, Parquet/CSV/JSON ohne Nachladen), alle Tabs eines Profils auf
@@ -101,7 +102,7 @@
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a–035d, 036–049),
+  erledigt: 001–034, 035a–035e, 036–049),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -121,7 +122,7 @@
 | Lizenzhinweise | `pnpm notices` (schreibt `THIRD-PARTY-NOTICES.txt`; nach jeder Änderung an Abhängigkeiten), `pnpm notices:check` |
 | Release-Notizen | `pnpm release:notes` (Conventional Commits seit dem letzten Tag); Ablauf in `docs/release.md` |
 | MCP-Sidecar | `pnpm mcp:dev` (Debug-Sidecar neben die Debug-App), `node scripts/mcp-sidecar.mjs [Ziel]` (für ein Paket, mit `--config src-tauri/tauri.sidecar.conf.json`) |
-| Treiber gegen echte Server | `sh scripts/db-test-servers.sh up` (Docker: PostgreSQL, MySQL, MariaDB, SQL Server, CockroachDB, TimescaleDB, Oracle Free, ClickHouse auf 127.0.0.1; `SC_DBTEST_ORACLE=0` lässt Oracle weg), `pnpm rust:test:db`, danach `sh scripts/db-test-servers.sh down` |
+| Treiber gegen echte Server | `sh scripts/db-test-servers.sh up` (Docker: PostgreSQL, MySQL, MariaDB, SQL Server, CockroachDB, TimescaleDB, Oracle Free, ClickHouse auf 127.0.0.1; `SC_DBTEST_ORACLE=0` lässt Oracle weg, `SC_DBTEST_YUGABYTE=1` nimmt YugabyteDB dazu), `pnpm rust:test:db`, danach `sh scripts/db-test-servers.sh down` |
 | Texte | `pnpm texts` (kein Text im Template, kein Deutsch außerhalb von `*.de.ts`) |
 | Alles prüfen | `pnpm check` |
 | Produktions-Build unter CSP | `pnpm build && pnpm preview:csp` → http://localhost:1461 (ohne Backend; prüft Editor-Worker, WebAssembly, Styles) |
@@ -409,7 +410,7 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   in `duckdb.rs`). Vor jedem Lesen einer Zelle prüft `readable`, ob der Treiber den Typ kann (sonst endet er in
   `unreachable!`). Erweiterungen werden nie von selbst geladen; ein Assistent bekommt dort keine Abfrage ausgeführt.
   Datei-Datenbanken erkennt `DbKind::is_file` (Rust) bzw. `isFileKind` (Fenster), nie ein Vergleich mit SQLite.
-- **Verwandte Server** (CockroachDB, TimescaleDB): keine eigene `DbKind`. Abweichungen hängen am `Flavor` der
+- **Verwandte Server** (CockroachDB, TimescaleDB, YugabyteDB): keine eigene `DbKind`. Abweichungen hängen am `Flavor` der
   Sitzung (`Session::flavor`), nie an einem Vergleich von Versionstexten außerhalb des Treibers.
 - **Bezeichner** quotet nur `meta::quote` in Rust; Knoten und DTOs bringen `quoted` mit. Katalogabfragen nur über
   `Session::ask` mit gebundenen Parametern.
