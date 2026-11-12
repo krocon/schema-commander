@@ -60,7 +60,8 @@ sha1 = "0.11"
 # Without the image feature; `wayland-data-control` for Wayland without XWayland.
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
 # Saved queries (prompt 024): deleting moves the file to the trash of the OS (as in files-and-folders-tauri).
-trash = { version = "5.2", default-features = false, features = ["coinit_apartmentthreaded"] }
+# `freedesktop` is the implementation for Linux: without it the crate does not compile there.
+trash = { version = "5.2", default-features = false, features = ["coinit_apartmentthreaded", "freedesktop"] }
 serde = { version = "1", features = ["derive"] }
 # raw_value: the import (prompt 033) keeps numbers of a JSON file digit for digit
 serde_json = { version = "1", features = ["raw_value"] }
