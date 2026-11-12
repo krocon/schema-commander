@@ -139,6 +139,11 @@ tag (`docs/release.md`); until certificates are set up they are unsigned. Every 
 `THIRD-PARTY-NOTICES.txt` with the licences of everything inside; *Help → About Schema Commander* shows it,
 together with version and build.
 
+## Website
+
+The product site lives in [`site/`](site/README.md): static pages without external requests. `node site/build.mjs`
+writes the shortcut table, the colour schemes and the icon into it from this repository.
+
 ## Development
 
 ```bash

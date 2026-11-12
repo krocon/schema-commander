@@ -361,6 +361,8 @@ docs/                          architecture.md, best-practices.md, themes.md, fe
                                release.md, macos-signing.md, distribution.md
 prompts/                       000-arbeitsweise.md, README.md (Index), offene Prompts; erledigte unter done/
 public/                        icon.svg (Quelle der App-Icons: `pnpm tauri icon public/icon.svg`), favicon.png
+site/                          Produktseite (statisch, Englisch): fünf Seiten, site.css, site.js; `node site/build.mjs`
+                               schreibt Kürzel, Farbschemata und Icon aus dem Repository hinein (`site/README.md`)
 ```
 
 ## 4. Architekturregeln (verbindlich)

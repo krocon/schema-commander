@@ -1,0 +1,450 @@
+<!doctype html>
+<!--
+  Schema Commander – product site, start page. Static: site.css + site.js next to this file, the icon in img/
+  (copied by `node site/build.mjs`). No web fonts, no trackers, no external requests. The pictures are scenes
+  drawn in HTML with the tokens of the app; the swatches between the scheme markers are written by the build.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Schema Commander – a keyboard-driven SQL client for macOS, Windows and Linux</title>
+<meta name="description" content="Schema Commander is a fast, keyboard-driven SQL client for PostgreSQL, MySQL, MariaDB, SQL Server and SQLite: editor with completion, results that stay in Rust, editing with a preview, plans, ER diagrams, AI control. Free and open source (MIT).">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0f1216" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Schema Commander – query, read, change, commit">
+<meta property="og:description" content="A keyboard-driven SQL client for macOS, Windows and Linux. PostgreSQL, MySQL, MariaDB, SQL Server, SQLite. Free and open source.">
+<meta property="og:image" content="img/icon.png">
+<meta name="twitter:card" content="summary">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="stylesheet" href="site.css">
+<script src="site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="index.html" aria-current="page"><img src="img/icon.png" width="30" height="30" alt=""><span>Schema Commander</span></a>
+    <nav class="nav-links" aria-label="Pages">
+      <a href="features.html">Features</a>
+      <a href="databases.html">Databases</a>
+      <a href="ai.html">AI control</a>
+      <a href="keyboard.html">Keyboard</a>
+      <a class="gh" href="https://github.com/krocon/schema-commander">GitHub</a>
+      <a class="btn btn-primary btn-sm" href="https://github.com/krocon/schema-commander/releases">Download</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" id="top">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw">SELECT</b> SQL client · macOS · Windows · Linux</p>
+      <h1 class="h1 split">Query. Read. Change. <span class="accent">Commit.</span></h1>
+      <p class="lead reveal" style="--d:3">A SQL client for people who keep their hands on the keys. <b>PostgreSQL, MySQL, MariaDB, SQL Server and SQLite</b> in one window; results stay in the Rust backend and the grid fetches only the rows you look at.</p>
+      <div class="actions reveal" style="--d:4">
+        <a class="btn btn-primary" href="https://github.com/krocon/schema-commander/releases">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
+          Download
+        </a>
+        <a class="btn btn-ghost" href="features.html">All features</a>
+      </div>
+      <p class="note reveal" style="--d:5">Free and open source (MIT). No account, no telemetry.</p>
+
+      <div class="hero-stage reveal" style="--d:2">
+        <div class="win demo scene" id="demo" aria-label="Live demo of Schema Commander, simulated in your browser">
+          <div class="demo-tabs" aria-hidden="true">
+            <span class="dots"><i></i><i></i><i></i></span>
+            <span class="tab on"><i></i><span>top-customers.sql</span></span>
+            <span class="tab">migration.sql</span>
+            <span class="tab">orders</span>
+          </div>
+          <div class="demo-main">
+            <div class="demo-side">
+              <p>shop</p>
+              <span class="db">public</span>
+              <button type="button" data-q="customers" aria-pressed="false">customers <small>8</small></button>
+              <button type="button" data-q="orders" aria-pressed="false">orders <small>48</small></button>
+              <button type="button" data-q="products" aria-pressed="false">products <small>6</small></button>
+            </div>
+            <div class="demo-work">
+              <pre class="code demo-editor" aria-label="The statement"><span><span class="k">SELECT</span> c.name, c.country, <span class="f">sum</span>(o.total) <span class="k">AS</span> revenue</span><span><span class="k">FROM</span>   customers c <span class="k">JOIN</span> orders o <span class="k">ON</span> o.customer_id = c.id</span><span><span class="k">GROUP  BY</span> c.name, c.country <span class="k">ORDER  BY</span> revenue <span class="k">DESC</span>;</span></pre>
+              <div class="demo-bar">
+                <button class="dbtn run" type="button" data-act="run">Run <kbd>⌘↵</kbd></button>
+                <button class="dbtn" type="button" data-q="top" aria-pressed="true">Top customers</button>
+                <button class="dbtn" type="button" data-q="open" aria-pressed="false">Not shipped</button>
+                <button class="dbtn" type="button" data-q="month" aria-pressed="false">Revenue by month</button>
+                <input class="demo-filter" type="search" placeholder="Filter the result … try “se” or “open”" aria-label="Filter the rows of the demo result" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="demo-result">
+                <div class="demo-empty">No row matches the filter.</div>
+              </div>
+              <div class="demo-status">
+                <span class="conn">shop · PostgreSQL</span>
+                <span data-hide>auto-commit</span>
+                <span data-rows>0 rows</span>
+                <span class="sp" data-stats>Mark cells: the status line adds them up</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="demo-hint"><span><b>Try it:</b> pick a statement or a table, click a column head to sort, drag over cells, type in the filter.</span><span>Simulated in your browser. The real one asks a real database.</span></p>
+      </div>
+    </div>
+  </section>
+
+  <div class="marquee sec-tight" aria-label="What it speaks" style="padding-block:18px;margin-top:clamp(56px,8vw,110px)">
+    <ul>
+      <li>PostgreSQL</li><li>MySQL</li><li>MariaDB</li><li>SQL Server</li><li>SQLite</li><li>CockroachDB</li><li>TimescaleDB</li><li>SSH tunnel</li><li>TLS with your own CA</li><li>CSV · TSV</li><li>JSON · NDJSON</li><li>Excel</li><li>Markdown</li><li>Mermaid · DBML</li><li>pg_dump · mysqldump</li><li>MCP</li>
+      <li aria-hidden="true">PostgreSQL</li><li aria-hidden="true">MySQL</li><li aria-hidden="true">MariaDB</li><li aria-hidden="true">SQL Server</li><li aria-hidden="true">SQLite</li><li aria-hidden="true">CockroachDB</li><li aria-hidden="true">TimescaleDB</li><li aria-hidden="true">SSH tunnel</li><li aria-hidden="true">TLS with your own CA</li><li aria-hidden="true">CSV · TSV</li><li aria-hidden="true">JSON · NDJSON</li><li aria-hidden="true">Excel</li><li aria-hidden="true">Markdown</li><li aria-hidden="true">Mermaid · DBML</li><li aria-hidden="true">pg_dump · mysqldump</li><li aria-hidden="true">MCP</li>
+    </ul>
+  </div>
+
+  <section class="sec" id="numbers">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw kw-num">COUNT</b> what is in the box</p>
+      <h2 class="h2 split">The rows stay in Rust. The window shows a slice.</h2>
+      <p class="lead reveal">A result is stored by the backend, in memory and above a limit on disk. Sorting, filtering, searching, adding up and comparing happen there, so the window never holds more than it paints.</p>
+      <div class="stats reveal">
+        <div class="stat"><b data-count="7">7</b><span>kinds of server the drivers are tested against</span></div>
+        <div class="stat"><b data-count="183">183</b><span>actions, each with a shortcut you can change</span></div>
+        <div class="stat"><b data-count="17">17</b><span>colour schemes, all WCAG AA, and your own</span></div>
+        <div class="stat"><b data-count="0">0</b><span>times the app asks “save?”: every text is backed up</span></div>
+      </div>
+      <p class="note reveal">Tested against PostgreSQL, MySQL, MariaDB, SQL Server, SQLite, CockroachDB and TimescaleDB. <a href="databases.html">What differs between them</a></p>
+    </div>
+  </section>
+
+  <section class="sec sec-line" id="tour">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw">FROM</b> question to answer, in six steps</p>
+      <h2 class="h2 split">From “where is that order?” to the row, and on to the fix.</h2>
+
+      <div class="story">
+        <div class="story-pin" aria-hidden="true">
+          <figure class="win">
+            <div class="win-bar"><i></i><i></i><i></i><span>query.sql</span></div>
+            <div class="stack">
+              <!-- 1 completion -->
+              <div class="scene on" style="position:absolute;inset:0">
+                <pre class="code"><span><span class="k">SELECT</span> o.id, o.total, c.name</span><span><span class="k">FROM</span>   orders o</span><span class="cur"><span class="k">JOIN</span>   cu<i class="caret"></i></span></pre>
+                <div class="pop" style="left:118px;top:84px">
+                  <div class="on"><span>customers c <span class="k">ON</span> c.id = o.customer_id</span><small>join</small></div>
+                  <div><span>customers</span><small>table</small></div>
+                  <div><span>customer_notes</span><small>table</small></div>
+                  <div><span>current_stock</span><small>view</small></div>
+                </div>
+              </div>
+              <!-- 2 table view, follow a key -->
+              <div class="scene" style="position:absolute;inset:0">
+                <div class="bar-line crumbs"><span>orders</span><span>customer_id = 3</span><span>customers</span></div>
+                <div class="bar-line"><span class="pill">status = 'open'</span><span class="pill">total &gt; 100</span><span>2 conditions · values are bound</span></div>
+                <table class="grid">
+                  <thead><tr><th class="rn">#</th><th class="num">id<small>int4</small></th><th class="num">customer_id<small>int4</small></th><th>status<small>text</small></th><th class="num">total<small>numeric</small></th></tr></thead>
+                  <tbody>
+                    <tr><td class="rn">1</td><td class="num">4031</td><td class="num fk sel">3</td><td>open</td><td class="num">318.40</td></tr>
+                    <tr><td class="rn">2</td><td class="num">4044</td><td class="num fk">5</td><td>open</td><td class="num">129.00</td></tr>
+                    <tr><td class="rn">3</td><td class="num">4045</td><td class="num fk">1</td><td>open</td><td class="num">201.75</td></tr>
+                    <tr><td class="rn">4</td><td class="num">4047</td><td class="num fk">3</td><td>open</td><td class="num">189.50</td></tr>
+                  </tbody>
+                </table>
+                <div class="pop" style="right:16px;bottom:16px;min-width:230px">
+                  <div><small>customers · id = 3</small></div>
+                  <div><span>name</span><span>Chidi Okafor</span></div>
+                  <div><span>country</span><span>NG</span></div>
+                  <div><span>since</span><span>2023-09-21</span></div>
+                </div>
+              </div>
+              <!-- 3 edit -->
+              <div class="scene" style="position:absolute;inset:0">
+                <div class="bar-line"><b>3 changes</b><span>1 changed · 1 new · 1 to delete</span><span class="pill">Preview SQL</span><span class="pill ok">Write ⌘S</span></div>
+                <table class="grid">
+                  <thead><tr><th class="rn">#</th><th class="num">id<small>int4</small></th><th>name<small>text</small></th><th class="num">price<small>numeric</small></th><th class="num">stock<small>int4</small></th></tr></thead>
+                  <tbody>
+                    <tr><td class="rn">1</td><td class="num">101</td><td>Trail shoe</td><td class="num">129.00</td><td class="num">42</td></tr>
+                    <tr><td class="rn">2</td><td class="num">102</td><td>Rain jacket</td><td class="num chg">179.50</td><td class="num">17</td></tr>
+                    <tr class="del"><td class="rn">3</td><td class="num">104</td><td>Head torch</td><td class="num">39.99</td><td class="num">0</td></tr>
+                    <tr><td class="rn">4</td><td class="num">105</td><td>Day pack 22 l</td><td class="num">89.00</td><td class="num">26</td></tr>
+                    <tr class="new"><td class="rn">+</td><td class="null">default</td><td>Gaiters</td><td class="num">34.00</td><td class="num">60</td></tr>
+                  </tbody>
+                </table>
+                <pre class="code" style="border-top:1px solid var(--border)"><span><span class="k">DELETE FROM</span> products <span class="k">WHERE</span> id = <span class="n">$1</span>;</span><span><span class="k">UPDATE</span> products <span class="k">SET</span> price = <span class="n">$1</span> <span class="k">WHERE</span> id = <span class="n">$2</span> <span class="k">AND</span> price = <span class="n">$3</span>;</span><span><span class="k">INSERT INTO</span> products (name, price, stock) <span class="k">VALUES</span> (<span class="n">$1</span>, <span class="n">$2</span>, <span class="n">$3</span>);</span></pre>
+              </div>
+              <!-- 4 plan -->
+              <div class="scene plan" style="position:absolute;inset:0">
+                <div class="hd"><span>operation</span><span>rows</span><span>ms</span><span>own time</span></div>
+                <div><span>Sort (revenue DESC)</span><span>8</span><span>0.1</span><i style="--w:2"></i></div>
+                <div><span>&nbsp;&nbsp;HashAggregate</span><span>8</span><span>1.4</span><i style="--w:6"></i></div>
+                <div><span>&nbsp;&nbsp;&nbsp;&nbsp;Hash Join</span><span>48,112</span><span>9.8</span><i style="--w:18"></i></div>
+                <div class="hot"><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Seq Scan on orders</span><span>48,112</span><span>61.3</span><i style="--w:100"></i></div>
+                <div><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Hash</span><span>8</span><span>0.0</span><i style="--w:1"></i></div>
+                <div><span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Seq Scan on customers</span><span>8</span><span>0.0</span><i style="--w:1"></i></div>
+                <span class="hint">Most of the time is spent in “Seq Scan on orders”. Estimated 900 rows, got 48,112: the statistics may be out of date.</span>
+              </div>
+              <!-- 5 ER diagram -->
+              <div class="scene" style="position:absolute;inset:0;padding:14px">
+                <svg class="er" viewBox="0 0 560 330" preserveAspectRatio="xMidYMid meet">
+                  <path d="M170 76 H 210 V 96 H 250"/><path d="M400 110 H 425 V 232 H 390"/><path d="M170 250 H 250"/>
+                  <rect x="20" y="30" width="150" height="92" rx="6"/><rect class="hd" x="20" y="30" width="150" height="26" rx="6"/>
+                  <text x="32" y="48">customers</text><text class="col pk" x="32" y="74">id</text><text class="col" x="32" y="92">name</text><text class="col" x="32" y="110">country</text>
+                  <rect class="me" x="250" y="50" width="150" height="110" rx="6"/><rect class="hd me" x="250" y="50" width="150" height="26" rx="6"/>
+                  <text x="262" y="68">orders</text><text class="col pk" x="262" y="94">id</text><text class="col" x="262" y="112">customer_id</text><text class="col" x="262" y="130">placed_at</text><text class="col" x="262" y="148">total</text>
+                  <rect x="250" y="200" width="140" height="92" rx="6"/><rect class="hd" x="250" y="200" width="140" height="26" rx="6"/>
+                  <text x="262" y="218">order_items</text><text class="col" x="262" y="244">order_id</text><text class="col" x="262" y="262">product_id</text><text class="col" x="262" y="280">quantity</text>
+                  <rect x="20" y="204" width="150" height="92" rx="6"/><rect class="hd" x="20" y="204" width="150" height="26" rx="6"/>
+                  <text x="32" y="222">products</text><text class="col pk" x="32" y="248">id</text><text class="col" x="32" y="266">name</text><text class="col" x="32" y="284">price</text>
+                </svg>
+              </div>
+              <!-- 6 protection -->
+              <div class="scene" style="position:absolute;inset:0">
+                <div class="bar-line"><span class="pill bad">PRODUCTION</span><b>shop-live</b><span>asks before anything that writes</span></div>
+                <pre class="code"><span><span class="k">DELETE FROM</span> orders</span><span><span class="k">WHERE</span>  status = <span class="s">'cancelled'</span>;</span></pre>
+                <div style="margin:14px;padding:16px;border:1px solid var(--border);border-radius:10px;background:var(--raised);font:400 13px/1.5 var(--sans)">
+                  <b style="display:block;margin-bottom:6px">Run this on shop-live?</b>
+                  <span style="color:var(--dim)">The statement writes. It runs in a transaction: you see how many rows it touched before you commit.</span>
+                  <div style="display:flex;gap:8px;margin-top:14px"><span class="pill">Cancel</span><span class="pill warn">Run</span></div>
+                </div>
+              </div>
+            </div>
+            <span class="story-count">1 / 6</span>
+          </figure>
+        </div>
+
+        <div class="story-steps">
+          <article class="step" data-title="query.sql · completion">
+            <p class="eyebrow"><b class="kw">JOIN</b> completion</p>
+            <h3>It knows your schema. Even the join.</h3>
+            <p>Tables behind <code>FROM</code>, the columns of an alias behind <code>o.</code>, and behind <code>JOIN</code> the whole condition, taken from the foreign key.</p>
+            <p>An error is underlined at the place the database names, with its code, detail and hint beside it.</p>
+            <div class="keys"><kbd>Ctrl+Space</kbd> <kbd>Cmd/Ctrl+Enter</kbd></div>
+          </article>
+          <article class="step" data-title="orders › customers">
+            <p class="eyebrow"><b class="kw">WHERE</b> tables as tables</p>
+            <h3>Filter, sort, follow the key.</h3>
+            <p>Open a table and filter it with conditions; the values are always bound, never written into the SQL. Sorting happens on the server.</p>
+            <p><kbd>F4</kbd> on <code>customer_id = 3</code> shows that customer, <kbd>Alt+F7</kbd> lists every table that points to the row, with counts.</p>
+            <div class="keys"><kbd>F4</kbd> <kbd>Shift+F4</kbd> <kbd>Alt+F7</kbd></div>
+          </article>
+          <article class="step" data-title="products · 3 changes">
+            <p class="eyebrow"><b class="kw kw-warn">UPDATE</b> edit data</p>
+            <h3>Change cells. Nothing is sent while you type.</h3>
+            <p>Changes are collected and shown in colour: changed, new, to delete. Look at them as SQL, undo them, then write them together in one transaction: all rows or none.</p>
+            <p>A row somebody else changed in the meantime is reported, not overwritten.</p>
+            <div class="keys"><kbd>F2</kbd> <kbd>Cmd/Ctrl+S</kbd> <kbd>Cmd/Ctrl+D</kbd></div>
+          </article>
+          <article class="step" data-title="query.sql · plan">
+            <p class="eyebrow"><b class="kw kw-fn">EXPLAIN</b> execution plan</p>
+            <h3>See where the time goes.</h3>
+            <p>The plan of every database as one tree table: rows estimated and actual, own and total time. The expensive operation and the wrong estimate stand out, with a hint in words.</p>
+            <p>“With execution” runs the statement inside a transaction that is rolled back.</p>
+            <div class="keys"><kbd>Cmd/Ctrl+K</kbd> <kbd>Cmd/Ctrl+X</kbd></div>
+          </article>
+          <article class="step" data-title="shop · ER diagram">
+            <p class="eyebrow"><b class="kw kw-ident">REFERENCES</b> ER diagram</p>
+            <h3>The schema as a picture.</h3>
+            <p>A whole schema, or one table with its neighbours. It arranges itself, tables can be moved, and the same content is there as lists.</p>
+            <p>Export as SVG, Mermaid or DBML.</p>
+          </article>
+          <article class="step" data-title="shop-live · production">
+            <p class="eyebrow"><b class="kw kw-error">DELETE</b> protection</p>
+            <h3>Production says so. And asks.</h3>
+            <p>A connection gets a level: free, ask before writing, or read only. Every statement is classified in the backend, the window only puts the question.</p>
+            <p>Transactions show their state as the server reports it; closing a tab with an open one asks first.</p>
+            <a class="more" href="features.html">Every feature in detail</a>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec sec-line" id="more">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw">UNION ALL</b> the rest of the toolbox</p>
+      <h2 class="h2 split">The details you miss everywhere else.</h2>
+      <div class="bento">
+        <article class="card w4 reveal">
+          <span class="glyph">WHERE customer_id = :customer AND id IN (:ids)</span>
+          <h3>Parameters</h3>
+          <p><code>:name</code>, <code>${name}</code>, <code>?</code> or <code>$1</code>: the app asks for the values when the statement runs, remembers them per tab and hands them to the driver. A value never becomes part of the SQL text, the history or a log.</p>
+        </article>
+        <article class="card reveal" style="--d:1"><span class="glyph">Σ count · sum · avg</span><h3>Figures of the selection</h3><p>Mark cells and the status line adds them up. Exactly: a <code>NUMERIC(38,10)</code> sum is right to the last digit.</p></article>
+        <article class="card reveal"><span class="glyph">⌘P ord_it</span><h3>Go to anything</h3><p>A few letters find a table, view, routine, column, tab or connection across all schemas. By word starts, with typos.</p></article>
+        <article class="card reveal" style="--d:1"><span class="glyph">⧉ csv · json · md · INSERT</span><h3>Copy as, export</h3><p>The selection as TSV, CSV, JSON, Markdown, HTML, <code>INSERT</code>, <code>IN (…)</code> or <code>WHERE</code>. A whole result into a file, also Excel and gzip, as a job you can stop.</p></article>
+        <article class="card reveal" style="--d:2"><span class="glyph">{ } &lt;/&gt; 0x</span><h3>Value panel</h3><p>The whole value of a cell beside the grid: long text, JSON and XML laid out, binary as hex or as a picture. 50 MB in one cell stay usable.</p></article>
+        <article class="card w3 reveal"><span class="glyph">≠ result 1 · result 2</span><h3>Compare two results</h3><p>By key columns or by position, with tolerances. Run a statement again and see what changed. Worked out in Rust, also for millions of rows.</p></article>
+        <article class="card w3 reveal" style="--d:1"><span class="glyph">.sql · sel⇥</span><h3>Saved queries and snippets</h3><p>Plain <code>.sql</code> files in a folder of your choice, with name and tags in a comment header: share them with Git. <code>sel</code> + <kbd>Tab</kbd> becomes a statement with placeholders.</p></article>
+        <article class="card reveal"><span class="glyph">↧ csv · ndjson · gz</span><h3>Import a file</h3><p>Preview, mapping by name, a proposed <code>CREATE TABLE</code>. Written with bound values, all or nothing or block by block.</p></article>
+        <article class="card reveal" style="--d:1"><span class="glyph">⟿ pg → mysql</span><h3>Copy between servers</h3><p>Tables from one connection to another, also across databases. Types are mapped and every loss is named before it runs.</p></article>
+        <article class="card reveal" style="--d:2"><span class="glyph">▁▃▆ svg</span><h3>Charts</h3><p>Lines, bars, scatter plots from a result. A million points are thinned in Rust without losing a peak.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec sec-line" id="databases">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw kw-ok">CONNECT</b> five drivers, seven servers</p>
+      <h2 class="h2 split">Your databases. Behind a tunnel, if they are.</h2>
+      <p class="lead reveal">Profiles in folders with colour tags, passwords only in the keychain of your system. A connection comes from a URL, or from what DBeaver, DataGrip, <code>.pgpass</code> or <code>.my.cnf</code> already know.</p>
+
+      <div class="flow reveal">
+        <svg viewBox="0 0 1200 380" role="img" aria-label="PostgreSQL, MySQL and MariaDB and SQL Server reach Schema Commander directly or through an SSH tunnel; a SQLite file is opened directly">
+          <path class="wire" d="M240 52 C 420 52, 380 190, 520 190"/>
+          <path class="wire" d="M240 144 C 400 144, 400 190, 520 190"/>
+          <path class="wire" d="M240 236 C 400 236, 400 190, 520 190"/>
+          <path class="wire" d="M240 328 C 620 328, 720 260, 920 230"/>
+          <path class="wire" d="M700 190 L 920 190"/>
+          <path class="pulse" style="--c:var(--fn)" d="M240 52 C 420 52, 380 190, 520 190"/>
+          <path class="pulse" style="--c:var(--warn);--dl:-.6s" d="M240 144 C 400 144, 400 190, 520 190"/>
+          <path class="pulse" style="--c:var(--error);--dl:-1.4s" d="M240 236 C 400 236, 400 190, 520 190"/>
+          <path class="pulse" style="--c:var(--ok);--dl:-2.1s" d="M240 328 C 620 328, 720 260, 920 230"/>
+          <path class="pulse" style="--c:var(--accent);--dl:-1s" d="M700 190 L 920 190"/>
+          <g class="node"><rect x="0" y="20" width="240" height="64" rx="10"/><text x="18" y="48">PostgreSQL</text><text class="sub" x="18" y="68">+ CockroachDB · TimescaleDB</text></g>
+          <g class="node"><rect x="0" y="112" width="240" height="64" rx="10"/><text x="18" y="140">MySQL · MariaDB</text><text class="sub" x="18" y="160">DELIMITER · session read only</text></g>
+          <g class="node"><rect x="0" y="204" width="240" height="64" rx="10"/><text x="18" y="232">SQL Server</text><text class="sub" x="18" y="252">GO batches · XML plans</text></g>
+          <g class="node"><rect x="0" y="296" width="240" height="64" rx="10"/><text x="18" y="324">SQLite</text><text class="sub" x="18" y="344">a file · and a demo in memory</text></g>
+          <g class="node"><rect x="520" y="154" width="180" height="72" rx="10"/><text x="540" y="186">TLS · SSH tunnel</text><text class="sub" x="540" y="206">host key checked</text></g>
+          <g class="node app">
+            <rect x="920" y="80" width="280" height="220" rx="12"/>
+            <rect x="920" y="80" width="280" height="30" rx="12" style="fill:var(--panel);stroke:none"/>
+            <text x="940" y="100" style="font-size:13px">Schema Commander</text>
+            <rect class="bar" x="940" y="130" width="150" height="8" rx="4" style="fill:var(--kw)"/>
+            <rect class="bar" x="940" y="150" width="220" height="8" rx="4" style="fill:var(--comment);--dl:-.3s"/>
+            <rect class="bar" x="940" y="170" width="180" height="8" rx="4" style="fill:var(--str);--dl:-.9s"/>
+            <rect class="bar" x="940" y="198" width="240" height="8" rx="4" style="fill:var(--border);--dl:-.5s"/>
+            <rect class="bar" x="940" y="218" width="200" height="8" rx="4" style="fill:var(--num);--dl:-1.2s"/>
+            <rect class="bar" x="940" y="238" width="230" height="8" rx="4" style="fill:var(--num);--dl:-.2s"/>
+            <rect class="bar" x="940" y="258" width="170" height="8" rx="4" style="fill:var(--num);--dl:-.7s"/>
+            <rect class="bar" x="940" y="278" width="210" height="8" rx="4" style="fill:var(--num);--dl:-1s"/>
+          </g>
+        </svg>
+        <ul class="flow-list">
+          <li style="--c:var(--fn)"><b>PostgreSQL</b><span>and what speaks its protocol: CockroachDB, TimescaleDB</span></li>
+          <li style="--c:var(--warn)"><b>MySQL · MariaDB</b><span>one driver, both flavours</span></li>
+          <li style="--c:var(--error)"><b>SQL Server</b><span>GO batches, XML plans</span></li>
+          <li style="--c:var(--ok)"><b>SQLite</b><span>a file, and a demo database in memory</span></li>
+          <li style="--c:var(--accent)"><b>TLS · SSH tunnel</b><span>your own CA, client certificate, host key checked</span></li>
+        </ul>
+      </div>
+      <a class="more reveal" href="databases.html">Connecting, tunnels, and what differs per database</a>
+    </div>
+  </section>
+
+  <section class="sec sec-line" id="ai">
+    <div class="wrap duo">
+      <div>
+        <p class="eyebrow reveal"><b class="kw kw-ident">GRANT</b> read, to an assistant</p>
+        <h2 class="h2 split">Let your AI ask. You decide what runs.</h2>
+        <p class="lead reveal">Over the Model Context Protocol, an assistant on the same computer reads the structure, runs reading queries within limits and proposes statements. Anything that writes waits for your click on a statement you can read.</p>
+        <p class="note reveal">Off by default. No port while it is off. Each connection gets its own level.</p>
+        <a class="more reveal" href="ai.html">Eight tools, four levels, the safety model</a>
+      </div>
+      <div class="chat" aria-label="Example conversation">
+        <p class="msg you">Which customers have not ordered since March?</p>
+        <p class="tool"><b>get_schema</b> shop · public: 4 tables</p>
+        <p class="tool"><b>describe_table</b> orders: customer_id → customers.id</p>
+        <p class="tool"><b>run_query</b> read only · 3 rows</p>
+        <p class="tool view"><b>write_to_tab</b> the statement, in a new tab</p>
+        <p class="msg ai">Three of them: Dana Kowalski, Emre Yilmaz and Hana Novak. Their last orders are from February. The statement is in a new tab if you want to change it.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec sec-line center" id="schemes">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw kw-str">SET</b> theme = …</p>
+      <h2 class="h2 split">Seventeen colour schemes. All pass WCAG AA.</h2>
+      <p class="lead reveal">From One Dark to Solarized Light to a C64. Editor and grid follow every one, “follow system” takes a light and a dark one of your choice, and a live editor makes your own.</p>
+      <div class="schemes reveal" role="group" aria-label="Colour scheme">
+        <!-- schemes:start -->
+        <button class="swatch" type="button" aria-pressed="true" data-theme="{&quot;--bg-app&quot;:&quot;#14171c&quot;,&quot;--panel&quot;:&quot;#1b1f26&quot;,&quot;--raised&quot;:&quot;#252a33&quot;,&quot;--hover&quot;:&quot;#2b313c&quot;,&quot;--border&quot;:&quot;#2e343f&quot;,&quot;--text&quot;:&quot;#d7dce3&quot;,&quot;--dim&quot;:&quot;#98a2b0&quot;,&quot;--faint&quot;:&quot;#98a2b0&quot;,&quot;--accent&quot;:&quot;#5aa2f7&quot;,&quot;--kw&quot;:&quot;#6cc4d8&quot;,&quot;--str&quot;:&quot;#9ccc8a&quot;,&quot;--num&quot;:&quot;#b9a3f0&quot;,&quot;--ident&quot;:&quot;#d9a6d2&quot;,&quot;--fn&quot;:&quot;#7fb4f5&quot;,&quot;--comment&quot;:&quot;#8b95a3&quot;,&quot;--null&quot;:&quot;#7f8a99&quot;,&quot;--sel&quot;:&quot;#24395a&quot;,&quot;--changed-bg&quot;:&quot;#4a3d0a&quot;,&quot;--changed-fg&quot;:&quot;#ffe9a8&quot;}" style="--a:#14171c;--b:#5aa2f7"><i></i>Dark</button>
+        <button class="swatch" type="button" aria-pressed="false" data-theme="{&quot;--bg-app&quot;:&quot;#fbfbfc&quot;,&quot;--panel&quot;:&quot;#f1f2f4&quot;,&quot;--raised&quot;:&quot;#ffffff&quot;,&quot;--hover&quot;:&quot;#e4e6ea&quot;,&quot;--border&quot;:&quot;#d3d7dd&quot;,&quot;--text&quot;:&quot;#1f2933&quot;,&quot;--dim&quot;:&quot;#5a6573&quot;,&quot;--faint&quot;:&quot;#5a6573&quot;,&quot;--accent&quot;:&quot;#1a66d6&quot;,&quot;--kw&quot;:&quot;#0b6e8c&quot;,&quot;--str&quot;:&quot;#2c6e1d&quot;,&quot;--num&quot;:&quot;#6236b5&quot;,&quot;--ident&quot;:&quot;#8d2f83&quot;,&quot;--fn&quot;:&quot;#1a5fc4&quot;,&quot;--comment&quot;:&quot;#5f6b7a&quot;,&quot;--null&quot;:&quot;#5f6b7a&quot;,&quot;--sel&quot;:&quot;#d4e4fb&quot;,&quot;--changed-bg&quot;:&quot;#fff1b8&quot;,&quot;--changed-fg&quot;:&quot;#3d2f00&quot;}" style="--a:#fbfbfc;--b:#1a66d6"><i></i>Light</button>
+        <button class="swatch" type="button" aria-pressed="false" data-theme="{&quot;--bg-app&quot;:&quot;#0f0b05&quot;,&quot;--panel&quot;:&quot;#120d06&quot;,&quot;--raised&quot;:&quot;#1a1309&quot;,&quot;--hover&quot;:&quot;#22180b&quot;,&quot;--border&quot;:&quot;#3a2a10&quot;,&quot;--text&quot;:&quot;#ffb000&quot;,&quot;--dim&quot;:&quot;#b07a1a&quot;,&quot;--faint&quot;:&quot;#b07a1a&quot;,&quot;--accent&quot;:&quot;#ffb000&quot;,&quot;--kw&quot;:&quot;#ffd27a&quot;,&quot;--str&quot;:&quot;#ff8c1a&quot;,&quot;--num&quot;:&quot;#d08f10&quot;,&quot;--ident&quot;:&quot;#ffc04d&quot;,&quot;--fn&quot;:&quot;#ffd27a&quot;,&quot;--comment&quot;:&quot;#b07a1a&quot;,&quot;--null&quot;:&quot;#b07a1a&quot;,&quot;--sel&quot;:&quot;#3a2a10&quot;,&quot;--changed-bg&quot;:&quot;#4a3d0a&quot;,&quot;--changed-fg&quot;:&quot;#ffe9a8&quot;}" style="--a:#0f0b05;--b:#ffb000"><i></i>Amber</button>
+        <button class="swatch" type="button" aria-pressed="false" data-theme="{&quot;--bg-app&quot;:&quot;#2a2626&quot;,&quot;--panel&quot;:&quot;#373232&quot;,&quot;--raised&quot;:&quot;#3f3939&quot;,&quot;--hover&quot;:&quot;#322d2d&quot;,&quot;--border&quot;:&quot;#3f3939&quot;,&quot;--text&quot;:&quot;#ffffff&quot;,&quot;--dim&quot;:&quot;#b0abab&quot;,&quot;--faint&quot;:&quot;#b0abab&quot;,&quot;--accent&quot;:&quot;#72acaf&quot;,&quot;--kw&quot;:&quot;#50999c&quot;,&quot;--str&quot;:&quot;#f7a21b&quot;,&quot;--num&quot;:&quot;#f7a21b&quot;,&quot;--ident&quot;:&quot;#f0624b&quot;,&quot;--fn&quot;:&quot;#b4b7ad&quot;,&quot;--comment&quot;:&quot;#b0abab&quot;,&quot;--null&quot;:&quot;#b0abab&quot;,&quot;--sel&quot;:&quot;#3f3939&quot;,&quot;--changed-bg&quot;:&quot;#4a3d0a&quot;,&quot;--changed-fg&quot;:&quot;#ffe9a8&quot;}" style="--a:#2a2626;--b:#72acaf"><i></i>Bold (Rainglow)</button>
+        <button class="swatch" type="button" aria-pressed="false" data-theme="{&quot;--bg-app&quot;:&quot;#1c1c21&quot;,&quot;--panel&quot;:&quot;#17171b&quot;,&quot;--raised&quot;:&quot;#1e1e23&quot;,&quot;--hover&quot;:&quot;#303248&quot;,&quot;--border&quot;:&quot;#2f2a2d&quot;,&quot;--text&quot;:&quot;#f0e8eb&quot;,&quot;--dim&quot;:&quot;#a59da2&quot;,&quot;--faint&quot;:&quot;#a59da2&quot;,&quot;--accent&quot;:&quot;#ec7083&quot;,&quot;--kw&quot;:&quot;#ddd0ff&quot;,&quot;--str&quot;:&quot;#ff9a97&quot;,&quot;--num&quot;:&quot;#f7b267&quot;,&quot;--ident&quot;:&quot;#7fe09a&quot;,&quot;--fn&quot;:&quot;#8fe3ea&quot;,&quot;--comment&quot;:&quot;#a59da2&quot;,&quot;--null&quot;:&quot;#a59da2&quot;,&quot;--sel&quot;:&quot;#4a4c64&quot;,&quot;--changed-bg&quot;:&quot;#4a3d0a&quot;,&quot;--changed-fg&quot;:&quot;#ffe9a8&quot;}" style="--a:#1c1c21;--b:#ec7083"><i></i>Crimson</button>
+        <button class="swatch" type="button" aria-pressed="false" data-theme="{&quot;--bg-app&quot;:&quot;#36312c&quot;,&quot;--panel&quot;:&quot;#443e37&quot;,&quot;--raised&quot;:&quot;#4c453e&quot;,&quot;--hover&quot;:&quot;#3e3933&quot;,&quot;--border&quot;:&quot;#4c453e&quot;,&quot;--text&quot;:&quot;#ebd1b7&quot;,&quot;--dim&quot;:&quot;#c1bdb9&quot;,&quot;--faint&quot;:&quot;#c1bdb9&quot;,&quot;--accent&quot;:&quot;#95cc5e&quot;,&quot;--kw&quot;:&quot;#95cc5e&quot;,&quot;--str&quot;:&quot;#f8bb39&quot;,&quot;--num&quot;:&quot;#f8bb39&quot;,&quot;--ident&quot;:&quot;#df8862&quot;,&quot;--fn&quot;:&quot;#6aa96e&quot;,&quot;--comment&quot;:&quot;#c1bdb9&quot;,&quot;--null&quot;:&quot;#c1bdb9&quot;,&quot;--sel&quot;:&quot;#4c453e&quot;,&quot;--changed-bg&quot;:&quot;#4a3d0a&quot;,&quot;--changed-fg&quot;:&quot;#ffe9a8&quot;}" style="--a:#36312c;--b:#95cc5e"><i></i>Earthsong (Rainglow)</button>
+        <button class="swatch" type="button" aria-pressed="false" data-theme="{&quot;--bg-app&quot;:&quot;#1b1b24&quot;,&quot;--panel&quot;:&quot;#262633&quot;,&quot;--raised&quot;:&quot;#2c2c3b&quot;,&quot;--hover&quot;:&quot;#22222d&quot;,&quot;--border&quot;:&quot;#2c2c3b&quot;,&quot;--text&quot;:&quot;#c8c7d5&quot;,&quot;--dim&quot;:&quot;#9a9aa6&quot;,&quot;--faint&quot;:&quot;#9a9aa6&quot;,&quot;--accent&quot;:&quot;#8e8ca9&quot;,&quot;--kw&quot;:&quot;#8683a3&quot;,&quot;--str&quot;:&quot;#a6fa62&quot;,&quot;--num&quot;:&quot;#a6fa62&quot;,&quot;--ident&quot;:&quot;#8883b8&quot;,&quot;--fn&quot;:&quot;#ffffff&quot;,&quot;--comment&quot;:&quot;#9a9aa6&quot;,&quot;--null&quot;:&quot;#9a9aa6&quot;,&quot;--sel&quot;:&quot;#2c2c3b&quot;,&quot;--changed-bg&quot;:&quot;#4a3d0a&quot;,&quot;--changed-fg&quot;:&quot;#ffe9a8&quot;}" style="--a:#1b1b24;--b:#8e8ca9"><i></i>Heroku (Rainglow)</button>
+        <button class="swatch" type="button" aria-pressed="false" data-theme="{&quot;--bg-app&quot;:&quot;#212933&quot;,&quot;--panel&quot;:&quot;#2b3542&quot;,&quot;--raised&quot;:&quot;#313d4c&quot;,&quot;--hover&quot;:&quot;#27303c&quot;,&quot;--border&quot;:&quot;#313d4c&quot;,&quot;--text&quot;:&quot;#aec2e0&quot;,&quot;--dim&quot;:&quot;#a4adb8&quot;,&quot;--faint&quot;:&quot;#a4adb8&quot;,&quot;--accent&quot;:&quot;#67a5cb&quot;,&quot;--kw&quot;:&quot;#5199c4&quot;,&quot;--str&quot;:&quot;#c7f026&quot;,&quot;--num&quot;:&quot;#ff572a&quot;,&quot;--ident&quot;:&quot;#7c91ab&quot;,&quot;--fn&quot;:&quot;#ffb20d&quot;,&quot;--comment&quot;:&quot;#a4adb8&quot;,&quot;--null&quot;:&quot;#a4adb8&quot;,&quot;--sel&quot;:&quot;#313d4c&quot;,&quot;--changed-bg&quot;:&quot;#4a3d0a&quot;,&quot;--changed-fg&quot;:&quot;#ffe9a8&quot;}" style="--a:#212933;--b:#67a5cb"><i></i>Legacy (Rainglow)</button>
+        <button class="swatch" type="button" aria-pressed="false" data-theme="{&quot;--bg-app&quot;:&quot;#0c0c0c&quot;,&quot;--panel&quot;:&quot;#000000&quot;,&quot;--raised&quot;:&quot;#121212&quot;,&quot;--hover&quot;:&quot;#0a1f0a&quot;,&quot;--border&quot;:&quot;#1f3d1f&quot;,&quot;--text&quot;:&quot;#00cc00&quot;,&quot;--dim&quot;:&quot;#00a000&quot;,&quot;--faint&quot;:&quot;#00a000&quot;,&quot;--accent&quot;:&quot;#88ff88&quot;,&quot;--kw&quot;:&quot;#bbffbb&quot;,&quot;--str&quot;:&quot;#e6b422&quot;,&quot;--num&quot;:&quot;#0f8f0f&quot;,&quot;--ident&quot;:&quot;#00cc00&quot;,&quot;--fn&quot;:&quot;#bbffbb&quot;,&quot;--comment&quot;:&quot;#00a000&quot;,&quot;--null&quot;:&quot;#00a000&quot;,&quot;--sel&quot;:&quot;#0f3d0f&quot;,&quot;--changed-bg&quot;:&quot;#4a3d0a&quot;,&quot;--changed-fg&quot;:&quot;#ffe9a8&quot;}" style="--a:#0c0c0c;--b:#88ff88"><i></i>Matrix</button>
+        <button class="swatch" type="button" aria-pressed="false" data-theme="{&quot;--bg-app&quot;:&quot;#3c319c&quot;,&quot;--panel&quot;:&quot;#3c319c&quot;,&quot;--raised&quot;:&quot;#554ab2&quot;,&quot;--hover&quot;:&quot;#4a40a8&quot;,&quot;--border&quot;:&quot;#554ab2&quot;,&quot;--text&quot;:&quot;#ffffff&quot;,&quot;--dim&quot;:&quot;#d2cfe9&quot;,&quot;--faint&quot;:&quot;#d2cfe9&quot;,&quot;--accent&quot;:&quot;#b9e893&quot;,&quot;--kw&quot;:&quot;#8abdc5&quot;,&quot;--str&quot;:&quot;#86c95c&quot;,&quot;--num&quot;:&quot;#d0dc71&quot;,&quot;--ident&quot;:&quot;#b9e893&quot;,&quot;--fn&quot;:&quot;#8abdc5&quot;,&quot;--comment&quot;:&quot;#c2bee0&quot;,&quot;--null&quot;:&quot;#c2bee0&quot;,&quot;--sel&quot;:&quot;#554ab2&quot;,&quot;--changed-bg&quot;:&quot;#4a3d0a&quot;,&quot;--changed-fg&quot;:&quot;#ffe9a8&quot;}" style="--a:#3c319c;--b:#b9e893"><i></i>Mystico – C64</button>
+        <button class="swatch" type="button" aria-pressed="false" data-theme="{&quot;--bg-app&quot;:&quot;#282c34&quot;,&quot;--panel&quot;:&quot;#21252b&quot;,&quot;--raised&quot;:&quot;#3d424b&quot;,&quot;--hover&quot;:&quot;#323844&quot;,&quot;--border&quot;:&quot;#333841&quot;,&quot;--text&quot;:&quot;#abb2bf&quot;,&quot;--dim&quot;:&quot;#adb2bb&quot;,&quot;--faint&quot;:&quot;#adb2bb&quot;,&quot;--accent&quot;:&quot;#6091f3&quot;,&quot;--kw&quot;:&quot;#56b6c2&quot;,&quot;--str&quot;:&quot;#98c379&quot;,&quot;--num&quot;:&quot;#d19a66&quot;,&quot;--ident&quot;:&quot;#c678dd&quot;,&quot;--fn&quot;:&quot;#61afef&quot;,&quot;--comment&quot;:&quot;#8f96a2&quot;,&quot;--null&quot;:&quot;#8f96a2&quot;,&quot;--sel&quot;:&quot;#3d424b&quot;,&quot;--changed-bg&quot;:&quot;#4a3d0a&quot;,&quot;--changed-fg&quot;:&quot;#ffe9a8&quot;}" style="--a:#282c34;--b:#6091f3"><i></i>One Dark</button>
+        <button class="swatch" type="button" aria-pressed="false" data-theme="{&quot;--bg-app&quot;:&quot;#282c34&quot;,&quot;--panel&quot;:&quot;#21252b&quot;,&quot;--raised&quot;:&quot;#3d424b&quot;,&quot;--hover&quot;:&quot;#323844&quot;,&quot;--border&quot;:&quot;#333841&quot;,&quot;--text&quot;:&quot;#bbbbbb&quot;,&quot;--dim&quot;:&quot;#adb2bb&quot;,&quot;--faint&quot;:&quot;#adb2bb&quot;,&quot;--accent&quot;:&quot;#6a98f4&quot;,&quot;--kw&quot;:&quot;#2bbac5&quot;,&quot;--str&quot;:&quot;#89ca78&quot;,&quot;--num&quot;:&quot;#d19a66&quot;,&quot;--ident&quot;:&quot;#d869e0&quot;,&quot;--fn&quot;:&quot;#61afef&quot;,&quot;--comment&quot;:&quot;#8f96a2&quot;,&quot;--null&quot;:&quot;#8f96a2&quot;,&quot;--sel&quot;:&quot;#3d424b&quot;,&quot;--changed-bg&quot;:&quot;#4a3d0a&quot;,&quot;--changed-fg&quot;:&quot;#ffe9a8&quot;}" style="--a:#282c34;--b:#6a98f4"><i></i>One Dark Vivid</button>
+        <button class="swatch" type="button" aria-pressed="false" data-theme="{&quot;--bg-app&quot;:&quot;#3d2f34&quot;,&quot;--panel&quot;:&quot;#4b3a40&quot;,&quot;--raised&quot;:&quot;#544148&quot;,&quot;--hover&quot;:&quot;#46363b&quot;,&quot;--border&quot;:&quot;#544148&quot;,&quot;--text&quot;:&quot;#edebe6&quot;,&quot;--dim&quot;:&quot;#c5b9be&quot;,&quot;--faint&quot;:&quot;#c5b9be&quot;,&quot;--accent&quot;:&quot;#f98eaa&quot;,&quot;--kw&quot;:&quot;#8fbe00&quot;,&quot;--str&quot;:&quot;#8fbe00&quot;,&quot;--num&quot;:&quot;#e6db74&quot;,&quot;--ident&quot;:&quot;#fd7367&quot;,&quot;--fn&quot;:&quot;#ff6788&quot;,&quot;--comment&quot;:&quot;#c5b9be&quot;,&quot;--null&quot;:&quot;#c5b9be&quot;,&quot;--sel&quot;:&quot;#544148&quot;,&quot;--changed-bg&quot;:&quot;#4a3d0a&quot;,&quot;--changed-fg&quot;:&quot;#ffe9a8&quot;}" style="--a:#3d2f34;--b:#f98eaa"><i></i>Piggy (Rainglow)</button>
+        <button class="swatch" type="button" aria-pressed="false" data-theme="{&quot;--bg-app&quot;:&quot;#fdf6e3&quot;,&quot;--panel&quot;:&quot;#eee8d5&quot;,&quot;--raised&quot;:&quot;#ddd6c1&quot;,&quot;--hover&quot;:&quot;#f6edcf&quot;,&quot;--border&quot;:&quot;#ddd6c1&quot;,&quot;--text&quot;:&quot;#4a5d63&quot;,&quot;--dim&quot;:&quot;#4c5b5f&quot;,&quot;--faint&quot;:&quot;#4c5b5f&quot;,&quot;--accent&quot;:&quot;#7a5c00&quot;,&quot;--kw&quot;:&quot;#5257a8&quot;,&quot;--str&quot;:&quot;#667600&quot;,&quot;--num&quot;:&quot;#bf4715&quot;,&quot;--ident&quot;:&quot;#c6337a&quot;,&quot;--fn&quot;:&quot;#1b7a73&quot;,&quot;--comment&quot;:&quot;#56676b&quot;,&quot;--null&quot;:&quot;#56676b&quot;,&quot;--sel&quot;:&quot;#d7d1c0&quot;,&quot;--changed-bg&quot;:&quot;#fff1b8&quot;,&quot;--changed-fg&quot;:&quot;#3d2f00&quot;}" style="--a:#fdf6e3;--b:#7a5c00"><i></i>Solarized Light</button>
+        <button class="swatch" type="button" aria-pressed="false" data-theme="{&quot;--bg-app&quot;:&quot;#000000&quot;,&quot;--panel&quot;:&quot;#000000&quot;,&quot;--raised&quot;:&quot;#1c1c1c&quot;,&quot;--hover&quot;:&quot;#1c1c1c&quot;,&quot;--border&quot;:&quot;#353535&quot;,&quot;--text&quot;:&quot;#dfdfe0&quot;,&quot;--dim&quot;:&quot;#a0a0a0&quot;,&quot;--faint&quot;:&quot;#a0a0a0&quot;,&quot;--accent&quot;:&quot;#ffffff&quot;,&quot;--kw&quot;:&quot;#6bdfff&quot;,&quot;--str&quot;:&quot;#10b981&quot;,&quot;--num&quot;:&quot;#ffa14f&quot;,&quot;--ident&quot;:&quot;#ff7ab2&quot;,&quot;--fn&quot;:&quot;#78c2b3&quot;,&quot;--comment&quot;:&quot;#a0a0a0&quot;,&quot;--null&quot;:&quot;#a0a0a0&quot;,&quot;--sel&quot;:&quot;#353535&quot;,&quot;--changed-bg&quot;:&quot;#4a3d0a&quot;,&quot;--changed-fg&quot;:&quot;#ffe9a8&quot;}" style="--a:#000000;--b:#ffffff"><i></i>True Black</button>
+        <button class="swatch" type="button" aria-pressed="false" data-theme="{&quot;--bg-app&quot;:&quot;#121212&quot;,&quot;--panel&quot;:&quot;#121212&quot;,&quot;--raised&quot;:&quot;#1f1f1f&quot;,&quot;--hover&quot;:&quot;#1f1f1f&quot;,&quot;--border&quot;:&quot;#2d2d2d&quot;,&quot;--text&quot;:&quot;#dfdfe0&quot;,&quot;--dim&quot;:&quot;#8a96a2&quot;,&quot;--faint&quot;:&quot;#8a96a2&quot;,&quot;--accent&quot;:&quot;#a07af7&quot;,&quot;--kw&quot;:&quot;#6bdfff&quot;,&quot;--str&quot;:&quot;#10b981&quot;,&quot;--num&quot;:&quot;#ffa14f&quot;,&quot;--ident&quot;:&quot;#ff7ab2&quot;,&quot;--fn&quot;:&quot;#78c2b3&quot;,&quot;--comment&quot;:&quot;#8a96a2&quot;,&quot;--null&quot;:&quot;#8a96a2&quot;,&quot;--sel&quot;:&quot;#2d2d2d&quot;,&quot;--changed-bg&quot;:&quot;#4a3d0a&quot;,&quot;--changed-fg&quot;:&quot;#ffe9a8&quot;}" style="--a:#121212;--b:#a07af7"><i></i>True Dark</button>
+        <button class="swatch" type="button" aria-pressed="false" data-theme="{&quot;--bg-app&quot;:&quot;#f2f4fe&quot;,&quot;--panel&quot;:&quot;#f2f4fe&quot;,&quot;--raised&quot;:&quot;#e7edff&quot;,&quot;--hover&quot;:&quot;#e0e6fa&quot;,&quot;--border&quot;:&quot;#c9d4f5&quot;,&quot;--text&quot;:&quot;#1c1a1a&quot;,&quot;--dim&quot;:&quot;#566180&quot;,&quot;--faint&quot;:&quot;#566180&quot;,&quot;--accent&quot;:&quot;#275ccf&quot;,&quot;--kw&quot;:&quot;#00787c&quot;,&quot;--str&quot;:&quot;#007c43&quot;,&quot;--num&quot;:&quot;#a85600&quot;,&quot;--ident&quot;:&quot;#ae3a93&quot;,&quot;--fn&quot;:&quot;#007d81&quot;,&quot;--comment&quot;:&quot;#566180&quot;,&quot;--null&quot;:&quot;#566180&quot;,&quot;--sel&quot;:&quot;#d0d0d0&quot;,&quot;--changed-bg&quot;:&quot;#fff1b8&quot;,&quot;--changed-fg&quot;:&quot;#3d2f00&quot;}" style="--a:#f2f4fe;--b:#275ccf"><i></i>True Light</button>
+        <!-- schemes:end -->
+      </div>
+      <figure class="win scheme-stage scene reveal">
+        <div class="win-bar"><i></i><i></i><i></i><span>Dark</span></div>
+        <div class="two">
+          <pre class="code"><span><span class="c">-- revenue per country, this year</span></span><span><span class="k">SELECT</span> c.country, <span class="f">sum</span>(o.total) <span class="k">AS</span> revenue</span><span><span class="k">FROM</span>   orders o</span><span><span class="k">JOIN</span>   customers c <span class="k">ON</span> c.id = o.customer_id</span><span class="cur"><span class="k">WHERE</span>  o.placed_at &gt;= <span class="s">'2026-01-01'</span></span><span>  <span class="k">AND</span>  o.status <span class="k">IN</span> (<span class="s">'paid'</span>, <span class="s">'shipped'</span>)</span><span><span class="k">GROUP  BY</span> c.country</span><span><span class="k">HAVING</span> <span class="f">sum</span>(o.total) &gt; <span class="n">1000</span>;</span></pre>
+          <div>
+            <table class="grid">
+              <thead><tr><th class="rn">#</th><th>country<small>bpchar</small></th><th class="num">revenue<small>numeric</small></th><th>note<small>text</small></th></tr></thead>
+              <tbody>
+                <tr><td class="rn">1</td><td>SE</td><td class="num">18,204.50</td><td class="null">NULL</td></tr>
+                <tr><td class="rn">2</td><td>IT</td><td class="num sel">12,930.00</td><td>key account</td></tr>
+                <tr><td class="rn">3</td><td>DE</td><td class="num sel">9,417.25</td><td class="null">NULL</td></tr>
+                <tr><td class="rn">4</td><td>PL</td><td class="num chg">4,120.00</td><td>corrected</td></tr>
+                <tr><td class="rn">5</td><td>JP</td><td class="num">2,088.90</td><td class="null">NULL</td></tr>
+                <tr><td class="rn">6</td><td>CZ</td><td class="num">1,312.40</td><td>new</td></tr>
+              </tbody>
+            </table>
+            <div class="bar-line" style="border-bottom:0"><b>6 rows</b><span>Count 2 · Sum 22,347.25 · Avg 11,173.63</span></div>
+          </div>
+        </div>
+      </figure>
+      <p class="note reveal">The colours above are the real values of each scheme, not screenshots.</p>
+    </div>
+  </section>
+
+  <section class="sec sec-line" id="platforms">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw">CREATE</b> one app, three systems</p>
+      <h2 class="h2 split">macOS, Windows and Linux.</h2>
+      <p class="lead reveal">Built with Tauri, Rust and Angular. The editor is editlicious, the grids are the GuiExpert Table. English and German, switchable while the app runs.</p>
+      <div class="os">
+        <article class="card reveal"><h3>macOS</h3><p>Apple Silicon and Intel in one universal app, with a native menu bar.</p><b>.dmg</b></article>
+        <article class="card reveal" style="--d:1"><h3>Windows</h3><p>The menu bar is drawn by the window, with the same actions and shortcuts.</p><b>installer · .msi</b></article>
+        <article class="card reveal" style="--d:2"><h3>Linux</h3><p>For desktops with WebKitGTK.</p><b>.deb · .rpm · AppImage</b></article>
+      </div>
+
+      <div class="pages">
+        <a class="card reveal" href="features.html"><span class="glyph">01</span><h3>Features</h3><p>Everything the client does, chapter by chapter.</p></a>
+        <a class="card reveal" style="--d:1" href="databases.html"><span class="glyph">02</span><h3>Databases</h3><p>Connecting, tunnels, protection, differences.</p></a>
+        <a class="card reveal" style="--d:2" href="ai.html"><span class="glyph">03</span><h3>AI control</h3><p>MCP: what an assistant can do, and what it cannot.</p></a>
+        <a class="card reveal" style="--d:3" href="keyboard.html"><span class="glyph">04</span><h3>Keyboard</h3><p>All shortcuts per system, and questions.</p></a>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta sec-line" id="get">
+    <div class="wrap">
+      <p class="prompt reveal">SELECT * FROM your_database;</p>
+      <h2 class="h2 split">Run it.</h2>
+      <div class="actions reveal">
+        <a class="btn btn-primary" href="https://github.com/krocon/schema-commander/releases">Download from GitHub</a>
+        <a class="btn btn-ghost" href="https://github.com/krocon/schema-commander">Read the source</a>
+      </div>
+      <p class="note reveal">Free and open source under the MIT license. The packages are not signed yet.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <ul>
+      <li><a href="https://github.com/krocon/schema-commander">Source on GitHub</a></li>
+      <li><a href="https://github.com/krocon/schema-commander/issues">Report a problem</a></li>
+      <li><a href="https://github.com/krocon/schema-commander/blob/main/LICENSE">MIT license</a></li>
+      <li><a href="https://krocon.de">Imprint and privacy (krocon.de)</a></li>
+    </ul>
+    <p>© Marc Kronberg. This page sets no cookies and loads nothing from other servers.</p>
+  </div>
+</footer>
+</body>
+</html>

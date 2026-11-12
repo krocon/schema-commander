@@ -1,0 +1,195 @@
+<!doctype html>
+<!-- Schema Commander – product site, AI control over MCP. See index.html for how the site is built. Facts: docs/mcp.md -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI control over MCP – Schema Commander</title>
+<meta name="description" content="An AI assistant on the same computer can use Schema Commander over the Model Context Protocol: read the structure, run reading queries within limits, propose statements you confirm. Eight tools, four levels per connection, off by default.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0f1216" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="AI control over MCP – Schema Commander">
+<meta property="og:image" content="img/icon.png">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="stylesheet" href="site.css">
+<script src="site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="index.html"><img src="img/icon.png" width="30" height="30" alt=""><span>Schema Commander</span></a>
+    <nav class="nav-links" aria-label="Pages">
+      <a href="features.html">Features</a>
+      <a href="databases.html">Databases</a>
+      <a href="ai.html" aria-current="page">AI control</a>
+      <a href="keyboard.html">Keyboard</a>
+      <a class="gh" href="https://github.com/krocon/schema-commander">GitHub</a>
+      <a class="btn btn-primary btn-sm" href="https://github.com/krocon/schema-commander/releases">Download</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="sub-hero" id="top" style="--hue:var(--ident)">
+    <div class="wrap duo">
+      <div>
+        <p class="eyebrow reveal"><b class="kw kw-ident">GRANT</b> read, to an assistant</p>
+        <h1 class="h1 split">Your AI asks. You decide what runs.</h1>
+        <p class="lead reveal">Over the <a href="https://modelcontextprotocol.io">Model Context Protocol</a>, an assistant such as Claude Code uses the running app: it reads the structure, runs reading queries within limits, and proposes everything else. <b>Off by default.</b></p>
+      </div>
+      <div class="chat" aria-label="Example conversation">
+        <p class="msg you">The order report is slow. Why?</p>
+        <p class="tool"><b>describe_table</b> orders: 6 columns, 1 index</p>
+        <p class="tool"><b>explain_query</b> Seq Scan on orders, 48,112 rows</p>
+        <p class="tool ask"><b>propose_query</b> CREATE INDEX orders_placed_idx …</p>
+        <p class="msg ai">The report filters on <span class="mono">placed_at</span>, and there is no index on it. I proposed one: you will see the statement in the app, and it runs only if you click “Run”.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec-tight" id="levels">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw">CASE</b> connection WHEN …</p>
+      <h2 class="h2 split">Four levels, per connection.</h2>
+      <p class="lead reveal">What an assistant may do is decided in the backend, connection by connection. The assistant never opens a connection: it works on the ones you opened.</p>
+      <div class="levels">
+        <article class="card reveal" style="--c:var(--faint)"><span class="glyph">off</span><h3>Off</h3><p>Nothing. The connection is not even named. This is the default, and it stays the default for every connection with a protection level until you say otherwise.</p></article>
+        <article class="card reveal" style="--d:1;--c:var(--kw)"><span class="glyph">structure</span><h3>Structure only</h3><p>Schemas, tables, columns, keys, DDL. No statement of the assistant runs, not even a plan: its estimates come from the data.</p></article>
+        <article class="card reveal" style="--d:2;--c:var(--ok)"><span class="glyph">read</span><h3>Reading queries</h3><p>One reading statement per call, on a session that may only read on the server, for at most 30 seconds, within the limits below.</p></article>
+        <article class="card reveal" style="--d:3;--c:var(--warn)"><span class="glyph">propose</span><h3>Writing as a proposal</h3><p>The assistant may propose statements that write. Each one is shown to you and runs only after your click. A read-only connection never writes, not even this way.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec sec-line" id="tools">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw kw-num">COUNT</b> (*) = 8</p>
+      <h2 class="h2 split">Eight tools.</h2>
+      <div class="table-scroll reveal">
+        <table>
+          <thead><tr><th scope="col">Tool</th><th scope="col">Needs</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>status</code></td><td>–</td><td>Version and limits</td></tr>
+            <tr><td><code>list_connections</code></td><td>–</td><td>Id, name, kind, open or not, level. No host, no user, no password</td></tr>
+            <tr><td><code>get_schema</code></td><td>structure</td><td>The schemas, or the objects of one schema</td></tr>
+            <tr><td><code>describe_table</code></td><td>structure</td><td>Columns, keys, relations, DDL</td></tr>
+            <tr><td><code>run_query</code></td><td>read</td><td><b>One</b> reading statement, limited</td></tr>
+            <tr><td><code>explain_query</code></td><td>read</td><td>The estimated plan, without execution</td></tr>
+            <tr><td><code>write_to_tab</code></td><td>structure</td><td>Text into a new tab. Nothing runs</td></tr>
+            <tr><td><code>propose_query</code></td><td>read / propose</td><td>A proposal to you. It runs only after your click</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec sec-line" id="reading">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw kw-ok">READ ONLY</b> twice</p>
+      <h2 class="h2 split">What “reading” means.</h2>
+      <p class="lead reveal">Two locks, not one. The statement must be classified as reading by the same check that protects production. And it runs on a session of its own that the <b>server</b> allows only to read.</p>
+      <div class="minis">
+        <article class="card reveal"><span class="glyph">PostgreSQL</span><h3>Read-only transactions</h3><p><code>default_transaction_read_only</code> on the session of the assistant.</p></article>
+        <article class="card reveal" style="--d:1"><span class="glyph">MySQL · MariaDB</span><h3>Read-only session</h3><p><code>SET SESSION TRANSACTION READ ONLY</code>.</p></article>
+        <article class="card reveal" style="--d:2"><span class="glyph">SQLite</span><h3>query_only</h3><p>The pragma is set for the call and taken back afterwards.</p></article>
+        <article class="card reveal"><span class="glyph">SQL Server</span><h3>Rolled back</h3><p>It has no such switch: the statement runs in a transaction that is rolled back.</p></article>
+        <article class="card reveal" style="--d:1"><span class="glyph">one statement</span><h3>No session control</h3><p><code>BEGIN</code>, <code>COMMIT</code>, <code>USE</code>, <code>SET</code> and the like do not count as reading.</p></article>
+        <article class="card reveal" style="--d:2"><span class="glyph">30 s</span><h3>A time limit</h3><p>A call ends after thirty seconds at the latest.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec sec-line" id="limits">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw">LIMIT</b> 200</p>
+      <h2 class="h2 split">What may leave.</h2>
+      <p class="lead reveal">Whatever an assistant reads goes to the assistant, and with it to its provider. So the answer is bounded, and you can see every call.</p>
+      <div class="stats reveal">
+        <div class="stat"><b data-count="200">200</b><span>rows per answer by default, 1,000 at most</span></div>
+        <div class="stat"><b data-count="100">100<small>k</small></b><span>characters per answer by default</span></div>
+        <div class="stat"><b data-count="2000">2000</b><span>characters per value, then it is cut and says so</span></div>
+        <div class="stat"><b data-count="256">256<small>bit</small></b><span>token between the assistant’s helper and the app</span></div>
+      </div>
+      <div class="faq">
+        <details>
+          <summary>Hidden columns</summary>
+          <p>Columns whose <b>name</b> contains <code>password</code>, <code>passwd</code>, <code>pwd</code>, <code>secret</code>, <code>token</code>, <code>api_key</code>, <code>private_key</code>, <code>credential</code> or a pattern of your own come back as <code>[hidden]</code>.</p>
+          <p>This is a filter over names, and it says so: an alias (<code>SELECT password AS x</code>) or an expression gets around it. If you need to be sure, give the connection “structure only”, or give the assistant a database user of its own without rights on those columns.</p>
+        </details>
+        <details>
+          <summary>Proposals</summary>
+          <p><code>propose_query</code> shows you the statement, the connection and the reason the assistant gives, as plain text. “Run” opens a tab and runs the statement like one you typed: with the protection of the connection, in your history. The assistant learns whether you accepted, the rows affected, or the start of the error.</p>
+          <p>There is one dialog per proposal, “Run” is disabled for a moment so a click meant for something else does not land on it, and after five minutes a proposal no longer runs. Statements with invisible or direction-changing characters are refused: what you read is what runs.</p>
+        </details>
+        <details>
+          <summary>Seeing what happens</summary>
+          <p>The status line says “AI connected” while an assistant is. The dialog keeps a protocol of every call: tool, connection, statement, rows, outcome. It lives in memory only. “Disconnect” cuts off every assistant; switching the control off closes the port and removes the file with the token.</p>
+        </details>
+        <details>
+          <summary>Data are not instructions</summary>
+          <p>Text from a database (values, names, comments) can pretend to be an instruction to the assistant. The app runs nothing that stands in data, and its answers tell the assistant that values are data. Whether an assistant keeps to that is not up to the app. That is why everything that writes needs your click on a statement you can read yourself.</p>
+        </details>
+        <details>
+          <summary>Errors</summary>
+          <p>If a statement that names a hidden pattern fails, the assistant only learns that it failed: an error text can quote values.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec sec-line" id="setup">
+    <div class="wrap">
+      <p class="eyebrow reveal"><b class="kw kw-str">SET</b> ai = on</p>
+      <h2 class="h2 split">Set it up in four steps.</h2>
+      <div class="duo" style="align-items:start;margin-top:36px">
+        <div>
+          <p class="reveal"><b>1.</b> Menu <b>Schema → AI control (MCP) …</b>, switch it on.</p>
+          <p class="reveal"><b>2.</b> Choose per connection what an assistant may do.</p>
+          <p class="reveal"><b>3.</b> “Copy the command for Claude Code” and run it in a terminal, or copy the entry for the configuration file of another assistant.</p>
+          <p class="reveal"><b>4.</b> “Test the connection” starts the helper the way an assistant would and asks the app through it.</p>
+          <p class="note reveal">The helper <code>schema-commander-mcp</code> ships beside the app. It speaks MCP over stdio, knows no database and writes nothing down.</p>
+        </div>
+        <div class="reveal">
+          <pre><code><span class="c"># in a terminal</span>
+<span class="p">$ </span>claude mcp add schema-commander -- \
+    /path/to/schema-commander-mcp
+
+<span class="c"># how the pieces talk</span>
+assistant ──stdio──▶ schema-commander-mcp
+          ──127.0.0.1 + token──▶ the app
+          ──▶ the tools, in the backend</code></pre>
+          <p class="note">The app listens only while the control is on, only on <code>127.0.0.1</code>, on a random port. Port and token stand in a file only your user can read.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta sec-line" id="get">
+    <div class="wrap">
+      <p class="prompt reveal">SELECT * FROM your_database;</p>
+      <h2 class="h2 split">Run it.</h2>
+      <div class="actions reveal">
+        <a class="btn btn-primary" href="https://github.com/krocon/schema-commander/releases">Download from GitHub</a>
+        <a class="btn btn-ghost" href="https://github.com/krocon/schema-commander/blob/main/docs/mcp.md">The technical notes</a>
+      </div>
+      <p class="note reveal">Free and open source under the MIT license. The packages are not signed yet.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <ul>
+      <li><a href="https://github.com/krocon/schema-commander">Source on GitHub</a></li>
+      <li><a href="https://github.com/krocon/schema-commander/issues">Report a problem</a></li>
+      <li><a href="https://github.com/krocon/schema-commander/blob/main/LICENSE">MIT license</a></li>
+      <li><a href="https://krocon.de">Imprint and privacy (krocon.de)</a></li>
+    </ul>
+    <p>© Marc Kronberg. This page sets no cookies and loads nothing from other servers.</p>
+  </div>
+</footer>
+</body>
+</html>
