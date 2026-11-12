@@ -1291,6 +1291,13 @@ export class App implements OnInit, OnDestroy {
         TOGGLE_VALUE_PANEL: () =>
           this.settings.update({
             valuePanelVisible: !this.settings.settings().valuePanelVisible,
+            // one thing beside the grid at a time
+            rowFormVisible: false,
+            resultVisible: true,
+          }),
+        TOGGLE_ROW_FORM: () =>
+          this.settings.update({
+            rowFormVisible: !this.settings.settings().rowFormVisible,
             resultVisible: true,
           }),
         SIDEBAR_SAVED: () => this.showSidebarView('saved'),
@@ -1397,7 +1404,8 @@ export class App implements OnInit, OnDestroy {
       SIDEBAR_DATABASE: () => s().sidebarView === 'database',
       SIDEBAR_HISTORY: () => s().sidebarView === 'history',
       SIDEBAR_SAVED: () => s().sidebarView === 'saved',
-      TOGGLE_VALUE_PANEL: () => s().valuePanelVisible,
+      TOGGLE_VALUE_PANEL: () => s().valuePanelVisible && !s().rowFormVisible,
+      TOGGLE_ROW_FORM: () => s().rowFormVisible,
       TOGGLE_FILTER_BAR: () => s().filterBarVisible,
     };
     return Object.entries(checks).map(([id, on]) =>
