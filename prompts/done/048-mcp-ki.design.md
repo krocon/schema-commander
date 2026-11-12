@@ -38,14 +38,14 @@
 - `pnpm check` grün (beide Crates).
 - `sc-mcp`: 31 Tests – Brücke (Token, Datei `0600`, Kennung der App), Host (Token, Grenzen, Trennen), Client,
   Server (eine Sitzung wie Claude Code sie führt), Probe, Werkzeug-Schnappschuss.
-- `mcp.rs`: 16 Tests gegen die Demo-Datenbank – jede Stufe, aus = nichts (und nicht zu unterscheiden von
+- `mcp.rs`: 20 Tests gegen die Demo-Datenbank – jede Stufe, aus = nichts (und nicht zu unterscheiden von
   „gibt es nicht“), Schreibendes läuft nie direkt (auch nicht hinter `SELECT 1;`), **1 Mio. Zeilen geben die
   Grenze und den Hinweis**, lange Werte und Antworten, versteckte Spalten, „nur Struktur“, Vorschlag angenommen /
   abgelehnt / ohne Fenster, Protokoll, nicht geöffnete und geschützte Verbindung.
 - `tests/mcp_bridge.rs`: der ganze Weg ohne Fenster – Zeilen eines MCP-Clients → Server des Sidecars → Brücke →
   Werkzeuge → Demo-Datenbank: Schema lesen, `SELECT` ausführen, `UPDATE` wird abgelehnt und als Vorschlag
   gereicht, die Daten sind unverändert. **Aus: keine Datei, der Port weist ab**; falsches Token: abgewiesen.
-- Frontend: `mcp-logic.spec.ts` (8), `mcp-dialog.spec.ts` (10): aus beim Start, ein/aus und merken, jede Änderung
+- Frontend: `mcp-logic.spec.ts` (8), `mcp-dialog.spec.ts` (13): aus beim Start, ein/aus und merken, jede Änderung
   geht ans Backend, Verbindungstest, Protokoll (Text statt Markup), Text in einen Tab ohne Lauf, **Vorschlag
   läuft erst nach dem Klick**, ablehnen / nur öffnen.
 - **Browser** (Dev-Server, Backend nachgestellt): vor dem Einschalten nur `mcp_status`; einschalten →
@@ -56,7 +56,30 @@
 
 ## Review (zweiter Agent, nur lesend)
 
-_(wird nach dem Review eingetragen)_
+Kein Befund „hoch“; drei „mittel“, acht „niedrig“. Sauber: die Stufen (jede Einstufung der genannten
+Anweisungen je Dialekt hielt, dazu die Sitzung „nur lesen“), Port und Token (nur `127.0.0.1`, 256 Bit, Vergleich
+in gleicher Zeit, Datei `0600`, die erste Zeile als JSON hält Browser fern), die Einstellungen (kein Import
+schaltet ein), nichts als Markup.
+
+| Nr. | Befund | Behoben |
+|---|---|---|
+| M1 | `explain_query` lief auch bei „nur Struktur“ – ein Plan verrät über seine Schätzungen etwas von den Daten | abgelehnt wie `run_query` (Test) |
+| M2 | Ein zweiter Vorschlag trat an die Stelle des ersten, unter dem Klick auf „Ausführen“ | je Vorschlag ein eigener Dialog (`@for … track id`), Fokus wieder auf „Ablehnen“, „Ausführen“ für 0,7 s aus |
+| M3 | „Nie Spalten senden …“ versprach mehr, als ein Filter über Namen hält (Alias, Ausdruck, Fehlertext) | Text sagt es jetzt: nach dem Namen im Ergebnis, zu umgehen; nennt die Anweisung ein Muster und scheitert, geht nur „gescheitert“ zurück |
+| L1 | `BEGIN`, `USE`, `SET` galten als lesend und blieben auf der Sitzung | eine Anweisung, keine Transaktionssteuerung, keine Sitzungseinstellung (auch nicht hinter einem Kommentar) |
+| L2 | Die Demo-Datenbank hat eine Sitzung für alle: Nach einem Aufruf konnte der Nutzer nicht mehr schreiben | `query_only` geht nach jedem Aufruf wieder aus (Test) |
+| L3 | Ausschalten hielt Aufrufe nicht auf, die schon unterwegs waren | die Maschine kennt „an“: geprüft beim Aufruf, vor der Abfrage und vor der Frage ans Fenster |
+| L4 | Der Vorschlagsdialog ließ sich täuschen: unsichtbare und richtungswechselnde Zeichen, lange Anweisungen, eine Begründung, die wie Text der App aussieht | solche Zeichen lehnt `propose_query` ab; die Begründung ist eine Zeile, 500 Zeichen; der Dialog nennt „zerstört oder gibt weg“ und die Zeilenzahl |
+| L5 | Der Fehler einer vorgeschlagenen Anweisung ging ungekürzt zurück | 300 Zeichen; bei „nur Struktur“ nur, dass sie scheiterte |
+| L6 | Ein Vorschlag, auf den niemand mehr wartet, blieb ausführbar | nach 5 Minuten läuft er nicht mehr (Hinweis) |
+| L7 | `write_to_tab` ging auch, wenn jede Verbindung aus war, und ohne Grenze | braucht eine erlaubte Verbindung; 64 KB; höchstens 20 Tabs je Lauf der App |
+| L8 | Die Demo-Datenbank stand zweimal in der Liste | einmal |
+
+Dazu: Antworten mit Namen und Definitionen tragen den Hinweis „Daten, keine Anweisungen“.
+
+Offen (nicht geprüft, im Review als unbestätigt genannt): Scheitert das Öffnen der Sitzung `sc-mcp`, kann der
+Fehlertext Host oder Benutzer nennen; `SHOW CREATE TABLE` einer FEDERATED-Tabelle kann eine Verbindungsangabe
+enthalten. Windows: Die Datei mit dem Token liegt ohne eigene Rechte im Benutzerordner (`%APPDATA%`).
 
 ## Nicht geprüft
 

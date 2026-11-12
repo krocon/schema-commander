@@ -83,11 +83,33 @@ export interface Proposal {
   readonly sql: string;
   readonly reason: string;
   readonly writes: boolean;
+  /** It destroys or gives away (DROP, TRUNCATE, GRANT …). */
+  readonly dangerous: boolean;
+  /** When it arrived (ms since the epoch): the assistant stops waiting after a while. */
+  readonly at: number;
 }
 
+/** The backend waits this long for the answer to a proposal; a later answer would reach nobody. */
+export const PROPOSAL_MS = 300_000;
+/** Tabs an assistant may open in one run of the app. */
+export const MAX_AI_TABS = 20;
+/** Characters of an error that go back to the assistant. */
+export const ERROR_CHARS = 300;
+
+/** Whether nobody waits for the answer to a proposal any more. */
+export const expired = (proposal: Proposal, now: number): boolean =>
+  now - proposal.at > PROPOSAL_MS;
+
+/** The lines of a statement: a long one says so before it is read to the end. */
+export const lineCount = (sql: string): number => sql.split('\n').length;
+
 /** Reads a request of the backend as a proposal; `null` when it is none. */
-export function proposalOf(id: number, args: Readonly<Record<string, unknown>>): Proposal | null {
-  const { connection, sql, reason, writes } = args;
+export function proposalOf(
+  id: number,
+  args: Readonly<Record<string, unknown>>,
+  now = Date.now(),
+): Proposal | null {
+  const { connection, sql, reason, writes, dangerous } = args;
   if (typeof connection !== 'string' || typeof sql !== 'string' || sql.trim() === '') return null;
   return {
     id,
@@ -95,5 +117,7 @@ export function proposalOf(id: number, args: Readonly<Record<string, unknown>>):
     sql,
     reason: typeof reason === 'string' ? reason : '',
     writes: writes !== false,
+    dangerous: dangerous === true,
+    at: now,
   };
 }

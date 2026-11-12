@@ -2,12 +2,19 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
+  DestroyRef,
   afterNextRender,
+  computed,
+  inject,
   input,
   output,
+  signal,
   viewChild,
 } from '@angular/core';
-import { Proposal } from './mcp-logic';
+import { Proposal, lineCount } from './mcp-logic';
+
+/** How long "Run it" stays off after the dialog appeared. */
+export const READY_MS = 700;
 import { MCP_TEXTS } from './mcp-texts';
 
 /**
@@ -27,8 +34,11 @@ import { MCP_TEXTS } from './mcp-texts';
       <h2 id="mp-title">{{ t.proposalTitle }}</h2>
       <p class="on">{{ t.proposalOn(connection()) }}</p>
       <p [class.warn]="proposal().writes" class="kind">
-        {{ proposal().writes ? t.proposalWrites : t.proposalReads }}
+        {{ kindText() }}
       </p>
+      @if (lines() > 12) {
+        <p class="note">{{ t.proposalLines(lines()) }}</p>
+      }
       <pre tabindex="0">{{ proposal().sql }}</pre>
       @if (proposal().reason) {
         <h3>{{ t.proposalReason }}</h3>
@@ -38,8 +48,12 @@ import { MCP_TEXTS } from './mcp-texts';
       <div class="buttons">
         <button #decline type="button" (click)="answered.emit('decline')">{{ t.decline }}</button>
         <span class="grow"></span>
-        <button type="button" (click)="answered.emit('tab')">{{ t.toTab }}</button>
-        <button type="button" class="primary" (click)="answered.emit('run')">{{ t.run }}</button>
+        <button type="button" [disabled]="!ready()" (click)="answered.emit('tab')">
+          {{ t.toTab }}
+        </button>
+        <button type="button" class="primary" [disabled]="!ready()" (click)="answered.emit('run')">
+          {{ t.run }}
+        </button>
       </div>
     </dialog>
   `,
@@ -110,6 +124,9 @@ import { MCP_TEXTS } from './mcp-texts';
       border: 1px solid var(--border);
       border-radius: var(--radius);
     }
+    button:disabled {
+      opacity: 0.5;
+    }
     button.primary {
       background: var(--accent);
       border-color: var(--accent);
@@ -123,15 +140,29 @@ export class McpProposalDialog {
   readonly connection = input.required<string>();
   readonly answered = output<'run' | 'tab' | 'decline'>();
 
+  private readonly destroyed = inject(DestroyRef);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
   private readonly decline = viewChild.required<ElementRef<HTMLButtonElement>>('decline');
 
   protected readonly t = MCP_TEXTS;
+  /** A moment before anything can be run: a click meant for the dialog before does not land here. */
+  protected readonly ready = signal(false);
+  protected readonly lines = computed(() => lineCount(this.proposal().sql));
+  protected readonly kindText = computed(() => {
+    const p = this.proposal();
+    return p.dangerous
+      ? this.t.proposalDangerous
+      : p.writes
+        ? this.t.proposalWrites
+        : this.t.proposalReads;
+  });
 
   constructor() {
     afterNextRender(() => {
       this.dialog().nativeElement.showModal();
       this.decline().nativeElement.focus();
+      const timer = setTimeout(() => this.ready.set(true), READY_MS);
+      this.destroyed.onDestroy(() => clearTimeout(timer));
     });
   }
 }

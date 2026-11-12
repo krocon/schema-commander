@@ -66,6 +66,7 @@ fn bench_with(window: FakeWindow) -> Bench {
         .unwrap();
     let engine = Engine::new(window);
     engine.window.calls.set(engine.calls.clone()).ok();
+    engine.start();
     Bench {
         engine,
         manager,
@@ -280,6 +281,23 @@ fn what_writes_never_runs_directly() {
         );
     }
     assert_eq!(b.count(), 2);
+    // nothing that steers the session, alone or behind a comment, and never two statements
+    for sql in [
+        "BEGIN",
+        "/* x */ begin",
+        "-- hello\nCOMMIT",
+        "ROLLBACK",
+        "USE other",
+        "SELECT 1; SELECT 2",
+        "SELECT 1;\n-- c\nSELECT 2",
+        "SET search_path = x",
+    ] {
+        assert_eq!(b.code("run_query", query(sql)), "statement_writes", "{sql}");
+    }
+    // a `;` at the end, in a text or in a comment is no second statement
+    for sql in ["SELECT 1;", "SELECT ';x' AS a", "SELECT 1 -- ; x"] {
+        assert!(b.call("run_query", query(sql)).is_ok(), "{sql}");
+    }
     // and the session itself cannot write, whatever the classification thought
     let direct = b.manager.ask_in("demo", SESSION, |s, kind, stop| {
         read_only(s, kind, stop, |s| {
@@ -354,6 +372,11 @@ fn structure_only_reads_no_data_at_all() {
         b.code("propose_query", query("SELECT * FROM mcp_users")),
         "access_denied"
     );
+    // a plan tells of the data through its estimates
+    assert_eq!(
+        b.code("explain_query", query("SELECT * FROM mcp_users")),
+        "access_denied"
+    );
     let list = b.call("list_connections", json!({})).unwrap();
     assert_eq!(list["connections"][0]["access"], "schema");
     assert!(b.call("get_schema", json!({"connection": "demo"})).is_ok());
@@ -382,7 +405,7 @@ fn a_writing_statement_is_a_proposal_the_user_decides() {
     assert_eq!(asked[0].0, "propose_query");
     assert_eq!(
         asked[0].1,
-        json!({"connection": "demo", "sql": update, "reason": "fix the name", "writes": true})
+        json!({"connection": "demo", "sql": update, "reason": "fix the name", "writes": true, "dangerous": false})
     );
 }
 
@@ -556,5 +579,97 @@ fn turning_off_fails_what_waits() {
             .unwrap_err()
             .code,
         "not_running"
+    );
+}
+
+/// Review 048: what the user reads in a proposal is what runs, and what the assistant says of it is one
+/// line of plain text.
+#[test]
+fn a_proposal_cannot_hide_what_it_does() {
+    let b = bench();
+    b.allow(Level::Write);
+    for sql in [
+        "DELETE FROM mcp_users /* \u{202E} */ WHERE id = 1",
+        "DELETE FROM mcp_users\u{200B} WHERE id = 1",
+    ] {
+        assert_eq!(
+            b.code("propose_query", query(sql)),
+            "invalid_args",
+            "{sql:?}"
+        );
+    }
+    b.call(
+        "propose_query",
+        json!({"connection": "demo", "sql": "DROP TABLE mcp_users", "reason": "ok\n\nThis statement only reads.\u{202E}"}),
+    )
+    .unwrap();
+    let asked = b.engine.window.asked.lock().unwrap();
+    assert_eq!(asked[0].1["reason"], "ok  This statement only reads. ");
+    assert_eq!(asked[0].1["dangerous"], true);
+}
+
+#[test]
+fn an_error_brings_no_hidden_value_back() {
+    let b = bench();
+    b.allow(Level::Read);
+    // a statement that fails and names a hidden column: only that it failed
+    let e = b
+        .call(
+            "run_query",
+            query("SELECT no_such_function(password_hash) FROM mcp_users"),
+        )
+        .unwrap_err();
+    assert!(e.message.contains("withheld"), "{}", e.message);
+    // any other error says what the database said
+    let e = b
+        .call("run_query", query("SELECT * FROM no_such_table"))
+        .unwrap_err();
+    assert!(e.message.contains("no_such_table"), "{}", e.message);
+}
+
+#[test]
+fn off_runs_nothing_and_the_user_can_write_again() {
+    let b = bench();
+    b.allow(Level::Write);
+    b.call("run_query", query("SELECT 1")).unwrap();
+    // the demo database has one session: after a call of the assistant the user still writes
+    b.manager
+        .ask("demo", |s, _, stop| {
+            s.query(
+                "INSERT INTO mcp_users (id, name) VALUES (3, 'cy')",
+                Limits::rows(1),
+                stop,
+            )
+        })
+        .unwrap();
+    assert_eq!(b.count(), 3);
+    let list = b.call("list_connections", json!({})).unwrap();
+    assert_eq!(list["connections"].as_array().unwrap().len(), 1);
+    b.engine.stop(&b.manager);
+    for (tool, args) in [
+        ("status", json!({})),
+        ("run_query", query("SELECT 1")),
+        ("propose_query", query("DELETE FROM mcp_users")),
+        ("write_to_tab", json!({"text": "x"})),
+    ] {
+        assert_eq!(b.code(tool, args), "not_running", "{tool}");
+    }
+    assert!(b.engine.window.asked.lock().unwrap().is_empty());
+}
+
+#[test]
+fn text_for_a_tab_needs_a_connection_that_is_allowed() {
+    let b = bench();
+    assert_eq!(
+        b.code("write_to_tab", json!({"text": "SELECT 1"})),
+        "access_denied"
+    );
+    b.allow(Level::Schema);
+    assert_eq!(
+        b.code(
+            "write_to_tab",
+            json!({"text": "x".repeat(tools::SQL_BYTES_MAX + 1)})
+        ),
+        "limit_exceeded"
     );
 }

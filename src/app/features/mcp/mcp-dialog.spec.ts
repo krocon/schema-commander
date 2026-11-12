@@ -22,7 +22,7 @@ import {
 } from '../../../testing/fake-apis';
 import { TabsStore } from '../tabs/tabs.store';
 import { McpDialog } from './mcp-dialog';
-import { McpProposalDialog } from './mcp-proposal-dialog';
+import { McpProposalDialog, READY_MS } from './mcp-proposal-dialog';
 import { McpService } from './mcp.service';
 
 async function settled(fixture?: { whenStable(): Promise<unknown> }): Promise<void> {
@@ -268,6 +268,109 @@ describe('AI control (MCP)', () => {
       { id: 2, result: { accepted: false, opened_in_tab: true } },
     ]);
     expect(TestBed.inject(TabsStore).tabs().at(-1)!.startText).toBe('DROP TABLE t');
+  });
+
+  it('keeps "run" off for a moment, says what destroys, and makes a dialog per proposal', async () => {
+    const make = async (id: number, sql: string, dangerous: boolean) => {
+      const fixture = TestBed.createComponent(McpProposalDialog);
+      fixture.componentRef.setInput('proposal', {
+        id,
+        connectionId: 'dev',
+        sql,
+        reason: '',
+        writes: true,
+        dangerous,
+        at: Date.now(),
+      });
+      fixture.componentRef.setInput('connection', 'Dev');
+      await settled(fixture);
+      return fixture;
+    };
+    const fixture = await make(
+      1,
+      Array.from({ length: 30 }, () => 'DROP TABLE t;').join('\n'),
+      true,
+    );
+    const el = fixture.nativeElement as HTMLElement;
+    const run = [...el.querySelectorAll('button')].find(
+      (b) => b.textContent.trim() === 'Ausführen',
+    )!;
+    // a click that was meant for the dialog before lands on nothing
+    expect(run.disabled).toBe(true);
+    expect(el.textContent).toContain('zerstört oder gibt weg');
+    expect(el.textContent).toContain('30 Zeilen');
+    await new Promise((resolve) => setTimeout(resolve, READY_MS + 50));
+    await settled(fixture);
+    expect(run.disabled).toBe(false);
+    // the list the app draws from holds one proposal at a time, each with its own id
+    await mcp.setEnabled(true);
+    for (const id of [11, 12]) {
+      api.emit({
+        kind: 'request',
+        id,
+        tool: 'propose_query',
+        args: { connection: 'dev', sql: 'DELETE FROM t' },
+      });
+    }
+    await settled();
+    expect(mcp.shownProposals().map((p) => p.id)).toEqual([11]);
+    await mcp.answer('decline');
+    expect(mcp.shownProposals().map((p) => p.id)).toEqual([12]);
+  });
+
+  it('does not run a proposal nobody waits for any more, and tells the assistant little of an error', async () => {
+    await mcp.setEnabled(true);
+    const now = Date.now();
+    const spy = vi.spyOn(Date, 'now');
+    spy.mockReturnValue(now);
+    api.emit({
+      kind: 'request',
+      id: 21,
+      tool: 'propose_query',
+      args: { connection: 'dev', sql: 'DELETE FROM t' },
+    });
+    await settled();
+    spy.mockReturnValue(now + 301_000);
+    await mcp.answer('run');
+    await settled();
+    spy.mockRestore();
+    expect(query.statements).toEqual([]);
+    expect(api.replies.at(-1)).toEqual({ id: 21, result: { accepted: false } });
+    expect(mcp.problem()).toContain('wartet nicht mehr');
+    // an error goes back cut; with "structure only" just that there was one
+    query.error = { code: 'invalid_query', message: `secret-${'x'.repeat(1000)}` };
+    api.emit({
+      kind: 'request',
+      id: 22,
+      tool: 'propose_query',
+      args: { connection: 'dev', sql: 'SELECT boom()' },
+    });
+    await settled();
+    await mcp.answer('run');
+    await settled();
+    const first = api.replies.at(-1)!.result as { error: string };
+    expect(first.error.length).toBeLessThanOrEqual(300);
+    await mcp.update({ ...mcp.ai(), structureOnly: true });
+    api.emit({
+      kind: 'request',
+      id: 23,
+      tool: 'propose_query',
+      args: { connection: 'dev', sql: 'SELECT boom()' },
+    });
+    await settled();
+    await mcp.answer('run');
+    await settled();
+    expect((api.replies.at(-1)!.result as { error: string }).error).toBe('the statement failed');
+  });
+
+  it('opens no more than twenty tabs for an assistant', async () => {
+    await mcp.setEnabled(true);
+    for (let id = 1; id <= 21; id++) {
+      api.emit({ kind: 'request', id, tool: 'write_to_tab', args: { text: 'SELECT 1' } });
+    }
+    await settled();
+    expect(api.replies.filter((r) => !r.error)).toHaveLength(20);
+    expect(api.replies.at(-1)?.error?.code).toBe('limit_exceeded');
   });
 
   it('answers what it does not understand, and forgets proposals when turned off', async () => {

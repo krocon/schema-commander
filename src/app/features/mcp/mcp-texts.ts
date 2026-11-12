@@ -41,9 +41,9 @@ export const MCP_EN = {
   structureOnly: 'Only structure, never data',
   maxRows: 'Rows per answer',
   maxChars: 'Characters per answer',
-  exclude: 'Never send columns whose name contains',
+  exclude: 'Hide result columns whose name contains',
   excludeHint:
-    'One per line. Always hidden: password, passwd, pwd, secret, token, api_key, private_key, credential.',
+    'One per line. Always hidden: password, passwd, pwd, secret, token, api_key, private_key, credential. This goes by the name a column has in the result: a query that renames it gets around it. For data that must not leave, allow "structure only".',
   access: 'What an assistant may do, per connection',
   defaultAccess: 'Connections without protection',
   connection: 'Connection',
@@ -77,6 +77,9 @@ export const MCP_EN = {
   proposalReason: 'Its reason, in its own words',
   proposalNote:
     'Read the statement itself: the reason is what the assistant says, not what the statement does. It runs like one you typed, with the safeguards of the connection.',
+  proposalDangerous: 'This statement destroys or gives away (DROP, TRUNCATE, GRANT …).',
+  proposalLines: (n: number) => `${n} lines – read to the end.`,
+  proposalExpired: 'The assistant no longer waits for this proposal: it was not run.',
   run: 'Run it',
   toTab: 'Only open in a tab',
   decline: 'Decline',

@@ -5,7 +5,15 @@ import { McpApi, McpEvent, McpLogEntry, McpProbe, McpStatus } from '../../core/m
 import { AiSettings } from '../../core/settings/settings.models';
 import { SettingsService } from '../../core/settings/settings.service';
 import { TabsStore } from '../tabs/tabs.store';
-import { Proposal, configOf, proposalOf, withEntry } from './mcp-logic';
+import {
+  ERROR_CHARS,
+  MAX_AI_TABS,
+  Proposal,
+  configOf,
+  expired,
+  proposalOf,
+  withEntry,
+} from './mcp-logic';
 import { MCP_TEXTS } from './mcp-texts';
 
 const OFF: McpStatus = { running: false, connections: 0, sidecar: '', sidecarFound: false };
@@ -33,6 +41,10 @@ export class McpService {
   /** Proposals that wait for the user; the first one is on screen. */
   private readonly proposals = signal<readonly Proposal[]>([]);
   readonly proposal = computed(() => this.proposals()[0] ?? null);
+  /** The proposal on screen, as a list: the template makes a dialog of its own for each. */
+  readonly shownProposals = computed(() => this.proposals().slice(0, 1));
+  /** Tabs assistants opened in this run of the app. */
+  private aiTabs = 0;
   readonly ai = computed(() => this.settings.settings().ai);
   private subscribed = false;
 
@@ -140,6 +152,14 @@ export class McpService {
   private onRequest(id: number, tool: string, args: Readonly<Record<string, unknown>>): void {
     if (tool === 'write_to_tab' && typeof args['text'] === 'string') {
       const connection = typeof args['connection'] === 'string' ? args['connection'] : null;
+      if (this.aiTabs >= MAX_AI_TABS) {
+        void this.api.reply(id, null, {
+          code: 'limit_exceeded',
+          message: `at most ${MAX_AI_TABS} tabs – the user closes some first`,
+        });
+        return;
+      }
+      this.aiTabs++;
       // text into a tab: nothing runs
       this.tabs.newTab(args['text'], connection ? { connection } : {});
       void this.api.reply(id, { opened: true });
@@ -151,6 +171,15 @@ export class McpService {
       return;
     }
     this.proposals.update((all) => [...all, proposal]);
+  }
+
+  /**
+   * What the assistant hears of an error: the start of it – an error can quote values –, and only that
+   * there was one where the user shares no data.
+   */
+  private errorFor(message: string | null): string | null {
+    if (message === null) return null;
+    return this.ai().structureOnly ? 'the statement failed' : message.slice(0, ERROR_CHARS);
   }
 
   /** The name of the connection of a proposal, as the user knows it. */
@@ -173,6 +202,12 @@ export class McpService {
       await this.api.reply(proposal.id, { accepted: false });
       return;
     }
+    // the assistant stopped waiting: what it no longer expects does not run
+    if (expired(proposal, Date.now())) {
+      this.problem.set(MCP_TEXTS.proposalExpired);
+      await this.api.reply(proposal.id, { accepted: false });
+      return;
+    }
     const tab = this.tabs.newTab(proposal.sql, { connection: proposal.connectionId });
     if (choice === 'tab') {
       await this.api.reply(proposal.id, { accepted: false, opened_in_tab: true });
@@ -191,10 +226,14 @@ export class McpService {
           (sum, r) => (r.rowsAffected === null ? sum : (sum ?? 0) + r.rowsAffected),
           null,
         ),
-        error: failed?.message ?? null,
+        error: this.errorFor(failed?.message ?? null),
       });
     } catch (e) {
-      await this.api.reply(proposal.id, { accepted: true, ran: false, error: describeError(e) });
+      await this.api.reply(proposal.id, {
+        accepted: true,
+        ran: false,
+        error: this.errorFor(describeError(e)),
+      });
     }
   }
 }

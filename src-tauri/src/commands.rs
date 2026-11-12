@@ -2696,6 +2696,7 @@ pub fn mcp_start(
     config: crate::mcp::Config,
 ) -> AppResult<McpStatus> {
     state.engine.configure(config);
+    state.engine.start();
     let mut host = state.host.lock();
     if host.is_none() {
         let file = app
@@ -2719,8 +2720,9 @@ pub fn mcp_start(
 /// Turns AI control off: the port closes, the file goes, every assistant is cut off, nothing waits.
 #[tauri::command(async)]
 pub fn mcp_stop(manager: State<'_, ConnectionManager>, state: State<'_, McpState>) -> McpStatus {
-    *state.host.lock() = None;
+    // first the engine: a call that is on its way finds it off
     state.engine.stop(&manager);
+    *state.host.lock() = None;
     state
         .engine
         .window

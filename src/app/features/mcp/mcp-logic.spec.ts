@@ -2,10 +2,13 @@ import { McpLogEntry } from '../../core/mcp/mcp-api';
 import { DEFAULT_AI, readAi } from '../../core/settings/settings.models';
 import {
   MAX_LOG,
+  PROPOSAL_MS,
   claudeCommand,
   configOf,
+  expired,
   levelOf,
   levelsFor,
+  lineCount,
   oneLine,
   patternsOf,
   proposalOf,
@@ -116,8 +119,21 @@ describe('mcp-logic', () => {
 
   it('reads a proposal and nothing else', () => {
     expect(
-      proposalOf(7, { connection: 'pg', sql: 'DELETE FROM t', reason: 'why', writes: true }),
-    ).toEqual({ id: 7, connectionId: 'pg', sql: 'DELETE FROM t', reason: 'why', writes: true });
+      proposalOf(7, { connection: 'pg', sql: 'DELETE FROM t', reason: 'why', writes: true }, 1000),
+    ).toEqual({
+      id: 7,
+      connectionId: 'pg',
+      sql: 'DELETE FROM t',
+      reason: 'why',
+      writes: true,
+      dangerous: false,
+      at: 1000,
+    });
+    const old = proposalOf(7, { connection: 'pg', sql: 'x', dangerous: true }, 1000)!;
+    expect(old.dangerous).toBe(true);
+    expect(expired(old, 1000 + PROPOSAL_MS)).toBe(false);
+    expect(expired(old, 1001 + PROPOSAL_MS)).toBe(true);
+    expect(lineCount('a\nb\nc')).toBe(3);
     // what is not said to only read counts as writing
     expect(proposalOf(7, { connection: 'pg', sql: 'x' })?.writes).toBe(true);
     expect(proposalOf(7, { connection: 'pg', sql: '  ' })).toBeNull();

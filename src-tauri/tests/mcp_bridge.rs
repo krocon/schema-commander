@@ -67,6 +67,7 @@ fn app(dir: &std::path::Path) -> Arc<App> {
         .unwrap();
     let engine = Engine::new(Yes::default());
     engine.window.calls.set(engine.calls.clone()).ok();
+    engine.start();
     engine.configure(Config {
         access: HashMap::from([("demo".to_owned(), Level::Write)]),
         ..Config::default()

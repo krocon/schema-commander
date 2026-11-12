@@ -623,7 +623,8 @@ const SIDEBAR_MIN = 140;
         <app-mcp-dialog (closed)="mcp.open.set(false)" />
       }
     }
-    @if (mcp.proposal(); as proposed) {
+    <!-- a dialog of its own per proposal: the next one never takes the place under a click -->
+    @for (proposed of mcp.shownProposals(); track proposed.id) {
       @defer (on immediate) {
         <app-mcp-proposal-dialog
           [proposal]="proposed"

@@ -41,9 +41,9 @@ export const MCP_DE: McpTexts = {
   structureOnly: 'Nur Struktur, nie Daten',
   maxRows: 'Zeilen je Antwort',
   maxChars: 'Zeichen je Antwort',
-  exclude: 'Nie Spalten senden, deren Name enthält',
+  exclude: 'Ergebnisspalten verstecken, deren Name enthält',
   excludeHint:
-    'Eines je Zeile. Immer versteckt: password, passwd, pwd, secret, token, api_key, private_key, credential.',
+    'Eines je Zeile. Immer versteckt: password, passwd, pwd, secret, token, api_key, private_key, credential. Das geht nach dem Namen, den eine Spalte im Ergebnis hat: Eine Abfrage, die sie umbenennt, kommt daran vorbei. Für Daten, die nicht hinaus dürfen, erlauben Sie „nur Struktur“.',
   access: 'Was ein Assistent darf, je Verbindung',
   defaultAccess: 'Verbindungen ohne Schutz',
   connection: 'Verbindung',
@@ -77,6 +77,10 @@ export const MCP_DE: McpTexts = {
   proposalReason: 'Seine Begründung, in seinen Worten',
   proposalNote:
     'Lesen Sie die Anweisung selbst: Die Begründung ist, was der Assistent sagt, nicht was die Anweisung tut. Sie läuft wie eine, die Sie getippt haben, mit dem Schutz der Verbindung.',
+  proposalDangerous: 'Diese Anweisung zerstört oder gibt weg (DROP, TRUNCATE, GRANT …).',
+  proposalLines: (n) => `${n} Zeilen – lesen Sie bis zum Ende.`,
+  proposalExpired:
+    'Der Assistent wartet nicht mehr auf diesen Vorschlag: Er wurde nicht ausgeführt.',
   run: 'Ausführen',
   toTab: 'Nur in einem Tab öffnen',
   decline: 'Ablehnen',
