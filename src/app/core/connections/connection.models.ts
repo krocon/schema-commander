@@ -10,14 +10,15 @@ export type DbKind =
   | 'duckdb'
   | 'clickhouse'
   | 'trino'
-  | 'libsql';
+  | 'libsql'
+  | 'd1';
 
-/** A kind with a dialect of its own (libSQL writes SQLite's). */
-export type SqlDialect = Exclude<DbKind, 'libsql'>;
+/** A kind with a dialect of its own (libSQL and D1 write SQLite's). */
+export type SqlDialect = Exclude<DbKind, 'libsql' | 'd1'>;
 
 /** The dialect a connection of this kind speaks: what its SQL is split, completed and quoted by. */
 export function dialectOf(kind: DbKind): SqlDialect {
-  return kind === 'libsql' ? 'sqlite' : kind;
+  return kind === 'libsql' || kind === 'd1' ? 'sqlite' : kind;
 }
 
 /** An embedded database: a file of this computer (or memory) – no host, no login. */
@@ -176,6 +177,8 @@ export const DB_KINDS: readonly {
   { kind: 'trino', label: 'Trino / Presto', port: 8080 },
   // a sqld server or a Turso database over HTTP; the dialect is SQLite's (prompt 035g)
   { kind: 'libsql', label: 'libSQL / Turso', port: 8080 },
+  // over Cloudflare's REST API: account id as the user, the id of the database, an API token (035h)
+  { kind: 'd1', label: 'Cloudflare D1', port: 443 },
   {
     kind: 'sqlite',
     // a getter: the language may change while the app runs

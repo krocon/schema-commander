@@ -197,7 +197,7 @@ import { BackupService, BackupTarget } from './backup.service';
             <fieldset>
               <legend>{{ t.simple }}</legend>
               <p class="note">{{ t.simpleHint }}</p>
-              @if (kind() !== 'sqlite' && kind() !== 'libsql') {
+              @if (kind() !== 'sqlite' && kind() !== 'libsql' && kind() !== 'd1') {
                 <label>
                   {{ t.simpleSchema }}
                   <input

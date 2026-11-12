@@ -157,7 +157,9 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                 ? t.serviceName
                 : draft().kind === 'trino'
                   ? t.catalogName
-                  : t.database
+                  : draft().kind === 'd1'
+                    ? t.d1Database
+                    : t.database
             }}</label>
             <input
               #database
@@ -171,7 +173,9 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                   ? t.serviceExample
                   : draft().kind === 'trino'
                     ? t.catalogExample
-                    : t.serverDefault
+                    : draft().kind === 'd1'
+                      ? t.d1DatabaseExample
+                      : t.serverDefault
               "
               [value]="draft().database"
               [class.invalid]="shown('database')"
@@ -179,7 +183,7 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
               (input)="patch({ database: database.value })"
             />
 
-            <label for="conn-user">{{ t.user }}</label>
+            <label for="conn-user">{{ draft().kind === 'd1' ? t.d1Account : t.user }}</label>
             <input
               #user
               id="conn-user"
@@ -194,7 +198,11 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
             />
 
             <label for="conn-password">{{
-              draft().kind === 'libsql' ? t.tokenOrPassword : t.password
+              draft().kind === 'libsql'
+                ? t.tokenOrPassword
+                : draft().kind === 'd1'
+                  ? t.d1Token
+                  : t.password
             }}</label>
             <span class="row">
               <input

@@ -124,6 +124,7 @@ const SAME = new Set<string>([
   'ClickHouse',
   'Trino / Presto',
   'libSQL / Turso',
+  'Cloudflare D1',
   'Schema Commander',
   'Schema',
   'TLS: ',

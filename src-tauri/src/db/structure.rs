@@ -403,7 +403,7 @@ pub fn plan(kind: DbKind, request: &Request) -> AppResult<Plan> {
             vec![dangerous(
                 match kind {
                     // SQLite has no TRUNCATE
-                    DbKind::Sqlite | DbKind::Libsql => format!("DELETE FROM {t};"),
+                    DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("DELETE FROM {t};"),
                     _ => format!("TRUNCATE TABLE {t};"),
                 },
                 "removes every row of the table",

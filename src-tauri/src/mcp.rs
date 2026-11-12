@@ -418,6 +418,15 @@ impl<W: Window> Engine<W> {
     /// DuckDB reads files from inside a query (`read_csv('/any/file')`): a „reading query“ there is
     /// reading this computer. An assistant may propose such a statement; it does not run one.
     fn no_file_reader(kind: DbKind) -> Result<(), BridgeError> {
+        if kind == DbKind::D1 {
+            // no session that only reads, no transaction to roll back: nothing here could hold a
+            // statement to reading but its classification
+            return Err(err(
+                "access_denied",
+                "Cloudflare D1 has no session that only reads: queries are not run for an assistant \
+                 here – propose the statement to the user instead",
+            ));
+        }
         if kind == DbKind::Duckdb {
             return Err(err(
                 "access_denied",
@@ -434,7 +443,7 @@ fn kind_name(kind: DbKind) -> &'static str {
         DbKind::Postgres => "postgres",
         DbKind::Mysql => "mysql",
         DbKind::Sqlserver => "sqlserver",
-        DbKind::Sqlite | DbKind::Libsql => "sqlite",
+        DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => "sqlite",
         DbKind::Oracle => "oracle",
         DbKind::Duckdb => "duckdb",
         DbKind::Clickhouse => "clickhouse",

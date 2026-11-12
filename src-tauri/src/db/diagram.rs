@@ -374,7 +374,7 @@ pub fn diagram(
             ),
         ),
         // the file that is open: SQLite has one namespace
-        DbKind::Sqlite | DbKind::Libsql => (
+        DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => (
             s.ask(
                 "SELECT m.name, p.name, p.type, CASE WHEN p.\"notnull\" = 0 THEN 'true' ELSE 'false' END, \
                    CASE WHEN p.pk > 0 THEN 'true' ELSE 'false' END \

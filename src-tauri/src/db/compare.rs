@@ -230,7 +230,7 @@ fn index_rows(s: &mut dyn Session, kind: DbKind, schema: &str, stop: Stop) -> Ap
             stop,
         ),
         // only indexes that were created as such: those of constraints belong to the table
-        DbKind::Sqlite | DbKind::Libsql => s.ask(
+        DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => s.ask(
             "SELECT m.name, l.name, CASE WHEN l.\"unique\" = 1 THEN 'true' ELSE 'false' END, x.name \
              FROM sqlite_master m, pragma_index_list(m.name) l, pragma_index_info(l.name) x \
              WHERE m.type = 'table' AND l.origin = 'c' ORDER BY 1, 2, x.seqno",
@@ -251,7 +251,7 @@ fn default_rows(
     stop: Stop,
 ) -> AppResult<Option<TextRows>> {
     Ok(match kind {
-        DbKind::Sqlite | DbKind::Libsql => Some(s.ask(
+        DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => Some(s.ask(
             "SELECT m.name || '.' || p.name, p.dflt_value \
              FROM sqlite_master m, pragma_table_info(m.name) p \
              WHERE m.type = 'table' AND p.dflt_value IS NOT NULL",
@@ -1177,7 +1177,9 @@ impl Writer<'_> {
                 self.q(self.target_schema)?,
                 self.q(&i.name)?
             ),
-            DbKind::Sqlite | DbKind::Libsql => format!("DROP INDEX {};", self.q(&i.name)?),
+            DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => {
+                format!("DROP INDEX {};", self.q(&i.name)?)
+            }
             _ => format!("DROP INDEX {} ON {};", self.q(&i.name)?, self.table(table)?),
         })
     }
@@ -1618,7 +1620,7 @@ fn grouped(
                             DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino => {
                                 return Err(super::not_yet(kind, "schema compare and structure editing"));
                             }
-                            DbKind::Sqlite | DbKind::Libsql => sqls.push(note(&format!(
+                            DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => sqls.push(note(&format!(
                                 "{}.{}: SQLite cannot change a column – the table must be rebuilt ({} → {})",
                                 table,
                                 item.name,
@@ -1784,9 +1786,13 @@ fn grouped(
                         "CREATE OR REPLACE VIEW {} AS\n{text};",
                         w.table(&item.name)?
                     )),
-                    (ItemKind::View | ItemKind::Trigger, DbKind::Sqlite | DbKind::Libsql) => Some(
-                        format!("DROP {what} IF EXISTS {};\n{text};", w.q(&item.name)?),
-                    ),
+                    (
+                        ItemKind::View | ItemKind::Trigger,
+                        DbKind::Sqlite | DbKind::Libsql | DbKind::D1,
+                    ) => Some(format!(
+                        "DROP {what} IF EXISTS {};\n{text};",
+                        w.q(&item.name)?
+                    )),
                     // the definition is the whole statement
                     (ItemKind::Routine, DbKind::Postgres) => Some(format!("{text};")),
                     (ItemKind::Trigger, DbKind::Postgres) => {
@@ -1848,7 +1854,7 @@ fn written(
                 DbKind::Postgres => "PostgreSQL",
                 DbKind::Mysql => "MySQL / MariaDB",
                 DbKind::Sqlserver => "SQL Server",
-                DbKind::Sqlite | DbKind::Libsql => "SQLite",
+                DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => "SQLite",
                 DbKind::Oracle => "Oracle",
                 DbKind::Duckdb => "DuckDB",
                 DbKind::Clickhouse => "ClickHouse",

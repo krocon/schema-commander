@@ -305,7 +305,7 @@ fn as_text(column: &str, kind: DbKind) -> String {
         DbKind::Postgres => format!("CAST({column} AS text)"),
         DbKind::Mysql => format!("CAST({column} AS CHAR)"),
         DbKind::Sqlserver => format!("CAST({column} AS nvarchar(max))"),
-        DbKind::Sqlite | DbKind::Libsql => format!("CAST({column} AS TEXT)"),
+        DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("CAST({column} AS TEXT)"),
         DbKind::Oracle => format!("TO_CHAR({column})"),
         DbKind::Duckdb | DbKind::Trino => format!("CAST({column} AS VARCHAR)"),
         DbKind::Clickhouse => format!("toString({column})"),
@@ -322,7 +322,10 @@ pub fn data_question(
     spec: &FindSpec,
 ) -> AppResult<Option<(Question, Vec<String>)>> {
     if spec.mode == Mode::Regex
-        && matches!(kind, DbKind::Sqlserver | DbKind::Sqlite | DbKind::Libsql)
+        && matches!(
+            kind,
+            DbKind::Sqlserver | DbKind::Sqlite | DbKind::Libsql | DbKind::D1
+        )
     {
         return Err(AppError::new(
             ErrorCode::Unsupported,
@@ -346,7 +349,7 @@ pub fn data_question(
             DbKind::Postgres | DbKind::Duckdb => format!("${n}"),
             DbKind::Mysql | DbKind::Trino => "?".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
-            DbKind::Sqlite | DbKind::Libsql => format!("?{n}"),
+            DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("?{n}"),
             DbKind::Oracle => format!(":{n}"),
             DbKind::Clickhouse => format!("{{p{n}:String}}"),
         }
@@ -359,7 +362,7 @@ pub fn data_question(
         let quoted = name(column, kind)?;
         let text = as_text(&quoted, kind);
         selected.push(match kind {
-            DbKind::Sqlite | DbKind::Libsql | DbKind::Trino => {
+            DbKind::Sqlite | DbKind::Libsql | DbKind::D1 | DbKind::Trino => {
                 format!("substr({text}, 1, {VALUE_CHARS})")
             }
             DbKind::Oracle => format!("SUBSTR({text}, 1, {VALUE_CHARS})"),
@@ -413,16 +416,16 @@ pub fn data_question(
                 }
             }
             // SQLite's LIKE ignores the case of ASCII letters, always: with case, `instr`
-            (DbKind::Sqlite | DbKind::Libsql, Mode::Contains) if sensitive => {
+            (DbKind::Sqlite | DbKind::Libsql | DbKind::D1, Mode::Contains) if sensitive => {
                 format!("instr({text}, {}) > 0", place(spec.text.clone()))
             }
-            (DbKind::Sqlite | DbKind::Libsql, Mode::Contains) => {
+            (DbKind::Sqlite | DbKind::Libsql | DbKind::D1, Mode::Contains) => {
                 format!("{text} LIKE {} ESCAPE '{ESCAPE}'", place(pattern.clone()))
             }
-            (DbKind::Sqlite | DbKind::Libsql, _) if sensitive => {
+            (DbKind::Sqlite | DbKind::Libsql | DbKind::D1, _) if sensitive => {
                 format!("{text} = {}", place(spec.text.clone()))
             }
-            (DbKind::Sqlite | DbKind::Libsql, _) => {
+            (DbKind::Sqlite | DbKind::Libsql | DbKind::D1, _) => {
                 format!("{text} = {} COLLATE NOCASE", place(spec.text.clone()))
             }
             // no LIKE either: a position says the same without a pattern
@@ -683,9 +686,9 @@ fn columns_of(
             limit,
             stop,
         )?,
-        DbKind::Sqlite | DbKind::Libsql => s.ask(
+        DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => s.ask(
             "SELECT m.name, p.name, p.type FROM sqlite_master m, pragma_table_info(m.name) p \
-             WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite\\_%' ESCAPE '\\' \
+             WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_cf\\_%' ESCAPE '\\' \
              ORDER BY m.name, p.cid",
             &[],
             limit,
@@ -821,7 +824,7 @@ pub(super) fn source_questions(kind: DbKind, flavor: Flavor) -> Vec<&'static str
              JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = @P1",
         ],
         // a table's statement holds its checks and defaults
-        DbKind::Sqlite | DbKind::Libsql => vec![
+        DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => vec![
             "SELECT type, name, sql FROM sqlite_master \
              WHERE sql IS NOT NULL AND type IN ('view', 'trigger', 'table') AND ?1 = ?1",
         ],
@@ -918,7 +921,10 @@ pub fn find(
     // said before anything is searched, not at the first table
     if spec.data
         && spec.mode == Mode::Regex
-        && matches!(kind, DbKind::Sqlserver | DbKind::Sqlite | DbKind::Libsql)
+        && matches!(
+            kind,
+            DbKind::Sqlserver | DbKind::Sqlite | DbKind::Libsql | DbKind::D1
+        )
     {
         return Err(AppError::new(
             ErrorCode::Unsupported,

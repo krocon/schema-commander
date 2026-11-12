@@ -7,6 +7,7 @@
 pub mod access;
 pub mod clickhouse;
 pub mod compare;
+pub mod d1;
 pub mod details;
 pub mod diagram;
 pub mod duckdb;
@@ -65,12 +66,15 @@ pub enum DbKind {
     Trino,
     /// libSQL (prompt 035g): a `sqld` server or a Turso database over HTTP; the dialect is SQLite's.
     Libsql,
+    /// Cloudflare D1 (prompt 035h) over Cloudflare's REST API; the dialect is SQLite's. `user` of the
+    /// profile is the account id, `database` the id of the database.
+    D1,
 }
 
 impl DbKind {
     /// The dialect is SQLite's, wherever the database lies: a file here, or libSQL behind a server.
     pub fn is_sqlite(self) -> bool {
-        matches!(self, DbKind::Sqlite | DbKind::Libsql)
+        matches!(self, DbKind::Sqlite | DbKind::Libsql | DbKind::D1)
     }
 
     /// An embedded database: a file of this computer (or memory), no server, no login.
@@ -82,7 +86,8 @@ impl DbKind {
     /// and keys that tell rows apart. ClickHouse has neither; Trino's catalog names no keys, and what a
     /// transaction holds there depends on the connector behind a table.
     pub fn edits_rows(self) -> bool {
-        !matches!(self, DbKind::Clickhouse | DbKind::Trino)
+        // D1 answers one request at a time: nothing can hold a transaction open
+        !matches!(self, DbKind::Clickhouse | DbKind::Trino | DbKind::D1)
     }
 
     pub fn default_port(self) -> u16 {
@@ -96,6 +101,7 @@ impl DbKind {
             DbKind::Clickhouse => 8123,
             DbKind::Trino => 8080,
             DbKind::Libsql => 8080,
+            DbKind::D1 => 443,
         }
     }
 }
@@ -320,12 +326,16 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
         (DbKind::Trino, Flavor::Presto) => "Presto",
         (DbKind::Trino, _) => "Trino",
         (DbKind::Libsql, _) => "libSQL",
+        (DbKind::D1, _) => "Cloudflare D1",
     };
     Capabilities {
         product: product.to_owned(),
         // the SQL Server and the Oracle driver have no way to stop a statement but to drop the connection
         // libSQL's protocol cannot stop a statement either: it is left behind, on a stream of its own
-        cancel: !matches!(kind, DbKind::Sqlserver | DbKind::Oracle | DbKind::Libsql),
+        cancel: !matches!(
+            kind,
+            DbKind::Sqlserver | DbKind::Oracle | DbKind::Libsql | DbKind::D1
+        ),
         // ClickHouse has no foreign keys, and Trino's catalog names none
         foreign_keys: !matches!(kind, DbKind::Clickhouse | DbKind::Trino),
         schemas: !kind.is_sqlite(),
@@ -333,7 +343,12 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
             && !matches!(kind, DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino),
         routines: !matches!(
             kind,
-            DbKind::Sqlite | DbKind::Libsql | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino
+            DbKind::Sqlite
+                | DbKind::Libsql
+                | DbKind::D1
+                | DbKind::Duckdb
+                | DbKind::Clickhouse
+                | DbKind::Trino
         ),
         plan: !matches!(
             kind,
@@ -344,6 +359,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
             kind,
             DbKind::Sqlite
                 | DbKind::Libsql
+                | DbKind::D1
                 | DbKind::Oracle
                 | DbKind::Duckdb
                 | DbKind::Clickhouse
@@ -353,14 +369,16 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
             kind,
             DbKind::Sqlite
                 | DbKind::Libsql
+                | DbKind::D1
                 | DbKind::Oracle
                 | DbKind::Duckdb
                 | DbKind::Clickhouse
                 | DbKind::Trino
         ),
+        // D1: a change of a table is written in a transaction, and there is none to open
         structure: !matches!(
             kind,
-            DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino
+            DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino | DbKind::D1
         ),
         // without transactions and unique keys a changed cell cannot be written safely
         edit: kind.edits_rows(),
@@ -404,7 +422,8 @@ pub fn begin_statement(kind: DbKind) -> &'static str {
         // there are no transactions: who needs one refuses ClickHouse before it comes to this
         DbKind::Clickhouse => "BEGIN TRANSACTION",
         DbKind::Trino => "START TRANSACTION",
-        DbKind::Libsql => "BEGIN",
+        // there are no transactions over the API: who needs one refuses D1 before it comes to this
+        DbKind::Libsql | DbKind::D1 => "BEGIN",
     }
 }
 
@@ -551,6 +570,7 @@ pub fn connect(
         DbKind::Clickhouse => Box::new(clickhouse::connect(profile, secret, stop)?),
         DbKind::Trino => Box::new(trino::connect(profile, secret, stop)?),
         DbKind::Libsql => Box::new(libsql::connect(profile, secret, stop)?),
+        DbKind::D1 => Box::new(d1::connect(profile, secret, stop)?),
     })
 }
 
@@ -989,6 +1009,12 @@ mod tests {
         assert!(DbKind::Libsql.is_sqlite() && !DbKind::Libsql.is_file());
         assert!(DbKind::Sqlite.is_sqlite() && !DbKind::Duckdb.is_sqlite());
         assert_eq!(begin_statement(DbKind::Libsql), "BEGIN");
+        // D1 (035h): the dialect of SQLite, one request at a time – read, run, do not edit
+        let d1 = of(DbKind::D1, Flavor::Plain);
+        assert_eq!(d1.product, "Cloudflare D1");
+        assert!(DbKind::D1.is_sqlite() && !DbKind::D1.is_file() && !DbKind::D1.edits_rows());
+        assert!(!d1.edit && !d1.structure && !d1.cancel && !d1.schemas && !d1.monitor);
+        assert!(d1.foreign_keys && d1.plan && d1.triggers);
         let lite = of(DbKind::Sqlite, Flavor::Plain);
         assert!(!lite.schemas && !lite.routines && lite.triggers && lite.cancel);
         let json = serde_json::to_value(&crdb).unwrap();

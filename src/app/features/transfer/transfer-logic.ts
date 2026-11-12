@@ -24,6 +24,7 @@ export function defaultSchema(kind: DbKind, database: string): string {
       return 'dbo';
     case 'sqlite':
     case 'libsql':
+    case 'd1':
     case 'duckdb':
       return 'main';
     case 'oracle':

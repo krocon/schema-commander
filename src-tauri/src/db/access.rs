@@ -175,7 +175,7 @@ const MS_PRINCIPALS: &str = "SELECT p.name, CASE WHEN p.type = 'R' THEN 'false' 
 pub fn principals(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Access> {
     let mut out = Access::default();
     match kind {
-        DbKind::Sqlite | DbKind::Libsql => return Err(unsupported()),
+        DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => return Err(unsupported()),
         DbKind::Oracle => return Err(super::not_yet(kind, "users and rights")),
         DbKind::Duckdb => return Err(unsupported()),
         DbKind::Clickhouse | DbKind::Trino => {
@@ -488,7 +488,7 @@ fn grant_of(row: &[Option<String>], via: Option<&str>) -> Grant {
 pub fn grants(s: &mut dyn Session, kind: DbKind, who: &Who, stop: Stop) -> AppResult<GrantList> {
     let mut out = GrantList::default();
     match kind {
-        DbKind::Sqlite | DbKind::Libsql => return Err(unsupported()),
+        DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => return Err(unsupported()),
         DbKind::Oracle => return Err(super::not_yet(kind, "users and rights")),
         DbKind::Duckdb => return Err(unsupported()),
         DbKind::Clickhouse | DbKind::Trino => {
@@ -915,7 +915,7 @@ fn written(
                         ));
                     }
                 }
-                DbKind::Sqlite | DbKind::Libsql => return Err(unsupported()),
+                DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => return Err(unsupported()),
                 DbKind::Oracle => return Err(super::not_yet(kind, "users and rights")),
                 DbKind::Duckdb => return Err(unsupported()),
                 DbKind::Clickhouse | DbKind::Trino => {
@@ -941,7 +941,7 @@ fn written(
                 DbKind::Postgres => format!("ALTER ROLE {name} PASSWORD {}", password()?),
                 DbKind::Mysql => format!("ALTER USER {name} IDENTIFIED BY {}", password()?),
                 DbKind::Sqlserver => format!("ALTER LOGIN {name} WITH PASSWORD = {}", password()?),
-                DbKind::Sqlite | DbKind::Libsql => return Err(unsupported()),
+                DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => return Err(unsupported()),
                 DbKind::Oracle => return Err(super::not_yet(kind, "users and rights")),
                 DbKind::Duckdb => return Err(unsupported()),
                 DbKind::Clickhouse | DbKind::Trino => {
@@ -980,7 +980,7 @@ fn written(
             let sql = match (kind, *add) {
                 (DbKind::Sqlserver, true) => format!("ALTER ROLE {r} ADD MEMBER {m}"),
                 (DbKind::Sqlserver, false) => format!("ALTER ROLE {r} DROP MEMBER {m}"),
-                (DbKind::Sqlite | DbKind::Libsql, _) => return Err(unsupported()),
+                (DbKind::Sqlite | DbKind::Libsql | DbKind::D1, _) => return Err(unsupported()),
                 (DbKind::Oracle, _) => return Err(super::not_yet(kind, "users and rights")),
                 (DbKind::Duckdb, _) => return Err(unsupported()),
                 (DbKind::Clickhouse | DbKind::Trino, _) => {
@@ -1133,7 +1133,7 @@ fn password_literal(
         }
         DbKind::Mysql => mysql_text(text, cx.backslash_escapes),
         DbKind::Sqlserver => plain_text(text, kind),
-        DbKind::Sqlite | DbKind::Libsql => return Err(unsupported()),
+        DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => return Err(unsupported()),
         DbKind::Oracle => return Err(super::not_yet(kind, "users and rights")),
         DbKind::Duckdb => return Err(unsupported()),
         DbKind::Clickhouse | DbKind::Trino => {
@@ -1273,6 +1273,7 @@ pub fn transactional(kind: DbKind, flavor: Flavor) -> bool {
         DbKind::Mysql
         | DbKind::Sqlite
         | DbKind::Libsql
+        | DbKind::D1
         | DbKind::Oracle
         | DbKind::Duckdb
         | DbKind::Clickhouse

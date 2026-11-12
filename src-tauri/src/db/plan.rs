@@ -834,8 +834,10 @@ pub fn ask(kind: DbKind, flavor: Flavor, sql: &str, analyze: bool) -> AppResult<
         (DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino, _, _) => {
             return Err(super::not_yet(kind, "the execution plan"));
         }
-        (DbKind::Sqlite | DbKind::Libsql, _, false) => one(format!("EXPLAIN QUERY PLAN {sql}")),
-        (DbKind::Sqlite | DbKind::Libsql, _, true) => {
+        (DbKind::Sqlite | DbKind::Libsql | DbKind::D1, _, false) => {
+            one(format!("EXPLAIN QUERY PLAN {sql}"))
+        }
+        (DbKind::Sqlite | DbKind::Libsql | DbKind::D1, _, true) => {
             return Err(AppError::new(
                 ErrorCode::Unsupported,
                 "SQLite gives no plan with times",

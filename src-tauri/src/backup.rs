@@ -54,6 +54,7 @@ pub fn tools_of(kind: DbKind) -> &'static [Tool] {
         DbKind::Sqlserver
         | DbKind::Sqlite
         | DbKind::Libsql
+        | DbKind::D1
         | DbKind::Oracle
         | DbKind::Duckdb
         | DbKind::Clickhouse
@@ -574,6 +575,7 @@ pub fn dump(e: &Endpoint, spec: &DumpSpec, target: &Path) -> AppResult<Invocatio
         DbKind::Sqlserver
         | DbKind::Sqlite
         | DbKind::Libsql
+        | DbKind::D1
         | DbKind::Oracle
         | DbKind::Duckdb
         | DbKind::Clickhouse

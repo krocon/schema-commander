@@ -206,7 +206,7 @@ pub fn activity(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Acti
     let mut missing = Vec::new();
     let first_line = |text: String| text.lines().next().unwrap_or_default().trim().to_owned();
     match kind {
-        DbKind::Sqlite | DbKind::Libsql | DbKind::Duckdb => return Err(unsupported()),
+        DbKind::Sqlite | DbKind::Libsql | DbKind::D1 | DbKind::Duckdb => return Err(unsupported()),
         DbKind::Oracle | DbKind::Clickhouse | DbKind::Trino => {
             return Err(super::not_yet(kind, "the server monitor"));
         }
@@ -389,7 +389,9 @@ pub fn kill_statement(kind: DbKind, id: &str, terminate: bool) -> AppResult<Stri
                 "SQL Server ends a statement only together with its session",
             ));
         }
-        (DbKind::Sqlite | DbKind::Libsql | DbKind::Duckdb, _) => return Err(unsupported()),
+        (DbKind::Sqlite | DbKind::Libsql | DbKind::D1 | DbKind::Duckdb, _) => {
+            return Err(unsupported());
+        }
         (DbKind::Oracle | DbKind::Clickhouse | DbKind::Trino, _) => {
             return Err(super::not_yet(kind, "the server monitor"));
         }

@@ -2852,7 +2852,7 @@ pub fn testdata_keys(
             crate::db::DbKind::Postgres => format!("{column}::text"),
             crate::db::DbKind::Mysql => format!("CAST({column} AS CHAR)"),
             crate::db::DbKind::Sqlserver => format!("CAST({column} AS nvarchar(4000))"),
-            crate::db::DbKind::Sqlite | crate::db::DbKind::Libsql => {
+            crate::db::DbKind::Sqlite | crate::db::DbKind::Libsql | crate::db::DbKind::D1 => {
                 format!("CAST({column} AS TEXT)")
             }
             crate::db::DbKind::Oracle => format!("TO_CHAR({column})"),
@@ -3081,7 +3081,8 @@ fn testdata_literal(
             (
                 crate::db::DbKind::Sqlserver
                 | crate::db::DbKind::Sqlite
-                | crate::db::DbKind::Libsql,
+                | crate::db::DbKind::Libsql
+                | crate::db::DbKind::D1,
                 yes,
             ) => if yes { "1" } else { "0" }.to_owned(),
             (_, true) => "TRUE".to_owned(),

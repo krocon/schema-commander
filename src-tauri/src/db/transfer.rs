@@ -374,7 +374,7 @@ pub fn type_for(to: DbKind, class: Class) -> (String, Option<&'static str>) {
                 Some("a type this app does not know: copied as text"),
             ),
         },
-        DbKind::Sqlite | DbKind::Libsql => match class {
+        DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => match class {
             Class::SmallInt | Class::Int | Class::BigInt => own("INTEGER"),
             Class::Numeric(_) => (
                 "NUMERIC".to_owned(),

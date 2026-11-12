@@ -149,8 +149,12 @@ pub fn literal(cell: &Value, kind: ColKind, dialect: DbKind) -> String {
     match cell {
         Value::Null => "NULL".to_string(),
         Value::Bool(b) => match (dialect, *b) {
-            (DbKind::Sqlserver | DbKind::Sqlite | DbKind::Libsql, true) => "1".to_string(),
-            (DbKind::Sqlserver | DbKind::Sqlite | DbKind::Libsql, false) => "0".to_string(),
+            (DbKind::Sqlserver | DbKind::Sqlite | DbKind::Libsql | DbKind::D1, true) => {
+                "1".to_string()
+            }
+            (DbKind::Sqlserver | DbKind::Sqlite | DbKind::Libsql | DbKind::D1, false) => {
+                "0".to_string()
+            }
             (_, true) => "TRUE".to_string(),
             (_, false) => "FALSE".to_string(),
         },
@@ -181,7 +185,7 @@ pub fn literal(cell: &Value, kind: ColKind, dialect: DbKind) -> String {
             Some((bytes, hex)) if bytes * 2 == hex.len() as u64 => match dialect {
                 DbKind::Postgres => format!("'\\x{hex}'"),
                 DbKind::Sqlserver => format!("0x{hex}"),
-                DbKind::Mysql | DbKind::Sqlite | DbKind::Libsql | DbKind::Trino => {
+                DbKind::Mysql | DbKind::Sqlite | DbKind::Libsql | DbKind::D1 | DbKind::Trino => {
                     format!("X'{hex}'")
                 }
                 DbKind::Oracle => format!("HEXTORAW('{hex}')"),

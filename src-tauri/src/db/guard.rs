@@ -220,7 +220,12 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
             } else {
                 Tok::Quoted(body)
             });
-        } else if c == '[' && matches!(kind, DbKind::Sqlserver | DbKind::Sqlite | DbKind::Libsql) {
+        } else if c == '['
+            && matches!(
+                kind,
+                DbKind::Sqlserver | DbKind::Sqlite | DbKind::Libsql | DbKind::D1
+            )
+        {
             let start = i + 1;
             i += 1;
             while i < n {
@@ -972,7 +977,8 @@ pub fn read_only_statement(kind: DbKind) -> Option<&'static str> {
         DbKind::Sqlite => Some("PRAGMA query_only = ON"),
         // the server takes no such PRAGMA: the classification is all there is, and a reading call
         // runs in a transaction that is rolled back
-        DbKind::Libsql => None,
+        // D1 has no session at all; whether a token may write is decided at Cloudflare
+        DbKind::Libsql | DbKind::D1 => None,
         // SQL Server has no read-only session; the classification is all there is
         DbKind::Sqlserver => None,
         // Oracle has it only for one transaction (and reads a stale snapshot inside it): the
