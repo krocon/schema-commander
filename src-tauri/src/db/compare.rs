@@ -110,16 +110,25 @@ fn invalid(message: &str) -> AppError {
 
 /// Whether a text is the name of a type and nothing more: no statement ends in it, no comment starts.
 fn type_like(text: &str) -> bool {
-    text.len() <= 200
-        && !text.contains("--")
-        && !text.contains("/*")
-        && text.chars().all(|c| {
-            c.is_alphanumeric()
-                || matches!(
-                    c,
-                    ' ' | '_' | '(' | ')' | ',' | '[' | ']' | '.' | '"' | '\''
-                )
-        })
+    if text.len() > 200 || text.contains("--") || text.contains("/*") {
+        return false;
+    }
+    // between single quotes (the values of an `enum`) anything on one line; a quote is doubled there
+    let mut quoted = false;
+    for c in text.chars() {
+        if c == '\'' {
+            quoted = !quoted;
+        } else if quoted {
+            if c.is_control() || c == '\\' {
+                return false;
+            }
+        } else if !(c.is_alphanumeric()
+            || matches!(c, ' ' | '_' | '(' | ')' | ',' | '[' | ']' | '.' | '"'))
+        {
+            return false;
+        }
+    }
+    !quoted
 }
 
 /// A snapshot that came from outside (a file): within the limits, or refused.
@@ -999,7 +1008,10 @@ pub fn narrows(from: &str, to: &str) -> bool {
             return true;
         }
         return match (fs.as_slice(), ts.as_slice()) {
-            (_, []) => false,
+            ([], []) => false,
+            // no size on the new side: no limit in PostgreSQL, but `decimal(18,0)` and one character
+            // elsewhere – and here nobody knows which database it is. Said, rather than not.
+            (_, []) => true,
             ([], _) => true,
             // a number: the digits before the point must not get fewer either
             ([fp, fsc], [tp, tsc]) if fb == "numeric" => {
@@ -1093,7 +1105,18 @@ impl Writer<'_> {
             lines.push(format!("  PRIMARY KEY ({})", self.list(&t.pk)?));
         }
         for c in &t.checks {
-            lines.push(format!("  {}", self.check_clause(c)));
+            // with its name: a check the database names itself is another one when read again
+            lines.push(if c.name.is_empty() {
+                format!("  {}", self.check_clause(c))
+            } else {
+                format!("  CONSTRAINT {} {}", self.q(&c.name)?, self.check_clause(c))
+            });
+        }
+        if self.kind == DbKind::Sqlite {
+            // SQLite cannot add a key afterwards
+            for k in &t.keys {
+                lines.push(format!("  {}", self.key_clause(k)?));
+            }
         }
         Ok(format!(
             "CREATE TABLE {} (\n{}\n);",
@@ -1152,6 +1175,33 @@ impl Writer<'_> {
         })
     }
 
+    /// The first argument of `sp_rename`: every part in brackets (a name may hold a dot), the whole as
+    /// the text of a string.
+    fn rename_path(&self, parts: &[&str]) -> AppResult<String> {
+        let mut quoted = Vec::new();
+        for part in parts {
+            // checked like every name, then always in brackets
+            self.q(part)?;
+            quoted.push(super::meta::quote_always(part, self.kind));
+        }
+        Ok(quoted.join(".").replace('\'', "''"))
+    }
+
+    /// A foreign key as a clause of `CREATE TABLE`.
+    fn key_clause(&self, k: &Key) -> AppResult<String> {
+        let target = if k.ref_schema.is_empty() {
+            self.table(&k.ref_table)?
+        } else {
+            format!("{}.{}", self.q(&k.ref_schema)?, self.q(&k.ref_table)?)
+        };
+        Ok(format!(
+            "FOREIGN KEY ({}) REFERENCES {} ({})",
+            self.list(&k.columns)?,
+            target,
+            self.list(&k.ref_columns)?
+        ))
+    }
+
     fn add_key(&self, table: &str, k: &Key) -> AppResult<String> {
         let target = if k.ref_schema.is_empty() {
             self.table(&k.ref_table)?
@@ -1175,7 +1225,8 @@ impl Writer<'_> {
     fn drop_constraint(&self, table: &str, constraint: &str, foreign: bool) -> AppResult<String> {
         let word = match (self.kind, foreign) {
             (DbKind::Mysql, true) => "FOREIGN KEY",
-            (DbKind::Mysql, false) => "CHECK",
+            // a check: `DROP CONSTRAINT` is what both MariaDB and MySQL (from 8.0.19) understand –
+            // MariaDB has no `DROP CHECK`
             _ => "CONSTRAINT",
         };
         Ok(format!(
@@ -1214,6 +1265,117 @@ pub fn script(
     picks: Option<&[String]>,
     renames: &[Rename],
 ) -> AppResult<String> {
+    let steps = grouped(source, target, picks, renames)?;
+    let kind = source.kind;
+    Ok(written(source, target, kind, &steps))
+}
+
+const RENAME: usize = 0;
+const UNLINK: usize = 1;
+const CREATE: usize = 2;
+const COLUMNS: usize = 3;
+const INDEXES: usize = 4;
+const CHECKS: usize = 5;
+const LINK: usize = 6;
+const CODE: usize = 7;
+const DROP_CODE: usize = 8;
+const DROP: usize = 9;
+// indexes go after the keys that may need them
+const UNINDEX: usize = 10;
+/// The groups of steps in the order they are written and run.
+const ORDER: [(usize, &str); 11] = [
+    (RENAME, "renames"),
+    (UNLINK, "keys and checks that go or change"),
+    (UNINDEX, "indexes that go or change"),
+    (CREATE, "new tables"),
+    (COLUMNS, "columns"),
+    (INDEXES, "indexes"),
+    (CHECKS, "primary keys and checks"),
+    (LINK, "foreign keys"),
+    (CODE, "views, routines, triggers"),
+    (
+        DROP_CODE,
+        "views, routines and triggers that are only in the target",
+    ),
+    (DROP, "columns and tables that are only in the target"),
+];
+
+/// One step of a migration, apart from the script (prompt 043: the structure editor shows and runs them).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScriptStep {
+    /// The statement; empty for a remark that is no statement.
+    pub sql: String,
+    /// Why the step may lose data; `None`: it does not.
+    pub danger: Option<String>,
+    /// What the script says instead of a statement (the database cannot do it this way).
+    pub note: Option<String>,
+}
+
+/// The steps of [`script`] one by one, in the order they run, the dangerous ones told apart.
+pub fn script_steps(
+    source: &Snapshot,
+    target: &Snapshot,
+    renames: &[Rename],
+) -> AppResult<Vec<ScriptStep>> {
+    let steps = grouped(source, target, None, renames)?;
+    Ok(ORDER
+        .iter()
+        .flat_map(|(group, _)| steps[*group].iter().flat_map(|entry| step_of(entry)))
+        .collect())
+}
+
+/// An entry of the script as steps: a statement, a statement that is commented out as dangerous (with
+/// its reason in the line before), or a remark.
+fn step_of(entry: &str) -> Vec<ScriptStep> {
+    let mut out = Vec::new();
+    let mut remark: Vec<&str> = Vec::new();
+    let mut dangerous: Vec<&str> = Vec::new();
+    let mut plain: Vec<&str> = Vec::new();
+    for line in entry.lines() {
+        if let Some(sql) = line.strip_prefix(DANGER) {
+            dangerous.push(sql);
+        } else if plain.is_empty() && dangerous.is_empty() && line.starts_with("-- ") {
+            remark.push(&line[3..]);
+        } else {
+            plain.push(line);
+        }
+    }
+    let said = remark.join(" ");
+    if !dangerous.is_empty() {
+        out.push(ScriptStep {
+            sql: dangerous.join("\n"),
+            danger: Some(said.trim_end_matches(':').to_owned()),
+            note: None,
+        });
+    } else if plain.iter().all(|l| l.trim().is_empty()) {
+        if !said.is_empty() {
+            out.push(ScriptStep {
+                sql: String::new(),
+                danger: None,
+                note: Some(said),
+            });
+        }
+        return out;
+    }
+    let sql = plain.join("\n");
+    if !sql.trim().is_empty() {
+        out.push(ScriptStep {
+            sql: sql.trim().to_owned(),
+            danger: None,
+            note: (dangerous.is_empty() && !said.is_empty()).then_some(said),
+        });
+    }
+    out
+}
+
+/// The steps of a migration by group (see [`ORDER`]).
+fn grouped(
+    source: &Snapshot,
+    target: &Snapshot,
+    picks: Option<&[String]>,
+    renames: &[Rename],
+) -> AppResult<[Vec<String>; 11]> {
     let items = compare(source, target, renames)?;
     let kind = source.kind;
     let w = Writer {
@@ -1225,18 +1387,6 @@ pub fn script(
     let picked = |id: &str| picks.is_none_or(|p| p.iter().any(|x| x == id));
     let table_of = |snap: &'_ Snapshot, t: &str| snap.tables.iter().find(|x| x.name == t).cloned();
     let mut steps: [Vec<String>; 11] = Default::default();
-    const RENAME: usize = 0;
-    const UNLINK: usize = 1;
-    const CREATE: usize = 2;
-    const COLUMNS: usize = 3;
-    const INDEXES: usize = 4;
-    const CHECKS: usize = 5;
-    const LINK: usize = 6;
-    const CODE: usize = 7;
-    const DROP_CODE: usize = 8;
-    const DROP: usize = 9;
-    // indexes go after the keys that may need them
-    const UNINDEX: usize = 10;
 
     // every name of a rename goes into a statement: checked like every other name
     for r in renames {
@@ -1254,9 +1404,8 @@ pub fn script(
     for r in ordered {
         let sql = match (&r.table, kind) {
             (None, DbKind::Sqlserver) => format!(
-                "EXEC sp_rename '{}.{}', '{}';",
-                target.schema.replace('\'', "''"),
-                r.from.replace('\'', "''"),
+                "EXEC sp_rename '{}', '{}';",
+                w.rename_path(&[&target.schema, &r.from])?,
                 r.to.replace('\'', "''")
             ),
             (None, DbKind::Mysql) => {
@@ -1268,10 +1417,8 @@ pub fn script(
                 w.q(&r.to)?
             ),
             (Some(table), DbKind::Sqlserver) => format!(
-                "EXEC sp_rename '{}.{}.{}', '{}', 'COLUMN';",
-                target.schema.replace('\'', "''"),
-                table.replace('\'', "''"),
-                r.from.replace('\'', "''"),
+                "EXEC sp_rename '{}', '{}', 'COLUMN';",
+                w.rename_path(&[&target.schema, table, &r.from])?,
                 r.to.replace('\'', "''")
             ),
             (Some(table), _) => format!(
@@ -1301,7 +1448,11 @@ pub fn script(
                         steps[INDEXES].push(w.create_index(&t.name, i)?);
                     }
                     // (a table created from its own statement has its keys in it)
-                    for k in t.keys.iter().filter(|_| t.definition.is_none()) {
+                    for k in t
+                        .keys
+                        .iter()
+                        .filter(|_| t.definition.is_none() && kind != DbKind::Sqlite)
+                    {
                         steps[LINK].push(w.add_key(&t.name, k)?);
                     }
                 } else if item.state == State::OnlyRight {
@@ -1661,6 +1812,16 @@ pub fn script(
         }
     }
 
+    Ok(steps)
+}
+
+/// The script as text: what it is, then its steps by group.
+fn written(
+    source: &Snapshot,
+    target: &Snapshot,
+    kind: DbKind,
+    steps: &[Vec<String>; 11],
+) -> String {
     let mut out = vec![
         note(&format!(
             "Makes {} like {} ({}). A proposal: read it, change it, run it yourself.",
@@ -1691,24 +1852,8 @@ pub fn script(
         ),
         String::new(),
     ];
-    let groups = [
-        (RENAME, "renames"),
-        (UNLINK, "keys and checks that go or change"),
-        (UNINDEX, "indexes that go or change"),
-        (CREATE, "new tables"),
-        (COLUMNS, "columns"),
-        (INDEXES, "indexes"),
-        (CHECKS, "primary keys and checks"),
-        (LINK, "foreign keys"),
-        (CODE, "views, routines, triggers"),
-        (
-            DROP_CODE,
-            "views, routines and triggers that are only in the target",
-        ),
-        (DROP, "columns and tables that are only in the target"),
-    ];
     let mut any = false;
-    for (group, title) in groups {
+    for (group, title) in ORDER {
         if steps[group].is_empty() {
             continue;
         }
@@ -1720,7 +1865,7 @@ pub fn script(
     if !any {
         out.push(note("Nothing to do: no difference was chosen."));
     }
-    Ok(format!("{}\n", out.join("\n").trim_end()))
+    format!("{}\n", out.join("\n").trim_end())
 }
 
 /// The script with its dangerous steps switched on – for tests, and for nobody else.
@@ -1944,12 +2089,16 @@ mod tests {
             ("varchar(20)", "varchar(40)"),
             ("varchar(20)", "text"),
             ("numeric(10,2)", "numeric(12,2)"),
-            ("character varying(20)", "character varying"),
             ("int", "integer"),
         ] {
             assert!(!narrows(from, to), "{from} → {to}");
         }
         for (from, to) in [
+            // review 043, H2: no size is no limit only in PostgreSQL – `decimal` is `decimal(18,0)`
+            // and `varchar` one character elsewhere; which database it is, nobody knows here
+            ("character varying(20)", "character varying"),
+            ("decimal(12,4)", "decimal"),
+            ("char(10)", "char"),
             ("bigint", "integer"),
             ("varchar(40)", "varchar(20)"),
             ("text", "varchar(20)"),

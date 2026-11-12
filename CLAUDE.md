@@ -74,10 +74,13 @@
   (Prompt 041);
   **Diagramm** aus dem Ergebnis (Linie, Balken, Punktwolke): aufbereitet und ausgedünnt in Rust, gezeichnet
   als SVG in den Farben des Schemas, mit Zoom, Tooltip und Legende (Prompt 042);
+  **Struktur bearbeiten**: Spalten, Indizes, Schlüssel und Checks einer Tabelle als Formular, Vorschau der
+  Anweisungen mit markierten Gefahren, Ausführen in einer Transaktion; neue Tabelle, duplizieren, leeren, löschen;
+  Definition von Views und Routinen im Editor (Prompt 043);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben; die Prompts 002–049 liegen in `prompts/` (Nummer = Reihenfolge,
-  erledigt: 001–034, 035a, 036–042),
+  erledigt: 001–034, 035a, 036–043),
   Erweiterungen an editlicious als E1–E5 in `prompts/done/editlicious/` (auszuführen im Repo `../editlicious`).
 - Weiterentwicklung über **Feature-Prompts** (`prompts/README.md`, gemeinsame Regeln `prompts/000-arbeitsweise.md`).
 
@@ -140,6 +143,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/session/            SessionApi: session.json, Texte der Tabs, .sql lesen/schreiben
   app/core/settings/           Settings (Modell, mergeSettings), SettingsService (tauri-plugin-store)
   app/core/sql/                QueryApi (run mit Ereignissen, window, free, cancel) + DTOs (ResultRef, RunEvent, Cell, ColKind) – spiegelt db/value.rs
+  app/core/structure/          StructureApi (struct_load, struct_plan, struct_apply) + DTOs – spiegelt
+                               db/structure.rs und die Tabelle aus db/compare.rs
   app/core/text/               places.ts (rein: Stelle des Editors ↔ Offset im Text; Spalten in Codepunkten)
   app/core/theme/              Farbschemata: tokens.ts (Katalog), themes/*.json, theme-logic.ts (rein),
                                ThemeService (Root: Auswahl, Vorschau, eigene Schemata), ThemeApi (themes.json),
@@ -215,6 +220,9 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                Gruppen – teilen, verschieben, schließen, reparieren), run-state.ts (Läufe, Meldungen,
                                Statuszeile), tx-logic.ts (rein: Texte zur Transaktion), result-tabs-logic.ts
                                (rein: Unter-Reiter, gehaltene Ergebnisse)
+  app/features/structure/      StructureDialog (Formular, Vorschau, Ausführen), StructureService (Root: Dialog,
+                               Lauf durch den Schutz, danach auffrischen), structure-logic.ts (rein: Formular ⇄
+                               Tabelle, Operationen, Prüfung, Skript)
   app/features/themes/         Farbschema-Galerie (ThemePicker, ThemeThumb, theme-picker-logic.ts),
                                Schema-Editor (ThemeEditor, theme-editor-logic.ts rein: Ids, Import, Kontrast)
   app/features/value/          ValuePanel (neben dem Gitter, <editlicious-editor readonly>), ValueService (Root:
@@ -270,6 +278,9 @@ src-tauri/                     Rust
   src/db/diagram.rs            Tabellen, Schlüssel und eindeutige Spaltensätze eines Schemas für das ER-Diagramm
   src/db/compare.rs            Schema-Vergleich: Schnappschuss, Unterschiede, Migrationsskript (rein bis auf das
                                Lesen; Katalog böser Namen, Rundreise)
+  src/db/structure.rs          Struktur bearbeiten: Anfrage (Tabelle vorher/nachher) → Anweisungen über den
+                               Erzeuger aus compare.rs, je Schritt eine; löschen, leeren, duplizieren; Lauf in
+                               einer Transaktion (rein bis auf Lesen und Lauf; Rundreise in SQLite)
   src/db/details.rs            Objekt-Details als Listen + DDL je Datenbank (Katalog, gebundene Parameter)
   src/db/relations.rs          Fremdschlüssel einer Tabelle als Daten, je Datenbank (Katalog, gebundene Parameter)
   src/db/plan.rs               Ausführungspläne: fragen je Datenbank, Parser (JSON, XML, Textbäume) in ein Modell,
@@ -349,6 +360,9 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   Wert wird als Markup in die Seite gesetzt; Bilder nur innerhalb der Grenzen von `value-logic.ts` als `blob:`.
 - **Ausführungsplan**: „Mit Ausführung“ führt die Anweisung aus – immer durch `admit`, immer in einer
   Transaktion, die `plan::explain` zurückrollt; ein Plan wird nur für **eine** Anweisung gefragt.
+- **Struktur bearbeiten**: Das Fenster sendet Tabellen (vorher, nachher, Umbenennungen), nie DDL. Geschrieben
+  wird nur über `structure::plan` → `compare::script_steps`; `struct_apply` schreibt neu, lässt jede Anweisung
+  durch `admit` und führt sie auf eigener Sitzung aus. Neue Schritte im Erzeuger brauchen die Gefahren-Prüfung.
 - **Schema-Vergleich**: Das Migrationsskript führt die App nie aus. Jeder Schritt, der Daten kosten kann, steht
   mit `-- DANGER: ` als Kommentar (`compare::danger`); neue Schritte in `script()` brauchen diese Prüfung.
 - **Suche auf dem Server**: nur `db/find.rs` baut ihre Anweisungen; der Suchtext ist immer gebunden. Ein Treffer

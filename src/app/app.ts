@@ -34,6 +34,8 @@ import { ErDiagramDialog } from './features/diagram/er-diagram-dialog';
 import { ExportDialog } from './features/export/export-dialog';
 import { PlanDialog } from './features/plan/plan-dialog';
 import { PlanService } from './features/plan/plan.service';
+import { StructureDialog } from './features/structure/structure-dialog';
+import { StructureService } from './features/structure/structure.service';
 import { ResultCompareDialog } from './features/result-compare/result-compare-dialog';
 import { ResultCompareService } from './features/result-compare/result-compare.service';
 import { isKept } from './features/tabs/result-tabs-logic';
@@ -136,6 +138,7 @@ const SIDEBAR_MIN = 140;
     ContextMenu,
     ExportDialog,
     PlanDialog,
+    StructureDialog,
     ResultCompareDialog,
     SchemaCompareDialog,
     ErDiagramDialog,
@@ -566,6 +569,11 @@ const SIDEBAR_MIN = 140;
         <app-result-compare-dialog [request]="request" (closed)="resultCompare.close()" />
       }
     }
+    @if (structure.target(); as target) {
+      @defer (on immediate) {
+        <app-structure-dialog [target]="target" (closed)="structure.close()" />
+      }
+    }
     @if (plans.view(); as view) {
       @defer (on immediate) {
         <app-plan-dialog [view]="view" (closed)="plans.close()" />
@@ -718,6 +726,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly serverSearch = inject(ServerSearchService);
   protected readonly diagrams = inject(DiagramService);
   protected readonly plans = inject(PlanService);
+  protected readonly structure = inject(StructureService);
   protected readonly resultCompare = inject(ResultCompareService);
   protected readonly schemaCompare = inject(SchemaCompareService);
   protected readonly formatter = inject(FormatService);

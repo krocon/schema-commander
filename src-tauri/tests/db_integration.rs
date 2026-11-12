@@ -4089,3 +4089,317 @@ fn every_server_explains_a_join_and_a_run_changes_nothing() {
         run(&mut s, &format!("DROP TABLE {}", t("sc_x_author")));
     }
 }
+
+// ── Editing the structure of a table (prompt 043) ───────────────────────────────────
+
+/// The round trip on every server: a table is created from what the editor holds, read again, edited
+/// (columns renamed, added, widened, dropped; an index; the table renamed), written, read again – and is
+/// what was edited, with its rows. A failure rolls back where DDL is transactional.
+#[test]
+#[ignore]
+fn a_structure_edited_and_written_reads_as_edited() {
+    use schema_commander_lib::db::compare::{Column, Index, Key, Named, Table, norm_type};
+    use schema_commander_lib::db::structure::{ColumnRename, Request, load, plan, run as run_ddl};
+    for (p, product) in [
+        (pg(), "postgres"),
+        (my(), "mysql"),
+        (maria(), "mariadb"),
+        (ms(), "sqlserver"),
+    ] {
+        let kind = p.kind;
+        let mut s = open(&p);
+        let schema = "sc_edit";
+        match kind {
+            DbKind::Postgres => {
+                run(&mut s, &format!("DROP SCHEMA IF EXISTS {schema} CASCADE"));
+                run(&mut s, &format!("CREATE SCHEMA {schema}"));
+            }
+            DbKind::Mysql => {
+                run(&mut s, &format!("DROP DATABASE IF EXISTS {schema}"));
+                run(&mut s, &format!("CREATE DATABASE {schema}"));
+            }
+            _ => {
+                for t in ["orders_copy", "orders", "bestellungen", "customers"] {
+                    run(&mut s, &format!("DROP TABLE IF EXISTS {schema}.{t}"));
+                }
+                run(&mut s, &format!("DROP SCHEMA IF EXISTS {schema}"));
+                run(&mut s, &format!("CREATE SCHEMA {schema}"));
+            }
+        }
+        run(
+            &mut s,
+            &format!("CREATE TABLE {schema}.customers (id int NOT NULL PRIMARY KEY)"),
+        );
+        run(
+            &mut s,
+            &format!("INSERT INTO {schema}.customers (id) VALUES (7)"),
+        );
+        let col = |name: &str, type_name: &str, nullable: bool, default: Option<&str>| Column {
+            name: name.into(),
+            type_name: type_name.into(),
+            nullable,
+            default: default.map(str::to_owned),
+        };
+        let new = Table {
+            name: "orders".into(),
+            columns: vec![
+                col("id", "int", false, None),
+                col("customer_id", "int", false, None),
+                col("note", "varchar(40)", true, Some("'it''s'")),
+                col("amount", "decimal(8,2)", true, None),
+            ],
+            pk: vec!["id".into()],
+            indexes: vec![Index {
+                name: "orders_note".into(),
+                unique: false,
+                columns: vec!["note".into()],
+                definition: None,
+            }],
+            keys: vec![Key {
+                name: "orders_customer".into(),
+                columns: vec!["customer_id".into()],
+                ref_schema: String::new(),
+                ref_table: "customers".into(),
+                ref_columns: vec!["id".into()],
+            }],
+            checks: vec![Named {
+                name: "orders_amount".into(),
+                text: "amount >= 0".into(),
+            }],
+            comment: None,
+            definition: None,
+        };
+        let apply = |s: &mut Box<dyn Session>, request: &Request| {
+            let plan = plan(kind, request).unwrap_or_else(|e| panic!("{product}: {e}"));
+            let statements = plan.statements();
+            let ran = run_ddl(
+                s.as_mut(),
+                kind,
+                &statements,
+                plan.transactional,
+                None,
+                &|| false,
+            )
+            .unwrap();
+            assert_eq!(
+                ran.failed, None,
+                "{product}: {:?}\n{statements:#?}",
+                ran.error
+            );
+            assert_eq!(ran.done, statements.len(), "{product}");
+        };
+        // what was read is what was edited – by structure: a database writes types, defaults and
+        // checks in its own words (`varchar` → `character varying`, `amount >= 0` → `((amount >= (0)…`)
+        let shape = |t: &Table| -> Vec<String> {
+            let mut out = vec![format!("table {}", t.name)];
+            for c in &t.columns {
+                out.push(format!(
+                    "column {} {} {}{}",
+                    c.name,
+                    norm_type(&c.type_name),
+                    if c.nullable { "null" } else { "not null" },
+                    // MariaDB says `NULL` where the others say nothing
+                    match c.default.as_deref() {
+                        Some(d) if !d.eq_ignore_ascii_case("null") => " default",
+                        _ => "",
+                    },
+                ));
+            }
+            out.push(format!("pk {:?}", t.pk));
+            let mut rest: Vec<String> = t
+                .indexes
+                .iter()
+                // MySQL makes an index for a foreign key by itself, named like the key
+                .filter(|i| !t.keys.iter().any(|k| k.name == i.name))
+                .map(|i| format!("index {} {} {:?}", i.name, i.unique, i.columns))
+                .chain(t.keys.iter().map(|k| {
+                    format!(
+                        "key {} {:?} -> {} {:?}",
+                        k.name, k.columns, k.ref_table, k.ref_columns
+                    )
+                }))
+                .chain(t.checks.iter().map(|c| format!("check {}", c.name)))
+                .collect();
+            rest.sort();
+            out.extend(rest);
+            out
+        };
+        let same = |edited: &Table, read: &Table| -> Vec<String> {
+            let (a, b) = (shape(edited), shape(read));
+            if a == b {
+                Vec::new()
+            } else {
+                vec![format!("edited {a:#?}\nread {b:#?}")]
+            }
+        };
+        let read = |s: &mut Box<dyn Session>, table: &str| {
+            load(s.as_mut(), kind, schema, table, &|| false)
+                .unwrap_or_else(|e| panic!("{product}: {table}: {e}"))
+        };
+
+        // 1. a new table
+        apply(
+            &mut s,
+            &Request::Change {
+                schema: schema.into(),
+                before: None,
+                after: new.clone(),
+                renames: vec![],
+            },
+        );
+        let loaded = read(&mut s, "orders");
+        assert_eq!(same(&new, &loaded), Vec::<String>::new(), "{product}: new");
+        run(
+            &mut s,
+            &format!("INSERT INTO {schema}.orders (id, customer_id, amount) VALUES (1, 7, 2.5)"),
+        );
+        // the default arrived with its quote
+        let r = run(&mut s, &format!("SELECT note FROM {schema}.orders"));
+        assert_eq!(rows(&r), json!([["it's"]]), "{product}");
+
+        // 2a. a column gets another name: its index follows and stays the same index
+        let mut renamed = loaded.clone();
+        let note = renamed
+            .columns
+            .iter()
+            .position(|c| c.name == "note")
+            .unwrap();
+        renamed.columns[note].name = "remark".into();
+        for index in &mut renamed.indexes {
+            for column in &mut index.columns {
+                if column == "note" {
+                    *column = "remark".into();
+                }
+            }
+        }
+        let request = Request::Change {
+            schema: schema.into(),
+            before: Some(loaded.clone()),
+            after: renamed.clone(),
+            renames: vec![ColumnRename {
+                from: "note".into(),
+                to: "remark".into(),
+            }],
+        };
+        let statements = plan(kind, &request).unwrap().statements();
+        assert_eq!(
+            statements.len(),
+            1,
+            "{product}: only the rename: {statements:#?}"
+        );
+        apply(&mut s, &request);
+        let loaded = read(&mut s, "orders");
+        assert_eq!(
+            same(&renamed, &loaded),
+            Vec::<String>::new(),
+            "{product}: renamed"
+        );
+
+        // 2b. edited: the table renamed, columns added (a name with a blank, a default with a
+        // quote), one widened, one dropped
+        let mut edited = loaded.clone();
+        edited.name = "bestellungen".into();
+        let note = edited
+            .columns
+            .iter()
+            .position(|c| c.name == "remark")
+            .unwrap();
+        edited.columns[note].type_name = "varchar(80)".into();
+        edited.columns.push(col("placed on", "date", true, None));
+        edited
+            .columns
+            .push(col("state", "varchar(10)", false, Some("'o''pen'")));
+        edited.columns.retain(|c| c.name != "amount");
+        edited.checks.clear();
+        // the index of the note goes, another one comes; the one MySQL made for the foreign key stays
+        // (it refuses to drop that while the key is there)
+        let keys: Vec<String> = edited.keys.iter().map(|k| k.name.clone()).collect();
+        edited.indexes.retain(|i| keys.contains(&i.name));
+        edited.indexes.push(Index {
+            name: "bestellungen_state".into(),
+            unique: false,
+            columns: vec!["state".into(), "customer_id".into()],
+            definition: None,
+        });
+        apply(
+            &mut s,
+            &Request::Change {
+                schema: schema.into(),
+                before: Some(loaded),
+                after: edited.clone(),
+                renames: vec![],
+            },
+        );
+        let again = read(&mut s, "bestellungen");
+        assert_eq!(
+            same(&edited, &again),
+            Vec::<String>::new(),
+            "{product}: edited"
+        );
+        // the row is there, its value under the new name, the new column with its default
+        let r = run(
+            &mut s,
+            &format!("SELECT id, remark, state FROM {schema}.bestellungen"),
+        );
+        assert_eq!(rows(&r), json!([[1, "it's", "o'pen"]]), "{product}");
+
+        // 3. a failure: nothing stays where DDL is transactional
+        let add = match kind {
+            DbKind::Sqlserver => format!("ALTER TABLE {schema}.bestellungen ADD half int NULL;"),
+            _ => format!("ALTER TABLE {schema}.bestellungen ADD COLUMN half int NULL;"),
+        };
+        let statements = vec![add, format!("ALTER TABLE {schema}.missing DROP COLUMN x;")];
+        let transactional = kind != DbKind::Mysql;
+        let ran = run_ddl(s.as_mut(), kind, &statements, transactional, None, &|| {
+            false
+        })
+        .unwrap();
+        assert_eq!(ran.failed, Some(1), "{product}");
+        assert!(ran.error.is_some());
+        assert_eq!(ran.rolled_back, transactional, "{product}");
+        let has_half = read(&mut s, "bestellungen")
+            .columns
+            .iter()
+            .any(|c| c.name == "half");
+        assert_eq!(has_half, !transactional, "{product}: what a failure leaves");
+        // the session is usable afterwards
+        run(&mut s, "SELECT 1");
+
+        // 4. a copy with its rows, emptied, dropped
+        let table = read(&mut s, "bestellungen");
+        apply(
+            &mut s,
+            &Request::Duplicate {
+                schema: schema.into(),
+                table,
+                name: "orders_copy".into(),
+                data: true,
+            },
+        );
+        let count = |s: &mut Box<dyn Session>, t: &str| {
+            rows(&run(s, &format!("SELECT count(*) FROM {schema}.{t}")))
+        };
+        assert_eq!(count(&mut s, "orders_copy"), json!([[1]]), "{product}");
+        assert!(
+            !read(&mut s, "orders_copy").keys.is_empty(),
+            "{product}: the copy has its foreign key"
+        );
+        apply(
+            &mut s,
+            &Request::Truncate {
+                schema: schema.into(),
+                table: "orders_copy".into(),
+            },
+        );
+        assert_eq!(count(&mut s, "orders_copy"), json!([[0]]), "{product}");
+        assert_eq!(count(&mut s, "bestellungen"), json!([[1]]), "{product}");
+        apply(
+            &mut s,
+            &Request::Drop {
+                schema: schema.into(),
+                table: "orders_copy".into(),
+            },
+        );
+        assert!(load(s.as_mut(), kind, schema, "orders_copy", &|| false).is_err());
+    }
+}

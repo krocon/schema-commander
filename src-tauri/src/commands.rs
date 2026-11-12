@@ -961,6 +961,75 @@ pub fn meta_diagram(
     })
 }
 
+/// A table as the structure editor shows it (prompt 043): columns, keys, indexes, checks.
+#[tauri::command(async)]
+pub fn struct_load(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    schema: String,
+    table: String,
+) -> AppResult<crate::db::compare::Table> {
+    manager.ask(&id, |session, kind, stop| {
+        crate::db::structure::load(session, kind, &schema, &table, stop)
+    })
+}
+
+/// The statements that make a table what the editor shows, or drop, empty or copy one (prompt 043).
+/// Nothing runs: the window shows them, with the steps that may lose data told apart.
+#[tauri::command(async)]
+pub fn struct_plan(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    request: crate::db::structure::Request,
+) -> AppResult<crate::db::structure::Plan> {
+    crate::db::structure::plan(manager.kind_of(&id)?, &request)
+}
+
+/// Runs the statements of a request (prompt 043). They are written here again from the request – the
+/// window never sends SQL –, each passes the guard (`confirmations[i]` for statement `i`), and they run
+/// on a session of their own, in one transaction where the database has DDL in transactions.
+#[tauri::command(async)]
+pub fn struct_apply(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    request: crate::db::structure::Request,
+    confirmations: Option<Vec<Option<String>>>,
+    allow_dangerous: bool,
+    timeout_ms: Option<u64>,
+) -> AppResult<crate::db::structure::Ran> {
+    const SESSION: &str = "sc-ddl";
+    let plan = crate::db::structure::plan(manager.kind_of(&id)?, &request)?;
+    if plan.incomplete {
+        return Err(AppError::new(
+            ErrorCode::Unsupported,
+            "a part of this change is not written: it cannot run as it is",
+        ));
+    }
+    let statements = plan.statements();
+    let tokens = confirmations.unwrap_or_default();
+    // all of them are admitted before the first one runs: a refusal leaves nothing half done
+    for (i, sql) in statements.iter().enumerate() {
+        let token = tokens.get(i).and_then(|t| t.as_deref());
+        manager.admit(&id, sql, token, allow_dangerous)?;
+    }
+    let timeout = timeout_ms
+        .filter(|ms| *ms > 0)
+        .map(std::time::Duration::from_millis);
+    let ran = manager.ask_in(&id, SESSION, |session, kind, stop| {
+        crate::db::structure::run(
+            session,
+            kind,
+            &statements,
+            plan.transactional,
+            timeout,
+            stop,
+        )
+    });
+    // whatever was begun on that session goes with it
+    manager.close_session(&id, SESSION);
+    ran
+}
+
 /// The plan of one statement (prompt 039). Without `analyze` nothing runs: the database only says how
 /// it would. With `analyze` the statement **runs** – it passes the guard like any statement
 /// (`confirmation`), inside a transaction that is rolled back, on a session of its own.
