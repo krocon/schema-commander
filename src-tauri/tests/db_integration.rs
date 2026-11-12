@@ -2523,6 +2523,7 @@ fn load_plan(s: &mut Box<dyn Session>, kind: DbKind, table: &str, local: bool) -
         DbKind::Sqlserver => "dbo",
         DbKind::Sqlite => "main",
         DbKind::Oracle => "SHOP",
+        DbKind::Duckdb => "main",
     };
     let info = meta::table(s.as_mut(), kind, schema, table, &|| false).unwrap();
     let mappings = info

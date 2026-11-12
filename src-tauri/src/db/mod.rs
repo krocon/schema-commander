@@ -8,6 +8,7 @@ pub mod access;
 pub mod compare;
 pub mod details;
 pub mod diagram;
+pub mod duckdb;
 pub mod edit;
 pub mod filter;
 pub mod find;
@@ -52,9 +53,16 @@ pub enum DbKind {
     Sqlite,
     /// Oracle Database (prompt 035b): `database` of the profile is the service name.
     Oracle,
+    /// DuckDB (prompt 035c): a file, or `:memory:` – embedded, like SQLite.
+    Duckdb,
 }
 
 impl DbKind {
+    /// An embedded database: a file of this computer (or memory), no server, no login.
+    pub fn is_file(self) -> bool {
+        matches!(self, DbKind::Sqlite | DbKind::Duckdb)
+    }
+
     pub fn default_port(self) -> u16 {
         match self {
             DbKind::Postgres => 5432,
@@ -62,6 +70,7 @@ impl DbKind {
             DbKind::Sqlserver => 1433,
             DbKind::Sqlite => 0,
             DbKind::Oracle => 1521,
+            DbKind::Duckdb => 0,
         }
     }
 }
@@ -167,7 +176,7 @@ impl Profile {
 
     /// `host:port/database` (or the file) for messages; never holds a secret.
     pub fn where_label(&self) -> String {
-        if self.kind == DbKind::Sqlite {
+        if self.kind.is_file() {
             return self.database.trim().to_string();
         }
         let db = self.database.trim();
@@ -193,7 +202,7 @@ impl Profile {
 
     /// SQLite needs no password, the others may.
     pub fn uses_password(&self) -> bool {
-        self.kind != DbKind::Sqlite
+        !self.kind.is_file()
     }
 }
 
@@ -274,6 +283,7 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
         (DbKind::Sqlserver, _) => "SQL Server",
         (DbKind::Sqlite, _) => "SQLite",
         (DbKind::Oracle, _) => "Oracle",
+        (DbKind::Duckdb, _) => "DuckDB",
     };
     Capabilities {
         product: product.to_owned(),
@@ -281,12 +291,13 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
         cancel: !matches!(kind, DbKind::Sqlserver | DbKind::Oracle),
         foreign_keys: true,
         schemas: kind != DbKind::Sqlite,
-        triggers: flavor != Flavor::Cockroach,
-        routines: kind != DbKind::Sqlite,
-        plan: kind != DbKind::Oracle,
-        monitor: !matches!(kind, DbKind::Sqlite | DbKind::Oracle),
-        access: !matches!(kind, DbKind::Sqlite | DbKind::Oracle),
-        structure: kind != DbKind::Oracle,
+        triggers: flavor != Flavor::Cockroach && kind != DbKind::Duckdb,
+        routines: !matches!(kind, DbKind::Sqlite | DbKind::Duckdb),
+        plan: !matches!(kind, DbKind::Oracle | DbKind::Duckdb),
+        // an embedded database has no server to watch and no users
+        monitor: !matches!(kind, DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb),
+        access: !matches!(kind, DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb),
+        structure: !matches!(kind, DbKind::Oracle | DbKind::Duckdb),
     }
 }
 
@@ -319,7 +330,7 @@ pub enum TxState {
 /// The statement that opens a transaction in a dialect.
 pub fn begin_statement(kind: DbKind) -> &'static str {
     match kind {
-        DbKind::Postgres | DbKind::Sqlite => "BEGIN",
+        DbKind::Postgres | DbKind::Sqlite | DbKind::Duckdb => "BEGIN",
         DbKind::Mysql => "START TRANSACTION",
         DbKind::Sqlserver => "BEGIN TRANSACTION",
         // Oracle opens a transaction with the first change; this opens one on purpose (see oracle.rs)
@@ -460,6 +471,7 @@ pub fn connect(
         DbKind::Sqlserver => Box::new(mssql::connect(profile, secret, stop)?),
         DbKind::Sqlite => Box::new(sqlite::open(profile)?),
         DbKind::Oracle => Box::new(oracle::connect(profile, secret, stop)?),
+        DbKind::Duckdb => Box::new(duckdb::open(profile)?),
     })
 }
 

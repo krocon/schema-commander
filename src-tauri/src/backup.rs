@@ -51,7 +51,7 @@ pub fn tools_of(kind: DbKind) -> &'static [Tool] {
     match kind {
         DbKind::Postgres => &[Tool::PgDump, Tool::PgRestore, Tool::Psql],
         DbKind::Mysql => &[Tool::MysqlDump, Tool::Mysql],
-        DbKind::Sqlserver | DbKind::Sqlite | DbKind::Oracle => &[],
+        DbKind::Sqlserver | DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb => &[],
     }
 }
 
@@ -565,7 +565,7 @@ pub fn dump(e: &Endpoint, spec: &DumpSpec, target: &Path) -> AppResult<Invocatio
                 replaces: Some(chosen.to_path_buf()),
             })
         }
-        DbKind::Sqlserver | DbKind::Sqlite | DbKind::Oracle => Err(invalid(
+        DbKind::Sqlserver | DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb => Err(invalid(
             "this database is not backed up with a tool: use the simple export",
         )),
     }

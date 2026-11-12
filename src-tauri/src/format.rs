@@ -33,6 +33,8 @@ pub enum Dialect {
     /// Oracle (prompt 035b): the common rules; what they do not fit (a q-quote, PL/SQL) is found by
     /// the check of the tokens and left as it was.
     Oracle,
+    /// DuckDB (prompt 035c): the common rules.
+    Duckdb,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

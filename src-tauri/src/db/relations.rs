@@ -116,6 +116,15 @@ const MYSQL: &str = "SELECT k.CONSTRAINT_NAME, k.TABLE_SCHEMA, k.TABLE_NAME, k.C
          OR (k.REFERENCED_TABLE_SCHEMA = ? AND k.REFERENCED_TABLE_NAME = ?)) \
      ORDER BY k.TABLE_SCHEMA, k.TABLE_NAME, k.CONSTRAINT_NAME, k.ORDINAL_POSITION";
 
+/// A key points to a table of its own schema; its columns are lists, opened side by side.
+const DUCKDB: &str = "SELECT k.constraint_name, k.schema_name, k.table_name, \
+       unnest(k.constraint_column_names), k.schema_name, k.referenced_table, \
+       unnest(k.referenced_column_names) \
+     FROM duckdb_constraints() k \
+     WHERE k.database_name = current_database() AND k.constraint_type = 'FOREIGN KEY' \
+       AND k.schema_name = $1 AND (k.table_name = $2 OR k.referenced_table = $2) \
+     ORDER BY k.schema_name, k.table_name, k.constraint_name";
+
 const ORACLE: &str = "SELECT c.constraint_name, c.owner, c.table_name, cc.column_name, \
        r.owner, r.table_name, rc.column_name \
      FROM all_constraints c \
@@ -214,6 +223,7 @@ pub fn relations(
         }
         DbKind::Sqlserver => fold(&s.ask(MSSQL, &[schema, table], Some(TIMEOUT), stop)?),
         DbKind::Sqlite => sqlite(s, schema, table, stop)?,
+        DbKind::Duckdb => fold(&s.ask(DUCKDB, &[schema, table], Some(TIMEOUT), stop)?),
         DbKind::Oracle => {
             fold(&s.ask(ORACLE, &[schema, table, schema, table], Some(TIMEOUT), stop)?)
         }

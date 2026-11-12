@@ -206,7 +206,7 @@ pub fn activity(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Acti
     let mut missing = Vec::new();
     let first_line = |text: String| text.lines().next().unwrap_or_default().trim().to_owned();
     match kind {
-        DbKind::Sqlite => return Err(unsupported()),
+        DbKind::Sqlite | DbKind::Duckdb => return Err(unsupported()),
         DbKind::Oracle => return Err(super::not_yet(kind, "the server monitor")),
         DbKind::Postgres => {
             out.can_cancel = true;
@@ -387,7 +387,7 @@ pub fn kill_statement(kind: DbKind, id: &str, terminate: bool) -> AppResult<Stri
                 "SQL Server ends a statement only together with its session",
             ));
         }
-        (DbKind::Sqlite, _) => return Err(unsupported()),
+        (DbKind::Sqlite | DbKind::Duckdb, _) => return Err(unsupported()),
         (DbKind::Oracle, _) => return Err(super::not_yet(kind, "the server monitor")),
     })
 }

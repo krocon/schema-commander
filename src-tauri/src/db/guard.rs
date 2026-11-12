@@ -653,6 +653,13 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
         return Some(Class::Read);
     }
 
+    if kind == DbKind::Duckdb
+        && (matches!(start, "INSTALL" | "LOAD" | "FORCE")
+            || (start == "UPDATE" && words.get(1) == Some(&"EXTENSIONS")))
+    {
+        // code from the net, run inside the app: asked about like what destroys
+        return Some(Class::Dangerous);
+    }
     let mut class = if READ_STARTS.contains(&start) {
         Class::Read
     } else if DANGEROUS_WORDS.contains(&start) {
@@ -891,7 +898,8 @@ pub fn read_only_statement(kind: DbKind) -> Option<&'static str> {
         DbKind::Sqlserver => None,
         // Oracle has it only for one transaction (and reads a stale snapshot inside it): the
         // classification is all there is, and a reading call runs in a transaction that is rolled back
-        DbKind::Oracle => None,
+        // DuckDB can be read only for a whole file, not for a session of an open one
+        DbKind::Oracle | DbKind::Duckdb => None,
     }
 }
 
@@ -900,13 +908,30 @@ mod tests {
     use super::*;
     use Class::{Dangerous, Ddl, Read, Write};
 
-    const ALL: [DbKind; 5] = [
+    const ALL: [DbKind; 6] = [
         DbKind::Postgres,
         DbKind::Mysql,
         DbKind::Sqlserver,
         DbKind::Sqlite,
         DbKind::Oracle,
+        DbKind::Duckdb,
     ];
+
+    /// DuckDB (prompt 035c): extensions are code from the net, files are written by statements.
+    #[test]
+    fn duckdb_extensions_ask_first_and_files_count_as_writing() {
+        let k = DbKind::Duckdb;
+        assert_eq!(classify("INSTALL httpfs", k), Dangerous);
+        assert_eq!(classify("LOAD 'x.duckdb_extension'", k), Dangerous);
+        assert_eq!(classify("FORCE INSTALL spatial", k), Dangerous);
+        assert_eq!(classify("UPDATE EXTENSIONS", k), Dangerous);
+        assert_eq!(classify("UPDATE t SET a = 1 WHERE id = 2", k), Write);
+        assert_eq!(classify("COPY t TO 'out.parquet'", k), Write);
+        assert_eq!(classify("ATTACH 'other.duckdb'", k), Ddl);
+        assert_eq!(classify("SELECT * FROM read_parquet('a.parquet')", k), Read);
+        assert_eq!(classify("FROM t SELECT a", k), Write);
+        assert_eq!(read_only_statement(k), None);
+    }
 
     /// Oracle (prompt 035b): a q-quote holds quotes as they are, a backslash escapes nothing, and a
     /// PL/SQL block is judged by what it holds.

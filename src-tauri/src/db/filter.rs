@@ -369,7 +369,7 @@ impl Builder {
         {
             // hex as a bound text, made bytes by the database: no driver needs to know binary values
             let placeholder = match self.kind {
-                DbKind::Postgres => format!("${n}"),
+                DbKind::Postgres | DbKind::Duckdb => format!("${n}"),
                 DbKind::Mysql => "?".to_owned(),
                 DbKind::Sqlserver => format!("@P{n}"),
                 DbKind::Sqlite => format!("?{n}"),
@@ -379,7 +379,7 @@ impl Builder {
                 DbKind::Postgres => format!("decode({inner}, 'hex')"),
                 DbKind::Mysql => format!("UNHEX({inner})"),
                 DbKind::Sqlserver => format!("CONVERT(varbinary(max), {inner}, 2)"),
-                DbKind::Sqlite => format!("unhex({inner})"),
+                DbKind::Sqlite | DbKind::Duckdb => format!("unhex({inner})"),
                 DbKind::Oracle => format!("HEXTORAW({inner})"),
             };
             self.sql.push_str(&around(&placeholder));
@@ -437,7 +437,7 @@ impl Builder {
             }
         };
         let placeholder = match self.kind {
-            DbKind::Postgres => format!("${n}"),
+            DbKind::Postgres | DbKind::Duckdb => format!("${n}"),
             DbKind::Mysql => "?".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
             DbKind::Sqlite => format!("?{n}"),
@@ -488,6 +488,7 @@ impl Builder {
         }
         match self.kind {
             DbKind::Postgres | DbKind::Sqlite => format!("CAST({column} AS text)"),
+            DbKind::Duckdb => format!("CAST({column} AS VARCHAR)"),
             DbKind::Mysql => format!("CAST({column} AS char)"),
             DbKind::Sqlserver => format!("CAST({column} AS nvarchar(max))"),
             DbKind::Oracle => format!("TO_CHAR({column})"),
@@ -800,7 +801,10 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
                 b.text(", ");
             }
             let column = name(&o.column, kind)?;
-            let native = matches!(kind, DbKind::Postgres | DbKind::Sqlite | DbKind::Oracle);
+            let native = matches!(
+                kind,
+                DbKind::Postgres | DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb
+            );
             if let (Some(nulls), false) = (o.nulls, native) {
                 // no NULLS FIRST/LAST there: a key before the column says where the NULLs go
                 let (null, other) = if nulls == Nulls::First {

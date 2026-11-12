@@ -414,6 +414,21 @@ fn text_arg<'a>(args: &'a Value, name: &str) -> Result<&'a str, BridgeError> {
         .ok_or_else(|| err("invalid_args", format!("`{name}` is missing")))
 }
 
+impl<W: Window> Engine<W> {
+    /// DuckDB reads files from inside a query (`read_csv('/any/file')`): a „reading query“ there is
+    /// reading this computer. An assistant may propose such a statement; it does not run one.
+    fn no_file_reader(kind: DbKind) -> Result<(), BridgeError> {
+        if kind == DbKind::Duckdb {
+            return Err(err(
+                "access_denied",
+                "DuckDB can read any file of this computer from a query: queries are not run for an \
+                 assistant here – propose the statement to the user instead",
+            ));
+        }
+        Ok(())
+    }
+}
+
 fn kind_name(kind: DbKind) -> &'static str {
     match kind {
         DbKind::Postgres => "postgres",
@@ -421,6 +436,7 @@ fn kind_name(kind: DbKind) -> &'static str {
         DbKind::Sqlserver => "sqlserver",
         DbKind::Sqlite => "sqlite",
         DbKind::Oracle => "oracle",
+        DbKind::Duckdb => "duckdb",
     }
 }
 
@@ -684,6 +700,7 @@ impl<W: Window> Engine<W> {
             }
             "run_query" => {
                 let p = self.admitted(m, args, Level::Read)?;
+                Self::no_file_reader(p.kind)?;
                 if config.structure_only {
                     return Err(err(
                         "access_denied",
@@ -736,6 +753,7 @@ impl<W: Window> Engine<W> {
             }
             "explain_query" => {
                 let p = self.admitted(m, args, Level::Read)?;
+                Self::no_file_reader(p.kind)?;
                 // a plan tells of the data, too: its estimates come from the statistics of the columns
                 if config.structure_only {
                     return Err(err(
