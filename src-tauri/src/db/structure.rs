@@ -356,6 +356,7 @@ pub fn plan(kind: DbKind, request: &Request) -> AppResult<Plan> {
             | DbKind::Clickhouse
             | DbKind::Trino
             | DbKind::Firebird
+            | DbKind::Bigquery
             | DbKind::D1
     ) {
         // no generator for its dialect yet (D1: no transaction to write the change in): nothing is written with another one's (review 035b 5)

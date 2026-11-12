@@ -28,6 +28,7 @@ export const CONNECTION_DE: Translation<typeof CONNECTION_EN> = {
     libsql: 'libSQL / Turso',
     d1: 'Cloudflare D1',
     firebird: 'Firebird',
+    bigquery: 'BigQuery',
   },
   password: 'Passwort',
   sshSecretTitle: 'SSH-Tunnel: Passwort oder Passphrase',

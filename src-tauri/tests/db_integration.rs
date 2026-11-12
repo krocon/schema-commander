@@ -2527,6 +2527,7 @@ fn load_plan(s: &mut Box<dyn Session>, kind: DbKind, table: &str, local: bool) -
         DbKind::Clickhouse => "shop",
         DbKind::Trino => "shop",
         DbKind::Firebird => "",
+        DbKind::Bigquery => "shop",
     };
     let info = meta::table(s.as_mut(), kind, schema, table, &|| false).unwrap();
     let mappings = info

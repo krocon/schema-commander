@@ -146,6 +146,7 @@ pub fn details(
         DbKind::Clickhouse => clickhouse::read(&mut r, schema, name)?,
         DbKind::Trino => trino::read(&mut r, schema, name, object)?,
         DbKind::Firebird => firebird::read(&mut r, name, object)?,
+        DbKind::Bigquery => bigquery::read(&mut r, schema, name)?,
     };
     if ddl.is_none() {
         r.notes.push("ddl".into());
@@ -1656,6 +1657,34 @@ mod sqlite {
             .map(|row| format!("{};\n", at(row, 0).trim_end().trim_end_matches(';')))
             .collect();
         Ok(Some(statements.join("\n")))
+    }
+}
+
+mod bigquery {
+    use super::*;
+    use crate::db::meta::quote_always;
+
+    pub fn read(r: &mut Reader, schema: &str, name: &str) -> AppResult<Option<String>> {
+        let dataset = quote_always(schema, DbKind::Bigquery);
+        r.section(
+            "columns",
+            &["name", "type", "nullable"],
+            &format!(
+                "SELECT column_name, data_type, CASE is_nullable WHEN 'YES' THEN 'yes' ELSE 'no' END \
+                 FROM {dataset}.INFORMATION_SCHEMA.COLUMNS WHERE table_name = ? \
+                 ORDER BY ordinal_position"
+            ),
+            &[name],
+        )?;
+        // the statement as BigQuery keeps it
+        let ddl = r.text(
+            &format!("SELECT ddl FROM {dataset}.INFORMATION_SCHEMA.TABLES WHERE table_name = ?"),
+            &[name],
+        )?;
+        Ok(ddl
+            .map(|t| t.trim().to_owned())
+            .filter(|t| !t.is_empty())
+            .map(|t| format!("{};\n", t.trim_end_matches(';'))))
     }
 }
 

@@ -4746,6 +4746,7 @@ dependencies = [
  "parking_lot",
  "quick-xml 0.42.0",
  "regex",
+ "ring",
  "rusqlite",
  "russh",
  "rust_xlsxwriter",

@@ -51,6 +51,9 @@ base64 = "0.22"
 firebird-wire = { version = "=0.1.16", features = ["chrono"] }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "net", "sync", "io-util", "macros"] }
 tokio-util = { version = "0.7", features = ["compat"] }
+# BigQuery and Snowflake (prompts 035j, 035k) sign a short-lived assertion with the key of an account
+# (RS256): the library rustls already uses for its own signatures.
+ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

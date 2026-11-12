@@ -832,7 +832,12 @@ pub fn ask(kind: DbKind, flavor: Flavor, sql: &str, analyze: bool) -> AppResult<
             }
         }
         (
-            DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino | DbKind::Firebird,
+            DbKind::Oracle
+            | DbKind::Duckdb
+            | DbKind::Clickhouse
+            | DbKind::Trino
+            | DbKind::Firebird
+            | DbKind::Bigquery,
             _,
             _,
         ) => {

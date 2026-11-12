@@ -159,7 +159,9 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                   ? t.catalogName
                   : draft().kind === 'd1'
                     ? t.d1Database
-                    : t.database
+                    : draft().kind === 'bigquery'
+                      ? t.bigqueryProject
+                      : t.database
             }}</label>
             <input
               #database
@@ -177,7 +179,9 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                       ? t.d1DatabaseExample
                       : draft().kind === 'firebird'
                         ? t.firebirdDatabaseExample
-                        : t.serverDefault
+                        : draft().kind === 'bigquery'
+                          ? t.bigqueryProjectExample
+                          : t.serverDefault
               "
               [value]="draft().database"
               [class.invalid]="shown('database')"
@@ -185,7 +189,13 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
               (input)="patch({ database: database.value })"
             />
 
-            <label for="conn-user">{{ draft().kind === 'd1' ? t.d1Account : t.user }}</label>
+            <label for="conn-user">{{
+              draft().kind === 'd1'
+                ? t.d1Account
+                : draft().kind === 'bigquery'
+                  ? t.bigqueryLocation
+                  : t.user
+            }}</label>
             <input
               #user
               id="conn-user"
@@ -275,7 +285,9 @@ const COLORS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
                 />
                 <button type="button" (click)="choosePem('clientCert')">{{ t.choose }}</button>
               </span>
-              <label for="conn-key">{{ t.clientKey }}</label>
+              <label for="conn-key">{{
+                draft().kind === 'bigquery' ? t.serviceAccountKey : t.clientKey
+              }}</label>
               <span class="row">
                 <input
                   #key

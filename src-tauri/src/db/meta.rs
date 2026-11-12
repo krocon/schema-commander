@@ -554,6 +554,37 @@ fn firebird_reserved(name: &str) -> bool {
         .is_ok()
 }
 
+/// The reserved words of BigQuery that the common list does not hold (review 035j 4).
+const BIGQUERY_RESERVED: &[&str] = &[
+    "assert_rows_modified",
+    "at",
+    "contains",
+    "define",
+    "enum",
+    "exclude",
+    "following",
+    "graph_table",
+    "groups",
+    "hash",
+    "lateral",
+    "lookup",
+    "new",
+    "nulls",
+    "preceding",
+    "proto",
+    "qualify",
+    "respect",
+    "struct",
+    "tablesample",
+    "treat",
+    "unbounded",
+    "within",
+];
+
+fn bigquery_reserved(name: &str) -> bool {
+    BIGQUERY_RESERVED.contains(&name.to_ascii_lowercase().as_str())
+}
+
 fn oracle_reserved(name: &str) -> bool {
     ORACLE_RESERVED.contains(&name.to_ascii_uppercase().as_str())
 }
@@ -589,6 +620,7 @@ fn plain(name: &str, kind: DbKind) -> bool {
         && !reserved(name)
         && !(kind == DbKind::Oracle && oracle_reserved(name))
         && !(kind == DbKind::Firebird && firebird_reserved(name))
+        && !(kind == DbKind::Bigquery && bigquery_reserved(name))
 }
 
 /// A name as it is written in SQL: as it is where that is safe, quoted otherwise (spaces, upper case in
@@ -603,6 +635,13 @@ pub fn quote(name: &str, kind: DbKind) -> String {
 /// A name in quotes, whatever it is.
 pub fn quote_always(name: &str, kind: DbKind) -> String {
     match kind {
+        // a backslash escapes inside backticks there; a name holds no line break
+        DbKind::Bigquery => format!(
+            "`{}`",
+            name.replace('\\', "\\\\")
+                .replace('`', "\\`")
+                .replace(['\n', '\r'], " ")
+        ),
         DbKind::Mysql => format!("`{}`", name.replace('`', "``")),
         // a backslash escapes inside backticks there (not in MySQL): written out as one
         DbKind::Clickhouse => format!("`{}`", name.replace('\\', "\\\\").replace('`', "``")),
@@ -683,6 +722,21 @@ pub fn schemas(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<S
             current: true,
         }]);
     }
+    if kind == DbKind::Bigquery {
+        // the datasets of the project, where the jobs of the connection run
+        return Ok(ask(s, super::bigquery::DATASETS, &[], stop)?
+            .iter()
+            .map(|row| {
+                let name = at(row, 0);
+                SchemaInfo {
+                    quoted: quote(&name, kind),
+                    name,
+                    system: false,
+                    current: false,
+                }
+            })
+            .collect());
+    }
     if kind == DbKind::Firebird {
         // one namespace without a name: nothing is ever qualified with it
         return Ok(vec![SchemaInfo {
@@ -724,6 +778,7 @@ pub fn schemas(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<S
         // the schemas of the catalog the connection names; `USE` in a tab is that tab's own matter
         // answered above, without a question
         DbKind::Firebird => "SELECT '', 'false', 'true' FROM rdb$database",
+        DbKind::Bigquery => "SELECT schema_name FROM INFORMATION_SCHEMA.SCHEMATA",
         DbKind::Trino => {
             "SELECT schema_name, \
              CASE WHEN schema_name = 'information_schema' THEN 'true' ELSE 'false' END, 'false' \
@@ -789,7 +844,18 @@ pub fn objects(
     schema: &str,
     stop: Stop,
 ) -> AppResult<Vec<ObjectInfo>> {
+    // BigQuery names a dataset in the statement itself: it cannot be bound, it is quoted
+    let named: Vec<String> = match kind {
+        DbKind::Bigquery => vec![format!(
+            "SELECT CASE table_type WHEN 'VIEW' THEN 'view' WHEN 'MATERIALIZED VIEW' THEN 'matview' \
+               ELSE 'table' END, table_name, '', NULL \
+             FROM {}.INFORMATION_SCHEMA.TABLES",
+            quote_always(schema, kind)
+        )],
+        _ => Vec::new(),
+    };
     let questions: &[&str] = match kind {
+        DbKind::Bigquery => &[],
         DbKind::Postgres => &[
             "SELECT CASE c.relkind WHEN 'v' THEN 'view' WHEN 'm' THEN 'matview' \
                WHEN 'S' THEN 'sequence' ELSE 'table' END, \
@@ -889,6 +955,9 @@ pub fn objects(
     let mut out = Vec::new();
     for sql in questions {
         object_rows(&ask(s, sql, &[schema], stop)?, kind, &mut out);
+    }
+    for sql in &named {
+        object_rows(&ask(s, sql, &[], stop)?, kind, &mut out);
     }
     out.sort_by(|a, b| {
         (a.kind as u8, a.name.to_lowercase(), &a.detail).cmp(&(
@@ -1163,6 +1232,33 @@ fn mssql_table(s: &mut dyn Session, schema: &str, table: &str, stop: Stop) -> Ap
         indexes: parts(&indexes),
         keys: parts(&keys),
         triggers: parts(&triggers),
+    })
+}
+
+/// BigQuery: `INFORMATION_SCHEMA.COLUMNS` of the dataset. Its keys are a promise nobody checks, and it
+/// has no indexes or triggers.
+fn bigquery_table(
+    s: &mut dyn Session,
+    schema: &str,
+    table: &str,
+    stop: Stop,
+) -> AppResult<TableInfo> {
+    let columns = ask(
+        s,
+        &format!(
+            "SELECT column_name, data_type, CASE is_nullable WHEN 'YES' THEN 'true' ELSE 'false' END, \
+               CAST(NULL AS STRING), '' \
+             FROM {}.INFORMATION_SCHEMA.COLUMNS WHERE table_name = ? ORDER BY ordinal_position",
+            quote_always(schema, DbKind::Bigquery)
+        ),
+        &[table],
+        stop,
+    )?;
+    Ok(TableInfo {
+        columns: column_rows(&columns, DbKind::Bigquery),
+        indexes: Vec::new(),
+        keys: Vec::new(),
+        triggers: Vec::new(),
     })
 }
 
@@ -1596,6 +1692,7 @@ pub fn table(
         DbKind::Clickhouse => clickhouse_table(s, schema, table, stop),
         DbKind::Trino => trino_table(s, schema, table, stop),
         DbKind::Firebird => firebird_table(s, table, stop),
+        DbKind::Bigquery => bigquery_table(s, schema, table, stop),
     }
 }
 
@@ -1605,6 +1702,25 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
     let text = text.trim();
     if text.is_empty() {
         return Ok(Vec::new());
+    }
+    if kind == DbKind::Bigquery {
+        // a dataset is named in the statement: asked one after the other, the first twenty
+        let needle = text.to_lowercase();
+        let mut found = Vec::new();
+        for schema in schemas(s, kind, stop)?.into_iter().take(20) {
+            for o in objects(s, kind, &schema.name, stop)? {
+                if o.name.to_lowercase().contains(&needle) {
+                    found.push(Found {
+                        schema: schema.name.clone(),
+                        kind: o.kind,
+                        quoted: o.quoted,
+                        name: o.name,
+                    });
+                }
+            }
+        }
+        found.truncate(200);
+        return Ok(found);
     }
     let pattern = like_pattern(text);
     let sql = match kind {
@@ -1635,6 +1751,10 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
             "SELECT schema, type, name FROM pragma_table_list \
              WHERE name LIKE ?1 ESCAPE '\\' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' \
              ORDER BY 3, 1 LIMIT 200"
+        }
+        // answered above
+        DbKind::Bigquery => {
+            "SELECT '', 'table', table_name FROM INFORMATION_SCHEMA.TABLES WHERE ? = ''"
         }
         // CONTAINING takes a text as it is, whatever its case
         DbKind::Firebird => {
@@ -1739,6 +1859,19 @@ mod tests {
         assert_eq!(q("x\\`; DROP TABLE t; --"), "`x\\\\``; DROP TABLE t; --`");
         // MySQL takes a backslash as it is there
         assert_eq!(quote("a\\b", DbKind::Mysql), "`a\\b`");
+    }
+
+    /// BigQuery (review 035j 4): its own words, and a name cannot leave its backticks.
+    #[test]
+    fn bigquery_names_are_quoted_with_backticks_and_backslashes() {
+        let q = |name: &str| quote(name, DbKind::Bigquery);
+        assert_eq!(q("orders"), "orders");
+        for word in ["hash", "new", "at", "groups", "select", "STRUCT"] {
+            assert_eq!(q(word), format!("`{word}`"));
+        }
+        assert_eq!(q("my-table"), "`my-table`");
+        assert_eq!(q("a`b\\c"), "`a\\`b\\\\c`");
+        assert_eq!(q("x\\`; DROP TABLE t; --"), "`x\\\\\\`; DROP TABLE t; --`");
     }
 
     /// Firebird (review 035i 4): its own words, and no name that begins with `_`.

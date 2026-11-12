@@ -228,6 +228,8 @@ pub fn relations(
         DbKind::Clickhouse => Vec::new(),
         // the catalog of Trino names no keys
         DbKind::Trino => Vec::new(),
+        // keys of BigQuery are a promise nobody checks: not followed
+        DbKind::Bigquery => Vec::new(),
         DbKind::Firebird => fold(&s.ask(
             &format!(
                 "{} AND {} AND (rc.rdb$relation_name = ? OR pk.rdb$relation_name = ?) \

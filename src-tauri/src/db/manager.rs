@@ -389,10 +389,10 @@ impl ConnectionManager {
             Some(tunnel) => {
                 // behind the tunnel the way goes on in the clear: a token of libSQL does not take it
                 // unless the server is the jump host itself (review 035g 6)
-                if profile.kind == DbKind::D1 {
+                if matches!(profile.kind, DbKind::D1 | DbKind::Bigquery) {
                     return Err(AppError::new(
                         ErrorCode::InvalidProfile,
-                        "D1 is reached at Cloudflare directly: no SSH tunnel",
+                        "this service is reached at its own address directly: no SSH tunnel",
                     ));
                 }
                 if profile.kind == DbKind::Libsql

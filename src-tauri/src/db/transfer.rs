@@ -316,6 +316,7 @@ pub fn type_for(to: DbKind, class: Class) -> (String, Option<&'static str>) {
         DbKind::Trino => own("varchar"),
         // only for the sake of a complete answer: `plan` refuses Firebird before it comes to this
         DbKind::Firebird => own("VARCHAR(8191)"),
+        DbKind::Bigquery => own("STRING"),
         DbKind::Duckdb => match class {
             Class::SmallInt => own("SMALLINT"),
             Class::Int => own("INTEGER"),

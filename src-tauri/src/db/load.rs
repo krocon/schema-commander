@@ -384,6 +384,9 @@ pub fn create_table(
         // room for values longer than the ones seen
         let len = (g.max_len.max(1) * 2).clamp(20, 4000);
         match (g.kind, kind) {
+            (GuessKind::DateTime, DbKind::Bigquery) => "DATETIME".into(),
+            (GuessKind::Bool, DbKind::Bigquery) => "BOOL".into(),
+            (GuessKind::Text, DbKind::Bigquery) => "STRING".into(),
             (GuessKind::Int, DbKind::Firebird) => "BIGINT".into(),
             (GuessKind::Decimal, DbKind::Firebird) => "NUMERIC(38, 10)".into(),
             (GuessKind::DateTime, DbKind::Firebird) => "TIMESTAMP".into(),

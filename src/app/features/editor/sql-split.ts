@@ -15,6 +15,8 @@ import { offsetAt, placeIn } from '../../core/text/places';
  * - **duckdb**: dollar quoting, as PostgreSQL.
  * - **clickhouse**: backticks and backslash escapes in strings, as MySQL.
  * - **firebird**: a procedure, function, trigger, package or `EXECUTE BLOCK` keeps the `;` of its body.
+ * - **bigquery**: backslash escapes in strings and in backticks, no doubled quotes, strings of three
+ *   quotes, `#` comments; a script runs whole (`splitForRun`).
  * - **trino**: the common rules – a quote is escaped only by doubling it.
  * - **oracle**: `q'[ … ]'` strings; PL/SQL (`BEGIN`, `DECLARE`, `CREATE … FUNCTION | PROCEDURE | PACKAGE |
  *   TRIGGER | TYPE`) keeps its `;` and ends at a line with only `/` – as in SQL*Plus. That line also ends
@@ -29,7 +31,8 @@ export type Dialect =
   | 'duckdb'
   | 'clickhouse'
   | 'trino'
-  | 'firebird';
+  | 'firebird'
+  | 'bigquery';
 
 export interface Statement {
   /** The statement without its terminator, trimmed. */
@@ -68,21 +71,34 @@ function skipToken(s: Scan): boolean {
       return true;
     }
   }
+  if (dialect === 'bigquery' && (c === "'" || c === '"') && next === c && script[s.i + 2] === c) {
+    // a string of three quotes: to its three closing ones, a backslash escapes
+    let i = s.i + 3;
+    while (i < script.length) {
+      if (script[i] === '\\') i += 2;
+      else if (script[i] === c && script[i + 1] === c && script[i + 2] === c) break;
+      else i++;
+    }
+    s.i = Math.min(i + 3, script.length);
+    return true;
+  }
   if (c === "'" || c === '"') {
     // PostgreSQL: only E'…' strings know backslash escapes; MySQL: every string does
     const prev = script[s.i - 1];
     const escapes =
       dialect === 'mysql' ||
       dialect === 'clickhouse' ||
+      dialect === 'bigquery' ||
       (dialect === 'postgres' &&
         c === "'" &&
         (prev === 'E' || prev === 'e') &&
         !WORD.test(script[s.i - 2] ?? ''));
-    skipQuoted(s, c, escapes);
+    skipQuoted(s, c, escapes, dialect !== 'bigquery');
     return true;
   }
   if (c === '`' && dialect !== 'postgres' && dialect !== 'duckdb') {
-    skipQuoted(s, '`', false);
+    // BigQuery: a backslash escapes inside backticks too, and no quote is doubled
+    skipQuoted(s, '`', dialect === 'bigquery', dialect !== 'bigquery');
     return true;
   }
   if (c === '[' && (dialect === 'sqlserver' || dialect === 'sqlite')) {
@@ -94,7 +110,7 @@ function skipToken(s: Scan): boolean {
     skipLine(s);
     return true;
   }
-  if (c === '#' && dialect === 'mysql') {
+  if (c === '#' && (dialect === 'mysql' || dialect === 'bigquery')) {
     skipLine(s);
     return true;
   }
@@ -118,7 +134,7 @@ function skipToken(s: Scan): boolean {
   return false;
 }
 
-function skipQuoted(s: Scan, quote: string, escapes: boolean): void {
+function skipQuoted(s: Scan, quote: string, escapes: boolean, doubles = true): void {
   const { script } = s;
   let i = s.i + 1;
   while (i < script.length) {
@@ -126,8 +142,8 @@ function skipQuoted(s: Scan, quote: string, escapes: boolean): void {
     if (escapes && c === '\\') {
       i += 2;
     } else if (c === quote) {
-      // a doubled quote is an escaped quote
-      if (script[i + 1] === quote) i += 2;
+      // a doubled quote is an escaped quote (not in BigQuery)
+      if (doubles && script[i + 1] === quote) i += 2;
       else {
         s.i = i + 1;
         return;
@@ -376,6 +392,15 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
  * (`GO`), because a batch is compiled as one and its statements share variables.
  */
 export function splitForRun(script: string, dialect: Dialect): Statement[] {
+  if (dialect === 'bigquery') {
+    // BigQuery runs a text of several statements as one script – with its variables, its blocks
+    // (`DECLARE`, `BEGIN … END`, `IF`) and one bill: it is sent whole
+    const all = splitStatements(script, dialect);
+    if (all.length <= 1) return all;
+    const from = all[0].start;
+    const to = all[all.length - 1].end;
+    return [{ ...all[0], text: script.slice(from, to), start: from, end: to }];
+  }
   if (dialect !== 'sqlserver') return splitStatements(script, dialect);
   const out: Statement[] = [];
   const s: Scan = { script, dialect, i: 0 };
