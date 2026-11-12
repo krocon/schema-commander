@@ -576,6 +576,28 @@ export const ACTIONS = [
     group: 'Schema',
     scope: 'global',
   },
+  // Editing the structure (prompt 043)
+  {
+    id: 'SCHEMA_EDIT_TABLE',
+    label: 'Edit the structure of the table …',
+    group: 'Schema',
+    scope: 'global',
+  },
+  { id: 'SCHEMA_NEW_TABLE', label: 'New table …', group: 'Schema', scope: 'global' },
+  {
+    id: 'SCHEMA_DUPLICATE_TABLE',
+    label: 'Duplicate the table …',
+    group: 'Schema',
+    scope: 'global',
+  },
+  { id: 'SCHEMA_TRUNCATE_TABLE', label: 'Empty the table …', group: 'Schema', scope: 'global' },
+  { id: 'SCHEMA_DROP_TABLE', label: 'Drop the table …', group: 'Schema', scope: 'global' },
+  {
+    id: 'SCHEMA_EDIT_SOURCE',
+    label: 'Edit the definition of the view or routine',
+    group: 'Schema',
+    scope: 'global',
+  },
   // Search on the server (prompt 036)
   { id: 'SEARCH_SERVER', label: 'Search on the server …', group: 'Schema', scope: 'global' },
   {

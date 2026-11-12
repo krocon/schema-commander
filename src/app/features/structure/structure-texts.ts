@@ -1,0 +1,108 @@
+import { translatable } from '../../core/i18n/i18n';
+import { STRUCTURE_DE } from './structure-texts.de';
+
+/** Texts of the structure editor (prompt 043). English is the source. */
+export const STRUCTURE_EN = {
+  editTitle: (table: string) => `Structure of ${table}`,
+  newTitle: (schema: string) => (schema ? `New table in ${schema}` : 'New table'),
+  dropTitle: (table: string) => `Drop ${table}`,
+  truncateTitle: (table: string) => `Empty ${table}`,
+  duplicateTitle: (table: string) => `Duplicate ${table}`,
+  loading: 'Reading the table …',
+  tableName: 'Table name',
+  columns: 'Columns',
+  name: 'Name',
+  type: 'Type',
+  notNull: 'NOT NULL',
+  default: 'Default',
+  primaryKey: 'Key',
+  addColumn: 'Add a column',
+  moveUp: (name: string) => `Move ${name} up`,
+  moveDown: (name: string) => `Move ${name} down`,
+  remove: (name: string) => `Remove ${name}`,
+  unnamed: 'this row',
+  indexes: 'Indexes',
+  indexColumns: 'Columns (a, b)',
+  unique: 'Unique',
+  addIndex: 'Add an index',
+  statementOnly: 'defined by its statement (expression, order or condition): not edited here',
+  foreignKeys: 'Foreign keys',
+  refTable: 'Points to (table)',
+  refColumns: 'Its columns',
+  addKey: 'Add a foreign key',
+  checks: 'Checks',
+  expression: 'Condition',
+  addCheck: 'Add a check',
+  copyName: 'Name of the copy',
+  withData: 'With the rows of the table',
+  preview: 'Show the statements',
+  back: 'Back to the structure',
+  nothing: 'Nothing changed: there is nothing to write.',
+  changes: 'Changes',
+  statements: 'Statements',
+  ops: {
+    createTable: 'Create the table',
+    renameTable: 'Rename the table',
+    addColumn: 'New column',
+    dropColumn: 'Drop the column',
+    renameColumn: 'Rename the column',
+    changeColumn: 'Change the column',
+    changeKey: 'Primary key',
+    addIndex: 'New index',
+    dropIndex: 'Drop the index',
+    changeIndex: 'Change the index',
+    addForeignKey: 'New foreign key',
+    dropForeignKey: 'Drop the foreign key',
+    changeForeignKey: 'Change the foreign key',
+    addCheck: 'New check',
+    dropCheck: 'Drop the check',
+    changeCheck: 'Change the check',
+  },
+  danger: 'May lose data',
+  remark: 'Not written',
+  transactional: 'All statements run in one transaction: if one fails, nothing is changed.',
+  notTransactional:
+    'This database commits every statement of this kind by itself: if one fails, the ones before it stay.',
+  incomplete:
+    'A part of this change is not written (see the remarks): it cannot run as it is. Open it as a script and finish it by hand – or go back and change less.',
+  understood: 'I have read the marked steps: they may lose data.',
+  readOnly: 'This connection is read-only: the structure cannot be changed here.',
+  run: 'Run',
+  running: 'Running …',
+  toEditor: 'Open as a script',
+  toEditorHint:
+    'A new tab with the statements to read and change; steps that may lose data are comments there',
+  scriptHeader: (what: string) => `${what} – a proposal: read it, change it, run it yourself.`,
+  cancel: 'Cancel',
+  close: 'Close',
+  done: (statements: number) =>
+    statements === 1 ? 'Done: 1 statement.' : `Done: ${statements} statements.`,
+  failedAt: (at: number, of: number) => `Statement ${at} of ${of} failed:`,
+  rolledBack: 'Everything was rolled back: nothing changed.',
+  partly: (done: number) =>
+    done === 1
+      ? 'The statement before it was committed and stays.'
+      : `The ${done} statements before it were committed and stay.`,
+  problems: {
+    noName: 'The table needs a name.',
+    noColumns: 'A table needs at least one column.',
+    columnNoName: 'Every column needs a name.',
+    columnNoType: 'Every column needs a type.',
+    duplicateColumn: 'Two columns have the same name.',
+    indexNoColumns: 'An index needs at least one column.',
+    partNoName: 'Every index and every check needs a name.',
+    unknownColumn: 'An index or a foreign key names a column the table does not have.',
+    keyIncomplete: 'A foreign key needs columns, a table to point to, and as many columns there.',
+    checkEmpty: 'A check needs a condition.',
+    lineBreak: 'Names, types, defaults and checks must be on one line.',
+  },
+  source: {
+    header: (name: string) => `Definition of ${name}: change it and run it to save.`,
+    noReplace:
+      'This database cannot replace the object in one statement: drop it first, then run this.',
+    none: 'The database gives no statement for this object.',
+  },
+};
+
+export type StructureTexts = typeof STRUCTURE_EN;
+export const STRUCTURE_TEXTS = translatable('structure', STRUCTURE_EN, { de: STRUCTURE_DE });

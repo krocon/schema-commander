@@ -54,6 +54,9 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
 - A chart of the result (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>T</kbd>): lines over time, bars, scatter plots – suggested
   from the column types, grouped and aggregated, with zoom, tooltip and legend; millions of points are thinned in Rust
   without losing a peak; export as SVG
+- Edit the structure of a table as a form – columns, indexes, foreign keys, checks – with the statements shown
+  before they run, steps that may lose data marked, and one transaction where the database allows it; new table,
+  duplicate, empty, drop; the definition of a view or routine opens as a statement that replaces it
 - Execution plans (<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>Ctrl/⌘</kbd>+<kbd>X</kbd>) as a tree table for every database: rows estimated and
   actual, own and total time, cost – the expensive operations and wrong estimates stand out. „With execution“
   runs the statement inside a transaction that is rolled back

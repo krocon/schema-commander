@@ -17,6 +17,11 @@ import {
   updateSnippet,
 } from './schema-logic';
 import { SchemaStore } from './schema.store';
+import { describeError } from '../../core/errors/app-error';
+import { SchemaApi } from '../../core/schema/schema-api';
+import { editableSource } from '../structure/structure-logic';
+import { STRUCTURE_TEXTS } from '../structure/structure-texts';
+import { StructureService } from '../structure/structure.service';
 
 /** What can be done with a node of the schema tree (prompt 008); each is an action of the app. */
 export type NodeAction =
@@ -26,6 +31,12 @@ export type NodeAction =
   | 'SCHEMA_IMPORT_TABLE'
   | 'SCHEMA_SEARCH'
   | 'SCHEMA_DIAGRAM'
+  | 'SCHEMA_EDIT_TABLE'
+  | 'SCHEMA_NEW_TABLE'
+  | 'SCHEMA_DUPLICATE_TABLE'
+  | 'SCHEMA_TRUNCATE_TABLE'
+  | 'SCHEMA_DROP_TABLE'
+  | 'SCHEMA_EDIT_SOURCE'
   | 'SCHEMA_INSERT_NAME'
   | 'SCHEMA_COPY_NAME'
   | 'SCHEMA_COPY_QUALIFIED'
@@ -40,6 +51,12 @@ export const NODE_ACTIONS: readonly NodeAction[] = [
   'SCHEMA_IMPORT_TABLE',
   'SCHEMA_SEARCH',
   'SCHEMA_DIAGRAM',
+  'SCHEMA_EDIT_TABLE',
+  'SCHEMA_NEW_TABLE',
+  'SCHEMA_DUPLICATE_TABLE',
+  'SCHEMA_TRUNCATE_TABLE',
+  'SCHEMA_DROP_TABLE',
+  'SCHEMA_EDIT_SOURCE',
   'SCHEMA_INSERT_NAME',
   'SCHEMA_COPY_NAME',
   'SCHEMA_COPY_QUALIFIED',
@@ -92,7 +109,21 @@ export function allows(action: NodeAction, row: TreeRow | null): boolean {
     case 'SCHEMA_IMPORT_TABLE':
     case 'SCHEMA_INSERT_TEMPLATE':
     case 'SCHEMA_UPDATE_TEMPLATE':
+    case 'SCHEMA_EDIT_TABLE':
+    case 'SCHEMA_DUPLICATE_TABLE':
+    case 'SCHEMA_TRUNCATE_TABLE':
+    case 'SCHEMA_DROP_TABLE':
       return isRelation(row) && row?.object?.kind === 'table';
+    case 'SCHEMA_NEW_TABLE':
+      // in the schema of the row, whatever the row is
+      return !!row?.schema;
+    case 'SCHEMA_EDIT_SOURCE':
+      return (
+        row?.kind === 'object' &&
+        (row.object?.kind === 'view' ||
+          row.object?.kind === 'matview' ||
+          row.object?.kind === 'routine')
+      );
   }
 }
 
@@ -108,6 +139,8 @@ export class SchemaActions {
   private readonly search = inject(ServerSearchService);
   private readonly diagram = inject(DiagramService);
   private readonly details = inject(ObjectDetailsService);
+  private readonly structure = inject(StructureService);
+  private readonly schemaApi = inject(SchemaApi);
 
   /** Whether `action` can run on the active row of the tree. */
   can(action: NodeAction): boolean {
@@ -132,6 +165,59 @@ export class SchemaActions {
           detail: row.object.kind === 'routine' ? row.object.detail : '',
         });
         return;
+      case 'SCHEMA_EDIT_TABLE':
+      case 'SCHEMA_DUPLICATE_TABLE':
+      case 'SCHEMA_TRUNCATE_TABLE':
+      case 'SCHEMA_DROP_TABLE': {
+        if (!row.schema || !row.object) return;
+        const modes = {
+          SCHEMA_EDIT_TABLE: 'edit',
+          SCHEMA_DUPLICATE_TABLE: 'duplicate',
+          SCHEMA_TRUNCATE_TABLE: 'truncate',
+          SCHEMA_DROP_TABLE: 'drop',
+        } as const;
+        this.structure.open({
+          connectionId: this.connections.activeId(),
+          schema: row.schema.name,
+          table: row.object.name,
+          mode: modes[action],
+        });
+        return;
+      }
+      case 'SCHEMA_NEW_TABLE':
+        if (!row.schema) return;
+        this.structure.open({
+          connectionId: this.connections.activeId(),
+          schema: row.schema.name,
+          table: null,
+          mode: 'edit',
+        });
+        return;
+      case 'SCHEMA_EDIT_SOURCE': {
+        if (!row.schema || !row.object) return;
+        const connectionId = this.connections.activeId();
+        const t = STRUCTURE_TEXTS.source;
+        try {
+          const details = await this.schemaApi.details(
+            connectionId,
+            row.schema.name,
+            row.object.name,
+            row.object.kind,
+            row.object.kind === 'routine' ? row.object.detail : '',
+          );
+          if (!details.ddl) {
+            this.tabs.notice.set(t.none);
+            return;
+          }
+          const source = editableSource(kind, details.ddl);
+          const lines = [`-- ${t.header(qualified)}`];
+          if (!source.replaces) lines.push(`-- ${t.noReplace}`);
+          this.tabs.newTab(`${lines.join('\n')}\n${source.text}\n`, { connection: connectionId });
+        } catch (e) {
+          this.tabs.notice.set(describeError(e));
+        }
+        return;
+      }
       case 'SCHEMA_INSERT_NAME':
         this.tabs.active()?.insert(row.kind === 'object' ? qualified : name);
         return;

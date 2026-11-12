@@ -1,3 +1,10 @@
+import {
+  StructPlan,
+  StructRan,
+  StructRequest,
+  StructureApi,
+  TableDef,
+} from '../app/core/structure/structure-api';
 import { ChartApi, ChartData, ChartSpec } from '../app/core/chart/chart-api';
 import {
   SavedApi,
@@ -1868,5 +1875,67 @@ export class FakeChartApi extends ChartApi {
   free(chartId: number): Promise<void> {
     this.freed.push(chartId);
     return Promise.resolve();
+  }
+}
+
+/** The structure of tables (prompt 043): one table, a plan that a test sets, and what was applied. */
+export class FakeStructureApi extends StructureApi {
+  table: TableDef = {
+    name: 'orders',
+    columns: [
+      { name: 'id', typeName: 'integer', nullable: false, default: null },
+      { name: 'note', typeName: 'varchar(40)', nullable: true, default: "'none'" },
+    ],
+    pk: ['id'],
+    indexes: [
+      {
+        name: 'orders_note',
+        unique: false,
+        columns: ['note'],
+        definition: 'CREATE INDEX orders_note ON shop.orders USING btree (note)',
+      },
+    ],
+    keys: [],
+    checks: [],
+    comment: null,
+    definition: null,
+  };
+  loadError: unknown = null;
+  planError: unknown = null;
+  nextPlan: StructPlan = {
+    steps: [{ sql: 'ALTER TABLE shop.orders ADD COLUMN x integer;', danger: null, note: null }],
+    transactional: true,
+    incomplete: false,
+  };
+  ran: StructRan = { done: 1, failed: null, error: null, transactional: true, rolledBack: false };
+  applyError: unknown = null;
+  readonly loads: string[] = [];
+  readonly plans: StructRequest[] = [];
+  readonly applied: {
+    request: StructRequest;
+    confirmations: readonly (string | null)[];
+    allowDangerous: boolean;
+  }[] = [];
+
+  load(connectionId: string, schema: string, table: string): Promise<TableDef> {
+    this.loads.push(`${connectionId}/${schema}.${table}`);
+    return this.loadError ? Promise.reject(this.loadError) : Promise.resolve(this.table);
+  }
+
+  plan(connectionId: string, request: StructRequest): Promise<StructPlan> {
+    void connectionId;
+    this.plans.push(request);
+    return this.planError ? Promise.reject(this.planError) : Promise.resolve(this.nextPlan);
+  }
+
+  apply(
+    connectionId: string,
+    request: StructRequest,
+    confirmations: readonly (string | null)[],
+    allowDangerous: boolean,
+  ): Promise<StructRan> {
+    void connectionId;
+    this.applied.push({ request, confirmations, allowDangerous });
+    return this.applyError ? Promise.reject(this.applyError) : Promise.resolve(this.ran);
   }
 }
