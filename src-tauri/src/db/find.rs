@@ -690,6 +690,7 @@ fn columns_of(
              JOIN information_schema.tables t \
                ON t.table_schema = c.table_schema AND t.table_name = c.table_name \
              WHERE c.table_schema = ? AND t.table_type = 'BASE TABLE' \
+               AND NOT regexp_like(c.data_type, '^(array|map|row|json)') \
              ORDER BY c.table_name, c.ordinal_position",
             &[schema],
             limit,

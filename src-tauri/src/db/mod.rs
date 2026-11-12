@@ -495,6 +495,12 @@ pub trait Session: Send {
     /// The session runs through this SSH tunnel: it keeps the tunnel alive as long as it lives, and
     /// announces every further connection it opens itself (to cancel a statement). Review 014 M1/M2.
     fn via_tunnel(&mut self, _tunnel: std::sync::Arc<crate::ssh::Tunnel>) {}
+    /// Makes the session read only by means of the driver itself, where the database has no statement
+    /// for it that holds (Trino: a transaction the driver keeps open). `false`: the driver has none –
+    /// see `guard::read_only_statement`.
+    fn make_read_only(&mut self) -> bool {
+        false
+    }
     /// Asks the server whether a transaction is open on this session.
     fn transaction_state(&mut self, stop: Stop) -> TxState;
     /// Product and version as the server names itself.

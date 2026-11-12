@@ -35,9 +35,9 @@ const MAX_PAGE: u64 = 256 * 1024 * 1024;
 /// One request at most: the server answers within a second or two, also while a statement runs.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 /// The name the driver prepares a statement with values under.
-const PREPARED: &str = "sc_bound";
+const PREPARED: &str = "sc__bound__values";
 /// The statement that opens the transaction of a session that only reads.
-pub const READ_ONLY: &str = "START TRANSACTION READ ONLY";
+const READ_ONLY: &str = "START TRANSACTION READ ONLY";
 /// Both families of headers are sent and read: a Trino server knows `X-Trino-…`, Presto `X-Presto-…`.
 const PREFIXES: [&str; 2] = ["X-Trino-", "X-Presto-"];
 
@@ -117,8 +117,36 @@ fn failed(error: &Value, sql: &str) -> AppError {
     })
 }
 
+/// `line 3:8: …` at the start of a message: the place as [`failed`] counts it.
+fn located(mut e: AppError, sql: &str) -> AppError {
+    if e.code != ErrorCode::InvalidQuery || e.details.is_some() {
+        return e;
+    }
+    let place = e.message.strip_prefix("line ").and_then(|rest| {
+        let (line, rest) = rest.split_once(':')?;
+        let column: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        Some((line.parse::<u64>().ok()?, column.parse::<u64>().ok()?))
+    });
+    if let Some((line, column)) = place {
+        let said = e.message.clone();
+        e = failed(
+            &serde_json::json!({"message": said, "errorName": "SYNTAX_ERROR", "errorCode": 1,
+                "errorLocation": {"lineNumber": line, "columnNumber": column}}),
+            sql,
+        );
+    }
+    e
+}
+
 /// An answer that is no page of a statement: a refused login, a proxy, another server.
 fn refused(on: &str, status: u16, body: &str) -> AppError {
+    // a statement with values travels in a header: one the server cannot read is refused with the
+    // whole request, in words that name line and column (review 035f 3)
+    if status == 400
+        && let Some((_, said)) = body.split_once("Prepared-Statement header: ")
+    {
+        return AppError::new(ErrorCode::InvalidQuery, clean(said));
+    }
     match status {
         401 | 403 => AppError::new(ErrorCode::AuthFailed, "login failed"),
         _ => {
@@ -315,7 +343,7 @@ fn split(sql: &str) -> Vec<(usize, &str)> {
                 }
             }
             b'-' if b.get(i + 1) == Some(&b'-') => {
-                while i < b.len() && b[i] != b'\n' {
+                while i < b.len() && b[i] != b'\n' && b[i] != b'\r' {
                     i += 1;
                 }
             }
@@ -368,6 +396,10 @@ struct Answer {
     rows: u64,
     truncated: bool,
     updated: Option<u64>,
+    /// The statement changed something (the server named an `updateType`): it has no result.
+    changes: bool,
+    /// The statement was ended on the server before its answer was complete.
+    cancelled: bool,
 }
 
 impl Trino {
@@ -532,7 +564,14 @@ impl Trino {
             };
             let mut response = sent.map_err(|e| transport(&self.on, &e))?;
             let status = response.status().as_u16();
-            if matches!(status, 502..=504) && tries < 20 {
+            // a page is asked again when the server is busy; a statement is posted again only when
+            // the coordinator itself said it took nothing (503) – behind a gateway a 502 or 504
+            // does not say that, and an INSERT must not run twice (review 035f 7)
+            let again = match path {
+                None => status == 503 && tries < 5,
+                Some(_) => matches!(status, 502..=504) && tries < 20,
+            };
+            if again {
                 tries += 1;
                 std::thread::sleep(Duration::from_millis(100 * tries));
                 continue;
@@ -589,8 +628,12 @@ impl Trino {
             rows: 0,
             truncated: false,
             updated: None,
+            changes: false,
+            cancelled: false,
         };
-        let mut page = self.page(None, &body, extra.as_deref())?;
+        let mut page = self
+            .page(None, &body, extra.as_deref())
+            .map_err(|e| located(e, sql))?;
         loop {
             if let Some(error) = page.get("error") {
                 return Err(failed(error, sql));
@@ -632,6 +675,7 @@ impl Trino {
                 .transpose()?;
             // a statement that changes rows answers with their number as a row: not a result
             let changes = page.get("updateType").is_some();
+            answer.changes |= changes;
             if let Some(Value::Array(rows)) = page.get_mut("data").map(Value::take)
                 && !changes
             {
@@ -662,11 +706,14 @@ impl Trino {
             let Some(next) = next else {
                 break;
             };
-            if answer.truncated {
+            if answer.truncated && (self.transaction.is_none() || self.read_only) {
                 // no more rows are wanted: the server must not go on producing them
                 self.cancel(&next);
+                answer.cancelled = true;
                 break;
             }
+            // inside a transaction of the user a cancelled statement would abort it: the rest of
+            // the answer is read and dropped instead, until it ends or the work is stopped
             if stop() {
                 self.cancel(&next);
                 return Err(super::cancelled());
@@ -678,9 +725,16 @@ impl Trino {
                     "the statement took too long",
                 ));
             }
-            page = self.page(Some(&next), "", None)?;
+            page = match self.page(Some(&next), "", None) {
+                Ok(page) => page,
+                Err(e) => {
+                    // whatever went wrong on the way: the statement must not run on unseen
+                    self.cancel(&next);
+                    return Err(e);
+                }
+            };
         }
-        if changes_nothing(&answer) && !answer.columns.is_empty() && answer.rows == 0 {
+        if !answer.changes && !answer.columns.is_empty() && answer.rows == 0 {
             // a result without rows still has its columns
             sink.start(&answer.columns);
         }
@@ -711,8 +765,25 @@ impl Trino {
                 ));
             }
         }
-        let result = self.one(sql, values, timeout, sink, plain, stop);
-        if result.is_err() {
+        let mut result = self.one(sql, values, timeout, sink, plain, stop);
+        // the server drops a transaction that was idle for some minutes: a new one, and once more
+        // (nothing has reached the sink by then; review 035f 2)
+        let expired = |e: &AppError| {
+            e.details
+                .as_ref()
+                .and_then(|d| d.sqlstate.as_deref())
+                .is_some_and(|s| {
+                    s.ends_with("UNKNOWN_TRANSACTION") || s.ends_with("TRANSACTION_ALREADY_ABORTED")
+                })
+        };
+        if result.as_ref().is_err_and(expired) {
+            let mut nothing = super::value::VecSink::new(0);
+            self.transaction = None;
+            self.one(READ_ONLY, &[], timeout, &mut nothing, false, stop)?;
+            result = self.one(sql, values, timeout, sink, plain, stop);
+        }
+        // a statement that failed or was ended early aborts its transaction (review 035f 1)
+        if result.as_ref().map_or(true, |answer| answer.cancelled) {
             let mut nothing = super::value::VecSink::new(0);
             let _ = self.one(
                 "ROLLBACK",
@@ -727,10 +798,6 @@ impl Trino {
         }
         result
     }
-}
-
-fn changes_nothing(answer: &Answer) -> bool {
-    answer.updated.is_none()
 }
 
 /// A sink for the app's own questions: every row as text.
@@ -779,18 +846,6 @@ impl Session for Trino {
         }
         let started = Instant::now();
         let values = params.iter().map(literal).collect::<AppResult<Vec<_>>>()?;
-        // the session is made read only by the statement the guard names: from then on the driver
-        // sees to it that there always is such a transaction
-        if values.is_empty() && sql.trim().eq_ignore_ascii_case(READ_ONLY) {
-            self.read_only = true;
-            return Ok(Outcome {
-                columns: Vec::new(),
-                rows: 0,
-                truncated: false,
-                rows_affected: None,
-                elapsed_ms: 0,
-            });
-        }
         // one statement per request: a text of several runs one after the other, the last one answers
         let mut statements = if values.is_empty() {
             split(sql)
@@ -822,7 +877,7 @@ impl Session for Trino {
             .map_err(|e| moved(e, last_at))?;
         Ok(Outcome {
             rows_affected: answer.updated,
-            columns: if answer.updated.is_some() {
+            columns: if answer.changes || answer.updated.is_some() {
                 Vec::new()
             } else {
                 answer.columns
@@ -835,6 +890,12 @@ impl Session for Trino {
 
     fn via_tunnel(&mut self, tunnel: Arc<crate::ssh::Tunnel>) {
         self.tunnel = Some(tunnel);
+    }
+
+    fn make_read_only(&mut self) -> bool {
+        // from now on the driver sees to it that every statement runs in a read-only transaction
+        self.read_only = true;
+        true
     }
 
     fn transaction_state(&mut self, _stop: Stop) -> TxState {

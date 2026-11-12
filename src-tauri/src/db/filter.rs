@@ -538,7 +538,8 @@ impl Builder {
 
     /// The column as text, for `LIKE` on a column that is none.
     fn as_text(&self, column: &str, kind: ValueKind) -> String {
-        if kind == ValueKind::Text {
+        // Trino's `strpos` takes no `char(n)`: every column is cast there (review 035f 5)
+        if kind == ValueKind::Text && self.kind != DbKind::Trino {
             return column.to_owned();
         }
         match self.kind {
@@ -1019,7 +1020,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             q.sql,
-            "SELECT *\nFROM shop.\"my orders\"\nWHERE \"placed at\" >= CAST(? AS date)\n  AND strpos(lower(name), lower(?)) > 0\n  AND raw = from_hex(?)\nLIMIT 10"
+            "SELECT *\nFROM shop.\"my orders\"\nWHERE \"placed at\" >= CAST(? AS date)\n  AND strpos(lower(CAST(name AS VARCHAR)), lower(?)) > 0\n  AND raw = from_hex(?)\nLIMIT 10"
         );
         assert_eq!(q.params.len(), 3);
         assert_eq!(q.params[1], Bind::Text("100%_[".into()));

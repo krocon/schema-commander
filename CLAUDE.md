@@ -415,7 +415,7 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
 - **Trino/Presto**: Das Protokoll bindet keine Werte – ein Wert wird nur durch `trino::literal` zu SQL (geprüft
   oder gequotet), nie anders. Gefragt wird nur der Server des Profils (`page_path`), was auch immer `nextUri`
   nennt. Die Sitzung ist, was die Kopfzeilen des Servers sagen (`follow`); „nur lesen“ hält der Treiber selbst
-  (`guarded`). Ob Zeilen bearbeitet werden, sagt `DbKind::edits_rows` – nie ein Vergleich mit ClickHouse.
+  (`Session::make_read_only`, `guarded`). Eine Anweisung wird nie erneut gesendet, außer nach 503. Ob Zeilen bearbeitet werden, sagt `DbKind::edits_rows` – nie ein Vergleich mit ClickHouse.
 - **DuckDB**: nie eine zweite Datenbank auf dieselbe Datei öffnen – Sitzungen sind Klone der einen (`SHARED`
   in `duckdb.rs`). Vor jedem Lesen einer Zelle prüft `readable`, ob der Treiber den Typ kann (sonst endet er in
   `unreachable!`). Erweiterungen werden nie von selbst geladen; ein Assistent bekommt dort keine Abfrage ausgeführt.

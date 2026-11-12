@@ -191,7 +191,7 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                 // ClickHouse takes it as an escape inside backticks too (review 035d 2)
                 if chars[i] == '\\'
                     && (quote != '`' || kind == DbKind::Clickhouse)
-                    && kind != DbKind::Oracle
+                    && !matches!(kind, DbKind::Oracle | DbKind::Trino)
                     && i + 1 < n
                 {
                     if chars[i + 1] == quote || chars[i + 1] == '\\' {
@@ -979,8 +979,9 @@ pub fn read_only_statement(kind: DbKind) -> Option<&'static str> {
         // kept by the session of the server; once set it cannot be taken back there
         // (1, not 2: with 2 an INSERT INTO FUNCTION file(…) still writes)
         DbKind::Clickhouse => Some("SET readonly = 1"),
-        // the driver keeps the session inside a read-only transaction from then on (see trino.rs)
-        DbKind::Trino => Some(super::trino::READ_ONLY),
+        // no statement that holds: the driver keeps the session inside a read-only transaction
+        // (`Session::make_read_only`, see trino.rs)
+        DbKind::Trino => None,
     }
 }
 
@@ -1029,8 +1030,10 @@ mod tests {
             ),
             Read
         );
-        assert_eq!(read_only_statement(k), Some("START TRANSACTION READ ONLY"));
+        assert_eq!(read_only_statement(k), None);
         assert!(is_transaction_control("START TRANSACTION READ ONLY", k));
+        // a backslash is a character there, as in Oracle: nothing ambiguous about it
+        assert_eq!(classify("SELECT 'C:\\', 'a\\' FROM t", k), Read);
     }
 
     /// ClickHouse (prompt 035d).

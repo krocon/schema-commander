@@ -429,7 +429,8 @@ fn trino_binds_values_and_a_read_only_session_cannot_write() {
 
     // read only: the statement the guard names, then nothing writes – whatever the session is told
     let mut reader = open();
-    run(&mut reader, guard::read_only_statement(K).unwrap());
+    assert_eq!(guard::read_only_statement(K), None);
+    assert!(reader.make_read_only());
     assert_eq!(reader.transaction_state(&|| false), TxState::Idle);
     assert_eq!(
         rows(&run(
@@ -909,8 +910,144 @@ fn presto_answers_like_trino() {
     assert_eq!(t.columns[0].name, "orderkey");
     // read only on the server
     let mut reader = connect(&p, None, &|| false).unwrap();
-    run(&mut reader, guard::read_only_statement(K).unwrap());
+    assert!(reader.make_read_only());
     assert_eq!(rows(&run(&mut reader, "SELECT 1")), json!([[1]]));
     assert!(try_run(&mut reader, "CREATE TABLE memory.default.sc_p (a integer)").is_err());
     assert_eq!(rows(&run(&mut reader, "SELECT 2")), json!([[2]]));
+}
+
+/// What the review of 035f found (the numbers are its findings).
+#[test]
+#[ignore]
+fn review_a_cut_result_keeps_the_session_and_errors_say_where() {
+    let stop = &|| false;
+    let cut = |s: &mut Box<dyn Session>| {
+        let r = s
+            .query(
+                "SELECT orderkey FROM tpch.sf1.lineitem",
+                Limits::rows(5),
+                stop,
+            )
+            .unwrap();
+        assert!(r.truncated && r.rows.len() == 5);
+    };
+    // 1: read only – the statement after a cut result runs
+    let mut reader = open();
+    assert!(reader.make_read_only());
+    cut(&mut reader);
+    assert_eq!(rows(&run(&mut reader, "SELECT 1")), json!([[1]]));
+    // 1: in a transaction of the user a cut result does not abort it
+    let mut s = open();
+    run(&mut s, "START TRANSACTION");
+    let small = s
+        .query(
+            "SELECT orderkey FROM tpch.tiny.orders",
+            Limits::rows(5),
+            stop,
+        )
+        .unwrap();
+    assert!(small.truncated);
+    assert_eq!(rows(&run(&mut s, "SELECT 1")), json!([[1]]));
+    assert_eq!(s.transaction_state(stop), TxState::Active);
+    run(&mut s, "ROLLBACK");
+    // 8: what the user types is what runs – a read-only transaction ends with its ROLLBACK
+    let p = "sc_r";
+    run(&mut s, &shop(p));
+    run(&mut s, "START TRANSACTION READ ONLY");
+    assert_eq!(s.transaction_state(stop), TxState::Active);
+    run(&mut s, "ROLLBACK");
+    run(
+        &mut s,
+        &format!("INSERT INTO memory.shop.{p}_customer (id, name) VALUES (9, 'after')"),
+    );
+    // 3: a statement with values that the server cannot read is a statement error, with its place
+    let e = try_bound(&mut s, "SELECT ?\n  FRM t", &[Bind::Int("1".into())]).unwrap_err();
+    assert_eq!(e.code, ErrorCode::InvalidQuery, "{}", e.message);
+    let d = e.details.unwrap();
+    assert_eq!(
+        (d.line, d.position),
+        (Some(2), Some(9 + 7)),
+        "{}",
+        e.message
+    );
+    // 5, 6: „contains“ on a char(n) column, and a column called like a word of the language
+    run(
+        &mut s,
+        &format!(
+            "CREATE TABLE memory.shop.{p}_odd (\"skip\" integer, code char(3), tags array(varchar), doc json)"
+        ),
+    );
+    run(
+        &mut s,
+        &format!(
+            "INSERT INTO memory.shop.{p}_odd VALUES (1, 'ab', ARRAY['x'], JSON '{{\"a\":1}}')"
+        ),
+    );
+    let q = filter::build(
+        K,
+        &TableQuery {
+            schema: Some("shop".into()),
+            table: format!("{p}_odd"),
+            conditions: vec![
+                Condition {
+                    column: "code".into(),
+                    op: Op::ContainsNoCase,
+                    values: vec!["B".into()],
+                    kind: ValueKind::Text,
+                    type_name: "char(3)".into(),
+                },
+                Condition {
+                    column: "skip".into(),
+                    op: Op::Eq,
+                    values: vec!["1".into()],
+                    kind: ValueKind::Number,
+                    type_name: "integer".into(),
+                },
+            ],
+            order: vec![Order {
+                column: "skip".into(),
+                desc: false,
+                nulls: None,
+            }],
+            ..TableQuery::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(bound(&mut s, &q.sql, &q.params).rows.len(), 1, "{}", q.sql);
+    // 4: a table with lists and JSON is searched in the columns that can be
+    let events = std::sync::Mutex::new(Vec::new());
+    find(
+        s.as_mut(),
+        K,
+        &FindSpec {
+            text: "ab".into(),
+            mode: Mode::Contains,
+            case_sensitive: false,
+            schemas: vec!["shop".into()],
+            tables: vec![("shop".to_owned(), format!("{p}_odd"))],
+            columns: Columns::All,
+            data: true,
+            sources: false,
+            names: false,
+            max_hits: 20,
+            table_timeout_ms: 20_000,
+            skip_rows_over: 0,
+        },
+        None,
+        &|e| events.lock().unwrap().push(e),
+        stop,
+    )
+    .unwrap();
+    let hits: usize = events
+        .into_inner()
+        .unwrap()
+        .into_iter()
+        .map(|e| match e {
+            FindEvent::Rows { hits, .. } => hits.len(),
+            _ => 0,
+        })
+        .sum();
+    assert_eq!(hits, 1);
+    run(&mut s, &format!("DROP TABLE memory.shop.{p}_odd"));
+    run(&mut s, &unshop(p));
 }
