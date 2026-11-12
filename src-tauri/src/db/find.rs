@@ -305,7 +305,7 @@ fn as_text(column: &str, kind: DbKind) -> String {
         DbKind::Postgres => format!("CAST({column} AS text)"),
         DbKind::Mysql => format!("CAST({column} AS CHAR)"),
         DbKind::Sqlserver => format!("CAST({column} AS nvarchar(max))"),
-        DbKind::Sqlite => format!("CAST({column} AS TEXT)"),
+        DbKind::Sqlite | DbKind::Libsql => format!("CAST({column} AS TEXT)"),
         DbKind::Oracle => format!("TO_CHAR({column})"),
         DbKind::Duckdb | DbKind::Trino => format!("CAST({column} AS VARCHAR)"),
         DbKind::Clickhouse => format!("toString({column})"),
@@ -321,7 +321,9 @@ pub fn data_question(
     columns: &[(String, String)],
     spec: &FindSpec,
 ) -> AppResult<Option<(Question, Vec<String>)>> {
-    if spec.mode == Mode::Regex && matches!(kind, DbKind::Sqlserver | DbKind::Sqlite) {
+    if spec.mode == Mode::Regex
+        && matches!(kind, DbKind::Sqlserver | DbKind::Sqlite | DbKind::Libsql)
+    {
         return Err(AppError::new(
             ErrorCode::Unsupported,
             "this database has no regular expressions",
@@ -344,7 +346,7 @@ pub fn data_question(
             DbKind::Postgres | DbKind::Duckdb => format!("${n}"),
             DbKind::Mysql | DbKind::Trino => "?".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
-            DbKind::Sqlite => format!("?{n}"),
+            DbKind::Sqlite | DbKind::Libsql => format!("?{n}"),
             DbKind::Oracle => format!(":{n}"),
             DbKind::Clickhouse => format!("{{p{n}:String}}"),
         }
@@ -357,7 +359,9 @@ pub fn data_question(
         let quoted = name(column, kind)?;
         let text = as_text(&quoted, kind);
         selected.push(match kind {
-            DbKind::Sqlite | DbKind::Trino => format!("substr({text}, 1, {VALUE_CHARS})"),
+            DbKind::Sqlite | DbKind::Libsql | DbKind::Trino => {
+                format!("substr({text}, 1, {VALUE_CHARS})")
+            }
             DbKind::Oracle => format!("SUBSTR({text}, 1, {VALUE_CHARS})"),
             DbKind::Clickhouse => format!("substringUTF8({text}, 1, {VALUE_CHARS})"),
             DbKind::Postgres | DbKind::Mysql | DbKind::Sqlserver | DbKind::Duckdb => {
@@ -409,14 +413,16 @@ pub fn data_question(
                 }
             }
             // SQLite's LIKE ignores the case of ASCII letters, always: with case, `instr`
-            (DbKind::Sqlite, Mode::Contains) if sensitive => {
+            (DbKind::Sqlite | DbKind::Libsql, Mode::Contains) if sensitive => {
                 format!("instr({text}, {}) > 0", place(spec.text.clone()))
             }
-            (DbKind::Sqlite, Mode::Contains) => {
+            (DbKind::Sqlite | DbKind::Libsql, Mode::Contains) => {
                 format!("{text} LIKE {} ESCAPE '{ESCAPE}'", place(pattern.clone()))
             }
-            (DbKind::Sqlite, _) if sensitive => format!("{text} = {}", place(spec.text.clone())),
-            (DbKind::Sqlite, _) => {
+            (DbKind::Sqlite | DbKind::Libsql, _) if sensitive => {
+                format!("{text} = {}", place(spec.text.clone()))
+            }
+            (DbKind::Sqlite | DbKind::Libsql, _) => {
                 format!("{text} = {} COLLATE NOCASE", place(spec.text.clone()))
             }
             // no LIKE either: a position says the same without a pattern
@@ -677,7 +683,7 @@ fn columns_of(
             limit,
             stop,
         )?,
-        DbKind::Sqlite => s.ask(
+        DbKind::Sqlite | DbKind::Libsql => s.ask(
             "SELECT m.name, p.name, p.type FROM sqlite_master m, pragma_table_info(m.name) p \
              WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite\\_%' ESCAPE '\\' \
              ORDER BY m.name, p.cid",
@@ -815,7 +821,7 @@ pub(super) fn source_questions(kind: DbKind, flavor: Flavor) -> Vec<&'static str
              JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = @P1",
         ],
         // a table's statement holds its checks and defaults
-        DbKind::Sqlite => vec![
+        DbKind::Sqlite | DbKind::Libsql => vec![
             "SELECT type, name, sql FROM sqlite_master \
              WHERE sql IS NOT NULL AND type IN ('view', 'trigger', 'table') AND ?1 = ?1",
         ],
@@ -910,7 +916,10 @@ pub fn find(
 ) -> AppResult<FindReport> {
     checked(spec)?;
     // said before anything is searched, not at the first table
-    if spec.data && spec.mode == Mode::Regex && matches!(kind, DbKind::Sqlserver | DbKind::Sqlite) {
+    if spec.data
+        && spec.mode == Mode::Regex
+        && matches!(kind, DbKind::Sqlserver | DbKind::Sqlite | DbKind::Libsql)
+    {
         return Err(AppError::new(
             ErrorCode::Unsupported,
             "this database has no regular expressions",

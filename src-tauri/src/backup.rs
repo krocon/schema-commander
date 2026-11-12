@@ -53,6 +53,7 @@ pub fn tools_of(kind: DbKind) -> &'static [Tool] {
         DbKind::Mysql => &[Tool::MysqlDump, Tool::Mysql],
         DbKind::Sqlserver
         | DbKind::Sqlite
+        | DbKind::Libsql
         | DbKind::Oracle
         | DbKind::Duckdb
         | DbKind::Clickhouse
@@ -572,6 +573,7 @@ pub fn dump(e: &Endpoint, spec: &DumpSpec, target: &Path) -> AppResult<Invocatio
         }
         DbKind::Sqlserver
         | DbKind::Sqlite
+        | DbKind::Libsql
         | DbKind::Oracle
         | DbKind::Duckdb
         | DbKind::Clickhouse
@@ -1132,7 +1134,7 @@ pub fn simple_export(
                     return Err(crate::db::cancelled());
                 }
                 let quoted = |n: &str| crate::db::meta::quote_always(n, kind);
-                let name = if kind == DbKind::Sqlite || schema.is_empty() {
+                let name = if kind.is_sqlite() || schema.is_empty() {
                     quoted(&table.name)
                 } else {
                     format!("{}.{}", quoted(schema), quoted(&table.name))

@@ -20,6 +20,7 @@ export const CONNECTION_DIALOG_EN = {
   catalogExample: 'for example hive, iceberg or postgresql',
   user: 'User',
   password: 'Password',
+  tokenOrPassword: 'Token (or password)',
   unchanged: '(unchanged)',
   rememberInKeychain: 'remember in the keychain',
   encryption: 'Encryption',

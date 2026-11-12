@@ -131,7 +131,7 @@ pub fn open(profile: &Profile) -> AppResult<Lite> {
 }
 
 /// The kind of a declared type by SQLite's affinity rules, as far as they say something.
-fn kind(decl: Option<&str>) -> ColKind {
+pub(super) fn kind(decl: Option<&str>) -> ColKind {
     let Some(decl) = decl else {
         return ColKind::Other;
     };

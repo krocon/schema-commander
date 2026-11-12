@@ -25,6 +25,7 @@ export const CONNECTION_DE: Translation<typeof CONNECTION_EN> = {
     duckdb: 'DuckDB',
     clickhouse: 'ClickHouse',
     trino: 'Trino / Presto',
+    libsql: 'libSQL / Turso',
   },
   password: 'Passwort',
   sshSecretTitle: 'SSH-Tunnel: Passwort oder Passphrase',

@@ -1,3 +1,4 @@
+import { dialectOf as sqlDialectOf } from '../../core/connections/connection.models';
 import { Injectable, inject } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
 import { MAX_RECENT_OBJECTS } from '../../core/settings/settings.models';
@@ -62,8 +63,9 @@ export class GotoService {
           : object.kind === 'column'
             ? 'insert'
             : 'details';
-    const dialect =
-      this.connections.profiles().find((p) => p.id === connectionId)?.kind ?? 'sqlite';
+    const dialect = sqlDialectOf(
+      this.connections.profiles().find((p) => p.id === connectionId)?.kind ?? 'sqlite',
+    );
     switch (variant) {
       case 'default': {
         await this.tables.open(connectionId, object.schema || null, object.name, object.name);

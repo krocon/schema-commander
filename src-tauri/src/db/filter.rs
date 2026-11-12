@@ -417,7 +417,7 @@ impl Builder {
                 DbKind::Postgres | DbKind::Duckdb => format!("${n}"),
                 DbKind::Mysql | DbKind::Trino => "?".to_owned(),
                 DbKind::Sqlserver => format!("@P{n}"),
-                DbKind::Sqlite => format!("?{n}"),
+                DbKind::Sqlite | DbKind::Libsql => format!("?{n}"),
                 DbKind::Oracle => format!(":{n}"),
                 DbKind::Clickhouse => format!("{{p{n}:String}}"),
             };
@@ -425,7 +425,9 @@ impl Builder {
                 DbKind::Postgres => format!("decode({inner}, 'hex')"),
                 DbKind::Mysql => format!("UNHEX({inner})"),
                 DbKind::Sqlserver => format!("CONVERT(varbinary(max), {inner}, 2)"),
-                DbKind::Sqlite | DbKind::Duckdb | DbKind::Clickhouse => format!("unhex({inner})"),
+                DbKind::Sqlite | DbKind::Libsql | DbKind::Duckdb | DbKind::Clickhouse => {
+                    format!("unhex({inner})")
+                }
                 DbKind::Oracle => format!("HEXTORAW({inner})"),
                 DbKind::Trino => format!("from_hex({inner})"),
             };
@@ -489,7 +491,7 @@ impl Builder {
             DbKind::Postgres | DbKind::Duckdb => format!("${n}"),
             DbKind::Mysql | DbKind::Trino => "?".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
-            DbKind::Sqlite => format!("?{n}"),
+            DbKind::Sqlite | DbKind::Libsql => format!("?{n}"),
             DbKind::Oracle => format!(":{n}"),
             // the placeholder names the type: a text is read by the server as what it is compared with
             DbKind::Clickhouse => match &bind {
@@ -501,8 +503,8 @@ impl Builder {
         let literal = match &bind {
             Bind::Int(v) | Bind::Decimal(v) => v.clone(),
             Bind::Bool(b) => match (self.kind, *b) {
-                (DbKind::Sqlserver | DbKind::Sqlite, true) => "1".to_owned(),
-                (DbKind::Sqlserver | DbKind::Sqlite, false) => "0".to_owned(),
+                (DbKind::Sqlserver | DbKind::Sqlite | DbKind::Libsql, true) => "1".to_owned(),
+                (DbKind::Sqlserver | DbKind::Sqlite | DbKind::Libsql, false) => "0".to_owned(),
                 (_, true) => "TRUE".to_owned(),
                 (_, false) => "FALSE".to_owned(),
             },
@@ -543,7 +545,7 @@ impl Builder {
             return column.to_owned();
         }
         match self.kind {
-            DbKind::Postgres | DbKind::Sqlite => format!("CAST({column} AS text)"),
+            DbKind::Postgres | DbKind::Sqlite | DbKind::Libsql => format!("CAST({column} AS text)"),
             DbKind::Duckdb | DbKind::Trino => format!("CAST({column} AS VARCHAR)"),
             DbKind::Mysql => format!("CAST({column} AS char)"),
             DbKind::Sqlserver => format!("CAST({column} AS nvarchar(max))"),
@@ -731,7 +733,11 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
         let close = match c {
             b'\'' => Some(b'\''),
             b'"' => Some(b'"'),
-            b'`' if matches!(kind, DbKind::Mysql | DbKind::Sqlite | DbKind::Clickhouse) => {
+            b'`' if matches!(
+                kind,
+                DbKind::Mysql | DbKind::Sqlite | DbKind::Libsql | DbKind::Clickhouse
+            ) =>
+            {
                 Some(b'`')
             }
             b'[' if kind == DbKind::Sqlserver => Some(b']'),
@@ -785,7 +791,11 @@ fn check_where(sql: &str, kind: DbKind) -> AppResult<()> {
                 return refuse("no placeholders");
             }
             b'#' if kind == DbKind::Clickhouse => return refuse("no comments"),
-            b'?' if matches!(kind, DbKind::Mysql | DbKind::Sqlite | DbKind::Trino) => {
+            b'?' if matches!(
+                kind,
+                DbKind::Mysql | DbKind::Sqlite | DbKind::Libsql | DbKind::Trino
+            ) =>
+            {
                 return refuse("no placeholders");
             }
             // `:1`, `:name` would be read as one of the values of the conditions
@@ -904,6 +914,7 @@ pub fn build(kind: DbKind, q: &TableQuery) -> AppResult<Built> {
                 kind,
                 DbKind::Postgres
                     | DbKind::Sqlite
+                    | DbKind::Libsql
                     | DbKind::Oracle
                     | DbKind::Duckdb
                     | DbKind::Clickhouse

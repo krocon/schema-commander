@@ -348,6 +348,23 @@ pub fn parse_url(text: &str) -> AppResult<Candidate> {
         url_form(DbKind::Trino, after("trino://"))?
     } else if lower.starts_with("presto://") {
         url_form(DbKind::Trino, after("presto://"))?
+    } else if lower.starts_with("libsql://") {
+        // a Turso address: HTTPS, the token in the query (`?authToken=…`) – it is the password
+        let (mut p, mut secret) = url_form(DbKind::Libsql, after("libsql://"))?;
+        p.tls = TlsMode::Verify;
+        if p.port == 0 {
+            p.port = 443;
+        }
+        p.database.clear();
+        let query = rest.split_once('?').map_or("", |(_, q)| q);
+        for pair in query.split('&') {
+            if let Some((key, value)) = pair.split_once('=')
+                && key.eq_ignore_ascii_case("authToken")
+            {
+                secret = Some(Secret::new(percent_decode(value)));
+            }
+        }
+        (p, secret)
     } else if lower.starts_with("clickhouse://") {
         url_form(DbKind::Clickhouse, after("clickhouse://"))?
     } else if lower.starts_with("oracle://") {
@@ -404,6 +421,8 @@ fn dbeaver_kind(provider: &str, driver: &str) -> Option<DbKind> {
         Some(DbKind::Oracle)
     } else if both.contains("trino") || both.contains("presto") {
         Some(DbKind::Trino)
+    } else if both.contains("libsql") || both.contains("turso") {
+        Some(DbKind::Libsql)
     } else if both.contains("clickhouse") {
         Some(DbKind::Clickhouse)
     } else if both.contains("duckdb") {
@@ -893,6 +912,22 @@ pub fn read(source: Source, path: Option<&Path>) -> AppResult<Vec<Candidate>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// libSQL (prompt 035g): the address Turso hands out.
+    #[test]
+    fn reads_a_turso_address_with_its_token() {
+        let c = parse_url("libsql://shop-acme.turso.io?authToken=ey.J%2Bx").unwrap();
+        assert_eq!(c.profile.kind, DbKind::Libsql);
+        assert_eq!(c.profile.host, "shop-acme.turso.io");
+        assert_eq!(c.profile.port, 443);
+        assert_eq!(c.profile.tls, TlsMode::Verify);
+        assert_eq!(c.profile.user, "");
+        assert_eq!(c.profile.database, "");
+        assert_eq!(c.password.unwrap().expose(), "ey.J+x");
+        let local = parse_url("libsql://127.0.0.1:8080").unwrap();
+        assert_eq!(local.profile.port, 8080);
+        assert!(local.password.is_none());
+    }
 
     fn url(text: &str) -> (Profile, Option<String>) {
         let c = parse_url(text).unwrap_or_else(|e| panic!("{text}: {e}"));

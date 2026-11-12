@@ -402,20 +402,22 @@ pub fn create_table(
                 format!("varchar2({len} char)")
             }
             (GuessKind::Text, DbKind::Oracle) => "clob".into(),
-            (GuessKind::Int, DbKind::Sqlite) => "integer".into(),
+            (GuessKind::Int, DbKind::Sqlite | DbKind::Libsql) => "integer".into(),
             (GuessKind::Int, _) => "bigint".into(),
-            (GuessKind::Decimal, DbKind::Postgres | DbKind::Sqlite) => "numeric".into(),
+            (GuessKind::Decimal, DbKind::Postgres | DbKind::Sqlite | DbKind::Libsql) => {
+                "numeric".into()
+            }
             (GuessKind::Decimal, _) => "decimal(38, 10)".into(),
             (GuessKind::Bool, DbKind::Postgres | DbKind::Mysql) => "boolean".into(),
             (GuessKind::Bool, DbKind::Sqlserver) => "bit".into(),
-            (GuessKind::Bool, DbKind::Sqlite) => "integer".into(),
-            (GuessKind::Date, DbKind::Sqlite) => "text".into(),
+            (GuessKind::Bool, DbKind::Sqlite | DbKind::Libsql) => "integer".into(),
+            (GuessKind::Date, DbKind::Sqlite | DbKind::Libsql) => "text".into(),
             (GuessKind::Date, _) => "date".into(),
             (GuessKind::DateTime, DbKind::Postgres) => "timestamp".into(),
             (GuessKind::DateTime, DbKind::Mysql) => "datetime(6)".into(),
             (GuessKind::DateTime, DbKind::Sqlserver) => "datetime2".into(),
-            (GuessKind::DateTime, DbKind::Sqlite) => "text".into(),
-            (GuessKind::Text, DbKind::Postgres | DbKind::Sqlite) => "text".into(),
+            (GuessKind::DateTime, DbKind::Sqlite | DbKind::Libsql) => "text".into(),
+            (GuessKind::Text, DbKind::Postgres | DbKind::Sqlite | DbKind::Libsql) => "text".into(),
             (GuessKind::Text, DbKind::Mysql) if g.max_len <= 2000 => format!("varchar({len})"),
             (GuessKind::Text, DbKind::Mysql) => "longtext".into(),
             (GuessKind::Text, DbKind::Sqlserver) if g.max_len <= 2000 => format!("nvarchar({len})"),

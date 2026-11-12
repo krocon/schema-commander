@@ -16,6 +16,7 @@ pub mod find;
 pub mod guard;
 pub mod http;
 pub mod import;
+pub mod libsql;
 pub mod load;
 pub mod manager;
 pub mod meta;
@@ -62,9 +63,16 @@ pub enum DbKind {
     Clickhouse,
     /// Trino and Presto (prompt 035f), over their HTTP protocol: `database` of the profile is the catalog.
     Trino,
+    /// libSQL (prompt 035g): a `sqld` server or a Turso database over HTTP; the dialect is SQLite's.
+    Libsql,
 }
 
 impl DbKind {
+    /// The dialect is SQLite's, wherever the database lies: a file here, or libSQL behind a server.
+    pub fn is_sqlite(self) -> bool {
+        matches!(self, DbKind::Sqlite | DbKind::Libsql)
+    }
+
     /// An embedded database: a file of this computer (or memory), no server, no login.
     pub fn is_file(self) -> bool {
         matches!(self, DbKind::Sqlite | DbKind::Duckdb)
@@ -87,6 +95,7 @@ impl DbKind {
             DbKind::Duckdb => 0,
             DbKind::Clickhouse => 8123,
             DbKind::Trino => 8080,
+            DbKind::Libsql => 8080,
         }
     }
 }
@@ -310,19 +319,21 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
         (DbKind::Clickhouse, _) => "ClickHouse",
         (DbKind::Trino, Flavor::Presto) => "Presto",
         (DbKind::Trino, _) => "Trino",
+        (DbKind::Libsql, _) => "libSQL",
     };
     Capabilities {
         product: product.to_owned(),
         // the SQL Server and the Oracle driver have no way to stop a statement but to drop the connection
-        cancel: !matches!(kind, DbKind::Sqlserver | DbKind::Oracle),
+        // libSQL's protocol cannot stop a statement either: it is left behind, on a stream of its own
+        cancel: !matches!(kind, DbKind::Sqlserver | DbKind::Oracle | DbKind::Libsql),
         // ClickHouse has no foreign keys, and Trino's catalog names none
         foreign_keys: !matches!(kind, DbKind::Clickhouse | DbKind::Trino),
-        schemas: kind != DbKind::Sqlite,
+        schemas: !kind.is_sqlite(),
         triggers: flavor != Flavor::Cockroach
             && !matches!(kind, DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino),
         routines: !matches!(
             kind,
-            DbKind::Sqlite | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino
+            DbKind::Sqlite | DbKind::Libsql | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino
         ),
         plan: !matches!(
             kind,
@@ -331,11 +342,21 @@ pub fn capabilities(kind: DbKind, flavor: Flavor) -> Capabilities {
         // an embedded database has no server to watch and no users
         monitor: !matches!(
             kind,
-            DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino
+            DbKind::Sqlite
+                | DbKind::Libsql
+                | DbKind::Oracle
+                | DbKind::Duckdb
+                | DbKind::Clickhouse
+                | DbKind::Trino
         ),
         access: !matches!(
             kind,
-            DbKind::Sqlite | DbKind::Oracle | DbKind::Duckdb | DbKind::Clickhouse | DbKind::Trino
+            DbKind::Sqlite
+                | DbKind::Libsql
+                | DbKind::Oracle
+                | DbKind::Duckdb
+                | DbKind::Clickhouse
+                | DbKind::Trino
         ),
         structure: !matches!(
             kind,
@@ -383,6 +404,7 @@ pub fn begin_statement(kind: DbKind) -> &'static str {
         // there are no transactions: who needs one refuses ClickHouse before it comes to this
         DbKind::Clickhouse => "BEGIN TRANSACTION",
         DbKind::Trino => "START TRANSACTION",
+        DbKind::Libsql => "BEGIN",
     }
 }
 
@@ -528,6 +550,7 @@ pub fn connect(
         DbKind::Duckdb => Box::new(duckdb::open(profile)?),
         DbKind::Clickhouse => Box::new(clickhouse::connect(profile, secret, stop)?),
         DbKind::Trino => Box::new(trino::connect(profile, secret, stop)?),
+        DbKind::Libsql => Box::new(libsql::connect(profile, secret, stop)?),
     })
 }
 
@@ -958,6 +981,14 @@ mod tests {
         assert!(trino.cancel && trino.schemas && !trino.foreign_keys && !trino.edit);
         assert!(!trino.plan && !trino.monitor && !trino.access && !trino.structure);
         assert!(!DbKind::Trino.edits_rows() && DbKind::Postgres.edits_rows());
+        // libSQL (035g): SQLite behind a server – all of its dialect, none of its file
+        let libsql = of(DbKind::Libsql, Flavor::Plain);
+        assert_eq!(libsql.product, "libSQL");
+        assert!(libsql.edit && libsql.plan && libsql.structure && libsql.foreign_keys);
+        assert!(!libsql.schemas && !libsql.cancel && !libsql.monitor && !libsql.access);
+        assert!(DbKind::Libsql.is_sqlite() && !DbKind::Libsql.is_file());
+        assert!(DbKind::Sqlite.is_sqlite() && !DbKind::Duckdb.is_sqlite());
+        assert_eq!(begin_statement(DbKind::Libsql), "BEGIN");
         let lite = of(DbKind::Sqlite, Flavor::Plain);
         assert!(!lite.schemas && !lite.routines && lite.triggers && lite.cancel);
         let json = serde_json::to_value(&crdb).unwrap();

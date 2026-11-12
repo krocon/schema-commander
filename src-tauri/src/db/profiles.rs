@@ -148,7 +148,8 @@ pub fn check(p: &Profile) -> AppResult<()> {
     if !host_ok(&p.host) {
         return Err(invalid("the host is missing or not a host name"));
     }
-    if p.user.trim().is_empty() {
+    // libSQL logs in with a token alone (the password of the profile)
+    if p.user.trim().is_empty() && p.kind != DbKind::Libsql {
         return Err(invalid("the user is missing"));
     }
     Ok(())

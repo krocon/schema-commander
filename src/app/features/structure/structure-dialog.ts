@@ -1,3 +1,4 @@
+import { dialectOf as sqlDialectOf } from '../../core/connections/connection.models';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -783,10 +784,11 @@ export class StructureDialog {
   private asked = 0;
 
   protected readonly writable = computed(() => this.service.canWrite(this.target().connectionId));
-  private readonly kind = computed(
-    () =>
+  private readonly kind = computed(() =>
+    sqlDialectOf(
       this.connections.profiles().find((p) => p.id === this.target().connectionId)?.kind ??
-      'sqlite',
+        'sqlite',
+    ),
   );
   protected readonly types = computed(() => typeSuggestions(this.kind()));
   protected readonly title = computed(() => {

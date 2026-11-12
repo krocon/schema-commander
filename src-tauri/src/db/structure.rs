@@ -78,7 +78,7 @@ fn invalid(message: &str) -> AppError {
 }
 
 fn qualified(kind: DbKind, schema: &str, table: &str) -> AppResult<String> {
-    if kind == DbKind::Sqlite || schema.is_empty() {
+    if kind.is_sqlite() || schema.is_empty() {
         name(table, kind)
     } else {
         Ok(format!("{}.{}", name(schema, kind)?, name(table, kind)?))
@@ -403,7 +403,7 @@ pub fn plan(kind: DbKind, request: &Request) -> AppResult<Plan> {
             vec![dangerous(
                 match kind {
                     // SQLite has no TRUNCATE
-                    DbKind::Sqlite => format!("DELETE FROM {t};"),
+                    DbKind::Sqlite | DbKind::Libsql => format!("DELETE FROM {t};"),
                     _ => format!("TRUNCATE TABLE {t};"),
                 },
                 "removes every row of the table",

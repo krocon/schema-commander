@@ -377,7 +377,7 @@ pub fn quote_always(name: &str, kind: DbKind) -> String {
         // a backslash escapes inside backticks there (not in MySQL): written out as one
         DbKind::Clickhouse => format!("`{}`", name.replace('\\', "\\\\").replace('`', "``")),
         DbKind::Sqlserver => format!("[{}]", name.replace(']', "]]")),
-        DbKind::Postgres | DbKind::Sqlite | DbKind::Duckdb | DbKind::Trino => {
+        DbKind::Postgres | DbKind::Sqlite | DbKind::Libsql | DbKind::Duckdb | DbKind::Trino => {
             format!("\"{}\"", name.replace('"', "\"\""))
         }
         // Oracle has no way to write a quote inside a quoted name (and allows none in a name): one that
@@ -463,7 +463,7 @@ pub fn schemas(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<S
              CASE WHEN s.name = SCHEMA_NAME() THEN 'true' ELSE 'false' END \
              FROM sys.schemas s ORDER BY 1"
         }
-        DbKind::Sqlite => {
+        DbKind::Sqlite | DbKind::Libsql => {
             "SELECT name, 'false', CASE WHEN name = 'main' THEN 'true' ELSE 'false' END \
              FROM pragma_database_list ORDER BY seq"
         }
@@ -578,7 +578,7 @@ pub fn objects(
              FROM sys.types t JOIN sys.schemas s ON s.schema_id = t.schema_id \
              WHERE s.name = @P1 AND t.is_user_defined = 1",
         ],
-        DbKind::Sqlite => &["SELECT type, name, '', NULL FROM pragma_table_list \
+        DbKind::Sqlite | DbKind::Libsql => &["SELECT type, name, '', NULL FROM pragma_table_list \
              WHERE schema = ?1 AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'"],
         DbKind::Trino => &[
             "SELECT CASE table_type WHEN 'VIEW' THEN 'view' ELSE 'table' END, \
@@ -1240,7 +1240,7 @@ pub fn table(
         DbKind::Postgres => pg_table(s, schema, table, stop),
         DbKind::Mysql => mysql_table(s, schema, table, stop),
         DbKind::Sqlserver => mssql_table(s, schema, table, stop),
-        DbKind::Sqlite => sqlite_table(s, schema, table, stop),
+        DbKind::Sqlite | DbKind::Libsql => sqlite_table(s, schema, table, stop),
         DbKind::Oracle => oracle_table(s, schema, table, stop),
         DbKind::Duckdb => duckdb_table(s, schema, table, stop),
         DbKind::Clickhouse => clickhouse_table(s, schema, table, stop),
@@ -1280,7 +1280,7 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
              WHERE o.type IN ('U', 'V') AND o.name LIKE @P1 ESCAPE '\\' AND o.is_ms_shipped = 0 \
              ORDER BY 3, 1"
         }
-        DbKind::Sqlite => {
+        DbKind::Sqlite | DbKind::Libsql => {
             "SELECT schema, type, name FROM pragma_table_list \
              WHERE name LIKE ?1 ESCAPE '\\' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' \
              ORDER BY 3, 1 LIMIT 200"

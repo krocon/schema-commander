@@ -15,7 +15,7 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
 
 ## What works
 
-- Connections to PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, ClickHouse, Trino/Presto, DuckDB and SQLite files: profiles in folders with colour tags,
+- Connections to PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, ClickHouse, Trino/Presto, libSQL/Turso, DuckDB and SQLite files: profiles in folders with colour tags,
   passwords only in the keychain of your OS; a demo database in memory to try things out.
   Servers that speak PostgreSQL's protocol work as PostgreSQL connections – tested with CockroachDB,
   TimescaleDB and YugabyteDB: the app finds out who answers and adapts (cancel, transaction state, catalog).
@@ -29,7 +29,11 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
   transactions and no unique keys).
   Trino (and Presto, which speaks the same protocol) likewise: one connection per catalog, over HTTP; run,
   browse, filter, search, cancel, a session that only reads. Its catalog names no keys, so rows are not
-  edited in the grid; a password is sent only over TLS
+  edited in the grid; a password is sent only over TLS.
+  libSQL (a `sqld` server or a Turso database) is SQLite over the network: everything the app does with a
+  SQLite file but the file copy as a backup. Paste the `libsql://…?authToken=…` address, or leave the user
+  empty and give the token as the password. An open transaction is kept alive while you think; a statement
+  cannot be stopped on the server
 - Query tabs, each with its own connection and result. Nothing ever asks „save?“: every text is backed up a
   moment after you type and is there again after a restart or a crash; `.sql` files keep their encoding
 - SQL editor with syntax highlighting; <kbd>Ctrl/⌘</kbd>+<kbd>Enter</kbd> runs the selection or the statement

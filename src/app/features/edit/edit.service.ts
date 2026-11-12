@@ -1,3 +1,4 @@
+import { dialectOf as sqlDialectOf } from '../../core/connections/connection.models';
 import { Injectable, inject, signal } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
 import { describeError, toAppError } from '../../core/errors/app-error';
@@ -726,7 +727,9 @@ export class EditService {
       this.settings.settings().editLock,
       view.schema,
       view.table,
-      this.connections.profiles().find((p) => p.id === tab.connectionId())?.kind ?? 'sqlite',
+      sqlDialectOf(
+        this.connections.profiles().find((p) => p.id === tab.connectionId())?.kind ?? 'sqlite',
+      ),
     );
     const rows =
       built.plan.rows.length +

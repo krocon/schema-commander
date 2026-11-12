@@ -2,7 +2,23 @@ import { CONNECTION_MODEL_TEXTS } from './connection-model-texts';
 
 /** Mirrors `DbKind` in src-tauri/src/db/mod.rs. */
 export type DbKind =
-  'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle' | 'duckdb' | 'clickhouse' | 'trino';
+  | 'postgres'
+  | 'mysql'
+  | 'sqlserver'
+  | 'sqlite'
+  | 'oracle'
+  | 'duckdb'
+  | 'clickhouse'
+  | 'trino'
+  | 'libsql';
+
+/** A kind with a dialect of its own (libSQL writes SQLite's). */
+export type SqlDialect = Exclude<DbKind, 'libsql'>;
+
+/** The dialect a connection of this kind speaks: what its SQL is split, completed and quoted by. */
+export function dialectOf(kind: DbKind): SqlDialect {
+  return kind === 'libsql' ? 'sqlite' : kind;
+}
 
 /** An embedded database: a file of this computer (or memory) – no host, no login. */
 export function isFileKind(kind: DbKind): boolean {
@@ -158,6 +174,8 @@ export const DB_KINDS: readonly {
   { kind: 'clickhouse', label: 'ClickHouse', port: 8123 },
   // Trino and Presto over HTTP; the database of the profile is the catalog (prompt 035f)
   { kind: 'trino', label: 'Trino / Presto', port: 8080 },
+  // a sqld server or a Turso database over HTTP; the dialect is SQLite's (prompt 035g)
+  { kind: 'libsql', label: 'libSQL / Turso', port: 8080 },
   {
     kind: 'sqlite',
     // a getter: the language may change while the app runs

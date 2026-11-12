@@ -20,6 +20,7 @@ export const CONNECTION_DIALOG_DE: Translation<typeof CONNECTION_DIALOG_EN> = {
   catalogExample: 'zum Beispiel hive, iceberg oder postgresql',
   user: 'Benutzer',
   password: 'Passwort',
+  tokenOrPassword: 'Token (oder Passwort)',
   unchanged: '(unverändert)',
   rememberInKeychain: 'im Schlüsselbund merken',
   encryption: 'Verschlüsselung',

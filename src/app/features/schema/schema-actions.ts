@@ -1,3 +1,4 @@
+import { dialectOf as sqlDialectOf } from '../../core/connections/connection.models';
 import { TableViews } from '../filter/table-views.service';
 import { Injectable, inject } from '@angular/core';
 import { ConnectionsStore } from '../../core/connections/connections.store';
@@ -184,7 +185,7 @@ export class SchemaActions {
     if (!row || !this.offered(action) || !allows(action, row)) return;
     const name = rowName(row) ?? '';
     const qualified = rowQualified(row) ?? '';
-    const kind = this.connections.active()?.kind ?? 'sqlite';
+    const kind = sqlDialectOf(this.connections.active()?.kind ?? 'sqlite');
     switch (action) {
       case 'SCHEMA_DETAILS':
         if (!row.schema || !row.object) return;

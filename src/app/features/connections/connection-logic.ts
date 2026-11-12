@@ -89,7 +89,8 @@ export function profileProblems(p: Profile): Partial<Record<Field, string>> {
   else if (!/^[A-Za-z0-9._:[\]%-]{1,253}$/.test(host)) {
     out.host = t.hostInvalid;
   }
-  if (!p.user.trim()) out.user = t.userMissing;
+  // libSQL logs in with a token alone: the password of the profile
+  if (!p.user.trim() && p.kind !== 'libsql') out.user = t.userMissing;
   if (p.kind === 'trino' && !p.database.trim()) out.database = t.catalogMissing;
   if (p.kind === 'oracle') {
     if (!p.database.trim()) out.database = t.serviceMissing;
@@ -128,6 +129,7 @@ export function withKind(p: Profile, kind: DbKind): Profile {
     duckdb: '',
     clickhouse: 'default',
     trino: 'trino',
+    libsql: '',
   };
   const usual = Object.values(users);
   return {

@@ -123,6 +123,7 @@ const SAME = new Set<string>([
   'DuckDB',
   'ClickHouse',
   'Trino / Presto',
+  'libSQL / Turso',
   'Schema Commander',
   'Schema',
   'TLS: ',
