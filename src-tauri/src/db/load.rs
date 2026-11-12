@@ -385,7 +385,7 @@ pub fn create_table(
         let len = (g.max_len.max(1) * 2).clamp(20, 4000);
         match (g.kind, kind) {
             (GuessKind::Int, DbKind::Firebird) => "BIGINT".into(),
-            (GuessKind::Decimal, DbKind::Firebird) => "DECFLOAT(34)".into(),
+            (GuessKind::Decimal, DbKind::Firebird) => "NUMERIC(38, 10)".into(),
             (GuessKind::DateTime, DbKind::Firebird) => "TIMESTAMP".into(),
             (GuessKind::Bool, DbKind::Firebird) => "BOOLEAN".into(),
             (GuessKind::Text, DbKind::Firebird) if g.max_len <= 2000 => format!("VARCHAR({len})"),

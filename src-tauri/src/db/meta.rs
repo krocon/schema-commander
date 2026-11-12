@@ -332,6 +332,228 @@ const ORACLE_RESERVED: &[&str] = &[
     "WHENEVER",
 ];
 
+/// The reserved words of Firebird 5, as its `RDB$KEYWORDS` lists them (review 035i 4): a column called
+/// `DATE` or `VALUE` – common in old databases – is one only in quotes.
+const FIREBIRD_RESERVED: &[&str] = &[
+    "ADD",
+    "ADMIN",
+    "ALL",
+    "ALTER",
+    "AND",
+    "ANY",
+    "AS",
+    "AT",
+    "AVG",
+    "BEGIN",
+    "BETWEEN",
+    "BIGINT",
+    "BINARY",
+    "BIT_LENGTH",
+    "BLOB",
+    "BOOLEAN",
+    "BOTH",
+    "BY",
+    "CASE",
+    "CAST",
+    "CHAR",
+    "CHARACTER",
+    "CHARACTER_LENGTH",
+    "CHAR_LENGTH",
+    "CHECK",
+    "CLOSE",
+    "COLLATE",
+    "COLUMN",
+    "COMMENT",
+    "COMMIT",
+    "CONNECT",
+    "CONSTRAINT",
+    "CORR",
+    "COUNT",
+    "COVAR_POP",
+    "COVAR_SAMP",
+    "CREATE",
+    "CROSS",
+    "CURRENT",
+    "CURRENT_CONNECTION",
+    "CURRENT_DATE",
+    "CURRENT_ROLE",
+    "CURRENT_TIME",
+    "CURRENT_TIMESTAMP",
+    "CURRENT_TRANSACTION",
+    "CURRENT_USER",
+    "CURSOR",
+    "DATE",
+    "DAY",
+    "DEC",
+    "DECFLOAT",
+    "DECIMAL",
+    "DECLARE",
+    "DEFAULT",
+    "DELETE",
+    "DELETING",
+    "DETERMINISTIC",
+    "DISCONNECT",
+    "DISTINCT",
+    "DOUBLE",
+    "DROP",
+    "ELSE",
+    "END",
+    "ESCAPE",
+    "EXECUTE",
+    "EXISTS",
+    "EXTERNAL",
+    "EXTRACT",
+    "FALSE",
+    "FETCH",
+    "FILTER",
+    "FLOAT",
+    "FOR",
+    "FOREIGN",
+    "FROM",
+    "FULL",
+    "FUNCTION",
+    "GDSCODE",
+    "GLOBAL",
+    "GRANT",
+    "GROUP",
+    "HAVING",
+    "HOUR",
+    "IN",
+    "INDEX",
+    "INNER",
+    "INSENSITIVE",
+    "INSERT",
+    "INSERTING",
+    "INT",
+    "INT128",
+    "INTEGER",
+    "INTO",
+    "IS",
+    "JOIN",
+    "LATERAL",
+    "LEADING",
+    "LEFT",
+    "LIKE",
+    "LOCAL",
+    "LOCALTIME",
+    "LOCALTIMESTAMP",
+    "LONG",
+    "LOWER",
+    "MAX",
+    "MERGE",
+    "MIN",
+    "MINUTE",
+    "MONTH",
+    "NATIONAL",
+    "NATURAL",
+    "NCHAR",
+    "NO",
+    "NOT",
+    "NULL",
+    "NUMERIC",
+    "OCTET_LENGTH",
+    "OF",
+    "OFFSET",
+    "ON",
+    "ONLY",
+    "OPEN",
+    "OR",
+    "ORDER",
+    "OUTER",
+    "OVER",
+    "PARAMETER",
+    "PLAN",
+    "POSITION",
+    "POST_EVENT",
+    "PRECISION",
+    "PRIMARY",
+    "PROCEDURE",
+    "PUBLICATION",
+    "REAL",
+    "RECORD_VERSION",
+    "RECREATE",
+    "RECURSIVE",
+    "REFERENCES",
+    "REGR_AVGX",
+    "REGR_AVGY",
+    "REGR_COUNT",
+    "REGR_INTERCEPT",
+    "REGR_R2",
+    "REGR_SLOPE",
+    "REGR_SXX",
+    "REGR_SXY",
+    "REGR_SYY",
+    "RELEASE",
+    "RESETTING",
+    "RETURN",
+    "RETURNING_VALUES",
+    "RETURNS",
+    "REVOKE",
+    "RIGHT",
+    "ROLLBACK",
+    "ROW",
+    "ROWS",
+    "ROW_COUNT",
+    "SAVEPOINT",
+    "SCHEMA",
+    "SCROLL",
+    "SECOND",
+    "SELECT",
+    "SENSITIVE",
+    "SET",
+    "SIMILAR",
+    "SMALLINT",
+    "SOME",
+    "SQLCODE",
+    "SQLSTATE",
+    "START",
+    "STDDEV_POP",
+    "STDDEV_SAMP",
+    "SUM",
+    "TABLE",
+    "THEN",
+    "TIME",
+    "TIMESTAMP",
+    "TIMEZONE_HOUR",
+    "TIMEZONE_MINUTE",
+    "TO",
+    "TRAILING",
+    "TRIGGER",
+    "TRIM",
+    "TRUE",
+    "UNBOUNDED",
+    "UNION",
+    "UNIQUE",
+    "UNKNOWN",
+    "UPDATE",
+    "UPDATING",
+    "UPPER",
+    "USER",
+    "USING",
+    "VALUE",
+    "VALUES",
+    "VARBINARY",
+    "VARCHAR",
+    "VARIABLE",
+    "VARYING",
+    "VAR_POP",
+    "VAR_SAMP",
+    "VIEW",
+    "WHEN",
+    "WHERE",
+    "WHILE",
+    "WINDOW",
+    "WITH",
+    "WITHOUT",
+    "YEAR",
+];
+
+fn firebird_reserved(name: &str) -> bool {
+    FIREBIRD_RESERVED
+        .binary_search(&name.to_ascii_uppercase().as_str())
+        .is_ok()
+}
+
 fn oracle_reserved(name: &str) -> bool {
     ORACLE_RESERVED.contains(&name.to_ascii_uppercase().as_str())
 }
@@ -350,7 +572,8 @@ fn plain(name: &str, kind: DbKind) -> bool {
         // PostgreSQL folds unquoted names to lower case: an upper case letter needs quotes
         DbKind::Postgres => first.is_ascii_lowercase() || first == '_',
         // Oracle folds unquoted names to upper case: a lower case letter needs quotes
-        DbKind::Oracle => first.is_ascii_uppercase(),
+        // (so does Firebird, and a name there begins with a letter)
+        DbKind::Oracle | DbKind::Firebird => first.is_ascii_uppercase(),
         _ => first.is_ascii_alphabetic() || first == '_',
     };
     let rest_ok = name.chars().all(|c| match kind {
@@ -361,7 +584,11 @@ fn plain(name: &str, kind: DbKind) -> bool {
         }
         _ => c.is_ascii_alphanumeric() || c == '_',
     });
-    first_ok && rest_ok && !reserved(name) && !(kind == DbKind::Oracle && oracle_reserved(name))
+    first_ok
+        && rest_ok
+        && !reserved(name)
+        && !(kind == DbKind::Oracle && oracle_reserved(name))
+        && !(kind == DbKind::Firebird && firebird_reserved(name))
 }
 
 /// A name as it is written in SQL: as it is where that is safe, quoted otherwise (spaces, upper case in
@@ -1512,6 +1739,31 @@ mod tests {
         assert_eq!(q("x\\`; DROP TABLE t; --"), "`x\\\\``; DROP TABLE t; --`");
         // MySQL takes a backslash as it is there
         assert_eq!(quote("a\\b", DbKind::Mysql), "`a\\b`");
+    }
+
+    /// Firebird (review 035i 4): its own words, and no name that begins with `_`.
+    #[test]
+    fn firebird_names_that_are_words_of_the_language_are_quoted() {
+        let q = |name: &str| quote(name, DbKind::Firebird);
+        assert_eq!(q("ORDERS"), "ORDERS");
+        for word in [
+            "DATE",
+            "VALUE",
+            "COUNT",
+            "TIMESTAMP",
+            "YEAR",
+            "POSITION",
+            "COMMENT",
+            "START",
+        ] {
+            assert_eq!(q(word), format!("\"{word}\""));
+        }
+        assert_eq!(q("_X"), "\"_X\"");
+        assert_eq!(q("orders"), "\"orders\"");
+        assert_eq!(q("My\"Q"), "\"My\"\"Q\"");
+        let mut sorted = FIREBIRD_RESERVED.to_vec();
+        sorted.sort_unstable();
+        assert_eq!(sorted, FIREBIRD_RESERVED);
     }
 
     #[test]

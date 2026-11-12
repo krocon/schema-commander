@@ -17,8 +17,8 @@ use super::{Bind, Limits, Profile, Session, Stop, TlsMode, TxState, clean};
 use crate::error::{AppError, AppResult, ErrorCode, ErrorDetails};
 use chrono::{Duration as Days, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 use firebird_wire::{
-    ColumnMeta, ConnectConfig, Connection, Error, Statement, Transaction, TransactionBuilder,
-    Value, WireCrypt,
+    ColumnMeta, ConnectConfig, Connection, DecFloat, Error, IsolationLevel, Statement, Transaction,
+    TransactionBuilder, Value, WireCrypt,
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -78,6 +78,12 @@ fn failed(e: &Error, on: &str, sql: &str) -> AppError {
                 .to_owned();
             let lower = said.to_lowercase();
             let code = match gds {
+                // whatever stands first: a write refused in a transaction that only reads
+                _ if lower.contains("read-only transaction")
+                    || lower.contains("read-only database") =>
+                {
+                    ErrorCode::PermissionDenied
+                }
                 // isc_login, isc_login_error
                 Some(335_544_472 | 335_545_106) => ErrorCode::AuthFailed,
                 // isc_io_error, isc_unavailable: no such database (file) on the server
@@ -133,7 +139,8 @@ fn failed(e: &Error, on: &str, sql: &str) -> AppError {
             AppError::new(ErrorCode::InvalidQuery, clean(m))
         }
         // a value that does not fit its place is the statement's matter, not the wire's
-        Error::Protocol(m) if m.contains("does not fit parameter") => {
+        // (the crate says so before anything is sent: the wire is as it was)
+        Error::Protocol(m) if m.contains("fit parameter") => {
             AppError::new(ErrorCode::InvalidQuery, clean(m))
         }
         other => AppError::new(
@@ -146,7 +153,7 @@ fn failed(e: &Error, on: &str, sql: &str) -> AppError {
 /// Whether the connection is still what it was after this error.
 fn breaks(e: &Error) -> bool {
     matches!(e, Error::Io(_) | Error::Closed | Error::Timeout)
-        || matches!(e, Error::Protocol(m) if !m.contains("does not fit parameter"))
+        || matches!(e, Error::Protocol(m) if !m.contains("fit parameter"))
 }
 
 fn config(profile: &Profile, secret: Option<&Secret>) -> AppResult<ConnectConfig> {
@@ -371,10 +378,16 @@ fn type_name(meta: &ColumnMeta) -> String {
             } else {
                 ("VARCHAR", "VARBINARY")
             };
-            if meta.sub_type == 1 {
+            // the length is in bytes: how many make a character says the character set
+            let per_char = match meta.sub_type & 0xff {
+                4 => 4,
+                3 => 3,
+                _ => 1,
+            };
+            if meta.sub_type & 0xff == 1 {
                 format!("{octets}({})", meta.length)
             } else {
-                format!("{word}({})", (meta.length / 4).max(1))
+                format!("{word}({})", (meta.length / per_char).max(1))
             }
         }
         SQL_BLOB if meta.sub_type == 1 => "BLOB SUB_TYPE TEXT".into(),
@@ -415,7 +428,8 @@ fn cell(v: Value, meta: &ColumnMeta) -> Cell {
         Value::Int(n) => Cell::I64(i64::from(n)),
         Value::BigInt(n) => Cell::I64(n),
         Value::Int128(n) => Cell::Decimal(scaled(n, meta.scale.min(0))),
-        Value::Float(f) => Cell::F64(f64::from(f)),
+        // the number as one would write it: 0.1, not what an f32 of 0.1 is as an f64
+        Value::Float(f) => Cell::F64(f.to_string().parse().unwrap_or(f64::from(f))),
         Value::Double(f) => Cell::F64(f),
         Value::Text(s) => Cell::Text(text(&s)),
         Value::Bytes(b) => Cell::bytes(&b),
@@ -445,10 +459,14 @@ fn cell(v: Value, meta: &ColumnMeta) -> Cell {
             }
         }
         Value::DecFloat(d) => match d.to_parts() {
-            Some((negative, coefficient, exponent)) => {
-                let n = i128::try_from(coefficient).unwrap_or(i128::MAX);
-                Cell::Decimal(scaled(if negative { -n } else { n }, exponent))
+            // written out where that is a number one reads; else as the server would write it
+            Some((negative, coefficient, exponent)) if (-60..=40).contains(&exponent) => {
+                match i128::try_from(coefficient) {
+                    Ok(n) => Cell::Decimal(scaled(if negative { -n } else { n }, exponent)),
+                    Err(_) => Cell::Decimal(d.to_string()),
+                }
             }
+            Some(_) => Cell::Decimal(d.to_string()),
             None if d.is_nan() => Cell::Text("NaN".into()),
             None if d.is_negative() => Cell::Text("-Infinity".into()),
             None => Cell::Text("Infinity".into()),
@@ -463,6 +481,16 @@ fn not_a(what: &str, text: &str) -> AppError {
         format!(
             "„{}“ is not a {what}",
             text.chars().take(40).collect::<String>()
+        ),
+    )
+}
+
+fn too_long(meta: &ColumnMeta) -> AppError {
+    AppError::new(
+        ErrorCode::InvalidQuery,
+        format!(
+            "the value is longer than its place holds ({})",
+            type_name(meta)
         ),
     )
 }
@@ -506,7 +534,13 @@ fn bound(raw: &str, meta: &ColumnMeta) -> AppResult<Value> {
             i64::try_from(whole("whole number")?).map_err(|_| fits("number this column holds"))?,
         ),
         SQL_INT128 => Value::Int128(whole("whole number")?),
-        SQL_FLOAT => Value::Float(Bind::float(t)? as f32),
+        SQL_FLOAT => {
+            let f = Bind::float(t)? as f32;
+            if !f.is_finite() {
+                return Err(fits("number this column holds"));
+            }
+            Value::Float(f)
+        }
         SQL_DOUBLE => Value::Double(Bind::float(t)?),
         SQL_BOOLEAN => match t.to_ascii_lowercase().as_str() {
             "true" | "t" | "1" | "yes" => Value::Bool(true),
@@ -523,40 +557,180 @@ fn bound(raw: &str, meta: &ColumnMeta) -> AppResult<Value> {
             let at = datetime(t).ok_or_else(|| not_a("date with a time", t))?;
             Value::Timestamp(days_of(at.date()), units_of(at.time()))
         }
+        SQL_DEC16 | SQL_DEC34 => {
+            Value::DecFloat(t.parse::<DecFloat>().map_err(|_| not_a("number", t))?)
+        }
+        SQL_TIMESTAMP_TZ => {
+            // an instant: with its offset, or – without one – taken as UTC, as the grid shows it
+            let at = chrono::DateTime::parse_from_str(t, "%Y-%m-%d %H:%M:%S%.f %:z")
+                .or_else(|_| chrono::DateTime::parse_from_rfc3339(&t.replacen(' ', "T", 1)))
+                .ok()
+                .or_else(|| datetime(t).map(|naive| naive.and_utc().fixed_offset()))
+                .ok_or_else(|| not_a("date with a time and a zone", t))?;
+            let utc = at.naive_utc();
+            let minutes = i16::try_from(at.offset().local_minus_utc() / 60).unwrap_or(0);
+            Value::TimestampTz(firebird_wire::value::TimestampTz {
+                utc_date: days_of(utc.date()),
+                utc_time: units_of(utc.time()),
+                zone: firebird_wire::tz::offset_zone_id(minutes),
+                offset: minutes,
+            })
+        }
+        SQL_TIME_TZ => {
+            return Err(AppError::new(
+                ErrorCode::Unsupported,
+                "a time with a zone cannot be bound for Firebird yet: write it into the statement",
+            ));
+        }
         // a binary text column takes bytes; the app sends them as hex through a function of the server
-        SQL_TEXT | SQL_VARYING if meta.sub_type == 1 => Value::Bytes(raw.as_bytes().to_vec()),
-        // text as it is – also for a BLOB, a DECFLOAT and a time with a zone: the server reads those
+        SQL_TEXT | SQL_VARYING if meta.sub_type & 0xff == 1 => {
+            if raw.len() > usize::try_from(meta.length).unwrap_or(0) {
+                return Err(too_long(meta));
+            }
+            Value::Bytes(raw.as_bytes().to_vec())
+        }
+        // a text longer than its place: said here, in words (the crate would call it a broken wire)
+        SQL_TEXT | SQL_VARYING if raw.len() > usize::try_from(meta.length).unwrap_or(0) => {
+            return Err(too_long(meta));
+        }
+        // text as it is – also for a BLOB
         _ => Value::Text(raw.to_owned()),
     })
+}
+
+/// How the user wants a transaction opened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct Opening {
+    read_only: bool,
+    isolation: Option<IsolationLevel>,
+    no_wait: bool,
+    lock_timeout: Option<i32>,
 }
 
 /// What a statement of the user does to the transaction of the session.
 #[derive(Debug, PartialEq, Eq)]
 enum Control {
-    Begin { read_only: bool },
+    Begin(Opening),
+    /// `SET TRANSACTION` with something the driver cannot do: said, not dropped.
+    Unknown(String),
     Commit,
     Rollback,
     None,
 }
 
-/// `SET TRANSACTION …`, `COMMIT [WORK]`, `ROLLBACK [WORK]` – and nothing that only starts like them
-/// (`ROLLBACK TO SAVEPOINT x` is a statement of the server).
+/// The words of a statement in upper case, without its comments; a string or a quoted name is one word
+/// that is none of the language (`'…'`).
+fn words(sql: &str) -> Vec<String> {
+    let chars: Vec<char> = sql.chars().collect();
+    let mut out = Vec::new();
+    let mut word = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let next = chars.get(i + 1).copied();
+        if c == '-' && next == Some('-') {
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+        } else if c == '/' && next == Some('*') {
+            i += 2;
+            while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                i += 1;
+            }
+            i += 2;
+        } else if c == '\'' || c == '"' {
+            i += 1;
+            while i < chars.len() && chars[i] != c {
+                i += 1;
+            }
+            i += 1;
+            out.push(std::mem::take(&mut word));
+            out.push("'…'".to_owned());
+        } else if c.is_whitespace() || c == ';' {
+            out.push(std::mem::take(&mut word));
+            i += 1;
+        } else {
+            word.push(c.to_ascii_uppercase());
+            i += 1;
+        }
+    }
+    out.push(word);
+    out.retain(|w| !w.is_empty());
+    out
+}
+
+/// `SET TRANSACTION …`, `COMMIT [WORK]`, `ROLLBACK [WORK]` – whatever comments stand around them – and
+/// nothing that only starts like them (`ROLLBACK TO SAVEPOINT x`, `COMMIT RETAIN` are the server's).
 fn control(sql: &str) -> Control {
-    let words: Vec<String> = sql
-        .trim()
-        .trim_end_matches(';')
-        .split_whitespace()
-        .map(str::to_ascii_uppercase)
-        .collect();
+    let words = words(sql);
     let words: Vec<&str> = words.iter().map(String::as_str).collect();
     match words.as_slice() {
-        ["SET", "TRANSACTION", rest @ ..] => Control::Begin {
-            read_only: rest.windows(2).any(|w| w == ["READ", "ONLY"]),
-        },
+        ["SET", "TRANSACTION", rest @ ..] => opening(rest),
         ["COMMIT"] | ["COMMIT", "WORK"] => Control::Commit,
         ["ROLLBACK"] | ["ROLLBACK", "WORK"] => Control::Rollback,
         _ => Control::None,
     }
+}
+
+/// The options of `SET TRANSACTION`: what the driver can ask of the server, or the word it cannot.
+fn opening(mut rest: &[&str]) -> Control {
+    let mut o = Opening::default();
+    while !rest.is_empty() {
+        let (taken, ok) = match rest {
+            ["READ", "ONLY", ..] => {
+                o.read_only = true;
+                (2, true)
+            }
+            ["READ", "WRITE", ..] => (2, true),
+            ["NO", "WAIT", ..] => {
+                o.no_wait = true;
+                (2, true)
+            }
+            ["WAIT", ..] => (1, true),
+            ["LOCK", "TIMEOUT", n, ..] => match n.parse::<i32>() {
+                Ok(seconds) if seconds >= 0 => {
+                    o.lock_timeout = Some(seconds);
+                    (3, true)
+                }
+                _ => (3, false),
+            },
+            ["ISOLATION", "LEVEL", ..] => (2, true),
+            ["SNAPSHOT", "TABLE", "STABILITY", ..] => {
+                o.isolation = Some(IsolationLevel::SnapshotTableStability);
+                (3, true)
+            }
+            ["SNAPSHOT", "TABLE", ..] => {
+                o.isolation = Some(IsolationLevel::SnapshotTableStability);
+                (2, true)
+            }
+            ["SNAPSHOT", ..] => {
+                o.isolation = Some(IsolationLevel::Snapshot);
+                (1, true)
+            }
+            ["READ", "COMMITTED", "NO", "RECORD_VERSION", ..] => {
+                o.isolation = Some(IsolationLevel::ReadCommittedNoRecordVersion);
+                (4, true)
+            }
+            ["READ", "COMMITTED", "RECORD_VERSION", ..] => {
+                o.isolation = Some(IsolationLevel::ReadCommittedRecordVersion);
+                (3, true)
+            }
+            ["READ", "COMMITTED", "READ", "CONSISTENCY", ..] => {
+                o.isolation = Some(IsolationLevel::ReadCommittedReadConsistency);
+                (4, true)
+            }
+            ["READ", "COMMITTED", ..] => {
+                o.isolation = Some(IsolationLevel::ReadCommittedRecordVersion);
+                (2, true)
+            }
+            _ => (1, false),
+        };
+        if !ok {
+            return Control::Unknown(rest[..taken.min(rest.len())].join(" "));
+        }
+        rest = &rest[taken.min(rest.len())..];
+    }
+    Control::Begin(o)
 }
 
 /// What one statement gave.
@@ -568,17 +742,26 @@ struct Answer {
 }
 
 impl Fire {
-    fn builder(&self, read_only: bool) -> TransactionBuilder {
-        let b = TransactionBuilder::new();
-        if read_only || self.read_only {
+    fn builder(&self, o: Opening) -> TransactionBuilder {
+        let mut b = TransactionBuilder::new();
+        if let Some(level) = o.isolation {
+            b = b.isolation(level);
+        }
+        if o.no_wait {
+            b = b.no_wait();
+        }
+        if let Some(seconds) = o.lock_timeout {
+            b = b.lock_timeout(seconds);
+        }
+        if o.read_only || self.read_only {
             b.read_only()
         } else {
             b
         }
     }
 
-    fn begin(&mut self, read_only: bool) -> AppResult<Transaction> {
-        let builder = self.builder(read_only);
+    fn begin(&mut self, opening: Opening) -> AppResult<Transaction> {
+        let builder = self.builder(opening);
         self.conn
             .begin_with(&builder)
             .map_err(|e| self.fail(&e, ""))
@@ -738,7 +921,7 @@ impl Fire {
             }
             return result;
         }
-        let tx = self.begin(false)?;
+        let tx = self.begin(Opening::default())?;
         let result = self.statement(&tx, sql, values, sink, plain);
         if self.broken {
             drop(tx);
@@ -898,15 +1081,23 @@ impl Session for Fire {
         };
         // the transaction is the client's to hold: these three the driver carries out itself
         match control(sql) {
-            Control::Begin { read_only } => {
+            Control::Begin(opening) => {
                 if self.tx.is_some() {
                     return Err(AppError::new(
                         ErrorCode::InvalidQuery,
                         "a transaction is open already: commit or roll back first",
                     ));
                 }
-                self.tx = Some(self.begin(read_only)?);
+                self.tx = Some(self.begin(opening)?);
                 return Ok(nothing(started));
+            }
+            Control::Unknown(option) => {
+                return Err(AppError::new(
+                    ErrorCode::Unsupported,
+                    format!(
+                        "SET TRANSACTION … {option}: this option is not carried out here – nothing was opened"
+                    ),
+                ));
             }
             Control::Commit | Control::Rollback if self.tx.is_none() => {
                 // nothing is open: every statement so far was kept as it ran
@@ -1112,19 +1303,86 @@ mod tests {
     fn the_transaction_is_steered_by_three_statements_and_no_other() {
         assert_eq!(
             control("set transaction"),
-            Control::Begin { read_only: false }
+            Control::Begin(Opening::default())
         );
         assert_eq!(
             control("SET TRANSACTION READ ONLY ISOLATION LEVEL SNAPSHOT;"),
-            Control::Begin { read_only: true }
+            Control::Begin(Opening {
+                read_only: true,
+                isolation: Some(IsolationLevel::Snapshot),
+                ..Opening::default()
+            })
+        );
+        assert_eq!(
+            control("SET TRANSACTION READ COMMITTED NO WAIT"),
+            Control::Begin(Opening {
+                isolation: Some(IsolationLevel::ReadCommittedRecordVersion),
+                no_wait: true,
+                ..Opening::default()
+            })
+        );
+        assert_eq!(
+            control("set transaction wait lock timeout 5"),
+            Control::Begin(Opening {
+                lock_timeout: Some(5),
+                ..Opening::default()
+            })
+        );
+        // what the driver cannot ask of the server is said, not dropped
+        assert_eq!(
+            control("SET TRANSACTION RESERVING t FOR PROTECTED WRITE"),
+            Control::Unknown("RESERVING".into())
         );
         assert_eq!(control(" commit work ; "), Control::Commit);
         assert_eq!(control("ROLLBACK"), Control::Rollback);
+        // review 035i 1: a comment beside it changes nothing
+        assert_eq!(control("-- done\nCOMMIT"), Control::Commit);
+        assert_eq!(control("/* x */ ROLLBACK -- all of it"), Control::Rollback);
+        assert_eq!(
+            control("-- c\nSET TRANSACTION /* now */ READ ONLY"),
+            Control::Begin(Opening {
+                read_only: true,
+                ..Opening::default()
+            })
+        );
         // statements of the server
         assert_eq!(control("ROLLBACK TO SAVEPOINT a"), Control::None);
         assert_eq!(control("COMMIT RETAIN"), Control::None);
         assert_eq!(control("SAVEPOINT a"), Control::None);
         assert_eq!(control("SET TERM ^"), Control::None);
         assert_eq!(control("SELECT 'COMMIT' FROM rdb$database"), Control::None);
+        assert_eq!(control("SELECT \"COMMIT\""), Control::None);
+    }
+
+    /// Review 035i 2, 5, 9, 11.
+    #[test]
+    fn values_that_do_not_fit_are_refused_in_words() {
+        let long = bound(&"x".repeat(21), &meta(SQL_VARYING, 0, 4, 20)).unwrap_err();
+        assert_eq!(long.code, ErrorCode::InvalidQuery);
+        assert!(long.message.contains("longer"));
+        assert!(bound(&"x".repeat(20), &meta(SQL_VARYING, 0, 4, 20)).is_ok());
+        assert!(bound("1e300", &meta(SQL_FLOAT, 0, 0, 4)).is_err());
+        assert!(matches!(
+            bound("12.5", &meta(SQL_DEC34, 0, 0, 16)).unwrap(),
+            Value::DecFloat(_)
+        ));
+        assert!(matches!(
+            bound("2024-02-29 13:05:09.25 +01:00", &meta(SQL_TIMESTAMP_TZ, 0, 0, 12)).unwrap(),
+            Value::TimestampTz(t) if t.offset == 60 && t.utc_date == 60369
+        ));
+        assert_eq!(
+            bound("13:05:09 +01:00", &meta(SQL_TIME_TZ, 0, 0, 8))
+                .unwrap_err()
+                .code,
+            ErrorCode::Unsupported
+        );
+        // a FLOAT is shown as one would write it
+        assert_eq!(
+            cell(Value::Float(0.1), &meta(SQL_FLOAT, 0, 0, 4)),
+            Cell::F64(0.1)
+        );
+        // the bytes of a character depend on the character set
+        assert_eq!(type_name(&meta(SQL_VARYING, 0, 0, 10)), "VARCHAR(10)");
+        assert_eq!(type_name(&meta(SQL_VARYING, 0, 4, 40)), "VARCHAR(10)");
     }
 }

@@ -184,9 +184,32 @@ function wordAt(script: string, i: number): string {
 /** Whether the text from `from` to `to` starts a trigger (`CREATE [TEMP] TRIGGER`). */
 /** Firebird: a statement with a body in PSQL (from its first `BEGIN` to the `END` that closes it). */
 function startsPsql(script: string, from: number, to: number): boolean {
+  // comments first: one before the statement may be longer than what is looked at of it
   return /^\s*(?:(?:CREATE(?:\s+OR\s+ALTER)?|ALTER|RECREATE)\s+(?:PROCEDURE|FUNCTION|TRIGGER|PACKAGE)|EXECUTE\s+BLOCK)\b/i.test(
-    script.slice(from, Math.min(to, from + 400)).replace(/--[^\n]*\n|\/\*[\s\S]*?\*\//g, ' '),
+    script
+      .slice(from, to)
+      .replace(/--[^\n]*\n|\/\*[\s\S]*?\*\//g, ' ')
+      .slice(0, 400),
   );
+}
+
+/** `SET TERM <new> <old>` at the start of a statement (Firebird's isql); `null` when it is none. */
+function setTerm(
+  script: string,
+  i: number,
+  current: string,
+): { delimiter: string; end: number } | null {
+  const m = /^SET\s+TERM\s+(\S+?)\s*/i.exec(script.slice(i, i + 80));
+  if (!m) return null;
+  let term = m[1];
+  // `SET TERM ^;` – the new one stands right before the old one
+  if (term.length > current.length && term.endsWith(current)) {
+    term = term.slice(0, -current.length);
+    return { delimiter: term, end: i + m[0].trimEnd().length };
+  }
+  const after = i + m[0].length;
+  if (!script.startsWith(current, after)) return null;
+  return { delimiter: term, end: after + current.length };
 }
 
 function startsTrigger(script: string, from: number, to: number): boolean {
@@ -240,6 +263,10 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
    * declarations stand, each with its `;`.
    */
   let declaring = false;
+  /** Firebird: inside a sub-routine declared before the body (`DECLARE PROCEDURE … BEGIN … END`). */
+  let sub = false;
+  /** Firebird: the routine is an external one (`EXTERNAL NAME … AS '…'`): it has no body. */
+  let external = false;
   /** Oracle: the statement is PL/SQL (`null` = its first word was not seen yet). */
   let plsql: boolean | null = null;
   const push = (end: number, next: number) => {
@@ -247,6 +274,8 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
     if (st) out.push(st);
     start = next;
     declaring = false;
+    sub = false;
+    external = false;
     depth = 0;
     trigger = false;
     plsql = null;
@@ -286,18 +315,47 @@ export function splitStatements(script: string, dialect: Dialect = 'sqlite'): St
         continue;
       }
     }
-    if (dialect === 'sqlite' || dialect === 'firebird') {
+    if (dialect === 'firebird' && script.slice(start, i).trim() === '') {
+      // `SET TERM ^ ;` of isql: from here on a statement ends at `^`
+      const term = setTerm(script, i, delimiter);
+      if (term) {
+        start = term.end;
+        delimiter = term.delimiter;
+        s.i = term.end;
+        continue;
+      }
+    }
+    // with a terminator of its own a script says itself where a statement ends
+    if (dialect === 'sqlite' || (dialect === 'firebird' && delimiter === ';')) {
       const word = wordAt(script, i);
       if (word) {
         const body =
           dialect === 'sqlite' ? startsTrigger(script, start, i) : startsPsql(script, start, i);
-        if (dialect === 'firebird' && word === 'AS' && !trigger && body) declaring = true;
+        if (dialect === 'firebird' && body) {
+          if (word === 'EXTERNAL' && !trigger && !declaring) external = true;
+          if (word === 'AS' && !trigger && !external) declaring = true;
+          // a routine declared inside the declarations has a body of its own
+          if (
+            word === 'DECLARE' &&
+            declaring &&
+            /^\s+(?:PROCEDURE|FUNCTION)\b/i.test(script.slice(i + 7, i + 40))
+          )
+            sub = true;
+        }
         if (word === 'BEGIN' && body) {
           trigger = true;
           declaring = false;
         }
         if (trigger && (word === 'BEGIN' || word === 'CASE')) depth++;
-        else if (trigger && word === 'END') depth--;
+        else if (trigger && word === 'END') {
+          depth--;
+          if (depth === 0 && sub) {
+            // back among the declarations: the body of the statement is still to come
+            sub = false;
+            trigger = false;
+            declaring = true;
+          }
+        }
         s.i = i + word.length;
         continue;
       }

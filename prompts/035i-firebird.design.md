@@ -33,9 +33,9 @@ Plan, Monitor, Rechte, Struktur bearbeiten, Schema-Vergleich und Tabellen kopier
   **Struktur bearbeiten**, **Schema-Vergleich**, **Tabellen kopieren** (kein Erzeuger für den Dialekt).
 - **DDL einer Tabelle**: Firebird bewahrt keine Anweisung auf, und die App schreibt noch keine. Views zeigen ihre
   Anweisung, Prozeduren und Funktionen ihren Rumpf.
-- `SET TRANSACTION` mit Optionen: Nur `READ ONLY` wird beachtet; Isolationsstufe, `WAIT`/`NO WAIT`, `RESERVING`
-  nicht. `COMMIT RETAIN`/`ROLLBACK RETAIN` gehen an den Server und scheitern dort.
-- `SET TERM` (ein Befehl von `isql`) kennt die App nicht; der Zerleger braucht ihn nicht.
+- `SET TRANSACTION`: `READ ONLY`/`WRITE`, die Isolationsstufe, `WAIT`/`NO WAIT` und `LOCK TIMEOUT` führt der
+  Treiber aus; `RESERVING`, `NO AUTO UNDO` und was sonst dort stehen kann, lehnt er ab (nichts wird geöffnet).
+  `COMMIT RETAIN`/`ROLLBACK RETAIN` gehen an den Server.
 - Pakete im Baum, Domänen, Ausnahmen, Rollen; Arrays (als nicht lesbar gezeigt).
 - Firebird 3 und 4: der Treiber nennt Firebird 5+; ältere sind nicht gelaufen. Eingebettete Datenbanken gibt es nicht.
 
@@ -56,3 +56,36 @@ Plan, Monitor, Rechte, Struktur bearbeiten, Schema-Vergleich und Tabellen kopier
   Fremdschlüssel, Diagramm, Suche; Filtern, Sortieren und ein Schreibplan mit Sperre in einer Transaktion.
 - Unit-Tests: `firebird.rs` (Zahlen mit Skala in beide Richtungen, Werte je Platz, Zellen, die drei Anweisungen der
   Transaktion), `guard.rs`, `import.rs`, `mod.rs`; im Fenster Zerlegen, Parameter.
+
+## Review
+
+Ein zweiter, nur lesender Blick über den Branch, mit dem echten Treiber gegen den laufenden Server geprüft.
+Behoben, mit Tests (`review_comments_long_values_binary_and_words_of_the_language`, `firebird.rs`, `meta.rs`,
+`guard.rs`, Fälle des Zerlegers):
+
+| # | Befund | Behebung |
+|---|---|---|
+| 1 (hoch) | Ein Kommentar neben `COMMIT`, `ROLLBACK` oder `SET TRANSACTION` ging am Treiber vorbei an den Server: Der schloss die Transaktion wirklich, der Treiber hielt ein totes Handle und alles danach scheiterte | Die drei Anweisungen werden ohne ihre Kommentare erkannt |
+| 2 (hoch) | Ein Text, länger als sein Platz, galt als kaputte Leitung: Die Sitzung war weg, eine offene Transaktion mit ihr | Die Länge wird beim Binden geprüft und in Worten abgelehnt; die Sitzung bleibt |
+| 3 (hoch) | Jeder Binärwert scheiterte: `HEX_DECODE(CAST(? AS VARCHAR(8191)))` – Firebird will eine gerade Länge | `VARCHAR(8190)`. **Bleibt:** ein Binärwert über 4095 Bytes lässt sich so nicht binden |
+| 4 (hoch) | 127 reservierte Wörter von Firebird wurden nicht gequotet (`DATE`, `VALUE`, `COUNT` … als Spaltennamen), Namen mit `_` am Anfang auch nicht | eigene Liste aus `RDB$KEYWORDS` des Servers; ein Name beginnt mit einem Buchstaben |
+| 5 | `DECFLOAT` und `TIMESTAMP WITH TIME ZONE` ließen sich nicht binden | werden gelesen und gebunden; `TIME WITH TIME ZONE` wird in Worten abgelehnt. Neue Import-Tabellen bekommen `NUMERIC(38, 10)` statt `DECFLOAT` |
+| 6 | Optionen von `SET TRANSACTION` wurden still verworfen | ausgeführt oder abgelehnt (siehe oben) |
+| 7 | `GEN_ID(…)` bewegt eine Sequenz auch in einer nur lesenden Transaktion und galt als lesend | gilt als schreibend |
+| 8 | Zerleger: `SET TERM`, ein langer Kommentar vor einer Prozedur, Unterroutinen in den Deklarationen, externe Funktionen | behoben |
+| 9 | `VARCHAR(10) CHARACTER SET NONE` hieß `VARCHAR(2)` | Bytes je Zeichen nach dem Zeichensatz |
+| 11 | `FLOAT` 0.1 erschien als 0.10000000149…; `1e300` wurde still zu unendlich; riesige `DECFLOAT`-Exponenten wurden zu tausenden Nullen | wie geschrieben; abgelehnt; in Exponentenschreibweise |
+| 12 | DDL in einer nur lesenden Sitzung war „ungültige Anweisung“ statt „keine Rechte“ | am Text der Meldung erkannt |
+
+Offen geblieben:
+
+- **Zeichensatz NONE mit Bytes, die kein UTF-8 sind** (alte Datenbanken mit WIN125x): Sie erscheinen als
+  Ersatzzeichen; die Sperre einer solchen Zeile passt nie, und wer die Zelle bearbeitet, überschreibt die Bytes.
+- Vergleiche lehnen ab, was die Spalte nicht halten könnte (`ID < 1.5` auf INTEGER) – richtig beim Schreiben,
+  überraschend beim Filtern. Sekundenbruchteile über vier Stellen werden abgeschnitten.
+- DDL in einer Transaktion des Nutzers sehen spätere Anweisungen erst nach dem `COMMIT`; die Fragen der App an den
+  Katalog laufen in der offenen Transaktion eines Tabs und sehen deren Stand.
+- Das Passwort liegt, solange die Sitzung lebt, im Verbindungsobjekt des Treibers (für die zweite Verbindung beim
+  Abbruch) – als gewöhnlicher Text, nicht genullt.
+- Berechnete Spalten sind nicht gekennzeichnet (das Gitter bietet sie zum Bearbeiten an, der Server lehnt ab); im
+  Namensindex fehlen Funktionen und Sequenzen; mit dem leeren Schema zeigen Suche und Palette `.TABELLE`.

@@ -416,8 +416,9 @@ impl Builder {
             let placeholder = match self.kind {
                 DbKind::Postgres | DbKind::Duckdb => format!("${n}"),
                 DbKind::Mysql | DbKind::Trino => "?".to_owned(),
-                // without a column beside it the server cannot tell what the value is
-                DbKind::Firebird => "CAST(? AS VARCHAR(8191))".to_owned(),
+                // without a column beside it the server cannot tell what the value is; hex is read
+                // in pairs, so the length is an even one (review 035i 3)
+                DbKind::Firebird => "CAST(? AS VARCHAR(8190))".to_owned(),
                 DbKind::Sqlserver => format!("@P{n}"),
                 DbKind::Sqlite | DbKind::Libsql | DbKind::D1 => format!("?{n}"),
                 DbKind::Oracle => format!(":{n}"),

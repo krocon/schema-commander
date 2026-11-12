@@ -741,6 +741,15 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
         // who may log in and what a role is: it gives away like a GRANT does (review 047 M1)
         class = Class::Dangerous;
     }
+    if kind == DbKind::Firebird
+        && class == Class::Read
+        && toks
+            .windows(2)
+            .any(|w| matches!(&w[0], Tok::Word(name) if name == "GEN_ID") && w[1] == Tok::Open)
+    {
+        // moves a sequence – also inside a transaction that only reads (review 035i 7)
+        class = Class::Write;
+    }
     if kind == DbKind::Trino
         && class == Class::Read
         && toks
@@ -1052,6 +1061,11 @@ mod tests {
             Read
         );
         assert_ne!(classify("EXECUTE PROCEDURE wipe", k), Read);
+        assert_eq!(classify("SELECT GEN_ID(g, 1) FROM rdb$database", k), Write);
+        assert_ne!(
+            classify("SELECT NEXT VALUE FOR g FROM rdb$database", k),
+            Read
+        );
         assert_eq!(classify("DROP TABLE t", k), Dangerous);
         assert_eq!(classify("RECREATE TABLE t (a INTEGER)", k), Dangerous);
         assert!(is_transaction_control("SET TRANSACTION", k));

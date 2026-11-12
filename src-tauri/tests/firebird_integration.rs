@@ -823,3 +823,142 @@ fn a_table_is_filtered_sorted_and_edited() {
     assert!(schema_commander_lib::db::compare::snapshot(s.as_mut(), K, "", stop).is_err());
     unshop(&mut s, p);
 }
+
+/// What the review of 035i found (the numbers are its findings).
+#[test]
+#[ignore]
+fn review_comments_long_values_binary_and_words_of_the_language() {
+    let mut s = open();
+    let stop = &|| false;
+    for sql in [
+        "DROP TABLE SC_FR",
+        "CREATE TABLE SC_FR (ID INTEGER NOT NULL PRIMARY KEY, V VARCHAR(5), O VARBINARY(8), \
+         \"DATE\" DATE, \"VALUE\" NUMERIC(10,2), \"COUNT\" INTEGER, D DECFLOAT(34), \
+         TZ TIMESTAMP WITH TIME ZONE, F FLOAT)",
+    ] {
+        let _ = try_run(&mut s, sql);
+    }
+    run(
+        &mut s,
+        "INSERT INTO SC_FR (ID, V, O, \"DATE\", \"VALUE\", \"COUNT\", F) VALUES (1, 'abc', x'00ff10', '2026-01-10', 12.5, 3, 0.1)",
+    );
+
+    // 1: a comment beside COMMIT, ROLLBACK or SET TRANSACTION changes nothing
+    run(&mut s, "-- open\nSET TRANSACTION");
+    assert_eq!(s.transaction_state(stop), TxState::Active);
+    run(&mut s, "UPDATE SC_FR SET V = 'x' WHERE ID = 1");
+    run(&mut s, "/* not this */ ROLLBACK -- all of it");
+    assert_eq!(s.transaction_state(stop), TxState::Idle);
+    run(&mut s, "SET TRANSACTION");
+    run(&mut s, "UPDATE SC_FR SET V = 'y' WHERE ID = 1");
+    run(&mut s, "-- done\nCOMMIT");
+    assert_eq!(s.transaction_state(stop), TxState::Idle);
+    assert_eq!(rows(&run(&mut s, "SELECT V FROM SC_FR")), json!([["y"]]));
+
+    // 6: options the driver carries out, and one it says it cannot
+    run(&mut s, "SET TRANSACTION READ COMMITTED NO WAIT");
+    run(&mut s, "ROLLBACK");
+    let e = try_run(
+        &mut s,
+        "SET TRANSACTION RESERVING SC_FR FOR PROTECTED WRITE",
+    )
+    .unwrap_err();
+    assert_eq!(e.code, ErrorCode::Unsupported, "{}", e.message);
+    assert_eq!(s.transaction_state(stop), TxState::Idle);
+
+    // 2: a text longer than its place is an error of the statement – also inside a transaction,
+    // which lives on
+    run(&mut s, "SET TRANSACTION");
+    run(&mut s, "UPDATE SC_FR SET V = 'held' WHERE ID = 1");
+    let long = try_bound(
+        &mut s,
+        "UPDATE SC_FR SET V = ? WHERE ID = 1",
+        &[Bind::Text("much too long for five".into())],
+    )
+    .unwrap_err();
+    assert_eq!(long.code, ErrorCode::InvalidQuery, "{}", long.message);
+    assert!(s.is_open());
+    assert_eq!(s.transaction_state(stop), TxState::Active);
+    run(&mut s, "COMMIT");
+    assert_eq!(rows(&run(&mut s, "SELECT V FROM SC_FR")), json!([["held"]]));
+
+    // 3, 4: a binary value and columns called like words of the language, in a filter and in an edit
+    let t = meta::table(s.as_mut(), K, "", "SC_FR", stop).unwrap();
+    let quoted: Vec<&str> = t.columns.iter().map(|c| c.quoted.as_str()).collect();
+    assert_eq!(
+        quoted,
+        [
+            "ID",
+            "V",
+            "O",
+            "\"DATE\"",
+            "\"VALUE\"",
+            "\"COUNT\"",
+            "D",
+            "TZ",
+            "F"
+        ]
+    );
+    let condition = |column: &str, value: &str, kind: ValueKind, type_name: &str| Condition {
+        column: column.into(),
+        op: Op::Eq,
+        values: vec![value.into()],
+        kind,
+        type_name: type_name.into(),
+    };
+    let q = filter::build(
+        K,
+        &TableQuery {
+            table: "SC_FR".into(),
+            conditions: vec![
+                condition("O", "00ff10", ValueKind::Bytes, "VARBINARY(8)"),
+                condition("DATE", "2026-01-10", ValueKind::Text, "DATE"),
+                condition("VALUE", "12.5", ValueKind::Number, "NUMERIC(10, 2)"),
+                condition("COUNT", "3", ValueKind::Number, "INTEGER"),
+            ],
+            order: vec![Order {
+                column: "VALUE".into(),
+                desc: false,
+                nulls: None,
+            }],
+            ..TableQuery::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(bound(&mut s, &q.sql, &q.params).rows.len(), 1, "{}", q.sql);
+    let plan: UpdatePlan = serde_json::from_value(json!({
+        "table": "SC_FR",
+        "rows": [{
+            "key": [{"column": "ID", "kind": "number", "typeName": "INTEGER", "value": "1"}],
+            "set": [{"column": "O", "kind": "bytes", "typeName": "VARBINARY(8)", "value": "cafe"},
+                    {"column": "VALUE", "kind": "number", "typeName": "NUMERIC(10, 2)", "value": "99.95"},
+                    {"column": "D", "kind": "number", "typeName": "DECFLOAT(34)", "value": "1234567890.123456789"},
+                    {"column": "TZ", "typeName": "TIMESTAMP WITH TIME ZONE", "value": "2024-02-29 13:05:09.25 +01:00"}],
+            "expect": [{"column": "O", "kind": "bytes", "typeName": "VARBINARY(8)", "value": "00ff10"}],
+        }],
+    }))
+    .unwrap();
+    let built = edit::build(K, &plan).unwrap();
+    assert_eq!(
+        bound(&mut s, &built[0].sql, &built[0].params).rows_affected,
+        Some(1),
+        "{}",
+        built[0].sql
+    );
+    let back = run(&mut s, "SELECT O, \"VALUE\", D, TZ, F FROM SC_FR");
+    let row = &rows(&back)[0];
+    assert_eq!(row[0], json!({"bytes": 2, "hex": "cafe"}));
+    assert_eq!(row[1], json!("99.95"));
+    assert_eq!(row[2], json!("1234567890.123456789"));
+    assert!(row[3].as_str().unwrap().contains("+01:00"), "{row}");
+    // 11: a FLOAT as one would write it
+    assert_eq!(row[4], json!(0.1));
+
+    // 12: a write refused by a read-only transaction is a matter of rights, also for DDL
+    let mut reader = open();
+    assert!(reader.make_read_only());
+    let e = try_run(&mut reader, "CREATE TABLE SC_FR_NEW (A INTEGER)").unwrap_err();
+    assert_eq!(e.code, ErrorCode::PermissionDenied, "{}", e.message);
+    drop(reader);
+    run(&mut s, "DROP TABLE SC_FR");
+}
