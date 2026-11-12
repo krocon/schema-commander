@@ -349,7 +349,9 @@ pub fn quote_always(name: &str, kind: DbKind) -> String {
     match kind {
         DbKind::Mysql => format!("`{}`", name.replace('`', "``")),
         DbKind::Sqlserver => format!("[{}]", name.replace(']', "]]")),
-        DbKind::Postgres | DbKind::Sqlite => format!("\"{}\"", name.replace('"', "\"\"")),
+        DbKind::Postgres | DbKind::Sqlite | DbKind::Duckdb => {
+            format!("\"{}\"", name.replace('"', "\"\""))
+        }
         // Oracle has no way to write a quote inside a quoted name (and allows none in a name): one that
         // came from somewhere else is dropped, so the name cannot end its quotes
         DbKind::Oracle => format!("\"{}\"", name.replace(['"', '\0'], "")),
@@ -436,6 +438,13 @@ pub fn schemas(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<Vec<S
         DbKind::Sqlite => {
             "SELECT name, 'false', CASE WHEN name = 'main' THEN 'true' ELSE 'false' END \
              FROM pragma_database_list ORDER BY seq"
+        }
+        // the schemas of the file that is open (its own catalog is another database, `system`)
+        DbKind::Duckdb => {
+            "SELECT schema_name, \
+             CASE WHEN schema_name IN ('information_schema', 'pg_catalog') THEN 'true' ELSE 'false' END, \
+             CASE WHEN schema_name = current_schema() THEN 'true' ELSE 'false' END \
+             FROM duckdb_schemas() WHERE database_name = current_database() ORDER BY 1"
         }
         // a schema is a user; those Oracle ships are marked as its own
         DbKind::Oracle => {
@@ -530,6 +539,14 @@ pub fn objects(
         ],
         DbKind::Sqlite => &["SELECT type, name, '', NULL FROM pragma_table_list \
              WHERE schema = ?1 AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'"],
+        DbKind::Duckdb => &[
+            "SELECT 'table', table_name, '', CAST(estimated_size AS VARCHAR) FROM duckdb_tables() \
+             WHERE database_name = current_database() AND schema_name = $1 AND NOT internal",
+            "SELECT 'view', view_name, '', NULL FROM duckdb_views() \
+             WHERE database_name = current_database() AND schema_name = $1 AND NOT internal",
+            "SELECT 'sequence', sequence_name, '', NULL FROM duckdb_sequences() \
+             WHERE database_name = current_database() AND schema_name = $1",
+        ],
         // a materialized view is also listed as a table of its name; dropped tables wait as BIN$…
         DbKind::Oracle => &[
             "SELECT CASE o.object_type WHEN 'TABLE' THEN 'table' WHEN 'VIEW' THEN 'view' \
@@ -827,6 +844,63 @@ fn mssql_table(s: &mut dyn Session, schema: &str, table: &str, stop: Stop) -> Ap
     })
 }
 
+/// DuckDB: its own table functions (`duckdb_columns()` …) of the database that is open.
+fn duckdb_table(
+    s: &mut dyn Session,
+    schema: &str,
+    table: &str,
+    stop: Stop,
+) -> AppResult<TableInfo> {
+    let p = &[schema, table];
+    const HERE: &str =
+        "database_name = current_database() AND schema_name = $1 AND table_name = $2";
+    let columns = ask(
+        s,
+        &format!(
+            "SELECT c.column_name, c.data_type, CASE WHEN c.is_nullable THEN 'true' ELSE 'false' END, \
+               c.column_default, \
+               CASE WHEN EXISTS (SELECT 1 FROM duckdb_constraints() k WHERE k.{HERE} \
+                   AND k.constraint_type = 'PRIMARY KEY' \
+                   AND list_contains(k.constraint_column_names, c.column_name)) THEN 'pk' \
+                 WHEN EXISTS (SELECT 1 FROM duckdb_constraints() k WHERE k.{HERE} \
+                   AND k.constraint_type = 'FOREIGN KEY' \
+                   AND list_contains(k.constraint_column_names, c.column_name)) THEN 'fk' \
+                 ELSE '' END \
+             FROM duckdb_columns() c WHERE c.{HERE} ORDER BY c.column_index"
+        ),
+        p,
+        stop,
+    )?;
+    let indexes = ask(
+        s,
+        &format!(
+            "SELECT index_name, CASE WHEN is_unique THEN 'unique ' ELSE '' END || 'index ' \
+               || replace(replace(CAST(expressions AS VARCHAR), '[', '('), ']', ')') \
+             FROM duckdb_indexes() WHERE {HERE} ORDER BY 1"
+        ),
+        p,
+        stop,
+    )?;
+    // NOT NULL is listed as a constraint of its own: it is shown with the column
+    let keys = ask(
+        s,
+        &format!(
+            "SELECT COALESCE(constraint_name, ''), constraint_text FROM duckdb_constraints() \
+             WHERE {HERE} AND constraint_type <> 'NOT NULL' \
+             ORDER BY CASE constraint_type WHEN 'PRIMARY KEY' THEN 0 WHEN 'UNIQUE' THEN 1 \
+               WHEN 'FOREIGN KEY' THEN 2 ELSE 3 END, 1"
+        ),
+        p,
+        stop,
+    )?;
+    Ok(TableInfo {
+        columns: column_rows(&columns, DbKind::Duckdb),
+        indexes: parts(&indexes),
+        keys: parts(&keys),
+        triggers: Vec::new(),
+    })
+}
+
 /// Oracle: the `ALL_` views show what the user may see. `LISTAGG` joins the columns of a key.
 fn oracle_table(
     s: &mut dyn Session,
@@ -1051,6 +1125,7 @@ pub fn table(
         DbKind::Sqlserver => mssql_table(s, schema, table, stop),
         DbKind::Sqlite => sqlite_table(s, schema, table, stop),
         DbKind::Oracle => oracle_table(s, schema, table, stop),
+        DbKind::Duckdb => duckdb_table(s, schema, table, stop),
     }
 }
 
@@ -1089,6 +1164,16 @@ pub fn search(s: &mut dyn Session, kind: DbKind, text: &str, stop: Stop) -> AppR
         DbKind::Sqlite => {
             "SELECT schema, type, name FROM pragma_table_list \
              WHERE name LIKE ?1 ESCAPE '\\' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' \
+             ORDER BY 3, 1 LIMIT 200"
+        }
+        DbKind::Duckdb => {
+            "SELECT schema_name, 'table', table_name FROM duckdb_tables() \
+             WHERE database_name = current_database() AND NOT internal \
+               AND table_name ILIKE $1 ESCAPE '\\' \
+             UNION ALL \
+             SELECT schema_name, 'view', view_name FROM duckdb_views() \
+             WHERE database_name = current_database() AND NOT internal \
+               AND view_name ILIKE $1 ESCAPE '\\' \
              ORDER BY 3, 1 LIMIT 200"
         }
         DbKind::Oracle => {

@@ -76,7 +76,7 @@ pub fn check(p: &Profile) -> AppResult<()> {
             return Err(invalid(format!("{what}: too long or control characters")));
         }
     }
-    if p.kind == DbKind::Sqlite {
+    if p.kind.is_file() {
         if p.ssh.is_some() {
             return Err(invalid("a database file has no SSH tunnel"));
         }

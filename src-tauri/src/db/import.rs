@@ -73,7 +73,7 @@ fn blank(kind: DbKind) -> Profile {
 
 /// A name for a profile that has none: `database@host`.
 fn suggested_name(p: &Profile) -> String {
-    if p.kind == DbKind::Sqlite {
+    if p.kind.is_file() {
         return Path::new(&p.database)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -396,6 +396,8 @@ fn dbeaver_kind(provider: &str, driver: &str) -> Option<DbKind> {
         Some(DbKind::Sqlserver)
     } else if both.contains("oracle") {
         Some(DbKind::Oracle)
+    } else if both.contains("duckdb") {
+        Some(DbKind::Duckdb)
     } else if both.contains("sqlite") {
         Some(DbKind::Sqlite)
     } else {

@@ -97,6 +97,35 @@ pub fn class_of(kind: DbKind, type_name: &str) -> Class {
             _ => Class::Other,
         };
     }
+    if kind == DbKind::Duckdb {
+        return match base.as_str() {
+            "tinyint" | "smallint" | "utinyint" => Class::SmallInt,
+            "integer" | "int" | "usmallint" => Class::Int,
+            "bigint" | "uinteger" => Class::BigInt,
+            "ubigint" => Class::Numeric(Some((20, 0))),
+            "hugeint" | "uhugeint" => Class::Numeric(Some((38, 0))),
+            "decimal" | "numeric" => match size.as_slice() {
+                [p, s] => Class::Numeric(Some((*p, *s))),
+                [p] => Class::Numeric(Some((*p, 0))),
+                _ => Class::Numeric(Some((18, 3))),
+            },
+            "float" | "real" => Class::Real,
+            "double" => Class::Double,
+            "boolean" => Class::Bool,
+            "varchar" | "text" | "string" | "char" | "bpchar" => Class::Text,
+            "date" => Class::Date,
+            "time" => Class::Time,
+            "timestamp" | "datetime" | "timestamp_s" | "timestamp_ms" | "timestamp_ns" => {
+                Class::Timestamp
+            }
+            "timestamp with time zone" | "timestamptz" => Class::TimestampTz,
+            "json" => Class::Json,
+            "uuid" => Class::Uuid,
+            "blob" | "bytea" | "binary" | "varbinary" => Class::Bytes,
+            // a list, a struct, a map, an enum: copied as its text
+            _ => Class::Other,
+        };
+    }
     if kind == DbKind::Oracle {
         return match base.as_str() {
             "number" | "numeric" | "decimal" => match size.as_slice() {
@@ -279,6 +308,31 @@ pub fn type_for(to: DbKind, class: Class) -> (String, Option<&'static str>) {
             Class::Bytes => own("varbinary(max)"),
             Class::Other => (
                 "nvarchar(max)".to_owned(),
+                Some("a type this app does not know: copied as text"),
+            ),
+        },
+        DbKind::Duckdb => match class {
+            Class::SmallInt => own("SMALLINT"),
+            Class::Int => own("INTEGER"),
+            Class::BigInt => own("BIGINT"),
+            Class::Numeric(Some((p, s))) if p <= 38 => (format!("DECIMAL({p},{s})"), None),
+            Class::Numeric(_) => (
+                "DOUBLE".to_owned(),
+                Some("more digits than DuckDB keeps exactly (38): stored as floating point"),
+            ),
+            Class::Real => own("FLOAT"),
+            Class::Double => own("DOUBLE"),
+            Class::Bool => own("BOOLEAN"),
+            Class::Char(_) | Class::Varchar(_) | Class::Text => own("VARCHAR"),
+            Class::Date => own("DATE"),
+            Class::Time => own("TIME"),
+            Class::Timestamp => own("TIMESTAMP"),
+            Class::TimestampTz => own("TIMESTAMP WITH TIME ZONE"),
+            Class::Json => own("JSON"),
+            Class::Uuid => own("UUID"),
+            Class::Bytes => own("BLOB"),
+            Class::Other => (
+                "VARCHAR".to_owned(),
                 Some("a type this app does not know: copied as text"),
             ),
         },

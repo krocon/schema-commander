@@ -381,6 +381,9 @@ pub fn create_table(
         // room for values longer than the ones seen
         let len = (g.max_len.max(1) * 2).clamp(20, 4000);
         match (g.kind, kind) {
+            (GuessKind::DateTime, DbKind::Duckdb) => "timestamp".into(),
+            (GuessKind::Bool, DbKind::Duckdb) => "boolean".into(),
+            (GuessKind::Text, DbKind::Duckdb) => "varchar".into(),
             (GuessKind::Int, DbKind::Oracle) => "number(19)".into(),
             (GuessKind::Decimal, DbKind::Oracle) => "number".into(),
             // BOOLEAN came with 23ai: a number is there everywhere
@@ -641,6 +644,8 @@ impl Loader<'_> {
     /// become exactly one row, is taken back to it. `apart`: every row in a transaction of its own (for
     /// what is checked only at `COMMIT`).
     fn singly(&mut self, pending: &[Pending], apart: bool) -> AppResult<()> {
+        // DuckDB has no savepoints: every row in a transaction of its own
+        let apart = apart || self.kind == DbKind::Duckdb;
         let (mark, back) = match self.kind {
             DbKind::Sqlserver => ("SAVE TRANSACTION sc_load", "ROLLBACK TRANSACTION sc_load"),
             _ => ("SAVEPOINT sc_load", "ROLLBACK TO SAVEPOINT sc_load"),

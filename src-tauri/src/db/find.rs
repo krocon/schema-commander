@@ -307,6 +307,7 @@ fn as_text(column: &str, kind: DbKind) -> String {
         DbKind::Sqlserver => format!("CAST({column} AS nvarchar(max))"),
         DbKind::Sqlite => format!("CAST({column} AS TEXT)"),
         DbKind::Oracle => format!("TO_CHAR({column})"),
+        DbKind::Duckdb => format!("CAST({column} AS VARCHAR)"),
     }
 }
 
@@ -339,7 +340,7 @@ pub fn data_question(
         params.push(value);
         let n = params.len();
         match kind {
-            DbKind::Postgres => format!("${n}"),
+            DbKind::Postgres | DbKind::Duckdb => format!("${n}"),
             DbKind::Mysql => "?".to_owned(),
             DbKind::Sqlserver => format!("@P{n}"),
             DbKind::Sqlite => format!("?{n}"),
@@ -356,7 +357,7 @@ pub fn data_question(
         selected.push(match kind {
             DbKind::Sqlite => format!("substr({text}, 1, {VALUE_CHARS})"),
             DbKind::Oracle => format!("SUBSTR({text}, 1, {VALUE_CHARS})"),
-            DbKind::Postgres | DbKind::Mysql | DbKind::Sqlserver => {
+            DbKind::Postgres | DbKind::Mysql | DbKind::Sqlserver | DbKind::Duckdb => {
                 format!("LEFT({text}, {VALUE_CHARS})")
             }
         });
@@ -415,6 +416,21 @@ pub fn data_question(
             (DbKind::Sqlite, _) => {
                 format!("{text} = {} COLLATE NOCASE", place(spec.text.clone()))
             }
+            (DbKind::Duckdb, Mode::Contains) => {
+                let op = if sensitive { "LIKE" } else { "ILIKE" };
+                format!("{text} {op} {} ESCAPE '{ESCAPE}'", place(pattern.clone()))
+            }
+            (DbKind::Duckdb, Mode::Exact) if sensitive => {
+                format!("{text} = {}", place(spec.text.clone()))
+            }
+            (DbKind::Duckdb, Mode::Exact) => {
+                format!("lower({text}) = lower({})", place(spec.text.clone()))
+            }
+            (DbKind::Duckdb, Mode::Regex) => format!(
+                "regexp_matches({text}, {}, '{}')",
+                place(spec.text.clone()),
+                if sensitive { "c" } else { "i" }
+            ),
             // Oracle compares as the session sorts: with the case as it is, unless told otherwise
             (DbKind::Oracle, Mode::Contains) if sensitive => {
                 format!("{text} LIKE {} ESCAPE '{ESCAPE}'", place(pattern.clone()))
@@ -619,6 +635,16 @@ fn columns_of(
             limit,
             stop,
         )?,
+        DbKind::Duckdb => s.ask(
+            "SELECT c.table_name, c.column_name, c.data_type FROM duckdb_columns() c \
+             JOIN duckdb_tables() t ON t.database_name = c.database_name \
+               AND t.schema_name = c.schema_name AND t.table_name = c.table_name \
+             WHERE c.database_name = current_database() AND c.schema_name = $1 AND NOT t.internal \
+             ORDER BY c.table_name, c.column_index",
+            &[schema],
+            limit,
+            stop,
+        )?,
         DbKind::Oracle => s.ask(
             "SELECT c.table_name, c.column_name, c.data_type FROM all_tab_cols c \
              JOIN all_tables t ON t.owner = c.owner AND t.table_name = c.table_name \
@@ -721,6 +747,13 @@ pub(super) fn source_questions(kind: DbKind, flavor: Flavor) -> Vec<&'static str
         DbKind::Sqlite => vec![
             "SELECT type, name, sql FROM sqlite_master \
              WHERE sql IS NOT NULL AND type IN ('view', 'trigger', 'table') AND ?1 = ?1",
+        ],
+        // a table's statement holds its checks and defaults
+        DbKind::Duckdb => vec![
+            "SELECT 'view', view_name, sql FROM duckdb_views() \
+             WHERE database_name = current_database() AND schema_name = $1 AND NOT internal",
+            "SELECT 'table', table_name, sql FROM duckdb_tables() \
+             WHERE database_name = current_database() AND schema_name = $1 AND NOT internal",
         ],
         // the text of a view and the body of a trigger are LONGs: read whole, searched here. The
         // source of routines comes line by line and is put together again

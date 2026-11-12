@@ -831,7 +831,9 @@ pub fn ask(kind: DbKind, flavor: Flavor, sql: &str, analyze: bool) -> AppResult<
                 after: vec![format!("SET {option} OFF")],
             }
         }
-        (DbKind::Oracle, _, _) => return Err(super::not_yet(kind, "the execution plan")),
+        (DbKind::Oracle | DbKind::Duckdb, _, _) => {
+            return Err(super::not_yet(kind, "the execution plan"));
+        }
         (DbKind::Sqlite, _, false) => one(format!("EXPLAIN QUERY PLAN {sql}")),
         (DbKind::Sqlite, _, true) => {
             return Err(AppError::new(

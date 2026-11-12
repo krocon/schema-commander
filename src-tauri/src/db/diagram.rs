@@ -254,6 +254,47 @@ pub fn diagram(
                 stop,
             ),
         ),
+        DbKind::Duckdb => (
+            s.ask(
+                "SELECT c.table_name, c.column_name, c.data_type, \
+                   CASE WHEN c.is_nullable THEN 'true' ELSE 'false' END, \
+                   CASE WHEN EXISTS (SELECT 1 FROM duckdb_constraints() k \
+                     WHERE k.database_name = c.database_name AND k.schema_name = c.schema_name \
+                       AND k.table_name = c.table_name AND k.constraint_type = 'PRIMARY KEY' \
+                       AND list_contains(k.constraint_column_names, c.column_name)) \
+                     THEN 'true' ELSE 'false' END \
+                 FROM duckdb_columns() c JOIN duckdb_tables() t \
+                   ON t.database_name = c.database_name AND t.schema_name = c.schema_name \
+                     AND t.table_name = c.table_name \
+                 WHERE c.database_name = current_database() AND c.schema_name = $1 AND NOT t.internal \
+                 ORDER BY c.table_name, c.column_index",
+                one,
+                Some(TIMEOUT),
+                stop,
+            )?,
+            s.ask(
+                "SELECT k.constraint_name, k.schema_name, k.table_name, \
+                   unnest(k.constraint_column_names), k.schema_name, k.referenced_table, \
+                   unnest(k.referenced_column_names) \
+                 FROM duckdb_constraints() k \
+                 WHERE k.database_name = current_database() AND k.constraint_type = 'FOREIGN KEY' \
+                   AND k.schema_name = $1 \
+                 ORDER BY k.table_name, k.constraint_name",
+                one,
+                Some(TIMEOUT),
+                stop,
+            )?,
+            s.ask(
+                "SELECT k.table_name, k.constraint_name, unnest(k.constraint_column_names) \
+                 FROM duckdb_constraints() k \
+                 WHERE k.database_name = current_database() AND k.schema_name = $1 \
+                   AND k.constraint_type IN ('PRIMARY KEY', 'UNIQUE') \
+                 ORDER BY 1, 2",
+                one,
+                Some(TIMEOUT),
+                stop,
+            ),
+        ),
         DbKind::Oracle => (
             s.ask(
                 "SELECT c.table_name, c.column_name, c.data_type, \

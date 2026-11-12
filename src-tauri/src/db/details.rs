@@ -142,6 +142,7 @@ pub fn details(
         DbKind::Sqlserver => mssql::read(&mut r, schema, name, object)?,
         DbKind::Sqlite => sqlite::read(&mut r, schema, name, object)?,
         DbKind::Oracle => oracle::read(&mut r, schema, name, object)?,
+        DbKind::Duckdb => duckdb::read(&mut r, schema, name, object)?,
     };
     if ddl.is_none() {
         r.notes.push("ddl".into());
@@ -1652,6 +1653,126 @@ mod sqlite {
             .map(|row| format!("{};\n", at(row, 0).trim_end().trim_end_matches(';')))
             .collect();
         Ok(Some(statements.join("\n")))
+    }
+}
+
+mod duckdb {
+    use super::*;
+
+    const HERE: &str =
+        "database_name = current_database() AND schema_name = $1 AND table_name = $2";
+
+    pub fn read(
+        r: &mut Reader,
+        schema: &str,
+        name: &str,
+        object: ObjectKind,
+    ) -> AppResult<Option<String>> {
+        let p = &[schema, name];
+        if matches!(object, ObjectKind::Table | ObjectKind::View) {
+            r.section(
+                "columns",
+                &["name", "type", "nullable", "default", "key", "extra", "comment"],
+                &format!(
+                    "SELECT c.column_name, c.data_type, CASE WHEN c.is_nullable THEN 'yes' ELSE 'no' END, \
+                       c.column_default, \
+                       CASE WHEN EXISTS (SELECT 1 FROM duckdb_constraints() k WHERE k.{HERE} \
+                           AND k.constraint_type = 'PRIMARY KEY' \
+                           AND list_contains(k.constraint_column_names, c.column_name)) THEN 'pk' \
+                         WHEN EXISTS (SELECT 1 FROM duckdb_constraints() k WHERE k.{HERE} \
+                           AND k.constraint_type = 'FOREIGN KEY' \
+                           AND list_contains(k.constraint_column_names, c.column_name)) THEN 'fk' \
+                         ELSE '' END, \
+                       CASE WHEN c.is_generated THEN 'generated' ELSE '' END, c.comment \
+                     FROM duckdb_columns() c WHERE c.{HERE} ORDER BY c.column_index"
+                ),
+                p,
+            )?;
+        }
+        if object == ObjectKind::Table {
+            r.section(
+                "indexes",
+                &["name", "definition", "unique", "primary", "method", "size"],
+                &format!(
+                    "SELECT index_name, sql, CASE WHEN is_unique THEN 'yes' ELSE 'no' END, \
+                       CASE WHEN is_primary THEN 'yes' ELSE 'no' END, NULL, NULL \
+                     FROM duckdb_indexes() WHERE {HERE} ORDER BY 1"
+                ),
+                p,
+            )?;
+            r.section(
+                "constraints",
+                &["name", "type", "definition"],
+                &format!(
+                    "SELECT constraint_name, constraint_type, constraint_text FROM duckdb_constraints() \
+                     WHERE {HERE} AND constraint_type IN ('PRIMARY KEY', 'UNIQUE', 'CHECK') \
+                     ORDER BY constraint_type DESC, 1"
+                ),
+                p,
+            )?;
+            r.section(
+                "references",
+                &["name", "columns", "refSchema", "refName", "refColumns", "onUpdate", "onDelete"],
+                &format!(
+                    "SELECT constraint_name, array_to_string(constraint_column_names, ', '), schema_name, \
+                       referenced_table, array_to_string(referenced_column_names, ', '), '', '' \
+                     FROM duckdb_constraints() WHERE {HERE} AND constraint_type = 'FOREIGN KEY' \
+                     ORDER BY 1"
+                ),
+                p,
+            )?;
+            r.section(
+                "referencedBy",
+                &[
+                    "name",
+                    "refSchema",
+                    "refName",
+                    "columns",
+                    "onUpdate",
+                    "onDelete",
+                ],
+                "SELECT constraint_name, schema_name, table_name, \
+                   array_to_string(constraint_column_names, ', '), '', '' \
+                 FROM duckdb_constraints() \
+                 WHERE database_name = current_database() AND schema_name = $1 \
+                   AND referenced_table = $2 AND constraint_type = 'FOREIGN KEY' \
+                 ORDER BY 3, 1",
+                p,
+            )?;
+            r.section(
+                "stats",
+                &["property", "value"],
+                &format!(
+                    "SELECT 'rows (estimated)', CAST(estimated_size AS VARCHAR) FROM duckdb_tables() \
+                     WHERE {HERE}"
+                ),
+                p,
+            )?;
+        }
+        // the statement as DuckDB keeps it; a table is followed by its indexes
+        let sql = match object {
+            ObjectKind::Table => format!("SELECT sql FROM duckdb_tables() WHERE {HERE}"),
+            ObjectKind::View => "SELECT sql FROM duckdb_views() \
+                 WHERE database_name = current_database() AND schema_name = $1 AND view_name = $2"
+                .to_owned(),
+            ObjectKind::Sequence => "SELECT sql FROM duckdb_sequences() \
+                 WHERE database_name = current_database() AND schema_name = $1 AND sequence_name = $2"
+                .to_owned(),
+            _ => return Ok(None),
+        };
+        let Some(text) = r.text(&sql, p)? else {
+            return Ok(None);
+        };
+        let mut ddl = format!("{};\n", text.trim().trim_end_matches(';'));
+        if object == ObjectKind::Table {
+            for row in r.rows(
+                &format!("SELECT sql FROM duckdb_indexes() WHERE {HERE} AND sql IS NOT NULL ORDER BY index_name"),
+                p,
+            )? {
+                ddl.push_str(&format!("{};\n", at(&row, 0).trim().trim_end_matches(';')));
+            }
+        }
+        Ok(Some(ddl))
     }
 }
 

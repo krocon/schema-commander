@@ -36,6 +36,10 @@ describe('connection logic', () => {
 
   it('says what is missing or not allowed', () => {
     expect(profileProblems(p({ name: 'Lokal' }))).toEqual({});
+    // DuckDB (035c): a file like SQLite – no host, no user
+    const duck = { name: 'Lager', kind: 'duckdb' as const, host: '', user: '' };
+    expect(Object.keys(profileProblems(p({ ...duck, database: '' })))).toEqual(['database']);
+    expect(profileProblems(p({ ...duck, database: ':memory:' }))).toEqual({});
     // Oracle (035b): the service name is needed, and TLS always checks
     const oracle = { name: 'Lager', kind: 'oracle' as const, user: 'report' };
     expect(Object.keys(profileProblems(p({ ...oracle, database: '' })))).toEqual(['database']);

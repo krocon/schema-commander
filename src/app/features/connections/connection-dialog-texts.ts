@@ -69,6 +69,8 @@ export const CONNECTION_DIALOG_EN = {
   chooseFileTitle: 'Choose a file',
   chooseKeyFileTitle: 'Choose a key file',
   chooseSqliteTitle: 'Choose an SQLite file',
+  chooseDuckdbTitle: 'Choose a DuckDB file',
+  duckdbMemory: 'a file, or :memory: to query Parquet, CSV and JSON files',
   allFiles: 'All files',
   connectionWorks: (version: string) => `Connection works: ${version}`,
   /** The stage of a connect an error belongs to, in front of its message. */

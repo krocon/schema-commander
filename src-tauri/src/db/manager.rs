@@ -741,7 +741,8 @@ impl ConnectionManager {
             DbKind::Sqlserver => ("SAVE TRANSACTION sc_rows", "ROLLBACK TRANSACTION sc_rows"),
             _ => ("SAVEPOINT sc_rows", "ROLLBACK TO SAVEPOINT sc_rows"),
         };
-        let can_probe = profile.kind != DbKind::Mysql;
+        // DuckDB has no savepoints
+        let can_probe = !matches!(profile.kind, DbKind::Mysql | DbKind::Duckdb);
         if problem.is_none() {
             for step in steps {
                 let marked = can_probe

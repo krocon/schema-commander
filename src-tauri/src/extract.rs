@@ -183,6 +183,7 @@ pub fn literal(cell: &Value, kind: ColKind, dialect: DbKind) -> String {
                 DbKind::Sqlserver => format!("0x{hex}"),
                 DbKind::Mysql | DbKind::Sqlite => format!("X'{hex}'"),
                 DbKind::Oracle => format!("HEXTORAW('{hex}')"),
+                DbKind::Duckdb => format!("unhex('{hex}')"),
             },
             // only the head of a big value is kept (prompt 006): better no value than a wrong one
             Some((bytes, _)) => format!("NULL /* binary, {bytes} bytes: not copied */"),

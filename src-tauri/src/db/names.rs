@@ -572,6 +572,17 @@ pub fn read_objects(s: &mut dyn Session, kind: DbKind, stop: Stop) -> AppResult<
             &[],
             stop,
         )?,
+        DbKind::Duckdb => ask(
+            s,
+            "SELECT 'table', schema_name, table_name, '' FROM duckdb_tables() \
+             WHERE database_name = current_database() AND NOT internal \
+             UNION ALL SELECT 'view', schema_name, view_name, '' FROM duckdb_views() \
+             WHERE database_name = current_database() AND NOT internal \
+             UNION ALL SELECT 'sequence', schema_name, sequence_name, '' FROM duckdb_sequences() \
+             WHERE database_name = current_database()",
+            &[],
+            stop,
+        )?,
         DbKind::Oracle => ask(
             s,
             "SELECT CASE o.object_type WHEN 'TABLE' THEN 'table' WHEN 'VIEW' THEN 'view' \
@@ -661,6 +672,13 @@ pub fn read_columns(
              JOIN sys.schemas s ON s.schema_id = o.schema_id \
              JOIN sys.types t ON t.user_type_id = c.user_type_id \
              WHERE o.type IN ('U', 'V') AND o.is_ms_shipped = 0",
+            &[],
+            stop,
+        )?,
+        DbKind::Duckdb => ask(
+            s,
+            "SELECT schema_name, table_name, column_name, data_type FROM duckdb_columns() \
+             WHERE database_name = current_database() AND NOT internal",
             &[],
             stop,
         )?,

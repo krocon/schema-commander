@@ -158,7 +158,7 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                 }
             }
             // PostgreSQL and SQL Server nest block comments
-            let nests = matches!(kind, DbKind::Postgres | DbKind::Sqlserver);
+            let nests = matches!(kind, DbKind::Postgres | DbKind::Sqlserver | DbKind::Duckdb);
             let mut depth = 1;
             i += 2;
             while i < n && depth > 0 {
@@ -235,7 +235,10 @@ fn scan(sql: &str, kind: DbKind) -> Scan {
                 .to_uppercase();
             i = (i + 1).min(n);
             toks.push(Tok::Quoted(body));
-        } else if c == '$' && kind == DbKind::Postgres && dollar_tag(&chars, i).is_some() {
+        } else if c == '$'
+            && matches!(kind, DbKind::Postgres | DbKind::Duckdb)
+            && dollar_tag(&chars, i).is_some()
+        {
             // $tag$ … $tag$
             let tag = dollar_tag(&chars, i).unwrap_or_default();
             let body = (i + tag.len()).min(n);
@@ -447,6 +450,10 @@ const TSQL_WRITE_WORDS: &[&str] = &[
 
 /// Functions that change something although they are called from a `SELECT`.
 const WRITING_FUNCTIONS: &[&str] = &[
+    // DuckDB: table functions that write files or settings
+    "ENABLE_LOGGING",
+    "DISABLE_LOGGING",
+    "TRUNCATE_DUCKDB_LOGS",
     "NEXTVAL",
     "SETVAL",
     "SET_CONFIG",
@@ -653,6 +660,23 @@ fn classify_one(toks: &[Tok], kind: DbKind) -> Option<Class> {
         return Some(Class::Read);
     }
 
+    if kind == DbKind::Duckdb
+        && (matches!(start, "INSTALL" | "LOAD" | "FORCE")
+            || (start == "UPDATE" && words.get(1) == Some(&"EXTENSIONS")))
+    {
+        // code from the net, run inside the app: asked about like what destroys
+        return Some(Class::Dangerous);
+    }
+    if kind == DbKind::Duckdb
+        && matches!(start, "SET" | "RESET" | "PRAGMA")
+        && words
+            .iter()
+            .any(|w| w.contains("EXTENSION") || *w == "ENABLE_EXTERNAL_ACCESS")
+    {
+        // the switches that keep extensions from loading on their own (and files in reach): turning
+        // them is the first half of running foreign code
+        return Some(Class::Dangerous);
+    }
     let mut class = if READ_STARTS.contains(&start) {
         Class::Read
     } else if DANGEROUS_WORDS.contains(&start) {
@@ -891,7 +915,8 @@ pub fn read_only_statement(kind: DbKind) -> Option<&'static str> {
         DbKind::Sqlserver => None,
         // Oracle has it only for one transaction (and reads a stale snapshot inside it): the
         // classification is all there is, and a reading call runs in a transaction that is rolled back
-        DbKind::Oracle => None,
+        // DuckDB can be read only for a whole file, not for a session of an open one
+        DbKind::Oracle | DbKind::Duckdb => None,
     }
 }
 
@@ -900,13 +925,55 @@ mod tests {
     use super::*;
     use Class::{Dangerous, Ddl, Read, Write};
 
-    const ALL: [DbKind; 5] = [
+    const ALL: [DbKind; 6] = [
         DbKind::Postgres,
         DbKind::Mysql,
         DbKind::Sqlserver,
         DbKind::Sqlite,
         DbKind::Oracle,
+        DbKind::Duckdb,
     ];
+
+    /// DuckDB (prompt 035c): extensions are code from the net, files are written by statements.
+    #[test]
+    fn duckdb_extensions_ask_first_and_files_count_as_writing() {
+        let k = DbKind::Duckdb;
+        assert_eq!(classify("INSTALL httpfs", k), Dangerous);
+        assert_eq!(classify("LOAD 'x.duckdb_extension'", k), Dangerous);
+        assert_eq!(classify("FORCE INSTALL spatial", k), Dangerous);
+        assert_eq!(classify("UPDATE EXTENSIONS", k), Dangerous);
+        assert_eq!(classify("UPDATE t SET a = 1 WHERE id = 2", k), Write);
+        assert_eq!(classify("COPY t TO 'out.parquet'", k), Write);
+        assert_eq!(classify("ATTACH 'other.duckdb'", k), Ddl);
+        assert_eq!(classify("SELECT * FROM read_parquet('a.parquet')", k), Read);
+        assert_eq!(classify("FROM t SELECT a", k), Write);
+        assert_eq!(read_only_statement(k), None);
+        // review 035c 1: dollar quotes and nested comments are DuckDB's too – what hides in them is seen
+        assert_eq!(
+            classify("SELECT $$'$$; DROP TABLE t; SELECT $$'$$", k),
+            Dangerous
+        );
+        assert_eq!(
+            classify("SELECT 1 /* /* */ ' */ ; DROP TABLE t; --'", k),
+            Dangerous
+        );
+        assert_eq!(classify("SELECT $tag$ ; DELETE FROM t $tag$", k), Read);
+        // review 035c 4: the switches for extensions, and functions that write
+        assert_eq!(
+            classify("SET autoinstall_known_extensions = true", k),
+            Dangerous
+        );
+        assert_eq!(
+            classify("SET GLOBAL autoload_known_extensions=true", k),
+            Dangerous
+        );
+        assert_eq!(classify("RESET custom_extension_repository", k), Dangerous);
+        assert_eq!(classify("SET threads = 4", k), Write);
+        assert_eq!(
+            classify("SELECT * FROM enable_logging(storage='file')", k),
+            Write
+        );
+    }
 
     /// Oracle (prompt 035b): a q-quote holds quotes as they are, a backslash escapes nothing, and a
     /// PL/SQL block is judged by what it holds.

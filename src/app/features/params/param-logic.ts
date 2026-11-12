@@ -53,6 +53,7 @@ export const DEFAULT_FORMS: Readonly<Record<Dialect, readonly ParamForm[]>> = {
   sqlserver: ['colon', 'brace', 'question'],
   sqlite: ['colon', 'brace', 'question', 'dollarName', 'at'],
   oracle: ['colon', 'brace'],
+  duckdb: ['colon', 'brace', 'dollarNumber'],
 };
 
 /** The forms of a connection: what the user set for it, else the defaults of its database. */
@@ -388,6 +389,13 @@ export function placeholder(dialect: Dialect, n: number, kind: BoundValue['kind'
     case 'oracle':
       // the driver binds numbers and dates as what they are
       return `:${n}`;
+    case 'duckdb': {
+      const p = `$${n}`;
+      if (kind === 'decimal') return `CAST(${p} AS DECIMAL(38,10))`;
+      if (kind === 'date') return `CAST(${p} AS DATE)`;
+      if (kind === 'datetime') return `CAST(${p} AS TIMESTAMP)`;
+      return p;
+    }
   }
 }
 

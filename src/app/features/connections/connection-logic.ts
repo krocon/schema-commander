@@ -3,6 +3,7 @@ import {
   Profile,
   defaultPort,
   isLocalHost,
+  isFileKind,
 } from '../../core/connections/connection.models';
 import { CONNECTION_DIALOG_TEXTS } from './connection-dialog-texts';
 import { CONNECTION_TEXTS } from './connection-texts';
@@ -79,7 +80,7 @@ export function profileProblems(p: Profile): Partial<Record<Field, string>> {
   if (!Number.isInteger(p.port) || p.port < 0 || p.port > 65535) {
     out.port = t.portRange;
   }
-  if (p.kind === 'sqlite') {
+  if (isFileKind(p.kind)) {
     if (!p.database.trim()) out.database = t.fileMissing;
     return out;
   }
@@ -123,15 +124,16 @@ export function withKind(p: Profile, kind: DbKind): Profile {
     sqlserver: 'sa',
     sqlite: '',
     oracle: 'system',
+    duckdb: '',
   };
   const usual = Object.values(users);
   return {
     ...p,
     kind,
     port: 0,
-    host: kind === 'sqlite' ? '' : p.host || 'localhost',
+    host: isFileKind(kind) ? '' : p.host || 'localhost',
     user: usual.includes(p.user.trim()) ? users[kind] : p.user,
-    database: kind === 'sqlite' || p.kind === 'sqlite' ? '' : p.database,
+    database: isFileKind(kind) || isFileKind(p.kind) ? '' : p.database,
   };
 }
 
@@ -151,7 +153,7 @@ export function portPlaceholder(kind: DbKind): string {
 
 /** A name for a profile that has none yet: `user@host/database`, or the file's name. */
 export function suggestedName(p: Profile): string {
-  if (p.kind === 'sqlite') {
+  if (isFileKind(p.kind)) {
     const file = p.database.trim().split(/[\\/]/).pop() ?? '';
     return file;
   }

@@ -33,6 +33,8 @@ pub enum Dialect {
     /// Oracle (prompt 035b): the common rules; what they do not fit (a q-quote, PL/SQL) is found by
     /// the check of the tokens and left as it was.
     Oracle,
+    /// DuckDB (prompt 035c): the common rules.
+    Duckdb,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -339,7 +341,7 @@ fn word_start(c: u8, dialect: Dialect) -> bool {
         || c >= 0x80
         || (c == b'@' && matches!(dialect, Dialect::Mysql | Dialect::Sqlserver))
         || (c == b'#' && dialect == Dialect::Sqlserver)
-        || (c == b'$' && dialect != Dialect::Postgres)
+        || (c == b'$' && !matches!(dialect, Dialect::Postgres | Dialect::Duckdb))
 }
 
 fn word_char(c: u8, dialect: Dialect) -> bool {
@@ -425,7 +427,8 @@ fn lex(src: &str, dialect: Dialect, stop: &dyn Fn() -> bool) -> Result<Vec<Tok>,
         if line_start {
             flags |= OWN_LINE;
         }
-        let pg = dialect == Dialect::Postgres;
+        // DuckDB shares dollar quotes, nested comments and E'…' with PostgreSQL
+        let pg = matches!(dialect, Dialect::Postgres | Dialect::Duckdb);
         let mysql = dialect == Dialect::Mysql;
         let kind;
         if line_start

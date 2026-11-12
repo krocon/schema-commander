@@ -69,6 +69,8 @@ export const CONNECTION_DIALOG_DE: Translation<typeof CONNECTION_DIALOG_EN> = {
   chooseFileTitle: 'Datei wählen',
   chooseKeyFileTitle: 'Schlüsseldatei wählen',
   chooseSqliteTitle: 'SQLite-Datei wählen',
+  chooseDuckdbTitle: 'DuckDB-Datei wählen',
+  duckdbMemory: 'eine Datei, oder :memory: für Abfragen auf Parquet-, CSV- und JSON-Dateien',
   allFiles: 'Alle Dateien',
   connectionWorks: (version) => `Verbindung steht: ${version}`,
   stageSsh: 'SSH-Tunnel: ',

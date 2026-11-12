@@ -38,6 +38,9 @@ sqlx-mysql = { version = "=0.9.0", default-features = false, features = ["chrono
 tiberius = { version = "0.13", default-features = false, features = ["rustls", "tds73", "chrono"] }
 # Oracle (prompt 035b): the thin driver maintained by Oracle, pure Rust, no Instant Client. A beta – pinned.
 oracledb = "=26.0.0-beta.5"
+# DuckDB (prompt 035c): the library is built in (C++, a few minutes of build time, about 50 MB in the
+# package); Parquet and JSON readers with it, so no extension has to be fetched.
+duckdb = { version = "=1.20000.1", features = ["bundled", "parquet", "json"] }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "net", "sync", "io-util", "macros"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
