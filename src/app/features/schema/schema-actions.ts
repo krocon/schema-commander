@@ -22,6 +22,7 @@ import { SchemaApi } from '../../core/schema/schema-api';
 import { editableSource } from '../structure/structure-logic';
 import { STRUCTURE_TEXTS } from '../structure/structure-texts';
 import { StructureService } from '../structure/structure.service';
+import { BackupService } from '../backup/backup.service';
 
 /** What can be done with a node of the schema tree (prompt 008); each is an action of the app. */
 export type NodeAction =
@@ -31,6 +32,7 @@ export type NodeAction =
   | 'SCHEMA_IMPORT_TABLE'
   | 'SCHEMA_SEARCH'
   | 'SCHEMA_DIAGRAM'
+  | 'SCHEMA_BACKUP'
   | 'SCHEMA_EDIT_TABLE'
   | 'SCHEMA_NEW_TABLE'
   | 'SCHEMA_DUPLICATE_TABLE'
@@ -51,6 +53,7 @@ export const NODE_ACTIONS: readonly NodeAction[] = [
   'SCHEMA_IMPORT_TABLE',
   'SCHEMA_SEARCH',
   'SCHEMA_DIAGRAM',
+  'SCHEMA_BACKUP',
   'SCHEMA_EDIT_TABLE',
   'SCHEMA_NEW_TABLE',
   'SCHEMA_DUPLICATE_TABLE',
@@ -100,6 +103,7 @@ export function allows(action: NodeAction, row: TreeRow | null): boolean {
     case 'SCHEMA_EXPORT_TABLE':
     case 'SCHEMA_SELECT_TEMPLATE':
       return isRelation(row);
+    case 'SCHEMA_BACKUP':
     case 'SCHEMA_DIAGRAM':
       // a schema, or a table (a view has no keys)
       return row?.kind === 'schema' || (row?.kind === 'object' && row.object?.kind === 'table');
@@ -140,6 +144,7 @@ export class SchemaActions {
   private readonly diagram = inject(DiagramService);
   private readonly details = inject(ObjectDetailsService);
   private readonly structure = inject(StructureService);
+  private readonly backup = inject(BackupService);
   private readonly schemaApi = inject(SchemaApi);
 
   /** Whether `action` can run on the active row of the tree. */
@@ -184,6 +189,15 @@ export class SchemaActions {
         });
         return;
       }
+      case 'SCHEMA_BACKUP':
+        if (!row.schema) return;
+        this.backup.open({
+          connectionId: this.connections.activeId(),
+          mode: 'backup',
+          schema: row.schema.name,
+          table: row.kind === 'object' ? (row.object?.name ?? null) : null,
+        });
+        return;
       case 'SCHEMA_NEW_TABLE':
         if (!row.schema) return;
         this.structure.open({

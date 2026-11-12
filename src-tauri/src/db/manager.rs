@@ -1137,6 +1137,55 @@ impl ConnectionManager {
         result
     }
 
+    /// Where a program of the database connects to for an open connection (prompt 044): the server of
+    /// the profile – or the local end of its SSH tunnel, which is told to let one more connection in –,
+    /// with the password the connection was opened with. The tunnel must live as long as the program runs.
+    pub fn external(
+        &self,
+        id: &str,
+    ) -> AppResult<(crate::backup::Endpoint, Option<Arc<Tunnel>>, Profile)> {
+        let profile = self.find(id)?;
+        if !self.is_open(id) {
+            return Err(AppError::new(
+                ErrorCode::NotConnected,
+                "connect first: the tool logs in like the connection did",
+            ));
+        }
+        let password = self.kept.lock().get(id).cloned().flatten();
+        let tunnel = self.tunnel_of(id, &profile)?;
+        let (host, port) = match &tunnel {
+            Some(tunnel) => {
+                tunnel.permit();
+                ("127.0.0.1".to_owned(), tunnel.port())
+            }
+            None => (profile.host.clone(), profile.port),
+        };
+        Ok((
+            crate::backup::Endpoint {
+                kind: profile.kind,
+                host,
+                port,
+                user: profile.user.clone(),
+                database: profile.database.clone(),
+                password,
+                // through a tunnel the name of the server is not the one in its certificate: the line
+                // is the tunnel's, checked by SSH
+                tls: if tunnel.is_some() && profile.tls.checks_server() {
+                    super::TlsMode::Require
+                } else {
+                    profile.tls
+                },
+                ca_file: profile.ca_file.clone(),
+                client_cert: profile.client_cert.clone(),
+                client_key: profile.client_key.clone(),
+                // said by the caller, who knows which program was found
+                maria_client: false,
+            },
+            tunnel,
+            profile,
+        ))
+    }
+
     /// Stops the statement that runs on a connection (nothing happens when none does).
     pub fn cancel(&self, id: &str) {
         self.cancel_in(id, None);

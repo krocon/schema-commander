@@ -79,6 +79,11 @@ pub enum TlsMode {
 }
 
 impl TlsMode {
+    /// Whether the certificate of the server is checked.
+    pub fn checks_server(self) -> bool {
+        matches!(self, TlsMode::VerifyCa | TlsMode::Verify)
+    }
+
     /// A CA file is given but this mode would not check against it (a profile must not hold both).
     pub fn unchecked_ca_conflict(self, ca_file: &str) -> bool {
         !ca_file.trim().is_empty() && !matches!(self, TlsMode::VerifyCa | TlsMode::Verify)

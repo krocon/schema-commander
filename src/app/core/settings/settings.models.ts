@@ -112,6 +112,8 @@ export interface Settings {
    * Where the user moved the tables of an ER diagram (prompt 037), per diagram (connection, schema,
    * table): the id of a table → `[x, y]`.
    */
+  /** Where the tools of the databases are, when the user said so (prompt 044): tool → full path. */
+  readonly toolPaths: Readonly<Record<string, string>>;
   readonly diagramPlaces: Readonly<
     Record<string, Readonly<Record<string, readonly [number, number]>>>
   >;
@@ -203,6 +205,7 @@ export const DEFAULT_SETTINGS: Settings = {
   filterBarVisible: false,
   columnLayouts: {},
   virtualRelations: {},
+  toolPaths: {},
   diagramPlaces: {},
   statsMeasures: ['cells', 'sum', 'mean', 'min', 'max'],
   paramsEnabled: true,
@@ -238,6 +241,19 @@ function numberOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? Math.round(value)
     : fallback;
+}
+
+const TOOLS = ['pgDump', 'pgRestore', 'psql', 'mysqlDump', 'mysql'];
+
+/** The paths of tools as stored: only known tools, only texts of a sane length. */
+export function readToolPaths(raw: unknown): Settings['toolPaths'] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, string> = {};
+  for (const tool of TOOLS) {
+    const path = (raw as Record<string, unknown>)[tool];
+    if (typeof path === 'string' && path.trim() !== '' && path.length <= 1000) out[tool] = path;
+  }
+  return out;
 }
 
 /** The places of the tables of diagrams as stored: only what has the shape, and not without end. */
@@ -352,6 +368,7 @@ export function mergeSettings(saved: unknown): Settings {
           ) as Record<string, TableSpecStored>)
         : {},
     filterBarVisible: bool('filterBarVisible'),
+    toolPaths: readToolPaths(s['toolPaths']),
     diagramPlaces: readDiagramPlaces(s['diagramPlaces']),
     virtualRelations:
       s['virtualRelations'] &&

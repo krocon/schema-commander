@@ -1030,6 +1030,321 @@ pub fn struct_apply(
     ran
 }
 
+// ── Backup and restore (prompt 044) ─────────────────────────────────────────────────────
+
+/// A tool of the database as the dialog shows it.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolInfo {
+    pub tool: crate::backup::Tool,
+    /// Where it is; `None`: not found.
+    pub path: Option<String>,
+    /// What `--version` says.
+    pub version: Option<String>,
+    pub major: Option<u32>,
+}
+
+/// What the dialog needs to know before a backup.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupInfo {
+    pub tools: Vec<ToolInfo>,
+    /// The major version of the server; a tool older than it may not read everything.
+    pub server_major: Option<u32>,
+}
+
+type ToolPaths = std::collections::HashMap<crate::backup::Tool, String>;
+
+fn locate(tool: crate::backup::Tool, paths: &ToolPaths) -> AppResult<PathBuf> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    crate::backup::find(
+        tool,
+        paths.get(&tool).map(String::as_str),
+        std::env::var_os("PATH").as_deref(),
+        home.as_deref(),
+        &|p| p.is_file(),
+    )
+}
+
+/// The tools for the database of a connection: where they are and how old (prompt 044). `paths`: where
+/// the user said they are. Nothing is downloaded, nothing but `--version` runs.
+#[tauri::command(async)]
+pub fn backup_tools(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    paths: ToolPaths,
+) -> AppResult<BackupInfo> {
+    let kind = manager.kind_of(&id)?;
+    let tools = crate::backup::tools_of(kind)
+        .iter()
+        .map(|&tool| match locate(tool, &paths) {
+            Ok(path) => {
+                let version = crate::backup::version(&path).ok().filter(|v| !v.is_empty());
+                ToolInfo {
+                    tool,
+                    major: version.as_deref().and_then(crate::backup::major_version),
+                    version,
+                    path: Some(path.to_string_lossy().into_owned()),
+                }
+            }
+            Err(_) => ToolInfo {
+                tool,
+                path: None,
+                version: None,
+                major: None,
+            },
+        })
+        .collect();
+    let server_major = manager
+        .ask(&id, |session, _, stop| session.server_version(stop))
+        .ok()
+        .as_deref()
+        .and_then(crate::backup::major_version);
+    Ok(BackupInfo {
+        tools,
+        server_major,
+    })
+}
+
+/// Whether the MySQL tool on this machine is MariaDB's: said by its `--version`.
+fn maria_client(
+    endpoint: &crate::backup::Endpoint,
+    paths: &ToolPaths,
+    tool: crate::backup::Tool,
+) -> bool {
+    endpoint.kind == crate::db::DbKind::Mysql
+        && locate(tool, paths)
+            .ok()
+            .and_then(|program| crate::backup::version(&program).ok())
+            .is_some_and(|v| v.to_lowercase().contains("mariadb"))
+}
+
+/// A folder of this app for the file with the password of MySQL: the user's alone.
+fn private_folder(app: &AppHandle) -> AppResult<PathBuf> {
+    let io = |e: std::io::Error| AppError::new(ErrorCode::Io, e.to_string());
+    let folder = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| AppError::new(ErrorCode::Io, e.to_string()))?
+        .join("private");
+    std::fs::create_dir_all(&folder).map_err(io)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700)).map_err(io)?;
+    }
+    // what a run left that was killed with the app (one job at a time: nothing here is in use)
+    if let Ok(entries) = std::fs::read_dir(&folder) {
+        for entry in entries.flatten() {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+    Ok(folder)
+}
+
+/// Writes a backup of the database of a connection with its own tool (prompt 044). `path` comes from the
+/// save dialog. A job: `cancel_job` ends the program and removes what it wrote. `on_line` hears what the
+/// program says.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn backup_dump(
+    app: AppHandle,
+    manager: State<'_, ConnectionManager>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    id: String,
+    spec: crate::backup::DumpSpec,
+    path: String,
+    paths: ToolPaths,
+    on_line: Channel<String>,
+) -> AppResult<crate::backup::Done> {
+    use std::sync::atomic::Ordering;
+    let target = export_target(&path)?;
+    let (mut endpoint, tunnel, _) = manager.external(&id)?;
+    endpoint.maria_client = maria_client(&endpoint, &paths, crate::backup::Tool::MysqlDump);
+    let invocation = crate::backup::dump(&endpoint, &spec, &target)?;
+    let program = locate(invocation.tool, &paths)?;
+    let private = private_folder(&app)?;
+    let stop = jobs.start(job_id, None);
+    let done = crate::backup::run(
+        &program,
+        &invocation,
+        &private,
+        &|line| {
+            let _ = on_line.send(line);
+        },
+        &|| stop.load(Ordering::Relaxed),
+    );
+    jobs.end(job_id);
+    // the tunnel lived as long as the program
+    drop(tunnel);
+    if done.is_ok() {
+        jobs.written.lock().insert(target);
+    }
+    done
+}
+
+/// What a file to restore is (`path` from the open dialog).
+#[tauri::command(async)]
+pub fn backup_file_kind(path: String) -> AppResult<crate::backup::FileKind> {
+    crate::backup::file_kind(&export_target(&path)?)
+}
+
+/// Plays a backup into the database of a connection (prompt 044). It writes whatever the file says: a
+/// connection that only reads refuses, one that asks wants its name typed (`typed_name`) – decided here.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn backup_restore(
+    app: AppHandle,
+    manager: State<'_, ConnectionManager>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    id: String,
+    spec: crate::backup::RestoreSpec,
+    path: String,
+    paths: ToolPaths,
+    typed_name: Option<String>,
+    on_line: Channel<String>,
+) -> AppResult<crate::backup::Done> {
+    use crate::db::guard::Protection;
+    use std::sync::atomic::Ordering;
+    let source = export_target(&path)?;
+    let (mut endpoint, tunnel, profile) = manager.external(&id)?;
+    endpoint.maria_client = maria_client(&endpoint, &paths, crate::backup::Tool::Mysql);
+    match profile.protection {
+        Protection::Readonly => {
+            return Err(AppError::new(
+                ErrorCode::PermissionDenied,
+                "this connection is read only: nothing is restored into it",
+            ));
+        }
+        // (a connection that is free asks in the window only – as for every statement that is not
+        // dangerous there; what the file holds nobody can classify, so `admit` has nothing to judge)
+        Protection::Ask if typed_name.as_deref().map(str::trim) != Some(profile.name.trim()) => {
+            return Err(AppError::new(
+                ErrorCode::ConfirmationRequired,
+                "type the name of the connection to restore into it",
+            ));
+        }
+        _ => {}
+    }
+    let kind = crate::backup::file_kind(&source)?;
+    let invocation = crate::backup::restore(&endpoint, &spec, kind, &source)?;
+    let program = locate(invocation.tool, &paths)?;
+    let private = private_folder(&app)?;
+    let stop = jobs.start(job_id, None);
+    let done = crate::backup::run(
+        &program,
+        &invocation,
+        &private,
+        &|line| {
+            let _ = on_line.send(line);
+        },
+        &|| stop.load(Ordering::Relaxed),
+    );
+    jobs.end(job_id);
+    drop(tunnel);
+    done
+}
+
+/// A copy of a SQLite database as a file of its own (prompt 044): `VACUUM INTO`, consistent while the
+/// database is in use. `path` comes from the save dialog, which asked before replacing a file.
+#[tauri::command(async)]
+pub fn backup_sqlite(
+    manager: State<'_, ConnectionManager>,
+    id: String,
+    path: String,
+) -> AppResult<u64> {
+    let target = export_target(&path)?;
+    if manager.kind_of(&id)? != crate::db::DbKind::Sqlite {
+        return Err(AppError::new(
+            ErrorCode::Unsupported,
+            "not a SQLite database",
+        ));
+    }
+    let text = target
+        .to_str()
+        .ok_or_else(|| AppError::new(ErrorCode::Io, "the target is no path SQLite can be told"))?
+        .to_owned();
+    // never over the database itself
+    let same = |a: &Path, b: &Path| match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    };
+    let (_, _, profile) = manager.external(&id)?;
+    if same(&target, Path::new(&profile.database)) || target.is_dir() {
+        return Err(AppError::new(
+            ErrorCode::Unsupported,
+            "the copy needs a file of its own",
+        ));
+    }
+    // written beside the target (VACUUM INTO wants a file that is not there), in its place when whole
+    let part = crate::backup::part_of(&target);
+    let _ = std::fs::remove_file(&part);
+    let part_text = part
+        .to_str()
+        .ok_or_else(|| AppError::new(ErrorCode::Io, "the target is no path SQLite can be told"))?
+        .to_owned();
+    let _ = text;
+    let copied = manager.ask(&id, |session, _, stop| {
+        session
+            .ask("VACUUM INTO ?1", &[part_text.as_str()], None, stop)
+            .map(|_| ())
+    });
+    if let Err(e) = copied {
+        let _ = std::fs::remove_file(&part);
+        return Err(e);
+    }
+    crate::backup::put_in_place(&part, &target)
+        .map_err(|e| AppError::new(ErrorCode::Io, e.to_string()))?;
+    Ok(std::fs::metadata(&target).map(|m| m.len()).unwrap_or(0))
+}
+
+/// The simple export (prompt 044, without the tools of the database): the tables of a schema as
+/// `CREATE` statements – written by the migration of the schema comparison against nothing – and their
+/// rows as `INSERT`s, in one file. No rights, no sequences, no routines: said in the file. A job.
+#[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
+pub fn backup_simple(
+    manager: State<'_, ConnectionManager>,
+    jobs: State<'_, Jobs>,
+    job_id: u64,
+    id: String,
+    schema: String,
+    data: bool,
+    path: String,
+    on_line: Channel<String>,
+) -> AppResult<crate::backup::Done> {
+    use std::sync::atomic::Ordering;
+    let target = export_target(&path)?;
+    let kind = manager.kind_of(&id)?;
+    let stop = jobs.start(job_id, Some(id.clone()));
+    let work = || -> AppResult<u64> {
+        let snapshot = manager.ask(&id, |session, kind, stop| {
+            crate::db::compare::snapshot(session, kind, &schema, stop)
+        })?;
+        crate::backup::simple_export(
+            kind,
+            &snapshot,
+            data,
+            &target,
+            &mut |sql, sink| manager.run_into(&id, sql, None, sink).map(|_| ()),
+            &|table| {
+                let _ = on_line.send(table);
+            },
+            &|| stop.load(Ordering::Relaxed),
+        )
+    };
+    let done = work();
+    jobs.end(job_id);
+    let bytes = done?;
+    jobs.written.lock().insert(target);
+    Ok(crate::backup::Done {
+        bytes,
+        warnings: false,
+    })
+}
+
 /// The plan of one statement (prompt 039). Without `analyze` nothing runs: the database only says how
 /// it would. With `analyze` the statement **runs** – it passes the guard like any statement
 /// (`confirmation`), inside a transaction that is rolled back, on a session of its own.

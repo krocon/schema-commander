@@ -16,6 +16,7 @@ export const SCHEMA_EN = {
   importTable: 'Import a file …',
   searchHere: 'Search here …',
   diagram: 'Diagram …',
+  backup: 'Back up …',
   editTable: 'Edit structure …',
   editSource: 'Edit definition',
   newTable: 'New table …',

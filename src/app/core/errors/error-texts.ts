@@ -8,6 +8,7 @@ export const ERROR_EN = {
   unsupported: 'This is not supported.',
   invalid_theme: 'This is not a valid colour scheme.',
   too_large: 'The file is too large.',
+  program_not_found: 'A program of the database is not on this machine.',
   not_found: 'Not found.',
   invalid_session: 'The stored session is invalid.',
   unknown_result: 'This result no longer exists.',

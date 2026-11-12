@@ -3,6 +3,7 @@
 
 pub mod about;
 pub mod app_menu;
+pub mod backup;
 pub mod chart;
 pub mod commands;
 pub mod copy;
@@ -162,6 +163,12 @@ pub fn run() {
             commands::result_window,
             commands::result_view,
             commands::result_stats,
+            commands::backup_tools,
+            commands::backup_dump,
+            commands::backup_file_kind,
+            commands::backup_restore,
+            commands::backup_sqlite,
+            commands::backup_simple,
             commands::struct_load,
             commands::struct_plan,
             commands::struct_apply,

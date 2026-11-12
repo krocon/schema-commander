@@ -3,6 +3,7 @@ import { ClipboardApi, TauriClipboardApi } from './core/backend/clipboard-api';
 import { AboutApi, TauriAboutApi } from './core/about/about-api';
 import { ExportApi, TauriExportApi } from './core/backend/export-api';
 import { ChartApi, TauriChartApi } from './core/chart/chart-api';
+import { BackupApi, TauriBackupApi } from './core/backup/backup-api';
 import { PlanApi, TauriPlanApi } from './core/plan/plan-api';
 import { StructureApi, TauriStructureApi } from './core/structure/structure-api';
 import { CompareApi, TauriCompareApi } from './core/compare/compare-api';
@@ -28,6 +29,7 @@ export const appConfig: ApplicationConfig = {
     { provide: HistoryApi, useClass: TauriHistoryApi },
     { provide: ExportApi, useClass: TauriExportApi },
     { provide: PlanApi, useClass: TauriPlanApi },
+    { provide: BackupApi, useClass: TauriBackupApi },
     { provide: StructureApi, useClass: TauriStructureApi },
     { provide: ChartApi, useClass: TauriChartApi },
     { provide: CompareApi, useClass: TauriCompareApi },

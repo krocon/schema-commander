@@ -6,6 +6,7 @@ export type ErrorCode =
   | 'unsupported'
   | 'invalid_theme'
   | 'too_large'
+  | 'program_not_found'
   | 'not_found'
   | 'invalid_session'
   | 'unknown_result'
@@ -64,6 +65,7 @@ const CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'unsupported',
   'invalid_theme',
   'too_large',
+  'program_not_found',
   'not_found',
   'invalid_session',
   'unknown_result',

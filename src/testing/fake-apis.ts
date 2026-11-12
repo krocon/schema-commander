@@ -1,4 +1,13 @@
 import {
+  BackupApi,
+  BackupDone,
+  BackupFileKind,
+  BackupInfo,
+  DumpSpec,
+  RestoreSpec,
+  ToolPaths,
+} from '../app/core/backup/backup-api';
+import {
   StructPlan,
   StructRan,
   StructRequest,
@@ -1937,5 +1946,103 @@ export class FakeStructureApi extends StructureApi {
     void connectionId;
     this.applied.push({ request, confirmations, allowDangerous });
     return this.applyError ? Promise.reject(this.applyError) : Promise.resolve(this.ran);
+  }
+}
+
+/** Backup and restore (prompt 044): tools a test sets, and what was asked for. */
+export class FakeBackupApi extends BackupApi {
+  info: BackupInfo = {
+    tools: [
+      { tool: 'pgDump', path: '/usr/bin/pg_dump', version: 'pg_dump (PostgreSQL) 16.3', major: 16 },
+      { tool: 'pgRestore', path: '/usr/bin/pg_restore', version: 'pg_restore 16.3', major: 16 },
+      { tool: 'psql', path: '/usr/bin/psql', version: 'psql (PostgreSQL) 16.3', major: 16 },
+    ],
+    serverMajor: 16,
+  };
+  kind: BackupFileKind = 'pgCustom';
+  error: unknown = null;
+  /** Holds a job back until a test lets it end. */
+  gate: Promise<void> | null = null;
+  readonly asked: ToolPaths[] = [];
+  readonly dumps: { connectionId: string; spec: DumpSpec; path: string }[] = [];
+  readonly restores: {
+    connectionId: string;
+    spec: RestoreSpec;
+    path: string;
+    typedName: string | null;
+  }[] = [];
+  readonly simples: { schema: string; data: boolean; path: string }[] = [];
+  readonly copies: string[] = [];
+  readonly cancelled: number[] = [];
+
+  tools(connectionId: string, paths: ToolPaths): Promise<BackupInfo> {
+    void connectionId;
+    this.asked.push(paths);
+    return Promise.resolve(this.info);
+  }
+
+  private async job(onLine: (line: string) => void): Promise<BackupDone> {
+    onLine('pg_dump: dumping contents of table "public.orders"');
+    if (this.gate) await this.gate;
+    if (this.error) throw this.error;
+    return { bytes: 2048, warnings: false };
+  }
+
+  dump(
+    jobId: number,
+    connectionId: string,
+    spec: DumpSpec,
+    path: string,
+    paths: ToolPaths,
+    onLine: (line: string) => void,
+  ): Promise<BackupDone> {
+    void jobId;
+    void paths;
+    this.dumps.push({ connectionId, spec, path });
+    return this.job(onLine);
+  }
+
+  fileKind(): Promise<BackupFileKind> {
+    return this.error ? Promise.reject(this.error) : Promise.resolve(this.kind);
+  }
+
+  restore(
+    jobId: number,
+    connectionId: string,
+    spec: RestoreSpec,
+    path: string,
+    paths: ToolPaths,
+    typedName: string | null,
+    onLine: (line: string) => void,
+  ): Promise<BackupDone> {
+    void jobId;
+    void paths;
+    this.restores.push({ connectionId, spec, path, typedName });
+    return this.job(onLine);
+  }
+
+  sqliteCopy(connectionId: string, path: string): Promise<number> {
+    void connectionId;
+    this.copies.push(path);
+    return Promise.resolve(4096);
+  }
+
+  simple(
+    jobId: number,
+    connectionId: string,
+    schema: string,
+    data: boolean,
+    path: string,
+    onLine: (line: string) => void,
+  ): Promise<BackupDone> {
+    void jobId;
+    void connectionId;
+    this.simples.push({ schema, data, path });
+    return this.job(onLine);
+  }
+
+  cancel(jobId: number): Promise<void> {
+    this.cancelled.push(jobId);
+    return Promise.resolve();
   }
 }

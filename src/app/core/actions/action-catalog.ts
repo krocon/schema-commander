@@ -361,6 +361,10 @@ export const ACTIONS = [
   { id: 'CANCEL_EXPORT', label: 'Cancel export', group: 'File', scope: 'global' },
   // Import of a file into a table (prompt 033)
   { id: 'IMPORT_DATA', label: 'Import data from a file …', group: 'File', scope: 'global' },
+  // Backup and restore (prompt 044)
+  { id: 'BACKUP_DATABASE', label: 'Back up the database …', group: 'File', scope: 'global' },
+  { id: 'RESTORE_DATABASE', label: 'Restore a backup …', group: 'File', scope: 'global' },
+  { id: 'SCHEMA_BACKUP', label: 'Back up the schema or table …', group: 'Schema', scope: 'global' },
   {
     id: 'REVEAL_EXPORT',
     label: 'Show the exported file in the file manager',
