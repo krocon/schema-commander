@@ -69,6 +69,7 @@ describe('ConnectionsStore', () => {
       monitor: true,
       access: true,
       structure: true,
+      edit: true,
     };
     await store.load();
     await settle();

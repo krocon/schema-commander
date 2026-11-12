@@ -14,6 +14,8 @@ export const EDIT_DE: Translation<typeof EDIT_EN> = {
     local:
       'Erst die lokale Sortierung und den lokalen Filter zurücksetzen: Bearbeitet wird, wo die Tabelle steht.',
     running: 'Die Zeilen werden noch gelesen.',
+    unsupported:
+      'Zeilen dieser Datenbank werden hier nicht bearbeitet: Sie hat keine Transaktionen und keine eindeutigen Schlüssel, an denen sich Zeilen unterscheiden ließen.',
   },
   noCell: 'Erst eine Zelle wählen.',
   noRowKey: 'Der Schlüssel dieser Zeile ist NULL: Sie lässt sich nicht bearbeiten.',

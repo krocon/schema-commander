@@ -125,6 +125,7 @@ export function withKind(p: Profile, kind: DbKind): Profile {
     sqlite: '',
     oracle: 'system',
     duckdb: '',
+    clickhouse: 'default',
   };
   const usual = Object.values(users);
   return {

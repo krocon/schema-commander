@@ -121,6 +121,7 @@ const SAME = new Set<string>([
   'SQL Server',
   'Oracle',
   'DuckDB',
+  'ClickHouse',
   'Schema Commander',
   'Schema',
   'TLS: ',

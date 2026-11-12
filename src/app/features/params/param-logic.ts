@@ -54,6 +54,8 @@ export const DEFAULT_FORMS: Readonly<Record<Dialect, readonly ParamForm[]>> = {
   sqlite: ['colon', 'brace', 'question', 'dollarName', 'at'],
   oracle: ['colon', 'brace'],
   duckdb: ['colon', 'brace', 'dollarNumber'],
+  // `{name:Type}` is ClickHouse's own: only `:name` is ours there
+  clickhouse: ['colon'],
 };
 
 /** The forms of a connection: what the user set for it, else the defaults of its database. */
@@ -389,6 +391,12 @@ export function placeholder(dialect: Dialect, n: number, kind: BoundValue['kind'
     case 'oracle':
       // the driver binds numbers and dates as what they are
       return `:${n}`;
+    case 'clickhouse':
+      // the placeholder names a type: whole numbers and booleans as such, the rest as text the
+      // server reads as what it is compared with
+      if (kind === 'int') return `{p${n}:Int64}`;
+      if (kind === 'bool') return `{p${n}:Bool}`;
+      return `{p${n}:String}`;
     case 'duckdb': {
       const p = `$${n}`;
       if (kind === 'decimal') return `CAST(${p} AS DECIMAL(38,10))`;

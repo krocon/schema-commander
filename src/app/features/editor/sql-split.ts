@@ -13,11 +13,13 @@ import { offsetAt, placeIn } from '../../core/text/places';
  *   at `;` for „under the caret“; a script runs batch by batch (`splitBatches`).
  * - **sqlite**: `CREATE TRIGGER … BEGIN … END` keeps its inner `;`.
  * - **duckdb**: dollar quoting, as PostgreSQL.
+ * - **clickhouse**: backticks and backslash escapes in strings, as MySQL.
  * - **oracle**: `q'[ … ]'` strings; PL/SQL (`BEGIN`, `DECLARE`, `CREATE … FUNCTION | PROCEDURE | PACKAGE |
  *   TRIGGER | TYPE`) keeps its `;` and ends at a line with only `/` – as in SQL*Plus. That line also ends
  *   any other statement.
  */
-export type Dialect = 'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle' | 'duckdb';
+export type Dialect =
+  'postgres' | 'mysql' | 'sqlserver' | 'sqlite' | 'oracle' | 'duckdb' | 'clickhouse';
 
 export interface Statement {
   /** The statement without its terminator, trimmed. */
@@ -61,6 +63,7 @@ function skipToken(s: Scan): boolean {
     const prev = script[s.i - 1];
     const escapes =
       dialect === 'mysql' ||
+      dialect === 'clickhouse' ||
       (dialect === 'postgres' &&
         c === "'" &&
         (prev === 'E' || prev === 'e') &&
