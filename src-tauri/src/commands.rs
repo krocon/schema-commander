@@ -1779,6 +1779,20 @@ pub fn third_party_notices(app: AppHandle) -> AppResult<String> {
         .ok_or_else(|| AppError::new(ErrorCode::NotFound, "the notices are not in this package"))
 }
 
+/// Asks GitHub whether there is a newer release than this build. Nothing of the user's is sent, nothing
+/// is downloaded.
+#[tauri::command(async)]
+pub fn check_update(app: AppHandle) -> AppResult<crate::update::UpdateInfo> {
+    crate::update::check(&app.package_info().version.to_string())
+}
+
+/// Opens the page of a release (`""`: the list of releases) in the browser. The address is built in the
+/// backend; anything that is not a version is refused.
+#[tauri::command(async)]
+pub fn open_release_page(version: String) -> AppResult<()> {
+    crate::update::open_page(&version)
+}
+
 /// A file that is to be loaded: it must be a full path (it comes from the open dialog).
 fn import_source(path: &str) -> AppResult<PathBuf> {
     let path = PathBuf::from(path);

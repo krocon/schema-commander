@@ -703,6 +703,7 @@ export const ACTIONS = [
   { id: 'SHOW_SHORTCUTS', label: 'Show keyboard shortcuts', group: 'Help', scope: 'view' },
   // About (prompt 034)
   { id: 'SHOW_ABOUT', label: 'About Schema Commander', group: 'Help', scope: 'global' },
+  { id: 'CHECK_UPDATES', label: 'Check for updates …', group: 'Help', scope: 'global' },
 ] as const satisfies readonly ActionDef[];
 
 export type ActionId = (typeof ACTIONS)[number]['id'];

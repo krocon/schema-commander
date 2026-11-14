@@ -169,6 +169,10 @@ tag (`docs/release.md`); until certificates are set up they are unsigned. Every 
 `THIRD-PARTY-NOTICES.txt` with the licences of everything inside; *Help → About Schema Commander* shows it,
 together with version and build.
 
+*Help → Check for updates …* asks GitHub for the latest release and tells you when there is a newer version
+(the app also asks by itself at the start, at most once a day – a setting turns that off). Nothing about you is
+sent, and nothing is downloaded or installed: the dialog opens the download page in your browser.
+
 ## Website
 
 The product site lives in [`site/`](site/README.md): static pages without external requests. `node site/build.mjs`

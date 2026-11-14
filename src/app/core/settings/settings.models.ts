@@ -104,6 +104,12 @@ export interface Settings {
   readonly historyEnabled: boolean;
   /** Ids of the connections whose statements are not noted. */
   readonly historyOff: readonly string[];
+  /** Ask GitHub once a day at the start whether there is a newer version. */
+  readonly updateCheck: boolean;
+  /** When the app last asked, in ms since 1970; 0 = never. State of this machine. */
+  readonly updateLastCheck: number;
+  /** The version the user said not to mention again (`1.2.3`); `''` = none. */
+  readonly updateSkipped: string;
   /** Entries the history keeps at most. */
   readonly historyMaxEntries: number;
   /** Days an entry is kept; 0 = any age. */
@@ -264,6 +270,9 @@ export const DEFAULT_SETTINGS: Settings = {
   lastExportFormat: null,
   exportChoices: {},
   historyEnabled: true,
+  updateCheck: true,
+  updateLastCheck: 0,
+  updateSkipped: '',
   historyOff: [],
   historyMaxEntries: 100_000,
   historyMaxDays: 365,
@@ -537,6 +546,13 @@ export function mergeSettings(saved: unknown): Settings {
       typeof s['confirmDangerous'] === 'boolean'
         ? s['confirmDangerous']
         : DEFAULT_SETTINGS.confirmDangerous,
+    updateCheck: bool('updateCheck'),
+    updateLastCheck: within('updateLastCheck', 0, 8.64e15),
+    updateSkipped:
+      typeof s['updateSkipped'] === 'string' &&
+      /^\d{1,9}\.\d{1,9}\.\d{1,9}$/.test(s['updateSkipped'])
+        ? s['updateSkipped']
+        : '',
     historyEnabled:
       typeof s['historyEnabled'] === 'boolean'
         ? s['historyEnabled']

@@ -93,6 +93,21 @@ Der Workflow importiert das Zertifikat und setzt `bundle.windows.certificateThum
 
 Keine Signatur. `SHA256SUMS.txt` liegt am Release.
 
+## Nach Updates suchen (ohne Installation)
+
+*Hilfe → Nach Updates suchen …* fragt GitHub nach dem neuesten veröffentlichten Release
+(`api.github.com/repos/krocon/schema-commander/releases/latest`) und vergleicht es mit der eigenen Version
+(`src-tauri/src/update.rs`). Ist es neuer, zeigt der Dialog Version, Datum und Notizen und öffnet auf Wunsch die
+Seite des Release im Browser – geladen und installiert wird nichts. Beim Start fragt die App von selbst höchstens
+einmal am Tag (Einstellung *Allgemein → Beim Start nach Updates suchen*, Vorgabe an); eine neuere Version steht
+dann nur als Knopf in der Statuszeile, „Diese Version überspringen“ lässt sie verschwinden.
+
+- Gesendet wird nichts vom Nutzer: keine Kennung, keine Version, keine Plattform – nur die Anfrage selbst.
+- GitHub lässt bei `latest` Entwürfe und Vorabversionen aus; die App bietet sie auch dann nicht an, wenn die
+  Antwort eine nennt. **Solange kein Release veröffentlicht ist (nur Entwurf), antwortet GitHub mit 404** und der
+  Dialog sagt, dass es noch kein Release gibt.
+- Der Tag eines Release muss eine Version sein (`vX.Y.Z`), sonst gilt die Antwort als unlesbar.
+
 ## Auto-Update (`tauri-plugin-updater`) – bewertet, **nicht aufgenommen**
 
 | Punkt | Bewertung |
@@ -105,7 +120,7 @@ Keine Signatur. `SHA256SUMS.txt` liegt am Release.
 
 So wird es eingeschaltet, wenn es so weit ist: Schlüsselpaar erzeugen und sicher verwahren; `tauri-plugin-updater`
 aufnehmen (Begründung in `architecture.md`), `updater:default` in die Capability; Einstellung „beim Start nach
-Updates suchen“ (abschaltbar, Vorgabe an) und Aktion „Nach Updates suchen“; gefundene Updates werden **gemeldet**
+Updates suchen“ und Aktion „Nach Updates suchen“ gibt es schon (oben) – sie rufen dann den Updater; gefundene Updates werden **gemeldet**
 (Version, Notizen, „Jetzt installieren“/„Später“), nie still installiert; Kanal „stable“ = veröffentlichte
 Releases (Entwürfe und Vorabversionen zählen nicht).
 

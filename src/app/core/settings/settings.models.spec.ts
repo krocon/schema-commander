@@ -88,3 +88,27 @@ describe('mergeKeymap', () => {
     expect(mergeSettings({ diagramPlaces: 'x' }).diagramPlaces).toEqual({});
   });
 });
+
+describe('the update check', () => {
+  it('is on by default and has asked never', () => {
+    expect(DEFAULT_SETTINGS.updateCheck).toBe(true);
+    expect(DEFAULT_SETTINGS.updateLastCheck).toBe(0);
+    expect(DEFAULT_SETTINGS.updateSkipped).toBe('');
+  });
+
+  it('keeps what is valid and falls back for the rest', () => {
+    const s = mergeSettings({
+      updateCheck: false,
+      updateLastCheck: 1_800_000_000_000,
+      updateSkipped: '1.2.3',
+    });
+    expect(s.updateCheck).toBe(false);
+    expect(s.updateLastCheck).toBe(1_800_000_000_000);
+    expect(s.updateSkipped).toBe('1.2.3');
+    for (const bad of ['v1.2.3', '1.2', '1.2.3-rc.1', '<b>', 7, null]) {
+      expect(mergeSettings({ updateSkipped: bad }).updateSkipped).toBe('');
+    }
+    expect(mergeSettings({ updateLastCheck: -1 }).updateLastCheck).toBe(0);
+    expect(mergeSettings({ updateLastCheck: 'now' }).updateLastCheck).toBe(0);
+  });
+});

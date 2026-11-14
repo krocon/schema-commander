@@ -1,6 +1,7 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { ClipboardApi, TauriClipboardApi } from './core/backend/clipboard-api';
 import { AboutApi, TauriAboutApi } from './core/about/about-api';
+import { TauriUpdateApi, UpdateApi } from './core/update/update-api';
 import { ExportApi, TauriExportApi } from './core/backend/export-api';
 import { ChartApi, TauriChartApi } from './core/chart/chart-api';
 import { BackupApi, TauriBackupApi } from './core/backup/backup-api';
@@ -45,6 +46,7 @@ export const appConfig: ApplicationConfig = {
     { provide: CompareApi, useClass: TauriCompareApi },
     { provide: FindApi, useClass: TauriFindApi },
     { provide: AboutApi, useClass: TauriAboutApi },
+    { provide: UpdateApi, useClass: TauriUpdateApi },
     { provide: DataImportApi, useClass: TauriDataImportApi },
     { provide: FormatApi, useClass: TauriFormatApi },
     { provide: SavedApi, useClass: TauriSavedApi },
