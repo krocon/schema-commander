@@ -40,6 +40,7 @@ export const SETTINGS_DE: Translation<typeof SETTINGS_EN> = {
     security: 'Sicherheit',
   },
   labels: {
+    updateCheck: 'Beim Start nach Updates suchen',
     language: 'Sprache',
     editorFontFamily: 'Schrift',
     editorFontSize: 'Schriftgröße (px)',
@@ -77,6 +78,8 @@ export const SETTINGS_DE: Translation<typeof SETTINGS_EN> = {
     showSystemSchemas: 'Systemschemas im Baum zeigen',
   },
   help: {
+    updateCheck:
+      'Fragt GitHub nach dem neuesten Release, höchstens einmal am Tag. Nichts über Sie wird gesendet, nichts installiert – eine neuere Version wird nur in der Statuszeile genannt.',
     language: 'Ändert jeden Text sofort, auch in offenen Dialogen und im Editor.',
     editorFontFamily:
       'Eine Schrift, die auf diesem Rechner installiert ist; leer = die des Editors.',

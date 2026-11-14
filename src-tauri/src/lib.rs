@@ -27,6 +27,7 @@ pub mod stats;
 pub mod testdata;
 pub mod textfile;
 pub mod themes;
+pub mod update;
 
 /// The window starts hidden and is shown with the first colour scheme; at the latest then.
 const SHOW_FALLBACK: std::time::Duration = std::time::Duration::from_secs(1);
@@ -154,6 +155,8 @@ pub fn run() {
             commands::find_on_server,
             commands::app_info,
             commands::third_party_notices,
+            commands::check_update,
+            commands::open_release_page,
             commands::load_preview,
             commands::load_table_ddl,
             commands::load_create_table,

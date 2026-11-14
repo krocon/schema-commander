@@ -113,6 +113,8 @@
   **Testdaten erzeugen**: je Spalte ein Generator (vorgeschlagen aus Typ, Schlüssel, Name), wiederholbar über
   einen Startwert, eindeutig ohne zu merken, Fremdschlüssel aus vorhandenen Zeilen; Vorschau, Schreiben als Job
   über den Lader des Imports oder als CSV/INSERT-Datei (Prompt 049);
+  **Nach Updates suchen**: fragt GitHub nach dem neuesten Release, meldet eine neuere Version (Dialog,
+  Statuszeile), öffnet die Download-Seite – lädt und installiert nichts (`docs/release.md`);
   Einstellungen und Fensterzustand bleiben über einen Neustart.
 - Alle Features aus
   `docs/feature-analysis.md` sind freigegeben und umgesetzt; die Prompts 001–049 liegen in `prompts/done/`
@@ -187,6 +189,7 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
   app/core/session/            SessionApi: session.json, Texte der Tabs, .sql lesen/schreiben
   app/core/settings/           Settings (Modell, mergeSettings), SettingsService (tauri-plugin-store)
   app/core/sql/                QueryApi (run mit Ereignissen, window, free, cancel) + DTOs (ResultRef, RunEvent, Cell, ColKind) – spiegelt db/value.rs
+  app/core/update/             UpdateApi (check_update, open_release_page) – spiegelt update.rs
   app/core/structure/          StructureApi (struct_load, struct_plan, struct_apply) + DTOs – spiegelt
                                db/structure.rs und die Tabelle aus db/compare.rs
   app/core/transfer/           TransferApi (transfer_plan, transfer_run) + DTOs – spiegelt db/transfer.rs
@@ -285,6 +288,8 @@ src/                           Angular 22 (zoneless, Signals, Standalone)
                                Schutz, Datei, Vorlagen), testdata-logic.ts (rein: Felder der Generatoren, Vorlagen)
   app/features/themes/         Farbschema-Galerie (ThemePicker, ThemeThumb, theme-picker-logic.ts),
                                Schema-Editor (ThemeEditor, theme-editor-logic.ts rein: Ids, Import, Kontrast)
+  app/features/update/         UpdateDialog, UpdateService (Root: fragen, beim Start höchstens einmal am Tag,
+                               überspringen), update-logic.ts (rein)
   app/features/value/          ValuePanel (neben dem Gitter, <editlicious-editor readonly>), ValueService (Root:
                                Zelle des Cursors, kopieren, speichern), value-logic.ts (rein: Ansichten, JSON/XML
                                setzen ohne zu parsen, Hex, Bildgrenzen)
@@ -400,6 +405,8 @@ src-tauri/                     Rust
   tests/libsql_integration.rs  libSQL gegen einen Container (ignoriert; pnpm rust:test:db)
   tests/trino_integration.rs   Trino (und mit SC_DBTEST_PRESTO=1 Presto) gegen Container (ignoriert; pnpm rust:test:db)
   src/themes.rs                eigene Farbschemata: themes.json, Grenzen, Import/Export (rein, getestet)
+  src/update.rs                nach Updates suchen: Versionen vergleichen, Antwort von GitHub lesen, Seite des
+                               Release bauen und öffnen (rein bis auf Anfrage und Browser; update_tests.rs)
   src/error.rs                 AppError { code, message, details } – details: was die Datenbank zum Fehler sagt
   capabilities/default.json    minimale Rechte (core:default, store:default, dialog:allow-open/-save)
   tauri.conf.json              Fenster, CSP, Bundle (Version aus package.json)
@@ -533,6 +540,9 @@ Ausführlich in **`docs/best-practices.md`** – vor jeder Änderung lesen. Die 
   entsteht erst beim Lauf. Ein neues Recht gehört in `privileges.json` und in `access::privileges`.
 - **Server-Monitor**: Anweisungen anderer sind fremde Daten – nur als Text auf dem Schirm, nie im Verlauf, in
   einem Log oder der Sitzung. Beendet wird nur nach der Rückfrage; `monitor_kill` lehnt „nur lesen“ ab.
+- **Updates**: Die App meldet nur – sie lädt und installiert nichts. Die Anfrage geht nur an `update::LATEST_URL`
+  und trägt nichts vom Nutzer (auch nicht die eigene Version); die Seite, die geöffnet wird, baut `update::page_for`
+  aus einer geprüften Version, nie aus der Antwort. Die Notizen eines Release sind fremder Text: nur als Text.
 - **Schutz**: Was SQL ausführt, ruft im Backend `ConnectionManager::admit`; das Fenster fragt nur, entscheidet nie.
 - **Zustand in Signals**, Stores je Instanz ohne `providedIn`, Globales in Root-Services; veraltete Antworten verwerfen.
 - **Texte nur in Katalogen**: `*-texts.ts` (Englisch, Quelle) + `*-texts.de.ts` über `translatable()`; nie beim

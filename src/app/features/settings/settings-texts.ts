@@ -41,6 +41,7 @@ export const SETTINGS_EN = {
     security: 'Safety',
   },
   labels: {
+    updateCheck: 'Check for updates at start',
     language: 'Language',
     editorFontFamily: 'Font',
     editorFontSize: 'Font size (px)',
@@ -78,6 +79,8 @@ export const SETTINGS_EN = {
     showSystemSchemas: 'Show system schemas in the tree',
   },
   help: {
+    updateCheck:
+      'Asks GitHub for the latest release, at most once a day. Nothing about you is sent, nothing is installed – a newer version is only mentioned in the status bar.',
     language: 'Changes every text at once, also in open dialogs and in the editor.',
     editorFontFamily: 'A font installed on this computer; empty = the font of the editor.',
     editorFontSize: '',

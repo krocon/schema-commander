@@ -21,6 +21,7 @@ export type GroupId = (typeof GROUPS)[number];
 /** The settings the dialog shows; everything else of `Settings` is state (sizes, last choices). */
 export type SettingKey =
   | 'language'
+  | 'updateCheck'
   | 'editorFontFamily'
   | 'editorFontSize'
   | 'editorTabWidth'
@@ -67,6 +68,7 @@ export type SettingDef = { readonly key: SettingKey; readonly group: GroupId } &
 /** The schema of the dialog: which setting, where, and what it may be. Bounds as in `mergeSettings`. */
 export const SETTING_DEFS: readonly SettingDef[] = [
   { key: 'language', group: 'general', kind: 'choice', values: ['system', 'en', 'de'] },
+  { key: 'updateCheck', group: 'general', kind: 'bool' },
   { key: 'editorFontFamily', group: 'editor', kind: 'text', maxLength: 120 },
   { key: 'editorFontSize', group: 'editor', kind: 'number', min: 8, max: 40, step: 1 },
   { key: 'editorTabWidth', group: 'editor', kind: 'number', min: 1, max: 16, step: 1 },
@@ -170,6 +172,9 @@ const LOCAL_KEYS: readonly string[] = [
   // where programs are on this machine (prompt 044): a file from elsewhere must not say what runs here
   'toolPaths',
   'testdataTemplates',
+  // when this machine last asked for a newer version, and which one its user skipped
+  'updateLastCheck',
+  'updateSkipped',
   // an imported file never turns AI control on or opens a connection to it (prompt 048)
   'ai',
 ];

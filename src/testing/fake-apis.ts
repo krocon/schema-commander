@@ -47,6 +47,7 @@ import {
 } from '../app/core/saved/saved-api';
 import { FormatApi, FormatDialect, FormatMode, FormatStyle } from '../app/core/format/format-api';
 import { AboutApi, AppInfo } from '../app/core/about/about-api';
+import { UpdateApi, UpdateInfo } from '../app/core/update/update-api';
 import { ExportApi, ExportSpec, Exported } from '../app/core/backend/export-api';
 import { Plan, PlanApi } from '../app/core/plan/plan-api';
 import {
@@ -2512,6 +2513,47 @@ export class FakeTestdataApi extends TestdataApi {
 
   cancel(jobId: number): Promise<void> {
     this.cancelled.push(jobId);
+    return Promise.resolve();
+  }
+}
+
+/**
+ * The update check without GitHub: answers with `info`, or rejects with `fail`. With `hold` an answer
+ * waits for `release()`. `opened` are the versions whose page was asked for.
+ */
+export class FakeUpdateApi extends UpdateApi {
+  info: UpdateInfo = {
+    current: '1.2.3',
+    latest: '1.3.0',
+    newer: true,
+    published: '2026-11-14',
+    notes: 'What is new\n<b>not markup</b>',
+    notesCut: false,
+  };
+  fail: { code: string; message: string } | null = null;
+  failOpen = false;
+  hold = false;
+  checks = 0;
+  readonly opened: string[] = [];
+  private waiting: (() => void)[] = [];
+
+  async check(): Promise<UpdateInfo> {
+    this.checks++;
+    const info = this.info;
+    const fail = this.fail;
+    if (this.hold) await new Promise<void>((resolve) => this.waiting.push(resolve));
+    if (fail) throw fail;
+    return info;
+  }
+
+  /** Lets every held answer through. */
+  release(): void {
+    this.waiting.splice(0).forEach((resolve) => resolve());
+  }
+
+  openPage(version: string): Promise<void> {
+    if (this.failOpen) return Promise.reject({ code: 'io', message: 'browser' });
+    this.opened.push(version);
     return Promise.resolve();
   }
 }

@@ -29,6 +29,9 @@ import {
 import { DataImportDialog } from './features/data-import/data-import-dialog';
 import { DataImportService } from './features/data-import/data-import.service';
 import { AboutDialog } from './features/about/about-dialog';
+import { UpdateDialog } from './features/update/update-dialog';
+import { UpdateService } from './features/update/update.service';
+import { UPDATE_TEXTS } from './features/update/update-texts';
 import { DiagramService } from './features/diagram/diagram.service';
 import { ErDiagramDialog } from './features/diagram/er-diagram-dialog';
 import { ExportDialog } from './features/export/export-dialog';
@@ -166,6 +169,7 @@ const SIDEBAR_MIN = 140;
     ErDiagramDialog,
     ServerSearchDialog,
     AboutDialog,
+    UpdateDialog,
     DataImportDialog,
     GuardDialog,
     HistoryDialog,
@@ -430,6 +434,16 @@ const SIDEBAR_MIN = 140;
             {{ mcpTexts.badge(mcp.status().connections) }}
           </button>
         }
+        @if (updates.offer(); as version) {
+          <button
+            type="button"
+            class="status-button"
+            [title]="updateTexts.availableHint"
+            (click)="updates.show()"
+          >
+            {{ updateTexts.available(version) }}
+          </button>
+        }
         @if (formatter.visible()) {
           <span>{{ formatTexts.running }}</span>
           <button type="button" class="status-button" (click)="formatter.cancel()">
@@ -656,6 +670,11 @@ const SIDEBAR_MIN = 140;
         <app-about-dialog (closed)="aboutOpen.set(false)" />
       }
     }
+    @if (updates.open()) {
+      @defer (on immediate) {
+        <app-update-dialog />
+      }
+    }
     @if (importOpen()) {
       @defer (on immediate) {
         <app-import-dialog (closed)="importOpen.set(false)" />
@@ -731,6 +750,8 @@ export class App implements OnInit, OnDestroy {
   protected readonly snippetsOpen = signal(false);
   protected readonly importOpen = signal(false);
   protected readonly aboutOpen = signal(false);
+  protected readonly updates = inject(UpdateService);
+  protected readonly updateTexts = UPDATE_TEXTS;
   /** The shortcut editor, `read` as an overview. */
   protected readonly shortcutsOpen = signal<'edit' | 'read' | null>(null);
   protected readonly settingsOpen = signal(false);
@@ -963,6 +984,8 @@ export class App implements OnInit, OnDestroy {
     await this.tabs.load();
     // AI control (prompt 048): on again only if the user had it on
     void this.mcp.init();
+    // a newer version (at most once a day, and only if the user lets the app ask)
+    void this.updates.checkAtStart();
     const notice = this.actions.startNotice();
     if (notice) this.ownNotice.set(notice);
     // the backup of a text that was just typed must not wait for its timer when the window goes
@@ -1547,6 +1570,7 @@ export class App implements OnInit, OnDestroy {
         OPEN_SHORTCUTS: () => this.shortcutsOpen.set('edit'),
         SHOW_SHORTCUTS: () => this.shortcutsOpen.set('read'),
         SHOW_ABOUT: () => this.aboutOpen.set(true),
+        CHECK_UPDATES: () => void this.updates.checkNow(),
         FOCUS_EDITOR: () => this.focusArea('editor'),
         FOCUS_RESULT: () => this.focusArea('result'),
         FOCUS_SIDEBAR: () => this.focusArea('sidebar'),

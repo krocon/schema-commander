@@ -211,4 +211,24 @@ describe('stored settings (migration)', () => {
     // and it does not leave this machine either
     expect(exportSettings(current)).not.toContain('pg_dump');
   });
+
+  it('keeps when this machine asked for updates and what was skipped out of a file', () => {
+    const current = {
+      ...DEFAULT_SETTINGS,
+      updateLastCheck: 1_800_000_000_000,
+      updateSkipped: '1.2.3',
+    };
+    const text = exportSettings(current);
+    expect(text).not.toContain('updateLastCheck');
+    expect(text).not.toContain('updateSkipped');
+    expect(text).toContain('"updateCheck": true');
+    const file = JSON.stringify({
+      format: EXPORT_FORMAT,
+      version: EXPORT_VERSION,
+      settings: { updateSkipped: '9.9.9', updateCheck: false },
+    });
+    const merged = importSettings(file, current);
+    expect(merged?.updateSkipped).toBe('1.2.3');
+    expect(merged?.updateCheck).toBe(false);
+  });
 });

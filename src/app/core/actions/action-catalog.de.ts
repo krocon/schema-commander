@@ -185,6 +185,7 @@ export const ACTION_LABELS_DE: Readonly<Record<ActionId, string>> = {
   OPEN_SHORTCUTS: 'Tastenkürzel bearbeiten …',
   SHOW_SHORTCUTS: 'Tastenkürzel anzeigen',
   SHOW_ABOUT: 'Über Schema Commander',
+  CHECK_UPDATES: 'Nach Updates suchen …',
 };
 
 /** German names of the groups; the key is the English name of the catalog. */
