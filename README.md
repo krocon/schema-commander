@@ -164,7 +164,8 @@ Built with [Tauri 2](https://tauri.app), Angular 22 (zoneless, signals) and Rust
 
 ## Releases
 
-There is no published release yet. Packages for macOS, Windows and Linux are built by a GitHub workflow from a
+Packages for macOS, Windows and Linux are on the
+[releases page](https://github.com/krocon/schema-commander/releases). They are built by a GitHub workflow from a
 tag (`docs/release.md`); until certificates are set up they are unsigned. Every package carries
 `THIRD-PARTY-NOTICES.txt` with the licences of everything inside; *Help → About Schema Commander* shows it,
 together with version and build.
